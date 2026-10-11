@@ -6,7 +6,6 @@
 
 <h4>One client for all your agents</h4>
 
-<h5>Phone and desktop, picking up the same session</h5>
 
 [📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](android/README.md) • [🖥️ **Desktop**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **Security model**](#security-model-)
 
@@ -14,11 +13,7 @@
 
 </div>
 
-**Built as one system across clients — switch between them whenever you like, and drive every agent on your computer (Claude Code and Codex today; more to come).**
-
-The client is just the entry point; **the work always runs on your computer** — losing the connection does not stop a run, and reconnecting picks up where you left off. The same session carries over between phone and desktop.
-
-Today it is still a developer tool; from here it grows from "one client driving many agents" toward customization for specific roles, and eventually your own personal agent.
+**Built as one system across clients — switch between them whenever you like, and drive every agent on your computer (Claude Code and Codex today; more to come).** The client is just the entry point; **the work always runs on your computer** — losing the connection does not stop a run, and reconnecting picks up where you left off. The same session carries over between phone and desktop.
 
 ## Quick start
 
