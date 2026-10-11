@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 上下文窗口占用圆环（聊天页顶栏，见 docs/ui/pages/chat.md §6.3）。
+ * 上下文窗口占用圆环（聊天页顶栏，见 docs/ui/mobile/pages/chat.md §6.3）。
  *
  * 只画比例、不写数字：顶栏那一行要留给 cwd，具体数值由点击后的详情给出。
  *

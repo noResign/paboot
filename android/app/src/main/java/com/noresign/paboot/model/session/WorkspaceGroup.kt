@@ -2,7 +2,7 @@ package com.noresign.paboot.model.session
 
 import com.noresign.paboot.network.daemon.dto.SessionDto
 
-/** 会话列表按 cwd 分组后的结果（docs/ui/pages/sessions.md §6.2）。 */
+/** 会话列表按 cwd 分组后的结果（docs/ui/mobile/pages/sessions.md §6.2）。 */
 data class WorkspaceGroup(
     /** 完整 cwd，用作分组的唯一 key。 */
     val cwd: String,

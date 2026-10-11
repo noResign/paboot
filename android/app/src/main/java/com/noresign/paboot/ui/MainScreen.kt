@@ -45,7 +45,7 @@ private enum class MainTab(val label: String, val icon: ImageVector) {
 }
 
 /**
- * 底部 Tab Bar，尺寸对齐 `docs/ui/preview.html` 的紧凑稿（icon 24dp + label 10.5sp，
+ * 底部 Tab Bar，尺寸对齐 `docs/ui/mobile/preview.html` 的紧凑稿（icon 24dp + label 10.5sp，
  * 条高约 61dp + 系统导航栏 inset）。
  *
  * 没有用 Material3 的 `NavigationBar`：它固定 80dp 高且不暴露高度参数，压不到预览稿的尺寸。
@@ -100,7 +100,7 @@ private fun MainBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
 }
 
 /**
- * 主界面：底部 Tab Bar 容器（会话 / 文件 / 设置），对应 docs/ui/design-principles.md §3。
+ * 主界面：底部 Tab Bar 容器（会话 / 文件 / 设置），对应 docs/ui/shared/design-principles.md §3。
  * 聊天详情是 push 页（在 MAIN 之上），进入后本容器（含 Tab）隐藏。
  */
 @Composable

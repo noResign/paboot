@@ -1,6 +1,6 @@
 # paboot-android
 
-paboot 的 Android 客户端。电脑上的 daemon 负责跑 agent，这个 App 是你的遥控器：
+paboot 的 Android 客户端。电脑上的 daemon 负责跑 agent，这个 App 是它的入口：
 看流式输出、审批工具调用、接收任务系统通知、浏览文件、管理工作区。整体定位与安装步骤见[根 README](../README.md)。
 
 ## 功能
@@ -20,7 +20,7 @@ paboot 的 Android 客户端。电脑上的 daemon 负责跑 agent，这个 App 
 - 有任务在监听时显示「正在监听 N 个任务」，监听结束后自动移除。关闭提醒会停止后台监听，不会取消电脑上的任务。
 - 通知依赖手机对 daemon 的后台连接。daemon 持续不可达约 60 秒后会停止监听；断网期间不保证即时提醒，审批仍按 daemon 的超时规则处理。
 
-完整交互说明见[系统通知（后台提醒）](../docs/ui/interactions.md#77-🟢-系统通知后台提醒)。
+完整交互说明见[系统通知（后台提醒）](../docs/ui/shared/interactions.md#77-🟢-系统通知后台提醒)。
 
 ## 前置
 
@@ -77,8 +77,8 @@ versionCode 取 epoch 秒；debug 固定 versionCode=`1`、versionName=`0.0.0-*`
 
 | 文档 | 内容 |
 |---|---|
-| [docs/ui_adapter.md](docs/ui_adapter.md) | UI 适配说明（Design Token → Compose 的落地） |
-| [docs/ui/](../docs/ui/README.md) | 移动端 UI 设计（与 iOS 共用，逐页规格在 `docs/ui/pages/`） |
+| [docs/ui/](../docs/ui/README.md) | UI 设计文档（共享规范 / 移动端 / 桌面端三层） |
+| [docs/ui/mobile/platforms/android.md](../docs/ui/mobile/platforms/android.md) | 本平台的落地映射（Design Token → Compose） |
 | [CLAUDE.md](../CLAUDE.md) | 仓库纲领与开发规范 |
 
 

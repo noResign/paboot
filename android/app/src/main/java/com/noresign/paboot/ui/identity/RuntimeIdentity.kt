@@ -10,7 +10,7 @@ import com.noresign.paboot.ui.theme.DesignColors
 import com.noresign.paboot.network.daemon.dto.AgentDto
 
 /**
- * 一个 runtime（agent）的 UI 身份：图标 + 主题色 + 展示名（docs/ui/design-principles.md §5.2）。
+ * 一个 runtime（agent）的 UI 身份：图标 + 主题色 + 展示名（docs/ui/shared/design-principles.md §5.2）。
  * 新增 agent 只需在 [RuntimeIdentities] 的 table 里加一行，不改布局。
  */
 data class RuntimeIdentity(

@@ -6,16 +6,16 @@ iOS 客户端**尚未实现**，本目录是预留位。整体定位见[根 READ
 
 - 原生 **UIKit**（命令式），与 Android 共用 [docs/ui/](../docs/ui/README.md) 这一套设计规范；
   token 落到 `UIColor` / `UIFont`（配 `UIFontMetrics` 支持动态字号）/ Auto Layout，图标用
-  SF Symbols，逐项映射见 [docs/ui/design-principles.md](../docs/ui/design-principles.md) §4.5
+  SF Symbols，逐项映射见 [docs/ui/shared/design-principles.md](../docs/ui/shared/design-principles.md) §4.5
 - **纯代码 UI，不用 Storyboard / XIB**：diff 干净、好 review，也不依赖 Interface Builder
-- 传输契约已冻结：跨端唯一真源是
+- 跨端传输契约的唯一真源是
   [daemon/src/types/api.ts](../daemon/src/types/api.ts)，
-  daemon 侧协议见 [daemon/docs/daemon.md](../daemon/docs/daemon.md) §6
+  daemon 侧协议见 [daemon/docs/protocol.md](../daemon/docs/protocol.md) 的「HTTP / SSE 协议」
 - 接入方式参考 Android 侧：按 `types/api.ts` 对齐 wire DTO（字段名 / 类型 / 多态判别一一对齐），
   再实现 SSE 传输与本地设置持久化
 
 实现适配方案（Design Token → UIKit 的逐项落地、分阶段实施）见
-[docs/ui_adapter.md](docs/ui_adapter.md)。
+[../docs/ui/mobile/platforms/ios.md](../docs/ui/mobile/platforms/ios.md)。
 
 ## 应用图标
 

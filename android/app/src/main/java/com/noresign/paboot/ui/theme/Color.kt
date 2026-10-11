@@ -3,7 +3,7 @@ package com.noresign.paboot.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * 语义色 token，值来自 docs/ui/design-principles.md §4.1（浅色默认 + 深色）。
+ * 语义色 token，值来自 docs/ui/shared/design-principles.md §4.1（浅色默认 + 深色）。
  *
  * Material3 的 ColorScheme 没有 success / warning / thinking 等槽位，因此完整语义色统一收在这里；
  * Theme.kt 只把标准槽位映射过去，UI 需要非标准色时直接从本对象取。

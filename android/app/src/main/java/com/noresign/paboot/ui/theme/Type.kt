@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// 语义字号（docs/ui/design-principles.md §4.2）：
+// 语义字号（docs/ui/shared/design-principles.md §4.2）：
 // 页面标题 20 / 列表·卡片标题 16 / 正文 14 / 辅助说明 12 / 代码 13（等宽）。
 val Typography = Typography(
     titleLarge = TextStyle(

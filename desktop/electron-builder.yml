@@ -17,6 +17,9 @@ directories:
 files:
   - out/**
   - package.json
+  # 窗口图标：BrowserWindow 在运行时读它（见 src/main/window.ts）。打包图标本身是
+  # electron-builder 从同一张 PNG 生成的，但窗口的 _NET_WM_ICON 需要文件实际存在。
+  - build/icon.png
 
 # The daemon ships inside the app (~900 KB of JS, no native deps) so the app and
 # its daemon can never drift apart in version — see daemon/bundled-entry.ts.
@@ -45,7 +48,7 @@ linux:
   category: Development
   icon: build/icon.png
   maintainer: noResign
-  synopsis: Remote client for a local coding agent
+  synopsis: One client for all your agents
   # Makes the .desktop entry's StartupWMClass match the app_id Electron derives
   # from package.json `desktopName`, so the window links to the launcher icon.
   syncDesktopName: true

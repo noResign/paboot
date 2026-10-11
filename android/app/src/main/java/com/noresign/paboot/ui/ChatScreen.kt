@@ -312,7 +312,7 @@ private fun ReconnectBanner() {
 }
 
 /**
- * 顶栏的上下文占用指示（docs/ui/pages/chat.md §6.3）：平时只占一个圆环，把宽度留给 cwd，
+ * 顶栏的上下文占用指示（docs/ui/mobile/pages/chat.md §6.3）：平时只占一个圆环，把宽度留给 cwd，
  * 点开才显示具体数值与百分比。
  *
  * 运行时不给窗口大小（Claude）时画不出比例，改用等宽小字显示占用量——一个空圆环会被读成

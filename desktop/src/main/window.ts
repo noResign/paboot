@@ -1,4 +1,4 @@
-import { BrowserWindow, net, protocol, shell, type Session } from 'electron';
+import { BrowserWindow, nativeImage, net, protocol, shell, type Session } from 'electron';
 import { existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -12,6 +12,28 @@ export const APP_SCHEME = 'paboot';
 export const APP_ORIGIN = `${APP_SCHEME}://app`;
 
 const RENDERER_DIR = join(__dirname, '../renderer');
+
+/**
+ * The window icon. Without it Linux window managers fall back to a generic
+ * placeholder in the dock/taskbar — the app icon is only consulted for packaged
+ * builds, via the `.desktop` entry.
+ *
+ * Ships in the app because electron-builder's `files` include `build/icon.png`;
+ * in a dev run the same relative path resolves inside the checkout.
+ *
+ * Resized at runtime rather than shipped at 128: **Electron only sets
+ * `_NET_WM_ICON` when the icon is ≤128px** (measured: 128 works, 256 and up
+ * leave the property empty, whether passed as a path or as a NativeImage).
+ * Scaling the 1024 packaging master here keeps a single source image.
+ */
+const WINDOW_ICON_PATH = join(__dirname, '../../build/icon.png');
+const WINDOW_ICON_SIZE = 128;
+
+function windowIcon(): Electron.NativeImage | undefined {
+  if (!existsSync(WINDOW_ICON_PATH)) return undefined;
+  const image = nativeImage.createFromPath(WINDOW_ICON_PATH);
+  return image.isEmpty() ? undefined : image.resize({ width: WINDOW_ICON_SIZE });
+}
 
 export function registerAppScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -112,6 +134,7 @@ export function createWindow(options: WindowOptions): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     show: false,
+    icon: windowIcon(),
     backgroundColor: '#111214',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {

@@ -56,11 +56,16 @@ lib-network/src/main/java/com/noresign/paboot/network/
    ├─ PabootStream.kt    SSE 域适配：POST /api/chat、GET /api/runs/:id/stream
    ├─ ChatStreamEvent.kt   Frame / Failed / Closed
    └─ dto/                 wire 模型，按业务域分文件（不再往下建子目录）
-      ├─ AgentDtos.kt          AgentDto + AgentsResponse
-      ├─ ClaudeSessionDtos.kt  ClaudeSessionDto + ClaudeSessionsResponse
-      ├─ SessionDtos.kt        SessionDto / SessionsResponse / SessionDetailResponse / MessageDto / RunDto / RunsResponse
-      ├─ EventDtos.kt          NormalizedEvent（+9 个子类）/ SseFrame / EventsResponse / ChatRequest / PermissionDecisionRequest
-      └─ CommonDtos.kt         HealthResponse / OkResponse / RenameRequest / RenameResponse
+      ├─ AgentDtos.kt              AgentDto + AgentsResponse
+      ├─ ClaudeSessionDtos.kt      ClaudeSessionDto + ClaudeSessionsResponse
+      ├─ SessionDtos.kt            SessionDto / SessionsResponse / SessionDetailResponse / MessageDto / RunDto / RunsResponse
+      ├─ SessionPermissionDtos.kt  PermissionGrantDto / SessionPermissionsResponse / UpdateSessionPermissionsRequest
+      ├─ EventDtos.kt              NormalizedEvent（sealed，11 个子类）/ SseFrame / EventsResponse / ChatRequest / PermissionDecisionRequest / QuestionDto
+      ├─ WorkspaceDtos.kt          WorkspaceDto / WorkspacesResponse / 增改与目录、书签请求响应 / DirectoryEntryDto / DirectoriesResponse
+      ├─ ChangeDtos.kt             ChangedFileDto / ChangesResponse / DiffResponse
+      ├─ FileDtos.kt               FileEntryDto / FilesResponse / FileContentDto
+      ├─ ConfigDtos.kt             ServerConfigDto / ConfigResponse / UpdateConfigRequest / ConfigWorkspaceDto
+      └─ CommonDtos.kt             HealthResponse / OkResponse / RenameRequest / RenameResponse
 ```
 
 **依赖方向单向向下**：`daemon/` → `sse/` + `http/`，`llm/` → `sse/`；`sse/` 不反向依赖任何上层。
@@ -139,7 +144,8 @@ val routed = RoutingLlmProvider(
 - `OpenAiCompatLlmProviderTest` —— 用假的 `SseSource` 喂固定帧，覆盖增量聚合、tool_calls 分片累积、
   `[DONE]`、异常翻译、请求体/端点
 - `RoutingLlmProviderTest` —— 路由与未知模型兜底
-- `EventDtosTest` —— 钉死归一化事件的 `type` 多态判别（10 个子类逐个验）与请求体编码
+- `EventDtosTest` —— 钉死归一化事件的 `type` 多态判别（11 个子类逐个验）与请求体/帧编码
+- `AgentDtosTest` —— `/api/agents` 响应的 `available` 字段编解码
 
 ```bash
 ./gradlew :lib-network:test

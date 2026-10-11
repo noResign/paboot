@@ -112,7 +112,7 @@ fun ConnectScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "远程指挥你电脑上的编码 agent",
+                    text = "一个客户端，操纵你所有的 agent",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

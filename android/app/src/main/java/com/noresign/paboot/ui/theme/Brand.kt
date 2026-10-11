@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
- * 品牌渐变（docs/ui/design-principles.md §4.1.1）：linear-gradient(135deg, #0E9F86 → #18C9A6)。
+ * 品牌渐变（docs/ui/shared/design-principles.md §4.1.1）：linear-gradient(135deg, #0E9F86 → #18C9A6)。
  * 仅用于 Logo、FAB、主 CTA 焦点态、连接页 hero 点缀，不滥用。
  */
 object Brand {

@@ -35,15 +35,15 @@
   margin-bottom: 4px;
 }
 
-.gate-brand .lg {
+/* 应用品牌标（BrandMark）：渐变方块，圆角 30% 与 Android 的 Brand.Gradient 一致 */
+.brand-mark {
   width: 30px;
   height: 30px;
   border-radius: 9px;
   background: var(--grad);
   display: grid;
   place-items: center;
-  color: #fff;
-  font-weight: 700;
+  flex: none;
 }
 
 .gate-slogan {

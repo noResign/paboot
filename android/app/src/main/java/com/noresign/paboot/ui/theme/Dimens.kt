@@ -2,7 +2,7 @@ package com.noresign.paboot.ui.theme
 
 import androidx.compose.ui.unit.dp
 
-/** 间距/圆角/触控（docs/ui/design-principles.md §4.3）。 */
+/** 间距/圆角/触控（docs/ui/shared/design-principles.md §4.3）。 */
 object DesignDimens {
 
     /** 基准网格。 */

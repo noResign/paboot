@@ -29,7 +29,7 @@ export interface Config {
   /** 空闲看门狗：run 多久无事件则自动取消（ms，0 = 禁用）。 */
   runIdleTimeoutMs: number;
   tls: TlsConfig | null;
-  /** 是否允许通过 /api/deploy 触发远程部署（PABOOT_ALLOW_DEPLOY=1）。 */
+  /** 是否允许通过 /api/deploy 触发部署（PABOOT_ALLOW_DEPLOY=1）。 */
   allowDeploy: boolean;
   /** 部署脚本绝对路径（PABOOT_DEPLOY_SCRIPT 可覆盖）。 */
   deployScript: string;

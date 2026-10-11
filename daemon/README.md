@@ -1,54 +1,36 @@
 # daemon
 
-paboot 的守护进程：`spawn` 本机已安装的编码 agent CLI（当前 Claude Code，架构上预留多
-agent），以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给远程客户端。
+paboot 的守护进程：`spawn` 本机已安装的编码 agent CLI（已接入 Claude Code 与 Codex），
+以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给客户端。
 
-完整技术方案（架构 / 协议 / 权限模型 / 数据模型 / 全部配置参数 / 分发）见
-**[docs/daemon.md](docs/daemon.md)**；项目总览见
-[paboot 仓库](https://github.com/noResign/AIRemote#readme)。
+完整技术方案见 **[docs/daemon.md](docs/daemon.md)**（索引：总览 / [协议](docs/protocol.md) /
+[权限](docs/permissions.md) / [运行时](docs/runtimes.md) / [配置](docs/configuration.md)）；
+项目总览见 [paboot 仓库](https://github.com/noResign/paboot#readme)。
 
-## 前置
-
-- Node `~24`、pnpm 10
-- 本机已装并登录 `claude` CLI（`claude auth login`）
-
-> 只是要用、不打算改代码的话，直接 `npm install -g @noresign/paboot` 即可（命令名是
-> `paboot`）。下面是**从源码**构建的步骤。
-
-## 构建与运行
+## 包安装
 
 ```bash
-pnpm install
-pnpm build            # tsc → dist/index.js（含 permission-hook.js）
-node dist/index.js --workspace ~/code/my-project
+npm install -g @noresign/paboot # 安装
+
+paboot # 运行
 ```
 
 首次启动生成 token 并打印，同时打印本机局域网地址；token 持久化在 `<data-dir>/token`
 （默认 `~/.paboot/token`），删掉即轮换。
 
-开发用 `pnpm dev`（tsx watch）。要全局安装成 `paboot` 命令：
+## 源码构建与运行
+
+- Node `~24`、pnpm 10
+- 本机已装并登录 `claude` CLI（`claude auth login`）
 
 ```bash
-ln -sf "$PWD/dist/index.js" ~/.local/bin/paboot
-paboot --help
+pnpm install
+pnpm build            # tsc → dist/index.js（含 permission-hook.js）
+pnpm dev --workspace ~/code/my-project (或者 node dist/index.js)
+
+pnpm typecheck        # check
+pnpm test             # Vitest
 ```
-
-常用 flag：`--host`（默认 `0.0.0.0`）、`--port`（默认 `4780`）、`--workspace`
-（默认当前目录）、`--data-dir`（默认 `~/.paboot`）、`--token`、
-`--permission-mode`、`--env-file`。环境变量同名 `PABOOT_*`，**flag 优先**；
-`.env` 在运行目录自动加载，模板见 [.env.example](.env.example)。
-
-## 冒烟测试
-
-```bash
-TOKEN=$(cat ~/.paboot/token)
-curl -s http://127.0.0.1:4780/api/health
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4780/api/agent
-curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"prompt":"列出当前目录的文件并总结"}' http://127.0.0.1:4780/api/chat
-```
-
-浏览器打开 [client/index.html](client/index.html) 可得到一个零依赖的图形化测试客户端。
 
 ## 配置
 
@@ -68,7 +50,17 @@ curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 `PABOOT_RUN_IDLE_TIMEOUT_SECONDS`（空闲看门狗，默认 900，0=禁用）、
 `PABOOT_ALLOW_DEPLOY`（允许手机触发部署，默认关闭）。
 
-完整清单见 [.env.example](.env.example) 与 [docs/daemon.md](docs/daemon.md) §10。
+完整清单见 [.env.example](.env.example) 与 [docs/configuration.md](docs/configuration.md)。
+
+## 冒烟测试
+
+```bash
+TOKEN=$(cat ~/.paboot/token)
+curl -s http://127.0.0.1:4780/api/health
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4780/api/agent
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt":"列出当前目录的文件并总结"}' http://127.0.0.1:4780/api/chat
+```
 
 ## API 速览
 
@@ -97,45 +89,26 @@ status | text_delta | thinking_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request | question
 ```
 
-完整端点表、请求体与错误形状见 [docs/daemon.md](docs/daemon.md) §6；跨端传输契约的唯一真源是
+完整端点表、请求体与错误形状见 [docs/protocol.md](docs/protocol.md) 的「HTTP / SSE 协议」；跨端传输契约的唯一真源是
 `src/types/api.ts`。
-
-## 开发
-
-```bash
-pnpm typecheck
-pnpm test             # Vitest
-```
-
-- 接入新 agent：实现 `src/runtimes/types.ts` 的 `RuntimeAdapter`，在
-  `src/runtimes/registry.ts` 注册一行；路由 / 引擎 / 持久化 / 传输不动。
-- 改协议：先改 `src/types/api.ts`（跨端契约唯一真源），再同步 Android 侧
-  `lib-network` 的 `paboot/dto/`，最后更新 `docs/daemon.md`。
-- `dist/`、`node_modules/` 不入库，不要手改 `dist/`。
 
 ## 安全
 
-远程驱动一个带 shell 权限的 agent 本质等于远程代码执行。所有非 `/api/health` 路由都要
+从客户端驱动一个带 shell 权限的 agent 本质等于远程代码执行。所有非 `/api/health` 路由都要
 Bearer token；默认权限模式为 `ask`，审批超时未处理默认拒绝，手机断线不立即取消任务或拒绝审批；**`workspace` 只是 spawn cwd，
 不是沙箱**。跨网络访问请先用组网工具（Tailscale / ZeroTier / WireGuard）把设备放进加密内网；
 内网穿透只适合自用（详见根 README「手机电脑不在同一个局域网」）。详见
-[docs/daemon.md](docs/daemon.md) §9。
+[docs/permissions.md](docs/permissions.md) 的「安全模型」。
 
-## 发布与安装
+## 安装
 
-**维护者发布**：由作者手动完成（`prepack` 钩子会自动 build，registry 与 access 由
-`package.json` 的 `publishConfig` 固定）。版本号取自 `package.json` 的 `version`（semver，
-手改递增）；**已发布的版本不可覆写**，改完发新版本。
-
-**用户安装**（需 Node `~24` + 本机已装并登录 Claude Code）：
+需 Node `~24` + 本机已装并登录 Claude Code / Codex：
 
 ```bash
 npx @noresign/paboot --help           # 免安装试用
 npm install -g @noresign/paboot       # 装成全局命令（命令名仍是 paboot）
 paboot --workspace /path/to/project
 ```
-
-包名为什么带 scope、包内容由哪些文件组成，见 [docs/daemon.md](docs/daemon.md) §12。
 
 ## License
 

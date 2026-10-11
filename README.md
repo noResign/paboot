@@ -2,56 +2,46 @@
 
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/media/mascot-hero-dark.png">
-  <img src="docs/media/mascot-hero.png" width="620" alt="AIRemote">
-</picture>
+<h1>paboot</h1>
 
-<h1>AIRemote</h1>
+<h4>一个客户端，操纵你所有的 agent</h4>
 
-<h4>躺着指挥电脑上的AI Agent 干活</h4>
+<h5>手机、桌面，同一份会话接着干</h5>
 
-<h5>咱就说，能不能躺着把活干了</h5>
-
-[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](android/README.md) • [🖥️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **安全模型**](#安全模型-)
+[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](android/README.md) • [🖥️ **桌面端**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **安全模型**](#安全模型-)
 
 [![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
-**远程操纵编码 agent。** 电脑上跑一个 daemon，把安装的编码 agent CLI（当前仅支持
-Claude Code，后续支持Codex、DSH）以无头方式 spawn 起来，把输出解析成统一的流式事件，通过 HTTP/SSE 推给手机：
-在手机上看流式输出、审批工具调用、浏览电脑文件、切换工作区；离开会话页后，
-Android 系统通知会提醒你处理审批或查看任务结果，不局限于写代码。
+**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code 与 Codex，后续还有更多）** 
 
-手机是远程终端，**任务始终在电脑上执行**——断连不影响任务，重连自动续上。
+客户端只是入口，**任务始终在电脑上执行**——断连不影响任务，重连自动续上；同一份会话，手机和桌面可以接着来。
+
+今天它仍是开发者的工具；往后会从「一个客户端操纵多个 agent」走向面向具体岗位的定制，再到属于你自己的 personal agent。
 
 ## 快速开始
 
 ### 1. 装 daemon
 
-前置：**Node `~24`**，以及本机已装并登录 `claude` CLI（`claude auth login`）：
+前置：**Node `~24`**，以及本机已装并登录的 agent CLI——Claude Code（`claude auth login`）或 Codex，装哪个就能用哪个。
 
 ```bash
 npm install -g @noresign/paboot      # 全局命令名是 paboot
 
-paboot --workspace ~/code/my-project # workspace参数指定工作空间，默认为命令启动目录
+paboot  # 工作目录默认取命令启动的目录
 ```
 
-首次启动会生成 token 并打印，同时打印手机可以连的局域网地址：
+- token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 自己指定
+- 完整参数、配置项与 HTTP/SSE 接口见 [daemon/README.md](daemon/README.md)
 
-```
-token: 3f9c…   ← 手机连的时候要填这个
-LAN:   http://192.168.1.20:4780
-```
+### 2. Android 客户端
 
-- token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 指定
-- 完整参数、配置项与 HTTP/SSE 接口见 [daemon/README.md](daemon/README.md)。
+**(1) [release](https://github.com/noResign/paboot/releases) 页面直接下载apk包**
 
-### 2. 编译 Android 客户端
+**(2) 自行编译运行**
 
-用 Android Studio 打开 `android/`（JDK 17，`minSdk 24` / `targetSdk 36`），
-选 flavor 后直接 Run。命令行等价于：
+用 Android Studio 打开 `android/` 选 flavor 后直接 Run。命令行等价于：
 
 ```bash
 cd android
@@ -86,7 +76,6 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 然后手机连 `http://your-server:4788`，4788端口为服务器端口，可自定义选择。但要注意：**SSH 只加密了「电脑 → 服务器」这一段，手机到服务器
 那一跳仍是明文 HTTP**，token 在这段上等于裸奔——所以这条路只适合自己临时用。
 
-两个容易踩的坑：
 
 - `-R` 默认只在服务器的 **loopback** 上监听，手机连不上；需要在服务器 `/etc/ssh/sshd_config`
   里设 `GatewayPorts clientspecified`
@@ -107,6 +96,8 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 
 ## 功能
 
+手机与桌面客户端是同一套能力，下表按手机端描述；**系统通知为 Android 独有**。
+
 | 能力 | 说明 |
 |---|---|
 | 手机上看流式输出 | 文字与思考过程实时刷出来，工具调用渲染成可展开的卡片 |
@@ -121,7 +112,7 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 | 文件快捷目录 | 为常用目录添加浏览书签，方便切换；书签与 agent 的附加目录分开管理 |
 | 文件与 Diff | 手机上直接看工作区的 Git 未提交改动、单文件 diff、目录树与文本文件；图片 / MP4 可就地预览 |
 
-## 界面
+## 移动端界面
 
 | 会话列表 | 聊天（支持markdown渲染） | 审批浮层 | 新建会话 |
 |---|---|---|---|
@@ -135,27 +126,28 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 ## 安全模型 ⚠️
 
 **`workspace` 不是沙箱。** 它只决定 agent 从哪个目录启动（spawn cwd），不限制它能碰哪些路径。
-`Read` / `Grep` 默认显式允许，不走手机审批，也不会自动添加附加目录；用户或管理员的
+`Read` / `Grep` 默认显式允许，不走客户端审批，也不会自动添加附加目录；用户或管理员的
 显式限制仍然有效。写入按会话模式、工具审批及 Claude Code 自身规则处理，`acceptEdits`
 不等于允许写入任意路径。文件级隔离需要 OS 层沙箱（bwrap / firejail / 容器）。
 
 daemon 提供的边界：
 
 - **认证**：所有非 health 的 `/api/*` 都要 Bearer token（常量时间比较）
-- **权限模式**：默认 `ask`，`bypass` 必须用户在手机上明确切换
-- **默认拒绝**：审批超时未处理 → 拒绝；手机断线不会立即结束任务或拒绝审批
+- **权限模式**：默认 `ask`，`bypass` 必须用户在客户端明确切换
+- **默认拒绝**：审批超时未处理 → 拒绝；客户端断线不会立即结束任务或拒绝审批
 - **Bash 自动允许**：无 shell 元字符且命中命令白名单时自动允许；当前按命令前缀匹配，不保证所有参数组合都只读
-- **审计**：chat / cancel / permission_decision / rename / delete 全部记入 `audit_log`
+- **审计**：写操作（chat / cancel / permission_decision / session 重命名与删除 / 配置与工作区变更…）记入 `audit_log`
 
 公开网络上使用，请先用ssh中转或者组网工具（Tailscale / ZeroTier / WireGuard）把设备放进一个加密的虚拟内网
 （见上文「手机电脑不在同一个局域网」），并保管好 token。只想本机使用就 `--host 127.0.0.1`。
 
 ## 状态
 
+- **agent**：已接入 Claude Code 与 Codex（实验性）
 - **daemon**：可用（会话 / 审批 / 工作区 / 文件 均已落地）
 - **Android**：已实现（连接、会话列表、聊天、审批、会话权限管理、系统通知、新建会话、设置、文件、工作区管理）
-- **iOS**：预留，尚未实现
-- **多 runtime**：抽象已就位，当前仅支持 Claude Code
+- **Desktop**：已实现（Electron 客户端，见 [desktop/README.md](desktop/README.md)）
+- **iOS**：预留，待实现
 
 ## License
 

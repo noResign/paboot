@@ -1,0 +1,37 @@
+# https://editorconfig.org
+#
+# 依据仓库现有代码的实际风格定（不是套模板）：
+#   Kotlin / Gradle / XML 4 空格，TypeScript / TSX / HTML / JSON / YAML 2 空格，
+#   无 TAB、LF 换行、无行尾空格；最大行长 120（实测 daemon TS 只有 0.6%、
+#   android Kotlin 只有 1.2% 的行超过它）。
+#
+# 之所以用 .editorconfig 而不是提交 .idea/：它被 Android Studio、IntelliJ、
+# VS Code、以及 ktlint 等工具共同识别，不绑定某个 IDE，也不会被 IDE 改写。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+trim_trailing_whitespace = true
+
+# daemon / desktop：TypeScript、前端资源、JSON
+[*.{ts,tsx,js,mjs,cjs,html,json,jsonc,yml,yaml}]
+indent_size = 2
+
+# Android：Kotlin、Groovy Gradle 脚本、XML 资源
+[*.{kt,kts,gradle,xml}]
+indent_size = 4
+
+# 文档：Markdown 的行尾两空格是硬换行，不能裁掉；也不限定行宽（表格会很长）
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# 二进制：不要动
+[*.{png,jpg,jpeg,gif,webp,ico,pdf,jar,keystore,jks}]
+insert_final_newline = false

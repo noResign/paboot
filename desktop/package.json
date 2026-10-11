@@ -5,7 +5,7 @@
   "description": "paboot desktop client (Electron + React).",
   "license": "Apache-2.0",
   "author": "noResign",
-  "homepage": "https://github.com/noResign/AIRemote#readme",
+  "homepage": "https://github.com/noResign/paboot#readme",
   "main": "out/main/index.js",
   "desktopName": "paboot.desktop",
   "scripts": {

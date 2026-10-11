@@ -47,7 +47,7 @@ class UpdaterDownloadTest {
             val events = runBlocking { Updater(config).download(manifest, destDir).toList() }
             assertTrue(events.any { it is UpdateEvent.DownloadProgress })
             assertTrue(events.any { it is UpdateEvent.Downloaded })
-            assertEquals(bytes.size.toLong(), File(destDir, "airemote-11.apk").length())
+            assertEquals(bytes.size.toLong(), File(destDir, "paboot-11.apk").length())
         } finally {
             server.shutdown()
             destDir.deleteRecursively()

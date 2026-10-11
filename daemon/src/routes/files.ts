@@ -36,8 +36,8 @@ function boolQuery(value: unknown): boolean {
 /**
  * Which directory tree to browse. An explicit `root` wins over the workspace's
  * primary dir; it is only checked for existing and being a directory, not for
- * being inside the workspace — browsing anywhere is deliberate (see daemon.md
- * §9: the workspace is not a sandbox, and the token holder owns the machine).
+ * being inside the workspace — browsing anywhere is deliberate (see
+ * docs/permissions.md「安全模型」: the workspace is not a sandbox, and the token holder owns the machine).
  */
 function resolveRoot(workspace: WorkspaceRow, requested: unknown): string {
   const raw = typeof requested === 'string' ? requested.trim() : '';

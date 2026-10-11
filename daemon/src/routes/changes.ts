@@ -25,7 +25,7 @@ function sendChangesError(res: import('express').Response, err: unknown): void {
  * Which tree to inspect for git changes. An explicit `root` wins over the
  * workspace's primary dir and is only checked for existing and being a
  * directory — inspecting repos outside the workspace is deliberate, matching
- * the Files tab (see daemon.md §9).
+ * the Files tab (see docs/permissions.md「安全模型」).
  */
 function resolveRoot(workspace: WorkspaceRow, requested: unknown): string {
   const raw = typeof requested === 'string' ? requested.trim() : '';

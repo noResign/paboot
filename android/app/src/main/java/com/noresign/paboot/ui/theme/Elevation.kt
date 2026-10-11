@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * 三层阴影 token（docs/ui/design-principles.md §4.1.1）。
+ * 三层阴影 token（docs/ui/shared/design-principles.md §4.1.1）。
  *
  * CSS 参考值：
  * - elevation1（卡片）      : 0 1px 2px  rgba(22,33,29,.06)

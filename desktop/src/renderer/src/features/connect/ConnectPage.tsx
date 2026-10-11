@@ -3,6 +3,7 @@ import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { isInsecure } from '../../../../shared/net';
 import { parseAddress } from './address';
+import { BrandMark } from '../../ui/BrandMark';
 import type {
   DiscoveredDaemon,
   LocalTokenHint,
@@ -109,10 +110,10 @@ export function ConnectPage() {
     <div className="gate">
       <div className="gate-card">
         <div className="gate-brand">
-          <span className="lg">A</span>
+          <BrandMark />
           paboot
         </div>
-        <div className="gate-slogan">远程驱动本机的编码 agent</div>
+        <div className="gate-slogan">一个客户端，操纵你所有的 agent</div>
 
         <div className="section-label" style={{ textAlign: 'center' }}>
           ── 连接 daemon ──
@@ -257,7 +258,7 @@ export function ConnectPage() {
         )}
 
         <div className="hint">
-          安全提示：不要把这个端口暴露到公网。远程驱动一个带 shell 权限的 agent
+          安全提示：不要把这个端口暴露到公网。从客户端驱动一个带 shell 权限的 agent
           等同于远程代码执行。
         </div>
 

@@ -1,46 +1,58 @@
 # CLAUDE.md
 
-本文件是这个仓库的**纲领性**入口指南。进入 `AIRemote/` 前先读这里，再按需读对应子项目的
+本文件是这个仓库的**纲领性**入口指南。进入 `paboot/` 前先读这里，再按需读对应子项目的
 `README.md` 与 `docs/`。细节以各文档为准，本文件只讲原则与边界。
 
 ## 项目简介
 
-**AIRemote** 是一个「远程操纵本机编码 agent」的项目：电脑上跑一个 daemon，用它 spawn 本机
-编码 agent（当前 Claude Code），把输出解析成统一流式事件，通过 HTTP/SSE 推给远程客户端
-（Android / iOS），并支持会话续接、断线重连、取消、工具审批、多 agent 并发。
+**paboot** 是一个「一个客户端，操纵你所有的 agent」的项目：电脑上跑一个 daemon，用它 spawn
+本机编码 agent（已接入 Claude Code 与 Codex（实验性），后续还有更多），把输出解析成统一流式
+事件，通过 HTTP/SSE 推给手机与桌面客户端（Android / iOS / desktop），并支持会话续接、
+断线重连、取消、工具审批、多 agent 并发。
 
-运行时被抽象成可插拔的 `RuntimeAdapter`，未来可加 Codex / OpenCode / DeepSeek Harness 等。
-客户端**多 runtime 可扩展**：事件流是 runtime 无关的，UI 只对「agent 身份」做可配置映射。
+运行时按驱动方式分**两条路径**接入：argv + stdout 流式的实现 `RuntimeAdapter`（当前只有
+Claude Code），RPC 对等的用 `RuntimeDetector` 登记 + 专用会话驱动（Codex 走 `codex app-server`
+的 JSON-RPC，**不实现 `RuntimeAdapter`，接入时 chat 路由要按 runtime id 分支**）。未来可加
+OpenCode / DeepSeek Harness 等。客户端**多 runtime 可扩展**：事件流是 runtime 无关的，
+UI 只对「agent 身份」做可配置映射。
 
-> 安全提醒：远程驱动一个带 shell 权限的 agent 本质等于远程代码执行。认证、权限审批、
+定位不止于「操纵 agent」，分四个阶段演进：
+
+1. **接入与互通**：把各家 agent 接进来，一个客户端操纵多个品牌的 agent；桌面端与移动端互通。
+2. **面向岗位**：针对具体岗位做定向改造，提升效率，探索 agent 协助的新方式。
+3. **Personal agent**：从工具走向属于你个人的 agent。
+4. **自进化**：让 personal agent 能够自我进化。
+
+> 安全提醒：从客户端驱动一个带 shell 权限的 agent 本质等于远程代码执行。认证、权限审批、
 > 工作目录、默认拒绝是核心设计目标，不是附加项。
 
 ## 目录结构
 
 ```
-AIRemote/
+paboot/
 ├─ CLAUDE.md              本文件
+├─ .editorconfig          代码风格（缩进 / 行宽 / 换行符），各 IDE / 编辑器共用
 ├─ docs/
-│  ├─ ui/                 移动端 UI 设计（Android/iOS 共用，单一设计源）
-│  │  ├─ README.md        总览与索引；design-principles.md 设计原则 + Design Tokens（§0-§5）
-│  │  ├─ pages/           逐页规格（连接 / 会话 / 聊天 / 文件 / 设置 / 审批 …）
-│  │  ├─ interactions.md  关键交互与状态（§7）
-│  │  ├─ appendix.md      数据映射 / 里程碑 / 接口契约
-│  │  └─ preview.html     可交互原型
+│  ├─ ui/                 UI 设计，三层：共享 / 移动端 / 桌面端
+│  │  ├─ README.md        三层索引
+│  │  ├─ shared/          跨平台设计源：design-principles（§0-§5）/ interactions（§7）/ appendix
+│  │  ├─ mobile/          移动端（Android/iOS 共用）：pages/ 逐页规格 · platforms/{android,ios}.md · preview.html
+│  │  └─ desktop/         桌面端：design.md · pages/ 逐页差异 · preview.html
 │  └─ local/              本机私有方案笔记（gitignore，不入库：权限/工作区、Files Tab、分页 …）
 ├─ daemon/                daemon 子项目（Node 24 + Express + SQLite）
 │  ├─ src/                daemon 源码
-│  ├─ client/             极简测试网页客户端（index.html，零依赖）
 │  ├─ tests/              Vitest 单测
-│  └─ docs/daemon.md      daemon 技术方案（架构/协议/权限/数据模型/端点表）
-├─ android/               Android 客户端（Kotlin + Compose，M1 已实现）
+│  └─ docs/               daemon 技术方案（daemon.md 为索引 + protocol / permissions / runtimes / configuration）
+├─ android/               Android 客户端（Kotlin + Compose）
 │  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
-│  └─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
+│  ├─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
+│  └─ lib-updater/        应用内自更新 SDK（作者自用，alpha/prod 双通道）
+├─ desktop/               桌面客户端（Electron + React）
 └─ ios/                   iOS 客户端（预留，原生 UIKit）
 ```
 
 - **daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
-- **android/**：已实现 M1（连接/会话列表/聊天/审批/新建会话/设置）。
+- **android/**：已实现（连接 / 会话列表 / 聊天 / 审批 / 会话权限 / 系统通知 / 文件 / 工作区）。
 - **传输契约**：跨端共享的 DTO、SSE 事件 union、错误形状放 `daemon/src/types/api.ts`。
 
 ## 技术栈
@@ -49,8 +61,10 @@ AIRemote/
   `node:sqlite`（零原生依赖）、测试 Vitest、dev 用 `tsx`。
 - **Android**：Kotlin、Jetpack Compose + Material 3、Retrofit + kotlinx-serialization、
   OkHttp（SSE 手写解析）、MMKV、Navigation Compose、MVVM；多模块（`:app` 业务 + `:lib-network` 通用网络层）。
+- **Desktop**：Electron（主进程 + preload）+ React/Vite 渲染层，**daemon 的另一个瘦客户端**：
+  复用同一份协议与设计 token，不改变 daemon 的独立性。打包用 electron-builder（AppImage / deb）。
 - **iOS**：预留，原生 UIKit（命令式），与 Android 共用 `docs/ui/` 一套规范；平台映射见
-  `docs/ui/design-principles.md` §4.5。
+  `docs/ui/shared/design-principles.md` §4.5，落地适配见 `docs/ui/mobile/platforms/ios.md`。
 
 
 ## 开发规范
@@ -63,15 +77,18 @@ AIRemote/
 - **例外：wire DTO 按域合并**。同一份协议的传输模型不搞「一类型一文件」，而是按业务域收成几个
   `<域>Dtos.kt`（`AgentDto` + `AgentsResponse` 同放 `AgentDtos.kt`），统一进 `<协议>/dto/` 包，
   **不再**在 `dto/` 下按域建子目录。理由：一个实体和它的列表包装永远同生共死，拆开只是噪音。
-- **传输契约**：改 `types/api.ts` 前先想清对 Android/iOS 两端的影响；Android 侧 DTO 与之一一
-  对齐（字段名/类型/多态判别）。
-- **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `daemon/docs/daemon.md`；
-  UI → `docs/ui/`）。
+- **传输契约**：改 `types/api.ts` 前先想清对 Android/iOS/desktop 三端的影响。
+- **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `daemon/docs/`，按主题分：
+  protocol / permissions / runtimes / configuration，`daemon.md` 为索引；UI → `docs/ui/`）。
+- **代码风格**：以仓库根 `.editorconfig` 为准（Kotlin/Gradle/XML 4 空格，TS/JSON/YAML 2 空格，
+  LF，行宽 120）。
 
 ### daemon
 
-- **接入新 agent**：实现 `src/runtimes/types.ts` 的 `RuntimeAdapter`，在
-  `src/runtimes/registry.ts` 注册一行；路由/引擎/持久化/传输不得改。
+- **接入新 agent**：先看驱动方式——argv + stdout 流式的实现 `src/runtimes/types.ts` 的
+  `RuntimeAdapter`，在 `src/runtimes/registry.ts` 注册一行，路由/引擎/持久化/传输都不用动；
+  RPC 对等的（如 Codex）用 `RuntimeDetector` 登记并自写会话驱动（`runtimes/codex/session.ts`），
+  且要在 `src/routes/chat.ts` 按 runtime id 分支。
 - **路由归属**：daemon 域端点放 `src/routes/<domain>.ts`，只有进程级元数据（health）留在
   `server.ts`。
 - **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录、
@@ -90,15 +107,9 @@ AIRemote/
   依赖、wire DTO、Retrofit 接口与客户端工厂、SSE 传输、网络错误包装。`app` 不自己声明这些依赖，
   直接用 `:lib-network` 的类型（依赖以 `api` 暴露）。`:lib-network` 不引用任何 `android.*`，
   也不放业务编排、UI、MMKV。
-- **`:lib-network` 内部分层（依赖单向向下，不引 okhttp-sse）**：
-  1. `sse/` 通用 SSE 传输——`SseSource` 接口 + `OkHttpSseSource`（裸 OkHttp 长连接）+ 纯逻辑
-     `SseParser`（可单测），不含业务语义；
-  2. `http/` REST 结果包装——`NetworkResult` + `safeApiCall`；
-  3. `llm/` 大模型供应商抽象——`LlmProvider`（`Flow` 流式 + 非流式）、`OpenAiCompatLlmProvider`
-     （OpenAI 兼容协议）、`RoutingLlmProvider` + `ModelResolver`（按 model 路由，依赖倒置）；
-  4. `daemon/` daemon 协议层——`PabootApi`（Retrofit）、`PabootClient`（工厂）、
-     `PabootStream` + `ChatStreamEvent`、`dto/`（5 个按域分的 `<域>Dtos.kt`，与 `types/api.ts`
-     一一对齐）。
+- **`:lib-network` 内部分层（依赖单向向下，不引 okhttp-sse）**：`sse/`（通用 SSE 传输）→
+  `http/`（REST 结果包装）→ `llm/`（大模型供应商抽象）/ `daemon/`（daemon 协议层 + `dto/`）。
+  逐文件说明、依赖方向与用法见 [该模块的 README](android/lib-network/README.md)。
 - **分层（`:app`）**：`data/repository`（业务编排，直接调 `:lib-network`）、`data/local`（MMKV 设置）、
   `model`（页面模型）、`viewmodel`、`ui`、`navigation`，严格 MVVM，UI 层不碰网络。
 - **传输契约**：改 `types/api.ts` 时同步改 `:lib-network` 的 `daemon/dto/`（字段名/类型/多态判别
@@ -108,74 +119,70 @@ AIRemote/
   新增 agent 只加一行不改布局。
 - **注意**：用户没有主动提出帮忙运行android项目，再更改后请不要主动使用.gradlew命令运行，用户自己运行测试
 
+### Desktop
+
+- **三进程**：`src/main/`（连接与发现、daemon 代理、流式、窗口、托盘 / 通知）+ `src/preload/`
+  （零依赖 `contextBridge`）+ `src/renderer/`（zustand + React）；两侧共用的契约与纯逻辑放
+  `src/shared/`。
+- **进程边界即安全边界**：`contextIsolation` / `nodeIntegration: false` / `sandbox` /
+  `webSecurity` 固定不变，渲染层**不直接碰 Node/Electron**，一律走 preload 暴露的 API；网络请求
+  由主进程发出。`tests/preload-sandbox.test.ts`、`tests/protocol-purity.test.ts` 是这条边界的
+  守护测试，改 preload 或协议层之前先看它们。
+- 其余（协议类型走 `@noresign/paboot/protocol` 且构建前要先编译 daemon、三份 tsconfig、打包时
+  daemon 走 `extraResources`、皮肤系统）见 [desktop/README.md](desktop/README.md)。
+
 ## 关键设计决策（速览）
 
 - **权限审批**：每个 Session 独立模式 `ask` / `acceptEdits` / `bypass`；`ask` 下 Bash/Write/Edit
-  经 PreToolUse hook 远程审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
+  经 PreToolUse hook 转发到客户端审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
   持久化 grant，默认拒绝、超时自动拒绝。**读（`Read`/`Grep`）不门控**——读工作区外不审批、
   不加目录；工作区边界只约束写入。
 - **工作空间**：`--workspace` 只在工作区表为空时注册一次（首次安装），删掉的工作区不会在重启后回来；
-  手机可新增/切换 Workspace。删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；
+  客户端可新增/切换 Workspace。删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；
   **默认工作区不可删**（要删先设别的为默认，顺带保证最后一个工作区删不掉）。
   Session 绑定 `workspace_id + cwd`，cwd 必须位于所属 Workspace 内。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
   `POST /api/runs/:id/cancel`。
-- **会话**：`--session-id`/`--resume` 管理 Claude 会话，`claude_session_id` 持久化；
-  `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔远程双向续接。
+- **会话**：`--session-id`/`--resume` 管理 Claude 会话，id 持久化在 `sessions.native_session_id`
+  ——这一列存的是**对应运行时自己的**会话 id，Codex 存的是它的 thread id；
+  `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔客户端双向续接。
 - **token**：持久化在 `<data-dir>/token`，启动复用（删文件即轮换）。
 
 ## 部署（作者本机私有工作流）
 
 > ⚠️ 本节描述的是**作者本机**的发布流水线，脚本位于 `.claude/skills/deploy/`，而 `.claude/`
 > 被 gitignore，**不在仓库内**——下面出现的脚本路径对开源读者都不可用，请直接忽略本节。
+> **用法、flag、脚本内部行为见 `.claude/skills/deploy/SKILL.md`**，本节只留边界与规则概览。
 
 **发布边界（重要）**
 
-- ✅ **本机发布流水线由 agent 执行**：用户说「发布测试 / 发布生产」时，按下面的规则跑脚本。
+- ✅ **本机发布流水线由 agent 执行**：用户说「发布测试 / 发布生产」时，按规则跑脚本。
 - ⛔ **对外的公开分发（npm 公共仓）只能由用户本人手动完成**：agent 不得代为发布，也不要
   主动建议、提示或输出这一步的命令。
 
-统一入口：`.claude/skills/deploy/scripts/deploy.sh`，按 git 变更自动决定做什么。
+统一入口 `.claude/skills/deploy/scripts/deploy.sh`，按 git 变更自动决定做什么，没有改动的部分跳过：
 
-- 发布测试：`.claude/skills/deploy/scripts/deploy.sh test`（alpha 通道）
-- 发布生产：`.claude/skills/deploy/scripts/deploy.sh prod`（prod 通道）
-- 预览：`.claude/skills/deploy/scripts/deploy.sh test --dry-run`
-- 强制/跳过：`--daemon`、`--android`、`--no-daemon`、`--no-android`
-- 变更基线默认 `origin/main`，可用 `--base <ref>` 或 `DEPLOY_BASE` 覆盖
+- `daemon/**` 有改动 → `pnpm build` + 重启本地 daemon；`prod` 再打 `.tgz` 上传 OSS `daemon/`
+- `android/**` 有改动 → `release-android.sh alpha|prod`（构建、签名、上传 OSS）
+- `desktop/**` 有改动 → `release-desktop.sh alpha|prod`
 
-规则：
+版本号规则，三个子项目统一语义化（`1.0.0 → 1.0.1` 小修 / `→ 1.1.0` 加功能 / `→ 2.0.0` 大改）：
 
-- `daemon/src/**`、`package.json`、`pnpm-lock.yaml`、`tsconfig.json` 等有改动时：
-  - `test` / `alpha`：`pnpm build` + 重启本地 daemon，不发 OSS
-  - `prod`：`pnpm build` + 重启本地 daemon，再 `release-daemon.sh --skip-build` 打成 `.tgz` 上传 OSS `daemon/`，并覆盖 `airemote-latest.tgz`
-  - 若存在 systemd user service `paboot.service`：`systemctl --user restart paboot`
-  - 否则回退到旧 `dist/index.js` kill + nohup 逻辑
-  - 健康检查 `http://127.0.0.1:<port>/api/health`
-- `android/**` 有改动时：`.claude/skills/deploy/scripts/release-android.sh alpha|prod`
-- 没有改动的部分自动跳过。
+- **Android**：源是 `android/version.txt`。发布脚本生成 versionName（alpha 追加 `-alpha.<时间戳>`），
+  versionCode = `epoch 秒`；debug variant 固定 `1` / `0.0.0-*`。**正式包的 versionCode 与
+  versionName 都必须高于本地 debug 构建**，否则安装器判降级拒装（踩坑记录见
+  `android/docs/local/updater.md` §7.1，私有）
+- **daemon**：源是 `daemon/package.json` 的 `version`；`--version`、`/api/health` 与发布产物都由它派生
+- **Desktop**：源是 `desktop/package.json` 的 `version`，alpha 追加 `-alpha.<UTC 时间戳>`；
+  桌面端**不做应用内自更新**，所以 OSS 上只放安装包本体
 
-Android 版本号：版本源是 `android/version.txt`（语义化，`1.0.0 → 1.0.1` 小修 /
-`→ 1.1.0` 加功能 / `→ 2.0.0` 大改）。发布脚本据此生成 versionName（alpha 追加 `-alpha.<时间戳>`），
-release variant（AS 直接 Build APK 或发布脚本）自动读它并取
-versionCode = `epoch 秒`；debug variant 才是本地包，固定 versionCode = `1`、versionName = `0.0.0-*`。
-约定与踩坑记录见 `android/docs/local/updater.md` §7.1（私有，不入库）——
-**正式包的 versionCode 和 versionName 都必须高于本地 debug 构建**，否则安装器会判降级拒装。
+版本文件必须入库：`android/version.txt`、`daemon/src/version.ts`（源是 package.json）。
+桌面端的版本源 `desktop/package.json` 本身就是入库文件。
 
-Daemon 版本号：版本源是 `daemon/package.json` 的 `version`（同样语义化，
-`1.0.0 → 1.0.1` 小修 / `→ 1.1.0` 加功能 / `→ 2.0.0` 大改），`--version`、`/api/health`
-和发布产物版本都由它派生。
-
-版本文件必须入库：`android/version.txt`（Android release 构建与发布脚本都依赖）、
-`daemon/src/version.ts`（daemon 编译与运行时依赖，源是 package.json）。
-
-Claude Code 部署 skill 在 `.claude/skills/deploy/SKILL.md`。只有用户明确说“发布/部署/发版”时才执行。
-
-远程对话里用户说“发布测试”“发布生产”时：
-
-- agent 必须调用 `.claude/skills/deploy/scripts/chat-deploy.sh <test|prod>`；
-- 不要直接运行 `deploy.sh`，否则 daemon 重启会把 agent 进程一起杀掉；
-- 查询状态用 `.claude/skills/deploy/scripts/chat-deploy.sh status`。
+只有用户明确说“发布/部署/发版”时才执行。**从客户端对话时**（用户说「发布测试 / 发布生产」）
+必须走 `.claude/skills/deploy/scripts/chat-deploy.sh`，**不要直接跑 `deploy.sh`**——它会重启
+daemon，把当前 agent 进程一起杀掉。
 
 
 ## git提交规范
@@ -185,8 +192,7 @@ Claude Code 部署 skill 在 `.claude/skills/deploy/SKILL.md`。只有用户明�
 - **type**：`feat` 新功能、`fix` 修复 bug、`refactor` 重构（不改行为）、`docs` 文档、`chore`
   杂务（依赖/构建/脚本）、`test` 测试、`perf` 性能。不用 `modify`——改动不是「新功能」就归
   `fix`/`refactor`。
-- **scope**：可选，标注受影响子项目：`daemon` / `android` / `ios` / `docs`；跨端或全局改动
-  省略 scope。
+- **scope**：可选，标注受影响子项目：`daemon` / `android` / `desktop` / `ios` / `docs`；跨端或
+  全局改动省略 scope。
 - **subject**：中文，简洁说明「做了什么」，如果改动设计多个角度修改，仅描述主要1～2个修改，以&连接；不加句号、不以大写开头；冒号后空一格；
   （`feat: xxx`，不是 `feat:xxx & xxx`）。
-- **push**：目前仅一人开发，无需git pull，直接使用git push推送远端

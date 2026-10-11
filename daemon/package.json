@@ -3,24 +3,24 @@
   "version": "1.8.0",
   "type": "module",
   "packageManager": "pnpm@10.33.2",
-  "description": "Remote-control your local coding agent from your phone: headless Claude Code, streaming events over HTTP/SSE, session resume, remote tool-call approval.",
+  "description": "One client for all your agents — run the agents on your machine headless and stream normalized events over HTTP/SSE: session resume, tool-call approval, multi-agent runs.",
   "license": "Apache-2.0",
   "author": "noResign",
-  "homepage": "https://github.com/noResign/AIRemote#readme",
+  "homepage": "https://github.com/noResign/paboot#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/noResign/AIRemote.git",
+    "url": "git+https://github.com/noResign/paboot.git",
     "directory": "daemon"
   },
-  "bugs": "https://github.com/noResign/AIRemote/issues",
+  "bugs": "https://github.com/noResign/paboot/issues",
   "keywords": [
     "claude-code",
-    "coding-agent",
-    "remote-control",
+    "codex",
+    "agent",
     "headless",
     "sse",
     "daemon",
-    "mobile"
+    "self-hosted"
   ],
   "bin": {
     "paboot": "dist/index.js"
@@ -28,7 +28,6 @@
   "files": [
     "dist",
     "docs",
-    "client",
     ".env.example"
   ],
   "exports": {
@@ -46,6 +45,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "clean": "rm -rf dist && echo 'cleaned: dist/'",
+    "clean:all": "rm -rf dist node_modules && echo 'cleaned: dist/ node_modules/ — run pnpm install next'",
     "prepack": "npm run build"
   },
   "engines": {

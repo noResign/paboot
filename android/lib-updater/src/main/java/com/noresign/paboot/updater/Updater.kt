@@ -53,14 +53,14 @@ class Updater(private val config: UpdaterConfig) {
         emit(UpdateEvent.Failed(UpdateException.from(throwable)))
     }
 
-    /** 下载 APK 到 destDir/airemote-<versionCode>.apk.part，sha256 校验后重命名为同名 .apk。 */
+    /** 下载 APK 到 destDir/paboot-<versionCode>.apk.part，sha256 校验后重命名为同名 .apk。 */
     fun download(manifest: UpdateManifest, destDir: File): Flow<UpdateEvent> = flow {
         if (!destDir.exists() && !destDir.mkdirs()) {
             throw UpdateException.Storage("cannot create update dir: ${destDir.absolutePath}")
         }
         // 文件名带 versionCode：每次更新的 URI/路径都不同，避免系统安装器按同一路径
         // 复用上一次解析出来的安装包信息（表现为「已安装相同版本」而装不上）。
-        val name = "airemote-${manifest.versionCode}.apk"
+        val name = "paboot-${manifest.versionCode}.apk"
         val part = File(destDir, "$name.part")
         val target = File(destDir, name)
         pruneStaleApks(destDir, keep = target)
@@ -117,7 +117,7 @@ class Updater(private val config: UpdaterConfig) {
      * 确认框上，此刻删掉那个包，等他点「安装」时就会读不到文件。
      */
     private fun pruneStaleApks(destDir: File, keep: File) {
-        val files = destDir.listFiles { file -> file.isFile && file.name.startsWith("airemote-") } ?: return
+        val files = destDir.listFiles { file -> file.isFile && file.name.startsWith("paboot-") } ?: return
         val newestApk = files.filter { it.name.endsWith(".apk") }.maxByOrNull { it.lastModified() }
         files.forEach { file -> if (file != keep && file != newestApk) file.delete() }
     }

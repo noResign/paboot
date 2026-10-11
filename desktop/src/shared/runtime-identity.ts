@@ -2,7 +2,7 @@ import type { AgentDto, ProductPermissionMode } from './contract';
 
 /**
  * A runtime's UI identity: icon + brand colour + display name
- * (docs/ui/design-principles.md §5.2). Adding an agent is one row in the table,
+ * (docs/ui/shared/design-principles.md §5.2). Adding an agent is one row in the table,
  * never a layout change.
  */
 export type RuntimeIcon = 'robot' | 'terminal' | 'build';
