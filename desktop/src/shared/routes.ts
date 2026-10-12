@@ -10,6 +10,7 @@ export const ROUTES = {
   workspaces: '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${encodeURIComponent(id)}`,
   workspaceDirs: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/dirs`,
+  workspaceShortcuts: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/shortcuts`,
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',

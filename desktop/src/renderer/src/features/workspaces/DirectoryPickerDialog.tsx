@@ -4,8 +4,12 @@ import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import type { DirectoriesResponse } from '../../../../shared/contract';
 
 interface Props {
-  /** `create` → the picked dir becomes a new workspace; `add-dir` → an extra dir on an existing one. */
-  mode: 'create' | 'add-dir';
+  /**
+   * `create` → the picked dir becomes a new workspace; `add-dir` → an extra dir on
+   * an existing one; `shortcut` → a files-tab bookmark (browsing only, grants the
+   * agent nothing).
+   */
+  mode: 'create' | 'add-dir' | 'shortcut';
   /** Canonical paths of existing workspaces, so the current dir can be tagged/turned off. */
   workspacePaths: string[];
   busy: boolean;
@@ -56,6 +60,7 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
 
   const isWorkspace = listing !== null && workspacePaths.includes(listing.path);
   const confirmDisabled = busy || listing === null || (mode === 'create' && isWorkspace);
+  const title = mode === 'create' ? '选择工作区目录' : mode === 'add-dir' ? '选择附加目录' : '选择要浏览的目录';
   const confirmLabel =
     mode === 'create' ? (isWorkspace ? '已是工作区' : '选择当前文件夹') : '添加此文件夹';
 
@@ -69,7 +74,7 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal dir-picker" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
-          <span>{mode === 'create' ? '选择工作区目录' : '选择附加目录'}</span>
+          <span>{title}</span>
           <button className="btn ghost" onClick={onClose}>
             ✕
           </button>
@@ -109,7 +114,9 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
         </div>
 
         <div className="hint">
-          工作区不是沙箱：agent 仍能读工作区外的东西，写则只在这个目录（及其附加目录）内。
+          {mode === 'shortcut'
+            ? '只是文件栏的一个浏览入口，不改变 agent 的读写范围。'
+            : '工作区不是沙箱：agent 仍能读工作区外的东西，写则只在这个目录（及其附加目录）内。'}
         </div>
         {(loadError ?? error) && <div className="error-text">{loadError ?? error}</div>}
 

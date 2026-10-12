@@ -5,6 +5,7 @@ import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
+import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 import type {
   ChangedFileDto,
   ChangesResponse,
@@ -80,6 +81,11 @@ export function FileBrowser({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, DirExpansion>>({});
+  // 「＋ 添加目录 / 移除书签」: a bookmark is a browsing-only extra root, so it lives
+  // on the workspace and is added/removed here without touching session state.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
 
   useEffect(() => {
     setDir('');
@@ -162,6 +168,38 @@ export function FileBrowser({
   const shortcuts = changes?.shortcutDirs ?? listing?.shortcutDirs ?? [];
   const activeRoot = root ?? changes?.root ?? listing?.root ?? '';
   const changeCount = changes?.files.length ?? 0;
+  const activeIsShortcut = activeRoot !== '' && shortcuts.includes(activeRoot);
+
+  /** Add a bookmark and switch to it — the point of adding one is to look inside. */
+  async function addBookmark(path: string): Promise<void> {
+    if (!workspaceId) return;
+    setPickerBusy(true);
+    setBookmarkError(null);
+    const res = await api.addWorkspaceShortcut(workspaceId, path);
+    setPickerBusy(false);
+    if (!res.ok) {
+      const { apiCode, message } = apiErrorOf(res.data);
+      // 409 shortcut_exists 等要留在弹窗里说清楚，别关掉再让人猜。
+      setBookmarkError(friendlyMessage(apiCode, res.status, message, '无法添加目录'));
+      return;
+    }
+    setPickerOpen(false);
+    onRootChange(path);
+  }
+
+  async function removeActiveBookmark(): Promise<void> {
+    if (!workspaceId || !activeIsShortcut) return;
+    setBookmarkError(null);
+    const res = await api.removeWorkspaceShortcut(workspaceId, activeRoot);
+    if (!res.ok) {
+      const { apiCode, message } = apiErrorOf(res.data);
+      setBookmarkError(friendlyMessage(apiCode, res.status, message, '无法移除书签'));
+      return;
+    }
+    // Fall back to the workspace's primary dir, which is always roots[0]. The root
+    // change alone re-runs the fetch, so the refreshed `shortcutDirs` comes back.
+    onRootChange(roots[0] ?? '');
+  }
 
   return (
     <div className="ftree">
@@ -196,11 +234,29 @@ export function FileBrowser({
               {showIgnored ? '隐藏忽略项' : '显示忽略项'}
             </button>
           )}
+          <button
+            className="btn tiny"
+            disabled={!workspaceId}
+            onClick={() => {
+              setBookmarkError(null);
+              setPickerOpen(true);
+            }}
+            title="浏览并固定一个工作区之外的目录"
+          >
+            ＋ 添加目录
+          </button>
+          {activeIsShortcut && (
+            <button className="btn tiny" onClick={() => void removeActiveBookmark()} title="从书签中移除这个目录">
+              移除书签
+            </button>
+          )}
           <button className="btn tiny" onClick={() => setReload((value) => value + 1)} title="刷新">
             刷新
           </button>
         </div>
       </div>
+
+      {bookmarkError && !pickerOpen && <div className="fnotice">{bookmarkError}</div>}
 
       {mode === 'all' && (
         <div className="fbreadcrumb mono">
@@ -245,6 +301,20 @@ export function FileBrowser({
           />
         )}
       </div>
+
+      {pickerOpen && (
+        <DirectoryPickerDialog
+          mode="shortcut"
+          workspacePaths={[]}
+          busy={pickerBusy}
+          error={bookmarkError}
+          onClose={() => {
+            setPickerOpen(false);
+            setBookmarkError(null);
+          }}
+          onPick={(path) => void addBookmark(path)}
+        />
+      )}
     </div>
   );
 }

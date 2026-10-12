@@ -25,6 +25,7 @@ import type {
   SseFrame,
   WorkspaceDirsResponse,
   WorkspaceResponse,
+  WorkspaceShortcutsResponse,
   WorkspacesResponse,
 } from '../../../shared/contract';
 
@@ -99,6 +100,10 @@ export const api = {
     request<WorkspaceDirsResponse>({ method: 'POST', path: ROUTES.workspaceDirs(id), body: { path } }),
   removeWorkspaceDir: (id: string, path: string) =>
     request<WorkspaceDirsResponse>({ method: 'DELETE', path: ROUTES.workspaceDirs(id), body: { path } }),
+  addWorkspaceShortcut: (id: string, path: string) =>
+    request<WorkspaceShortcutsResponse>({ method: 'POST', path: ROUTES.workspaceShortcuts(id), body: { path } }),
+  removeWorkspaceShortcut: (id: string, path: string) =>
+    request<WorkspaceShortcutsResponse>({ method: 'DELETE', path: ROUTES.workspaceShortcuts(id), body: { path } }),
   directories: (path?: string, showHidden?: boolean) =>
     request<DirectoriesResponse>({
       method: 'GET',

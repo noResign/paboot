@@ -50,6 +50,13 @@ export interface WorkspaceDirsResponse {
   dirs: string[];
 }
 
+/** `POST` / `DELETE /api/workspaces/:id/shortcuts` — files-tab bookmarks. Unlike
+ *  `dirs`, they grant the agent nothing; they are just extra roots to browse. */
+export interface WorkspaceShortcutsResponse {
+  ok: boolean;
+  shortcutDirs: string[];
+}
+
 /** `DELETE /api/workspaces/:id` — how many sessions the cascade took with it. */
 export interface DeleteWorkspaceResponse {
   ok: boolean;
