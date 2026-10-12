@@ -2,14 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
-import type { DiffView } from './DiffViewer';
+import { SPLIT_MIN_PX, type DiffView } from './DiffViewer';
 
 /**
  * Below this pane width the side-by-side view degrades to unified. Sized so the
  * default window (1280 − 300 rail − 260 tree = 720) keeps 并排 available; it only
  * kicks in once the window is genuinely cramped.
  */
-const SPLIT_MIN_PX = 640;
 
 /**
  * ⑤ 文件 / ⑥ Diff (docs/local/pages/files.md §6.8). The desktop-only move is
@@ -77,6 +76,7 @@ export function FilesPage({ workspaceId, workspaceName }: { workspaceId: string 
           onModeChange={setMode}
           selectedPath={selection?.path ?? null}
           onSelect={setSelection}
+          diffView={effectiveView}
         />
         <div ref={paneRef} className="fpane-host">
           <FilePane

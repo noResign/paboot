@@ -2426,7 +2426,15 @@ a.btn {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  /* Long lines are not wrapped (that would lie about the code); the panel scrolls
+     horizontally instead so the whole line is reachable. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* 统一: a row is as wide as its content, at least the container. */
+.fdiff:not(.split) .fdiff-ln {
+  width: max-content;
+  min-width: 100%;
 }
 .fdiff-ln {
   display: flex;
@@ -2443,7 +2451,10 @@ a.btn {
 }
 .fdiff-text {
   flex: 1;
-  min-width: 0;
+  /* Never shrink below the longest line (lines are `pre`, so max-content is the
+     full line): the row then overflows and the panel scrolls instead of clipping
+     text into the neighbouring split column. */
+  min-width: max-content;
 }
 .fdiff-ln.add { background: color-mix(in srgb, var(--success) 15%, transparent); }
 .fdiff-ln.del { background: color-mix(in srgb, var(--error) 13%, transparent); }
@@ -2459,11 +2470,34 @@ a.btn {
   color: var(--text-muted);
   opacity: 0.75;
 }
-/* 并排: two columns, the pair on one row. */
-.fdiff.split .fdiff-pair { display: flex; }
-.fdiff.split .fdiff-pair .fdiff-ln { flex: 1; min-width: 0; }
+/* 并排: one shared two-column grid, so both sides line up across every row, and
+   the grid grows with the code — a long line widens its column (both columns
+   share the width across all rows) and the panel scrolls right to reach it. */
+.fdiff.split {
+  display: grid;
+  /* Two EQUAL columns: both at least `--split-colw` (the widest line across both
+     sides, measured in DiffViewer), grown to 1fr so they split the panel 50/50.
+     Larger content makes both columns wider together and the panel scrolls right,
+     so the two sides stay aligned row-for-row. */
+  grid-template-columns: repeat(2, minmax(var(--split-colw, 20em), 1fr));
+}
+.fdiff.split .fdiff-pair { display: contents; }
+/* A plain block, NOT a flex row: a flex container's intrinsic width is what came
+   up short here, letting the track collapse and the text spill across the
+   divider. Inline gutter + text size the block exactly by its longest line. */
+.fdiff.split .fdiff-ln {
+  display: block;
+}
+.fdiff.split .fdiff-ln .fdiff-gutter {
+  display: inline-block;
+  width: 34px;
+  margin-right: 10px;
+}
+.fdiff.split .fdiff-ln .fdiff-text {
+  display: inline;
+}
 .fdiff.split .fdiff-pair .fdiff-ln + .fdiff-ln { border-left: 1px solid var(--border); }
-.fdiff.split .fdiff-ln.full { display: flex; }
+.fdiff.split .fdiff-ln.full { grid-column: 1 / -1; }
 .fdiff-ln.empty { background: var(--surface-2); }
 .fchev {
   width: 10px;
@@ -2723,4 +2757,44 @@ a.btn {
 }
 .btn.danger {
   color: var(--danger, #e06c75);
+}
+
+/* 全部 diff: every changed file's patch stacked into one continuous scroll. */
+.fdiff-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px;
+}
+.fdiff-file {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.fdiff-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--surface-2, #222);
+}
+.fdiff-file-status {
+  flex: none;
+  font-family: monospace;
+  font-weight: 600;
+}
+.fdiff-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fdiff-file-stat {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted, #888);
 }

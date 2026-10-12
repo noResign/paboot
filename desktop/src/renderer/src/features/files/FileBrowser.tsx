@@ -5,6 +5,8 @@ import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
+import { ChangesFeed } from './ChangesFeed';
+import type { DiffView } from './DiffViewer';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 import type {
   ChangedFileDto,
@@ -48,6 +50,8 @@ interface Props {
   onSelect(selection: FileSelection): void;
   /** Scope 改动 to one run's checkpoint (`?runId=`); live dirty state when unset. */
   runId?: string;
+  /** Diff layout for the inline 改动 feed; the list view ignores it. */
+  diffView?: DiffView;
 }
 
 /**
@@ -64,12 +68,19 @@ export function FileBrowser({
   selectedPath,
   onSelect,
   runId,
+  diffView = 'unified',
 }: Props) {
   const [dir, setDir] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   /** Bumped by 刷新 to re-run the fetch. */
   const [reload, setReload] = useState(0);
+  /**
+   * 改动 as GitHub's "Files changed": every file's diff stacked into one scroll
+   * (the default). The list is kept as the alternative — handy for jumping to one
+   * file in a large change set.
+   */
+  const [changesLayout, setChangesLayout] = useState<'list' | 'diffs'>('diffs');
 
   // The change list lives in a renderer-side cache keyed by (connection,
   // workspace, root): this panel unmounts on navigation, and re-running git on
@@ -229,6 +240,15 @@ export function FileBrowser({
           ))}
         </select>
         <div className="ftree-buttons">
+          {mode === 'changes' && (
+            <button
+              className="btn tiny"
+              title={changesLayout === 'diffs' ? '改为逐文件列表' : '把所有文件的改动排在一起，直接上下滑'}
+              onClick={() => setChangesLayout((value) => (value === 'list' ? 'diffs' : 'list'))}
+            >
+              {changesLayout === 'diffs' ? '列表' : '全部 diff'}
+            </button>
+          )}
           <button className="btn tiny" onClick={() => setShowHidden((value) => !value)}>
             {showHidden ? '隐藏隐藏项' : '显示隐藏项'}
           </button>
@@ -287,13 +307,23 @@ export function FileBrowser({
         ) : loading && !(mode === 'changes' ? changes : listing) ? (
           <div className="fnotice">正在读取…</div>
         ) : mode === 'changes' ? (
-          <ChangesList
-            changes={changes}
-            selected={selectedPath}
-            expanded={expanded}
-            onToggleDir={(path) => void toggleDir(path)}
-            onPick={(path, kind) => onSelect({ path, kind })}
-          />
+          changesLayout === 'diffs' ? (
+            <ChangesFeed
+              files={changes?.files ?? []}
+              workspaceId={workspaceId}
+              root={root}
+              runId={runId}
+              view={diffView}
+            />
+          ) : (
+            <ChangesList
+              changes={changes}
+              selected={selectedPath}
+              expanded={expanded}
+              onToggleDir={(path) => void toggleDir(path)}
+              onPick={(path, kind) => onSelect({ path, kind })}
+            />
+          )
         ) : (
           <AllFilesList
             listing={listing}

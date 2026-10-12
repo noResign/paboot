@@ -4,6 +4,7 @@ import { useChat } from '../../store/chat';
 import { RunList } from '../chat/RunList';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
+import { SPLIT_MIN_PX, type DiffView } from './DiffViewer';
 
 type AsideTab = 'files' | 'runs';
 
@@ -23,6 +24,11 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
   // Files scope: an explicitly picked run (from the run list) or the latest
   // settled run (the 本轮 button). `null` = live dirty state.
   const [runId, setRunId] = useState<string | null>(null);
+  // 并排 only when the panel is wide enough; the panel defaults narrow, so the
+  // fallback is unified (same rule as the full files page).
+  const [view, setView] = useState<DiffView>('unified');
+  const canSplit = width >= SPLIT_MIN_PX;
+  const effectiveView: DiffView = canSplit ? view : 'unified';
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
   const latestRunId = chat && chat.phase === 'settled' ? (chat.runId ?? null) : null;
 
@@ -100,6 +106,27 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
               ))}
           </>
         )}
+        {/* 并排/统一 stays reachable whether browsing the list or looking at one
+            file, so a diff can be switched without going back first. Hidden for
+            plain file content, which has no diff layout to choose. */}
+        {tab === 'files' && (!selection || selection.kind === 'diff') && (
+          <span className="seg3">
+            <button
+              className={effectiveView === 'split' ? 'active' : ''}
+              title={canSplit ? '并排显示' : '并排显示（会先把右栏拉宽到可读宽度）'}
+              onClick={() => {
+                // A too-narrow panel would render 并排 unreadably, so widen it first.
+                if (!canSplit) setWidth(SPLIT_MIN_PX);
+                setView('split');
+              }}
+            >
+              并排
+            </button>
+            <button className={effectiveView === 'unified' ? 'active' : ''} onClick={() => setView('unified')}>
+              统一
+            </button>
+          </span>
+        )}
         <button className="btn ghost tiny aside-close" onClick={onCollapse} title="收起右栏">
           ✕
         </button>
@@ -118,12 +145,12 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             }}
           />
         ) : selection ? (
-          // Always unified here: the panel is far narrower than the split minimum.
           <FilePane
             workspaceId={workspaceId}
             root={root}
             selection={selection}
-            view="unified"
+            view={effectiveView}
+            narrowHint={!canSplit}
             emptyText=""
             runId={runId ?? undefined}
           />
@@ -137,6 +164,7 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             selectedPath={null}
             onSelect={setSelection}
             runId={runId ?? undefined}
+            diffView={effectiveView}
           />
         )}
       </div>
