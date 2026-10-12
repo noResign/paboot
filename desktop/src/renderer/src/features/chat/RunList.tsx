@@ -2,16 +2,7 @@ import { useState } from 'react';
 import type { RunDto } from '../../../../shared/contract';
 import { api } from '../../ipc/client';
 import { useChat } from '../../store/chat';
-
-const STATUS_LABEL: Record<string, string> = {
-  running: '运行中',
-  queued: '排队',
-  succeeded: '完成',
-  failed: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断',
-  rolled_back: '已回滚',
-};
+import { canDiffRun, canRollbackRun, RUN_STATUS_LABEL } from './runActions';
 
 interface Props {
   runs: RunDto[];
@@ -58,14 +49,14 @@ export function RunList({ runs, connectionId, sessionId, onViewChanges }: Props)
     <div className="run-list">
       {notice && <div className="run-list-notice">{notice}</div>}
       {[...runs].reverse().map((run) => {
-        const canDiff = run.checkpoint?.status === 'complete';
-        const canRollback = Boolean(run.checkpoint?.preRef) && run.status !== 'rolled_back';
+        const canDiff = canDiffRun(run);
+        const canRollback = canRollbackRun(run);
         const pending = confirm?.runId === run.id;
         return (
           <div key={run.id} className="run-row">
             <div className="run-row-main">
               <span className={`run-status run-status-${run.status}`}>
-                {STATUS_LABEL[run.status] ?? run.status}
+                {RUN_STATUS_LABEL[run.status] ?? run.status}
               </span>
               <span className="run-prompt" title={run.prompt}>
                 {run.prompt}

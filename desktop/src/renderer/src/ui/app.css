@@ -2713,8 +2713,13 @@ a.btn {
   gap: 4px;
 }
 .rollback-confirm {
-  display: inline-flex;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rollback-confirm span {
+  flex: 1 1 100%;
 }
 .btn.danger {
   color: var(--danger, #e06c75);

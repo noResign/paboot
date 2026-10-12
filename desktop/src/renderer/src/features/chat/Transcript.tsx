@@ -5,7 +5,9 @@ import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
 import { ToolIcon } from '../../ui/ToolIcon';
 import { formatTokens } from '../../../../shared/format';
+import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
+import { canRollbackRun } from './runActions';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -27,7 +29,18 @@ const REVEAL_AT_PX = 48;
  * the scrollbar jump per frame — the risk the spec calls out. Capping what is
  * mounted gets the memory/layout win without that failure mode.
  */
-export function Transcript({ messages, scrollRef }: { messages: ChatMessage[]; scrollRef: React.RefObject<HTMLDivElement | null> }) {
+export function Transcript({
+  messages,
+  scrollRef,
+  runs,
+  onRollback,
+}: {
+  messages: ChatMessage[];
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  /** The session's runs, to gate the per-message rollback action by checkpoint. */
+  runs: RunDto[];
+  onRollback(runId: string): void;
+}) {
   const [limit, setLimit] = useState(VISIBLE);
   const shown = messages.length > limit ? messages.slice(messages.length - limit) : messages;
   const hidden = messages.length - shown.length;
@@ -79,7 +92,13 @@ export function Transcript({ messages, scrollRef }: { messages: ChatMessage[]; s
       )}
       {shown.map((message) =>
         message.kind === 'user' ? (
-          <UserRow key={message.id} id={message.id} text={message.text} />
+          <UserRow
+            key={message.id}
+            id={message.id}
+            text={message.text}
+            run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
+            onRollback={onRollback}
+          />
         ) : (
           <AssistantRow key={message.id} message={message} />
         ),
@@ -111,12 +130,31 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
   );
 }
 
-function UserRow({ id, text }: { id: string; text: string }) {
+function UserRow({
+  id,
+  text,
+  run,
+  onRollback,
+}: {
+  id: string;
+  text: string;
+  run: RunDto | undefined;
+  onRollback(runId: string): void;
+}) {
   return (
     <div className="msg user" data-msg-id={id}>
       <div className="bubble">{text}</div>
       <div className="msg-actions">
         <CopyButton text={text} />
+        {run && canRollbackRun(run) && (
+          <button
+            className="btn ghost tiny"
+            title="把工作区文件恢复到这次发送之前（破坏性，agent 对话不回退）"
+            onClick={() => onRollback(run.id)}
+          >
+            回滚
+          </button>
+        )}
       </div>
     </div>
   );

@@ -25,7 +25,7 @@ export interface UsageInfo {
 }
 
 export type ChatMessage =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; runId?: string }
   | {
       kind: 'assistant';
       id: string;

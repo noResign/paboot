@@ -39,7 +39,7 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
   const [showPerms, setShowPerms] = useState(false);
   // Rollback is destructive: two-step confirm, and a second step when it would
   // also discard later runs.
-  const [rollback, setRollback] = useState<{ needForce: boolean; laterRuns?: number } | null>(null);
+  const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
 
@@ -64,23 +64,23 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
     if (res.ok) patchTitle(chat.connectionId, chat.sessionId, title);
   }
 
-  async function doRollback(force: boolean): Promise<void> {
-    const runId = chat?.runId;
-    if (!runId) return;
+  async function doRollback(): Promise<void> {
+    const target = rollback?.runId;
+    if (!target) return;
     setRollbackBusy(true);
     setRollbackNotice(null);
-    const res = await api.runRollback(runId, force);
+    const res = await api.runRollback(target, rollback.needForce);
     setRollbackBusy(false);
     if (res.ok) {
       setRollback(null);
-      setRollbackNotice('已回滚到本轮之前（agent 对话未回退）');
+      setRollbackNotice('已回滚（agent 对话未回退）');
       // Reload the session: runs, statuses, the tree and the synthetic note.
       if (chat?.sessionId) void useChat.getState().openSession(chat.connectionId, chat.sessionId);
       return;
     }
     const data = res.data as { code?: string; laterRuns?: number; error?: string };
     if (data?.code === 'later_runs_exist') {
-      setRollback({ needForce: true, laterRuns: data.laterRuns });
+      setRollback({ runId: target, needForce: true, laterRuns: data.laterRuns });
       return;
     }
     setRollback(null);
@@ -145,26 +145,6 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
               停止
             </button>
           )}
-          {!busy && chat.sessionId && chat.runId && (
-            rollback ? (
-              <span className="rollback-confirm">
-                <button className="btn danger" disabled={rollbackBusy} onClick={() => void doRollback(rollback.needForce)}>
-                  {rollback.needForce ? `丢弃后续 ${rollback.laterRuns} 轮并回滚` : '确认回滚'}
-                </button>
-                <button className="btn ghost" disabled={rollbackBusy} onClick={() => setRollback(null)}>
-                  取消
-                </button>
-              </span>
-            ) : (
-              <button
-                className="btn ghost"
-                title="把工作区文件恢复到本轮之前（破坏性，且 agent 对话不回退）"
-                onClick={() => setRollback({ needForce: false })}
-              >
-                回滚
-              </button>
-            )
-          )}
           {chat.sessionId && (
             <button className="btn ghost" title="会话权限设置" onClick={() => setShowPerms(true)}>
               ⚙
@@ -176,6 +156,21 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
       <TodoPanel todos={chat.todos} />
 
       {chat.error && <div className="chat-banner error">{chat.error}</div>}
+      {rollback && (
+        <div className="chat-banner rollback-confirm">
+          <span>
+            {rollback.needForce
+              ? '该运行之后还有更晚的运行，回滚会把它们一并丢弃。文件恢复到该运行之前，agent 对话不回退。'
+              : '把工作区文件恢复到这次发送之前？该轮及之后的文件改动会被覆盖，agent 对话不回退，此操作难以撤销。'}
+          </span>
+          <button className="btn danger" disabled={rollbackBusy} onClick={() => void doRollback()}>
+            {rollback.needForce ? `丢弃后续 ${rollback.laterRuns} 轮并回滚` : '确认回滚'}
+          </button>
+          <button className="btn ghost" disabled={rollbackBusy} onClick={() => setRollback(null)}>
+            取消
+          </button>
+        </div>
+      )}
       {rollbackNotice && <div className="chat-banner">{rollbackNotice}</div>}
       {chat.phase === 'reconnecting' && <div className="chat-banner">● 连接中断，正在重连…</div>}
       {chat.phase === 'settled' && (
@@ -199,7 +194,12 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
         ) : chat.messages.length === 0 ? (
           <div className="main-body">发送一条消息开始对话</div>
         ) : (
-          <Transcript messages={chat.messages} scrollRef={scrollRef} />
+          <Transcript
+            messages={chat.messages}
+            scrollRef={scrollRef}
+            runs={chat.runs}
+            onRollback={(runId) => setRollback({ runId, needForce: false })}
+          />
         )}
       </div>
 

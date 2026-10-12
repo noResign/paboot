@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +46,9 @@ internal fun MessageList(
     loading: Boolean,
     onAnswer: (String, String) -> Unit,
     modifier: Modifier = Modifier,
+    /** runIds whose checkpoint is captured and rollback-able; drives the per-message action. */
+    rollbackableRunIds: Set<String> = emptySet(),
+    onRollback: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -121,7 +125,11 @@ internal fun MessageList(
                     key = { index -> index },
                 ) { index ->
                     when (val message = messages[index]) {
-                        is ChatUiMessage.User -> UserBubble(message.text)
+                        is ChatUiMessage.User -> UserBubble(
+                            text = message.text,
+                            canRollback = message.runId != null && message.runId in rollbackableRunIds,
+                            onRollback = { message.runId?.let(onRollback) },
+                        )
                         is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
                     }
                 }
@@ -148,19 +156,24 @@ internal fun MessageList(
 }
 
 @Composable
-internal fun UserBubble(text: String) {
+internal fun UserBubble(text: String, canRollback: Boolean = false, onRollback: () -> Unit = {}) {
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = 300.dp),
-        ) {
-            Text(
-                text = text,
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+        Column(horizontalAlignment = Alignment.End) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.widthIn(max = 300.dp),
+            ) {
+                Text(
+                    text = text,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+            if (canRollback) {
+                TextButton(onClick = onRollback) { Text("回滚到这次之前", style = MaterialTheme.typography.labelSmall) }
+            }
         }
     }
 }

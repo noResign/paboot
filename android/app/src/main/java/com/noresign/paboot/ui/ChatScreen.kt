@@ -102,9 +102,14 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
-    val runId by viewModel.runId.collectAsState()
     val runs by viewModel.runs.collectAsState()
     val rollbackResult by viewModel.rollbackResult.collectAsState()
+    // 有 preRef 且已终态的 run 才能回滚（running/queued 也有 preRef，但 daemon 会以 run_active 拒绝）。
+    val rollbackableRunIds = remember(runs) {
+        runs.filter {
+            it.checkpoint?.preRef != null && it.status != "rolled_back" && it.status != "running" && it.status != "queued"
+        }.map { it.id }.toSet()
+    }
     // The run a rollback is being confirmed for (latest-run button or a row in the
     // 运行 sheet). `rollbackForce` escalates the wording once the daemon reports
     // that later runs would also be discarded.
@@ -187,9 +192,6 @@ fun ChatScreen(
                     if (runs.isNotEmpty()) {
                         TextButton(onClick = { runsOpen = true }) { Text("运行") }
                     }
-                    if (!streaming) {
-                        runId?.let { rid -> TextButton(onClick = { pendingRollback = rid }) { Text("回滚") } }
-                    }
                     TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
                 },
             )
@@ -227,6 +229,8 @@ fun ChatScreen(
             streaming = streaming,
             loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
+            rollbackableRunIds = rollbackableRunIds,
+            onRollback = { pendingRollback = it },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -280,7 +284,7 @@ fun ChatScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (run.checkpoint?.preRef != null && run.status != "rolled_back") {
+                        if (run.id in rollbackableRunIds) {
                             TextButton(onClick = {
                                 pendingRollback = run.id
                                 runsOpen = false

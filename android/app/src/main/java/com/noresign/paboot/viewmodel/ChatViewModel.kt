@@ -203,7 +203,7 @@ class ChatViewModel(
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         for (run in runs) {
-            list += ChatUiMessage.User(run.prompt)
+            list += ChatUiMessage.User(run.prompt, runId = run.id)
             if (run.id == runningRunId) {
                 // 运行中：attach() 会追加并续流
                 list += ChatUiMessage.Assistant()
@@ -444,9 +444,22 @@ class ChatViewModel(
         _streaming.value = false
     }
 
+    /**
+     * 新发送的 user 消息在发送时还不知道 run id（首帧 `status` 才带出来）。收到首帧后把
+     * 最后一条无 runId 的 user 消息补上，让「回滚到这次之前」能在运行中/结束后挂上去。
+     */
+    private fun stampLastUserRunId(runId: String) {
+        val current = _messages.value
+        val idx = current.indexOfLast { it is ChatUiMessage.User && it.runId == null }
+        if (idx < 0) return
+        val message = current[idx] as ChatUiMessage.User
+        _messages.value = current.toMutableList().also { it[idx] = message.copy(runId = runId) }
+    }
+
     private fun handleFrame(evt: ChatStreamEvent.Frame) {
         val frame = evt.frame
         _runId.value = frame.runId
+        stampLastUserRunId(frame.runId)
         val e = frame.event
         if (e is NormalizedEvent.Status) e.runtime?.let { _sessionRuntime.value = it }
         if (e is NormalizedEvent.Status && e.sessionId != null && sessionId == null) {

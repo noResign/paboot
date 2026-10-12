@@ -540,6 +540,19 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
     contextUsage = next.contextUsage;
   }
 
+  // A fresh send's user message has no run id until the stream tells us; stamp
+  // it so its per-message rollback action appears while the run is live.
+  if (runId) {
+    let lastUser = -1;
+    for (let i = 0; i < messages.length; i += 1) {
+      if (messages[i]?.kind === 'user') lastUser = i;
+    }
+    const message = lastUser >= 0 ? messages[lastUser] : undefined;
+    if (message?.kind === 'user' && !message.runId) {
+      messages = messages.map((entry, i) => (i === lastUser ? { ...entry, runId } : entry));
+    }
+  }
+
   return { ...chat, messages, todos, contextUsage, permissions, runId, sessionId, runtime, pendingNew, title };
 }
 
@@ -569,7 +582,7 @@ async function rebuildHistory(
   let todos: TodoItem[] = [];
 
   runs.forEach((run, index) => {
-    messages.push({ kind: 'user', id: nextId('u'), text: run.prompt });
+    messages.push({ kind: 'user', id: nextId('u'), text: run.prompt, runId: run.id });
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.
