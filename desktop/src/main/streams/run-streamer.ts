@@ -2,7 +2,14 @@ import { LINE_FLUSH_MS } from './constants';
 import { FrameBatcher } from './frame-batcher';
 import { ROUTES } from '../../shared/routes';
 import { apiErrorOf } from '../../shared/errors';
-import { decide as decideReconnect, HEALTHY_ATTEMPT_MS, type ReconnectDecision } from '../../shared/reconnect';
+import {
+  backoffMs,
+  decide as decideReconnect,
+  HEALTHY_ATTEMPT_MS,
+  isNonRetryable,
+  UNREACHABLE_BUDGET_MS,
+  type ReconnectDecision,
+} from '../../shared/reconnect';
 import { LineSplitter, SseParser } from '../../shared/sse-parse';
 import type { NormalizedEvent, SseFrame } from '../../shared/contract';
 import type { DaemonClient } from '../daemon/client';
@@ -128,11 +135,27 @@ export class RunStreamer {
       const streamMs = this.deps.now() - startedAt;
       const resumable = this.runId;
 
-      // A run id we never learned means there is nothing to resume: the request
-      // died before its first frame, so only the user can retry.
+      // A run id we never learned means the POST died before its first frame.
+      // The command id makes that recoverable: re-send the same chat request and
+      // the daemon attaches us to the run it already started (or starts one if
+      // the first request never landed). Give up only once the daemon has been
+      // unreachable past the budget, or the failure is not worth retrying.
       if (!outcome.terminal && resumable === null) {
-        this.deps.emit(this.done('giveup', outcome.httpCode, outcome.apiCode, outcome.message));
-        return;
+        const now = this.deps.now();
+        unreachableSince = unreachableSince ?? now;
+        if (
+          isNonRetryable(outcome.httpCode) ||
+          now - unreachableSince >= UNREACHABLE_BUDGET_MS
+        ) {
+          this.deps.emit(this.done('giveup', outcome.httpCode, outcome.apiCode, outcome.message));
+          return;
+        }
+        attempt = outcome.frames > 0 || streamMs > HEALTHY_ATTEMPT_MS ? 0 : attempt + 1;
+        this.deps.emit({ streamId: this.streamId, kind: 'phase', phase: 'reconnecting', attempt });
+        await this.deps.sleep(backoffMs(attempt, this.deps.random()));
+        if (this.stopped || gen !== this.gen) return;
+        current = spec;
+        continue;
       }
 
       const probed = outcome.terminal || resumable === null ? null : await this.deps.probeRunActive(resumable);
@@ -303,6 +326,7 @@ export class RunStreamer {
           workspaceId: spec.workspaceId,
           permissionMode: spec.permissionMode,
           claudeSessionId: spec.claudeSessionId,
+          commandId: spec.commandId,
         },
       },
       signal,

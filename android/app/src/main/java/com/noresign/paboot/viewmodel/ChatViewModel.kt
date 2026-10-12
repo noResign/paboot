@@ -24,6 +24,7 @@ import com.noresign.paboot.network.daemon.dto.SseFrame
 import com.noresign.paboot.network.daemon.dto.MessageDto
 import com.noresign.paboot.network.daemon.dto.RunDto
 import com.noresign.paboot.network.http.NetworkResult
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -232,18 +233,32 @@ class ChatViewModel(
         }
         _messages.update { it + ChatUiMessage.User(prompt) + ChatUiMessage.Assistant() }
         _error.value = null
+        // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
+        val sessionIdAtSend = sessionId
+        val claudeSessionId = initialClaudeSessionId
+        val runtime = initialRuntime
+        val workspaceId = initialWorkspaceId
+        val permissionMode = initialPermissionMode
+        // 同一次发送（含重发）共用一个 commandId，让「请求刚发出就断、run id 都没拿到」
+        // 能按同一 id 重发，daemon 重连到已起的 run，而不是起第二个。
+        val commandId = UUID.randomUUID().toString()
+        val chatFlow: () -> Flow<ChatStreamEvent> = {
+            repository.chatStream(
+                sessionId = sessionIdAtSend,
+                prompt = prompt,
+                claudeSessionId = claudeSessionId,
+                runtime = runtime,
+                workspaceId = workspaceId,
+                permissionMode = permissionMode,
+                commandId = commandId,
+            )
+        }
         // 新 run：seq 空间是新的，runId 要等首帧 status 才知道
         startStream(
-            initialFlow = repository.chatStream(
-                sessionId = sessionId,
-                prompt = prompt,
-                claudeSessionId = initialClaudeSessionId,
-                runtime = initialRuntime,
-                workspaceId = initialWorkspaceId,
-                permissionMode = initialPermissionMode,
-            ),
+            initialFlow = chatFlow(),
             runId = null,
             initialAfter = null,
+            resendChat = chatFlow,
         )
         initialClaudeSessionId = null
         initialRuntime = null
@@ -275,11 +290,13 @@ class ChatViewModel(
      * @param initialFlow 首轮用的流：新会话是 `/api/chat`，重连已有 run 是 `/api/runs/:id/stream`
      * @param runId 已知的 run id；新会话传 null（首帧 `status` 才会带出来）
      * @param initialAfter 首轮的 `?after=` 游标
+     * @param resendChat 连 run id 都没拿到时按同一 `commandId` 重发的流工厂；只有新会话「发送」提供
      */
     private fun startStream(
         initialFlow: Flow<ChatStreamEvent>,
         runId: String?,
         initialAfter: Long?,
+        resendChat: (() -> Flow<ChatStreamEvent>)? = null,
     ) {
         streamJob?.cancel()
         val gen = ++streamGen
@@ -330,15 +347,21 @@ class ChatViewModel(
                     unreachableSince = null
                 }
 
-                // 连 run id 都没拿到（请求刚发出就断了）→ 无从续接，只能让用户重发
-                val decision = if (!terminal && resumable == null) {
-                    ReconnectPolicy.Decision.GiveUp
-                } else {
-                    ReconnectPolicy.decide(
+                // 连 run id 都没拿到（请求刚发出就断了）。有 commandId 就能按同一 id 重发，
+                // daemon 会重连到已起的 run（或起一个，若首个请求根本没到）；否则无从续接，
+                // 只能让用户重发。退避预算用完或错误不值得重试（如 400）才放弃。
+                val unreachableMs = unreachableSince?.let { now - it } ?: 0L
+                val decision = when {
+                    !terminal && resumable == null && resendChat != null &&
+                        !ReconnectPolicy.isNonRetryable(failure?.httpCode) &&
+                        unreachableMs < ReconnectPolicy.UNREACHABLE_BUDGET_MS ->
+                        ReconnectPolicy.Decision.Retry(ReconnectPolicy.backoffMs(attempt, Random.nextDouble()))
+                    !terminal && resumable == null -> ReconnectPolicy.Decision.GiveUp
+                    else -> ReconnectPolicy.decide(
                         terminal = terminal,
                         httpCode = failure?.httpCode,
                         runActive = probed,
-                        unreachableMs = unreachableSince?.let { now - it } ?: 0L,
+                        unreachableMs = unreachableMs,
                         attempt = attempt,
                         jitter = Random.nextDouble(),
                     )
@@ -381,9 +404,14 @@ class ChatViewModel(
                         }
                         _reconnecting.value = true
                         delay(decision.delayMs)
-                        currentRunId = resumable
                         after = if (lastSeq >= 0) lastSeq else initialAfter
-                        flow = repository.runStream(currentRunId!!, after)
+                        flow = if (resumable != null) {
+                            currentRunId = resumable
+                            repository.runStream(resumable, after)
+                        } else {
+                            // resumable == null 时按同一 commandId 重发（见上面的判定）
+                            resendChat!!()
+                        }
                     }
                 }
             }

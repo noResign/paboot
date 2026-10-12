@@ -195,6 +195,9 @@ export const useChat = create<ChatStore>((set, get) => ({
       workspaceId: chat.pendingNew?.workspaceId ?? undefined,
       permissionMode: chat.pendingNew?.permissionMode,
       claudeSessionId: chat.pendingNew?.claudeSessionId ?? undefined,
+      // One send = one run. A stable id lets a resend re-attach instead of
+      // starting a second run if the response was lost.
+      commandId: crypto.randomUUID(),
     };
     await startStream(set, key, spec);
   },
