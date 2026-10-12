@@ -136,6 +136,10 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 显式停止用 `POST /api/runs/:id/cancel`。**不同 Session 之间**多 run 并发无全局锁
 （同一 Session 见上面的 409 守卫）。
 
+**重启对账**：daemon 启动时把所有仍是 `running` 的 run 标为 `interrupted`（进程已随上次退出消失，
+没有任何东西在跑），并给它的持久流补一帧终局 `status(label=interrupted)`。否则该 run 会永远读作
+"运行中"，且重连回放到一半就断、渲染成永不结束的轮次。
+
 ## 会话与跨端续接
 
 - Claude Code 的所有会话（TUI 与 headless）统一存 `~/.claude/projects/<cwd>/<id>.jsonl`，
