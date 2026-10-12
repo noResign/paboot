@@ -21,6 +21,10 @@ export function ConnectPage() {
   const errorCode = useConnection((s) => s.errorCode);
   const connect = useConnection((s) => s.connect);
   const disconnectAll = useConnection((s) => s.disconnectAll);
+  const probeNow = useConnection((s) => s.probeNow);
+  const views = useConnection((s) => s.views);
+  const returnToId = useConnection((s) => s.returnToId);
+  const cancelAddHost = useConnection((s) => s.cancelAddHost);
 
   const [address, setAddress] = useState('');
   // Starting a daemon is a deliberate, multi-step act: a directory that becomes
@@ -33,6 +37,14 @@ export function ConnectPage() {
   const [spawnLogPath, setSpawnLogPath] = useState<string | null>(null);
   const [token, setToken] = useState('');
   const [recent, setRecent] = useState<RecentConnection[]>([]);
+
+  // Discovery is a snapshot taken once, at boot (`App` calls `boot()`). It knows
+  // nothing about a daemon started or stopped afterwards — including one this
+  // page launched itself. Re-probe on every mount so the「本机 daemon」block shows
+  // live state instead of a stale「没找到」while a daemon is in fact running.
+  useEffect(() => {
+    void probeNow();
+  }, [probeNow]);
 
   // Addresses only, and this page is remounted on every disconnect, so the list
   // is always current without a subscription.
@@ -88,6 +100,9 @@ export function ConnectPage() {
       return;
     }
     setSpawnOpen(false);
+    // The daemon we just started has to be discoverable the next time this page
+    // mounts — the boot snapshot predates it.
+    void probeNow();
     // Connect to the port it actually bound, not the one we asked for.
     const bound = res.listen ? parseAddress(res.listen) : null;
     if (!bound) {
@@ -105,10 +120,17 @@ export function ConnectPage() {
 
   const parsedAddress = parseAddress(address);
   const insecureWarning = parsedAddress ? isInsecure(parsedAddress.host, parsedAddress.tls) : false;
+  //「添加电脑」can be backed out of: the host it was opened from is still live.
+  const returnView = views.find((item) => item.id === returnToId && item.connected) ?? null;
 
   return (
     <div className="gate">
       <div className="gate-card">
+        {returnView && (
+          <button className="btn ghost" style={{ marginBottom: 12 }} onClick={cancelAddHost} title="返回上一台主机">
+            ← 返回 {returnView.name ?? returnView.baseUrl ?? '上一台主机'}
+          </button>
+        )}
         <div className="gate-brand">
           <BrandMark />
           paboot

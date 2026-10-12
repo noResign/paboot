@@ -15,6 +15,11 @@ interface ConnectionState {
   error: string | null;
   /** Machine-readable reason for the last failed connect, e.g. `token_required`. */
   errorCode: string | null;
+  /**
+   * The host「添加电脑」was opened from. The connect page offers a way back to it,
+   * so a user who changed their mind is not stranded with no active host.
+   */
+  returnToId: string | null;
   activeView(): ConnectionView | null;
   boot(): Promise<void>;
   probeNow(): Promise<ProbeResult>;
@@ -23,6 +28,8 @@ interface ConnectionState {
   switchTo(id: string): void;
   /** Show the connect page to add a host, *without* dropping the others. */
   addHost(): void;
+  /** Leave「添加电脑」and go back to the host it was opened from, if still there. */
+  cancelAddHost(): void;
   removeHost(id: string): Promise<void>;
   disconnectAll(): Promise<void>;
 }
@@ -36,6 +43,7 @@ export const useConnection = create<ConnectionState>((set, get) => ({
   connecting: false,
   error: null,
   errorCode: null,
+  returnToId: null,
 
   activeView() {
     const { views, activeId } = get();
@@ -82,7 +90,7 @@ export const useConnection = create<ConnectionState>((set, get) => ({
     }
     // Adding a host leaves the others connected; this one just becomes current.
     const views = await connectionApi.list();
-    set({ views, activeId: result.view.id, connecting: false });
+    set({ views, activeId: result.view.id, connecting: false, returnToId: null });
     setActiveConnectionId(result.view.id);
     return true;
   },
@@ -91,15 +99,28 @@ export const useConnection = create<ConnectionState>((set, get) => ({
     // The chat store is keyed by connection id, so its caches survive; only the
     // *open* one has to go, or the shell would keep showing the other host's.
     useChat.getState().leave();
-    set({ activeId: id });
+    set({ activeId: id, returnToId: null });
     setActiveConnectionId(id);
   },
 
   addHost() {
     // Drop nothing in main — just stop pointing at a host so the connect page shows.
     useChat.getState().leave();
-    set({ activeId: null });
+    set({ activeId: null, returnToId: get().activeId });
     setActiveConnectionId(null);
+  },
+
+  cancelAddHost() {
+    const id = get().returnToId;
+    if (!id) return;
+    // The host we came from can be gone (removed in another window). Then there is
+    // nothing to go back to — fall through to the connect page rather than a blank.
+    if (!get().views.some((view) => view.id === id && view.connected)) {
+      set({ returnToId: null });
+      return;
+    }
+    set({ activeId: id, returnToId: null });
+    setActiveConnectionId(id);
   },
 
   async removeHost(id) {
