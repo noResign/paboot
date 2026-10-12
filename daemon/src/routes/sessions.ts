@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
-import type { RunRow, SessionRow } from '../db.js';
+import type { RunCheckpointRow, RunRow, SessionRow } from '../db.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { runningRunBySession } from '../session-runs.js';
 
@@ -19,7 +19,7 @@ function sessionDto(s: SessionRow, runningRunId: string | null = null) {
   };
 }
 
-function runDto(r: RunRow) {
+function runDto(r: RunRow, checkpoint?: RunCheckpointRow) {
   return {
     id: r.id,
     sessionId: r.session_id,
@@ -31,6 +31,14 @@ function runDto(r: RunRow) {
     endedAt: r.ended_at,
     exitCode: r.exit_code,
     error: r.error,
+    checkpoint: checkpoint
+      ? {
+          status: checkpoint.status,
+          repoRoot: checkpoint.repo_root,
+          preRef: checkpoint.pre_ref,
+          postRef: checkpoint.post_ref,
+        }
+      : null,
   };
 }
 
@@ -56,7 +64,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     res.json({
       session: sessionDto(s, running.get(s.id) ?? null),
       messages: ctx.db.listMessages(s.id),
-      runs: ctx.db.listRuns(s.id).map(runDto),
+      runs: ctx.db.listRuns(s.id).map((r) => runDto(r, ctx.db.getRunCheckpoint(r.id))),
     });
   });
 

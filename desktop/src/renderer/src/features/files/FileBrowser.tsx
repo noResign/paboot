@@ -46,6 +46,8 @@ interface Props {
   onModeChange(mode: FileMode): void;
   selectedPath: string | null;
   onSelect(selection: FileSelection): void;
+  /** Scope 改动 to one run's checkpoint (`?runId=`); live dirty state when unset. */
+  runId?: string;
 }
 
 /**
@@ -61,6 +63,7 @@ export function FileBrowser({
   onModeChange,
   selectedPath,
   onSelect,
+  runId,
 }: Props) {
   const [dir, setDir] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -73,7 +76,7 @@ export function FileBrowser({
   // every open is slow exactly when it hurts — while a run rewrites the tree.
   // A cold key still falls back to `null`, which is what shows「正在读取…」.
   const connectionId = useConnection((state) => state.activeId);
-  const cacheKey = connectionId && workspaceId ? changesKey(connectionId, workspaceId, root) : null;
+  const cacheKey = connectionId && workspaceId ? changesKey(connectionId, workspaceId, root, runId) : null;
   const changes = useFilesCache((state) => (cacheKey ? state.changes[cacheKey] : undefined)) ?? null;
   const putChanges = useFilesCache((state) => state.putChanges);
 
@@ -108,7 +111,7 @@ export function FileBrowser({
     const hasCached = mode === 'changes' && useFilesCache.getState().changes[cacheKey] !== undefined;
     if (!hasCached) setLoading(true);
     setError(null);
-    const query = { workspaceId, root: root ?? undefined };
+    const query = { workspaceId, root: root ?? undefined, runId };
     void (mode === 'changes' ? api.changes(query) : api.files({ ...query, path: dir, showHidden, showIgnored })).then(
       (res) => {
         if (!live) return;
@@ -125,7 +128,7 @@ export function FileBrowser({
     return () => {
       live = false;
     };
-  }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges]);
+  }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges, runId]);
 
   /** Second click collapses; the listing is refetched on the next expand. */
   async function toggleDir(path: string): Promise<void> {

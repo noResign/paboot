@@ -15,8 +15,8 @@ interface FilesCacheState {
   putChanges(key: string, data: ChangesResponse): void;
 }
 
-export function changesKey(connectionId: string, workspaceId: string, root: string | null): string {
-  return `${connectionId}|${workspaceId}|${root ?? ''}`;
+export function changesKey(connectionId: string, workspaceId: string, root: string | null, runId?: string): string {
+  return `${connectionId}|${workspaceId}|${root ?? ''}|${runId ?? ''}`;
 }
 
 export const useFilesCache = create<FilesCacheState>((set) => ({

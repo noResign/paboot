@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import { log } from '../log.js';
+import { captureCheckpoint, repoRootFor } from '../checkpoints.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
@@ -205,6 +206,21 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       commandId: commandId ?? null,
     });
 
+    // Snapshot the workspace before the run can touch it, so its changes can be
+    // diffed and rolled back later. Best-effort: a non-git cwd or a git failure
+    // just means no checkpoint, and the run proceeds anyway.
+    const repoRoot = await repoRootFor(session.cwd);
+    const preRef = repoRoot ? await captureCheckpoint(repoRoot, `${runId}-pre`) : null;
+    if (repoRoot) {
+      ctx.db.upsertRunCheckpoint({
+        runId,
+        repoRoot,
+        preRef,
+        postRef: null,
+        status: preRef ? 'complete' : 'unavailable',
+      });
+    }
+
     res.writeHead(200, sseHeaders());
     res.write(': connected\n\n');
 
@@ -302,6 +318,18 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         // detail stays in the events table.
         if (assistantText.trim()) {
           ctx.db.addMessage(session.id, 'assistant', assistantText.trim());
+        }
+        // Close the checkpoint pair so the run's diff (pre..post) is available.
+        // Cancelled runs converge here too, so they stay diffable/rollback-able.
+        if (repoRoot) {
+          const postRef = await captureCheckpoint(repoRoot, `${runId}-post`);
+          ctx.db.upsertRunCheckpoint({
+            runId,
+            repoRoot,
+            preRef,
+            postRef,
+            status: preRef && postRef ? 'complete' : 'unavailable',
+          });
         }
       }
       if (outcome.error && outcome.status === 'failed') {

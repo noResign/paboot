@@ -1,8 +1,11 @@
 import type { ServerResponse } from 'node:http';
+import path from 'node:path';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { RunRow } from '../db.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
+import { ChangesError } from '../changes.js';
+import { captureCheckpoint, restoreToRef } from '../checkpoints.js';
 import { getActiveRun, listActiveRuns } from '../runtimes/active-runs.js';
 import { isTerminalEvent, sseHeaders, writeSseFrame } from '../sse.js';
 
@@ -10,6 +13,19 @@ function parseAfter(raw: unknown): number | null {
   if (raw === undefined) return 0;
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+function inside(root: string, absolute: string): boolean {
+  const rel = path.relative(root, absolute);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function sendRollbackError(res: import('express').Response, err: unknown): void {
+  if (err instanceof ChangesError) {
+    res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    return;
+  }
+  res.status(500).json({ error: err instanceof Error ? err.message : String(err), code: 'internal_error' });
 }
 
 /**
@@ -106,6 +122,69 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
     active.cancel('cancelled by request');
     ctx.db.audit('cancel', id);
     res.json({ ok: true, id });
+  });
+
+  // Roll the workspace back to before a run: restore the tree to the run's
+  // pre-checkpoint and mark it and every later run in the session as
+  // `rolled_back`. Destructive and hard to reverse — the caller must opt in
+  // (`confirm`), the current tree is snapshotted first as an escape hatch, and
+  // discarding later runs additionally requires `force`.
+  app.post('/api/runs/:id/rollback', async (req, res) => {
+    const id = req.params.id;
+    const body = (req.body ?? {}) as { confirm?: unknown; force?: unknown };
+    if (body.confirm !== true) {
+      res.status(400).json({ error: 'rollback requires { confirm: true }', code: 'confirm_required' });
+      return;
+    }
+    const run = ctx.db.getRun(id);
+    if (!run) {
+      res.status(404).json({ error: 'run not found', code: 'run_not_found' });
+      return;
+    }
+    const checkpoint = ctx.db.getRunCheckpoint(id);
+    if (!checkpoint || !checkpoint.pre_ref) {
+      res.status(409).json({ error: 'run has no checkpoint to roll back to', code: 'no_checkpoint' });
+      return;
+    }
+
+    // A live run editing the same repo would race the restore and be clobbered.
+    const clashing = listActiveRuns().some((active) => {
+      const activeRun = ctx.db.getRun(active.id);
+      const session = activeRun ? ctx.db.getSession(activeRun.session_id) : undefined;
+      return session ? inside(checkpoint.repo_root, session.cwd) : false;
+    });
+    if (clashing) {
+      res.status(409).json({ error: 'a run is still active in this repository', code: 'run_active' });
+      return;
+    }
+
+    const later = ctx.db.listRuns(run.session_id).filter((r) => r.started_at > run.started_at);
+    if (later.length > 0 && body.force !== true) {
+      res.status(409).json({
+        error: 'later runs would also be discarded',
+        code: 'later_runs_exist',
+        laterRuns: later.length,
+      });
+      return;
+    }
+
+    try {
+      // Escape hatch: snapshot the current tree so a mistaken rollback is itself
+      // recoverable (via git, outside the product — there is no UI for it).
+      await captureCheckpoint(checkpoint.repo_root, `pre-rollback-${Date.now()}`);
+      await restoreToRef(checkpoint.repo_root, checkpoint.pre_ref);
+    } catch (err) {
+      sendRollbackError(res, err);
+      return;
+    }
+
+    const rolledBackRuns = ctx.db.markRunsRolledBack(run.session_id, run.started_at);
+    for (const affected of [run, ...later]) ctx.db.markRunCheckpointRolledBack(affected.id);
+    // The file tree rewound; the agent's transcript cannot. Say so explicitly so
+    // the history stays honest about what happened.
+    ctx.db.addMessage(run.session_id, 'assistant', '文件已回滚到该运行之前（agent 对话未回退）。');
+    ctx.db.audit('rollback', id);
+    res.json({ ok: true, rolledBackRuns, conversationRewound: false });
   });
 
   // One-shot replay of a run's persisted events, in the same `SseFrame` shape

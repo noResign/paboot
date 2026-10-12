@@ -145,3 +145,10 @@ data class PermissionDecisionRequest(
     /** UserInput answers: returned to the provider, not saved in history. */
     val response: JsonElement? = null,
 )
+
+/** `POST /api/runs/:id/rollback` 请求体。破坏性；`force` 连更晚的 run 一起丢弃。 */
+@Serializable
+data class RollbackRequest(
+    val confirm: Boolean,
+    val force: Boolean = false,
+)

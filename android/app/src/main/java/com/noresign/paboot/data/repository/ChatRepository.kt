@@ -7,6 +7,7 @@ import com.noresign.paboot.network.daemon.ChatStreamEvent
 import com.noresign.paboot.network.daemon.dto.ChatRequest
 import com.noresign.paboot.network.daemon.dto.EventsResponse
 import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
+import com.noresign.paboot.network.daemon.dto.RollbackRequest
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 import com.noresign.paboot.network.daemon.dto.SessionDetailResponse
@@ -92,6 +93,15 @@ class ChatRepository(
     suspend fun cancelRun(runId: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.cancelRun(runId) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    /** 破坏性：把工作区回滚到该 run 之前。`apiCode == "later_runs_exist"` 时需带 force 重试。 */
+    suspend fun rollbackRun(runId: String, force: Boolean = false): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.rollbackRun(runId, RollbackRequest(confirm = true, force = force)) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }

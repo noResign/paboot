@@ -37,6 +37,11 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [showPerms, setShowPerms] = useState(false);
+  // Rollback is destructive: two-step confirm, and a second step when it would
+  // also discard later runs.
+  const [rollback, setRollback] = useState<{ needForce: boolean; laterRuns?: number } | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
 
   // Hooks must run before the early return below.
   const { ref: scrollRef, showJump, jumpToBottom, onScroll } = useStickToBottom({
@@ -57,6 +62,28 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
     if (!chat || !chat.sessionId || !title || title === chat.title) return;
     const res = await api.renameSession(chat.sessionId, title);
     if (res.ok) patchTitle(chat.connectionId, chat.sessionId, title);
+  }
+
+  async function doRollback(force: boolean): Promise<void> {
+    const runId = chat?.runId;
+    if (!runId) return;
+    setRollbackBusy(true);
+    setRollbackNotice(null);
+    const res = await api.runRollback(runId, force);
+    setRollbackBusy(false);
+    if (res.ok) {
+      setRollback(null);
+      setRollbackNotice('已回滚到本轮之前（agent 对话未回退）');
+      if (chat) void useSessions.getState().refreshCurrent(chat.connectionId);
+      return;
+    }
+    const data = res.data as { code?: string; laterRuns?: number; error?: string };
+    if (data?.code === 'later_runs_exist') {
+      setRollback({ needForce: true, laterRuns: data.laterRuns });
+      return;
+    }
+    setRollback(null);
+    setRollbackNotice(data?.error ?? '回滚失败');
   }
 
   return (
@@ -117,6 +144,26 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
               停止
             </button>
           )}
+          {!busy && chat.sessionId && chat.runId && (
+            rollback ? (
+              <span className="rollback-confirm">
+                <button className="btn danger" disabled={rollbackBusy} onClick={() => void doRollback(rollback.needForce)}>
+                  {rollback.needForce ? `丢弃后续 ${rollback.laterRuns} 轮并回滚` : '确认回滚'}
+                </button>
+                <button className="btn ghost" disabled={rollbackBusy} onClick={() => setRollback(null)}>
+                  取消
+                </button>
+              </span>
+            ) : (
+              <button
+                className="btn ghost"
+                title="把工作区文件恢复到本轮之前（破坏性，且 agent 对话不回退）"
+                onClick={() => setRollback({ needForce: false })}
+              >
+                回滚
+              </button>
+            )
+          )}
           {chat.sessionId && (
             <button className="btn ghost" title="会话权限设置" onClick={() => setShowPerms(true)}>
               ⚙
@@ -128,6 +175,7 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
       <TodoPanel todos={chat.todos} />
 
       {chat.error && <div className="chat-banner error">{chat.error}</div>}
+      {rollbackNotice && <div className="chat-banner">{rollbackNotice}</div>}
       {chat.phase === 'reconnecting' && <div className="chat-banner">● 连接中断，正在重连…</div>}
       {chat.phase === 'settled' && (
         <div className="chat-banner">该运行已结束（daemon 侧已不在运行），以上为已收到的事件。</div>

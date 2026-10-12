@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
+import { useChat } from '../../store/chat';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
 
@@ -20,6 +21,17 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
   const [mode, setMode] = useState<FileMode>('changes');
   const [root, setRoot] = useState<string | null>(null);
   const [selection, setSelection] = useState<FileSelection | null>(null);
+  // Scope 改动 to the latest completed run's checkpoint (`?runId=`). Opt-in and
+  // only offered once a run has settled, so the panel keeps its live-dirty-state
+  // default the rest of the time.
+  const [runScope, setRunScope] = useState(false);
+  const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
+  const scopedRunId = chat && chat.phase === 'settled' ? (chat.runId ?? undefined) : undefined;
+  const runId = runScope ? scopedRunId : undefined;
+
+  useEffect(() => {
+    if (!scopedRunId) setRunScope(false);
+  }, [scopedRunId]);
 
   // Root and open file are per-workspace; clear them when it changes so the
   // panel never shows another workspace's (or host's) files.
@@ -58,6 +70,15 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
         ) : (
           <span className="title">文件</span>
         )}
+        {!selection && scopedRunId && (
+          <button
+            className={`btn ghost tiny${runScope ? ' active' : ''}`}
+            onClick={() => setRunScope((value) => !value)}
+            title="只看本轮运行的改动（对比该 run 前后的快照）"
+          >
+            本轮
+          </button>
+        )}
         <button className="btn ghost tiny aside-close" onClick={onCollapse} title="收起右栏">
           ✕
         </button>
@@ -66,7 +87,7 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
       <div className="aside-body">
         {selection ? (
           // Always unified here: the panel is far narrower than the split minimum.
-          <FilePane workspaceId={workspaceId} root={root} selection={selection} view="unified" emptyText="" />
+          <FilePane workspaceId={workspaceId} root={root} selection={selection} view="unified" emptyText="" runId={runId} />
         ) : (
           <FileBrowser
             workspaceId={workspaceId}
@@ -76,6 +97,7 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             onModeChange={setMode}
             selectedPath={null}
             onSelect={setSelection}
+            runId={runId}
           />
         )}
       </div>

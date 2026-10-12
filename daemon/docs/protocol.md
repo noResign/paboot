@@ -40,8 +40,8 @@
 | `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |
 | `DELETE /api/workspaces/:id/shortcuts` | 是 | 移除浏览书签，`{path}`；只删书签，不动任何授权 |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
-| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>` |
-| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>` |
+| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>`；带 `?runId=` 时改为该 run 的 `pre..post` 改动 |
+| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>`（可带 `?runId=`） |
 | `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=` |
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&root=<abs>&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
@@ -54,6 +54,7 @@
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
+| `POST /api/runs/:id/rollback` | 是 | **破坏性**：把工作区回滚到该 run 之前，`{confirm:true, force?}`（见下文「每轮 checkpoint 与回滚」） |
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
 | `GET /api/runs/:id/stream` | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播（重连订阅） |
 | `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
@@ -138,7 +139,24 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 
 **重启对账**：daemon 启动时把所有仍是 `running` 的 run 标为 `interrupted`（进程已随上次退出消失，
 没有任何东西在跑），并给它的持久流补一帧终局 `status(label=interrupted)`。否则该 run 会永远读作
-"运行中"，且重连回放到一半就断、渲染成永不结束的轮次。
+"运行中"。
+
+## 每轮 checkpoint 与回滚
+
+每个 run 在**开跑前**和**收口后**各用隐藏 git ref（`refs/paboot/checkpoints/<runId>-{pre,post}`）
+快照一次 `session.cwd` 所在 git 仓库的整个工作区。快照走**临时 index**（`GIT_INDEX_FILE`），**不碰**
+真实的 index / HEAD / 暂存区，所以对你的未提交状态零影响。
+
+- 非 git 工作区 / 快照失败：不落记录（`RunDto.checkpoint` 为 null），run 照常跑，绝不 `git init`。
+- `GET /api/changes?runId=<id>` 返回该 run 的 `pre..post` 改动（复用实时 changes 的形状），
+  `GET /api/changes/diff?runId=<id>&path=` 取单文件补丁。`RunDto.checkpoint` 让客户端知道某轮是否可看。
+- `POST /api/runs/:id/rollback` 把工作区恢复到该 run **之前**，并把该 run **及其之后**的所有 run 标为
+  `rolled_back`。防护：必须 `{confirm:true}`；同仓库有活跃 run → 409 `run_active`；存在更晚的 run 且未
+  `force` → 409 `later_runs_exist`（带数量）；回滚前先存一份 `refs/paboot/pre-rollback/<ts>` 安全快照
+  （只能用 git CLI 手动救，product 内无恢复入口）。
+- **破坏性**：会覆盖工作区当前内容、删掉被回滚 run 新增的文件、忽略/未跟踪的忽略文件与 submodule 内部
+  内容不入快照也不还原。且**文件回滚了，agent 对话不回退**——响应带 `conversationRewound:false`，
+  并追加一条合成助手消息说明，避免历史"说改了却没改"。
 
 ## 会话与跨端续接
 

@@ -6,7 +6,7 @@ import { IGNORED_DIRS } from './file-browser.js';
 
 const execFileAsync = promisify(execFile);
 
-const MAX_PATCH_CHARS = 512 * 1024;
+export const MAX_PATCH_CHARS = 512 * 1024;
 const MAX_UNTRACKED_BYTES = 1024 * 1024;
 
 export type ChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
@@ -59,12 +59,13 @@ interface GitFail {
   stderr: string;
 }
 
-async function runGit(cwd: string, args: string[]): Promise<GitOk | GitFail> {
+export async function runGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<GitOk | GitFail> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
       windowsHide: true,
+      ...(env === undefined ? {} : { env }),
     });
     return { ok: true, stdout };
   } catch (err) {
@@ -77,7 +78,7 @@ async function runGit(cwd: string, args: string[]): Promise<GitOk | GitFail> {
   }
 }
 
-async function gitRootFor(dir: string): Promise<string | null> {
+export async function gitRootFor(dir: string): Promise<string | null> {
   const result = await runGit(dir, ['rev-parse', '--show-toplevel']);
   if (!result.ok) {
     if (result.code === 'git_unavailable') {

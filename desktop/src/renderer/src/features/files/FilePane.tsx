@@ -15,13 +15,15 @@ interface Props {
   /** The page header explains the degradation; the panel is too narrow for it. */
   narrowHint?: boolean;
   emptyText?: string;
+  /** Scope the diff to one run's checkpoint (`?runId=`). */
+  runId?: string;
 }
 
 /**
  * The content half: header (path / size / diff counts) plus the diff or text
  * viewer. Shared by the files page and the chat's right panel.
  */
-export function FilePane({ workspaceId, root, selection, view, narrowHint, emptyText }: Props) {
+export function FilePane({ workspaceId, root, selection, view, narrowHint, emptyText, runId }: Props) {
   const [file, setFile] = useState<FileContentDto | null>(null);
   const [diff, setDiff] = useState<DiffResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,7 +41,7 @@ export function FilePane({ workspaceId, root, selection, view, narrowHint, empty
     }
     let live = true;
     setLoading(true);
-    const query = { workspaceId, root: root ?? undefined, path: selection.path };
+    const query = { workspaceId, root: root ?? undefined, path: selection.path, runId };
     void (selection.kind === 'diff' ? api.changesDiff(query) : api.fileContent(query)).then((res) => {
       if (!live) return;
       setLoading(false);
@@ -54,7 +56,7 @@ export function FilePane({ workspaceId, root, selection, view, narrowHint, empty
     return () => {
       live = false;
     };
-  }, [workspaceId, root, selection]);
+  }, [workspaceId, root, selection, runId]);
 
   const additions = diff && !diff.binary
     ? diff.patch.split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++')).length

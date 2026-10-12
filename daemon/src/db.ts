@@ -67,6 +67,16 @@ export interface RunRow {
   command_id: string | null;
 }
 
+/** Per-run workspace checkpoint. `status`: complete | unavailable | rolled_back. */
+export interface RunCheckpointRow {
+  run_id: string;
+  repo_root: string;
+  pre_ref: string | null;
+  post_ref: string | null;
+  status: string;
+  created_at: number;
+}
+
 export interface EventRow {
   id: number;
   run_id: string;
@@ -135,6 +145,15 @@ export class Db {
         exit_code INTEGER,
         error TEXT,
         command_id TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS run_checkpoints (
+        run_id TEXT PRIMARY KEY,
+        repo_root TEXT NOT NULL,
+        pre_ref TEXT,
+        post_ref TEXT,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS events (
@@ -712,6 +731,50 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC`)
       .all(sessionId) as unknown as RunRow[];
+  }
+
+  // ---- run checkpoints ----
+
+  upsertRunCheckpoint(input: {
+    runId: string;
+    repoRoot: string;
+    preRef: string | null;
+    postRef: string | null;
+    status: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO run_checkpoints (run_id, repo_root, pre_ref, post_ref, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(run_id) DO UPDATE SET
+           repo_root = excluded.repo_root,
+           pre_ref = excluded.pre_ref,
+           post_ref = excluded.post_ref,
+           status = excluded.status`,
+      )
+      .run(input.runId, input.repoRoot, input.preRef, input.postRef, input.status, Date.now());
+  }
+
+  getRunCheckpoint(runId: string): RunCheckpointRow | undefined {
+    return this.db.prepare(`SELECT * FROM run_checkpoints WHERE run_id = ?`).get(runId) as unknown as
+      | RunCheckpointRow
+      | undefined;
+  }
+
+  markRunCheckpointRolledBack(runId: string): void {
+    this.db.prepare(`UPDATE run_checkpoints SET status = 'rolled_back' WHERE run_id = ?`).run(runId);
+  }
+
+  /**
+   * Mark a run and every run that started at or after it as `rolled_back`, for
+   * the session that owns them. Runs are ordered by `started_at` (see
+   * `listRuns`), so that is the boundary. Returns how many rows changed.
+   */
+  markRunsRolledBack(sessionId: string, fromStartedAt: number): number {
+    const result = this.db
+      .prepare(`UPDATE runs SET status = 'rolled_back' WHERE session_id = ? AND started_at >= ?`)
+      .run(sessionId, fromStartedAt);
+    return Number(result.changes);
   }
 
   // ---- events ----

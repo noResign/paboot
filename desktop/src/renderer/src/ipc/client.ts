@@ -20,6 +20,7 @@ import type {
   PermissionDto,
   PermissionGrantDto,
   ProductPermissionMode,
+  RunRollbackResponse,
   SessionDetailResponse,
   SessionsResponse,
   SseFrame,
@@ -121,10 +122,17 @@ export const api = {
   }) => request<FilesResponse>({ method: 'GET', path: ROUTES.files, query: { ...params } }),
   fileContent: (params: { workspaceId?: string; root?: string; path: string }) =>
     request<FileContentDto>({ method: 'GET', path: ROUTES.fileContent, query: { ...params } }),
-  changes: (params: { workspaceId?: string; root?: string }) =>
+  changes: (params: { workspaceId?: string; root?: string; runId?: string }) =>
     request<ChangesResponse>({ method: 'GET', path: ROUTES.changes, query: { ...params } }),
-  changesDiff: (params: { workspaceId?: string; root?: string; path: string }) =>
+  changesDiff: (params: { workspaceId?: string; root?: string; path: string; runId?: string }) =>
     request<DiffResponse>({ method: 'GET', path: ROUTES.changesDiff, query: { ...params } }),
+  /** Destructive: restore the workspace to before `runId`. `force` also discards later runs. */
+  runRollback: (runId: string, force = false) =>
+    request<RunRollbackResponse>({
+      method: 'POST',
+      path: ROUTES.runRollback(runId),
+      body: { confirm: true, force },
+    }),
   sessions: (workspaceId?: string) =>
     request<SessionsResponse>({
       method: 'GET',

@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -59,6 +60,7 @@ import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.notify.NotificationPermission
 import com.noresign.paboot.notify.RunNotifications
+import com.noresign.paboot.viewmodel.RollbackResult
 import com.noresign.paboot.viewmodel.SessionPermissionsUiState
 import com.noresign.paboot.ui.chat.InputBar
 import com.noresign.paboot.ui.chat.MessageList
@@ -100,6 +102,33 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
+    val runId by viewModel.runId.collectAsState()
+    val rollbackResult by viewModel.rollbackResult.collectAsState()
+    var rollbackConfirm by remember { mutableStateOf(false) }
+    var rollbackForce by remember { mutableStateOf(false) }
+
+    // 回滚结果：成功/失败弹提示；需要 force 时把确认框升级为「会一并丢弃后续运行」。
+    LaunchedEffect(rollbackResult) {
+        when (val r = rollbackResult) {
+            is RollbackResult.Done -> {
+                rollbackConfirm = false
+                rollbackForce = false
+                snackbarHostState.showSnackbar("已回滚到本轮之前（对话未回退）")
+                viewModel.consumeRollbackResult()
+            }
+            is RollbackResult.NeedForce -> {
+                rollbackForce = true
+                viewModel.consumeRollbackResult()
+            }
+            is RollbackResult.Failed -> {
+                rollbackConfirm = false
+                rollbackForce = false
+                snackbarHostState.showSnackbar(r.message)
+                viewModel.consumeRollbackResult()
+            }
+            null -> Unit
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -149,6 +178,9 @@ fun ChatScreen(
                 },
                 actions = {
                     contextUsage?.let { ContextIndicator(it) }
+                    if (!streaming && runId != null) {
+                        TextButton(onClick = { rollbackConfirm = true }) { Text("回滚") }
+                    }
                     TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
                 },
             )
@@ -205,6 +237,36 @@ fun ChatScreen(
             submitting = permissionSubmitting,
             inputError = permissionInputError,
             onDecide = viewModel::decidePermission,
+        )
+    }
+
+    if (rollbackConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                rollbackConfirm = false
+                rollbackForce = false
+            },
+            title = { Text(if (rollbackForce) "仍要回滚？" else "回滚此运行？") },
+            text = {
+                Text(
+                    if (rollbackForce) {
+                        "该运行之后还有更晚的运行，回滚会把它们一并丢弃。文件恢复到本轮之前，agent 对话不回退。"
+                    } else {
+                        "文件将恢复到本轮运行之前，该轮及之后的文件改动会被覆盖。agent 对话不会回退，此操作难以撤销。"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.rollback(rollbackForce) }) { Text("确认回滚") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        rollbackConfirm = false
+                        rollbackForce = false
+                    },
+                ) { Text("取消") }
+            },
         )
     }
 

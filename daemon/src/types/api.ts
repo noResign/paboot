@@ -134,6 +134,14 @@ export interface PermissionGrantDto {
   createdAt: number;
 }
 
+/** Per-run workspace checkpoint. `status`: complete | unavailable | rolled_back. */
+export interface RunCheckpointDto {
+  status: string;
+  repoRoot: string;
+  preRef: string | null;
+  postRef: string | null;
+}
+
 export interface RunDto {
   id: string;
   sessionId: string;
@@ -146,6 +154,16 @@ export interface RunDto {
   endedAt: number | null;
   exitCode: number | null;
   error: string | null;
+  /** Present when the run's repo could be snapshotted; lets clients diff/roll back. */
+  checkpoint?: RunCheckpointDto | null;
+}
+
+/** `POST /api/runs/:id/rollback` response. */
+export interface RunRollbackResponse {
+  ok: boolean;
+  rolledBackRuns: number;
+  /** The file tree rewound; the agent's conversation did not. */
+  conversationRewound: false;
 }
 
 /** ---- deploy ---- */
@@ -232,6 +250,8 @@ export interface ChangesResponse {
   roots: string[];
   /** Browse-only bookmarks; not roots, grant nothing. See `WorkspaceDto.shortcutDirs`. */
   shortcutDirs: string[];
+  /** Set when the request was scoped to a run's `pre..post` checkpoint diff. */
+  runId?: string;
   isGitRepo: boolean;
   gitRoot: string | null;
   /** Git repos among `dir`'s direct children; only filled when `isGitRepo` is false. */

@@ -47,6 +47,14 @@ sealed class SessionPermissionsUiState {
     data class Error(val message: String) : SessionPermissionsUiState()
 }
 
+/** 回滚一次尝试的结果，供聊天页弹提示 / 升级为带 force 的二次确认。 */
+sealed interface RollbackResult {
+    data object Done : RollbackResult
+    /** 该 run 之后还有更晚的 run，需要 `force` 才能一并丢弃。 */
+    data object NeedForce : RollbackResult
+    data class Failed(val message: String) : RollbackResult
+}
+
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
     private val sessionRepository: SessionRepository = SessionRepository(),
@@ -110,6 +118,9 @@ class ChatViewModel(
 
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
+
+    private val _rollbackResult = MutableStateFlow<RollbackResult?>(null)
+    val rollbackResult = _rollbackResult.asStateFlow()
 
     private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
     val sessionPermissions = _sessionPermissions.asStateFlow()
@@ -730,6 +741,25 @@ class ChatViewModel(
 
     fun consumeError() {
         _error.value = null
+    }
+
+    /**
+     * 回滚工作区到该 run 之前（破坏性）。`later_runs_exist` 时不要 force 直接重试，
+     * 交给 UI 二次确认后再 `rollback(force = true)`。
+     */
+    fun rollback(force: Boolean = false) {
+        val rid = _runId.value ?: return
+        viewModelScope.launch {
+            _rollbackResult.value = when (val r = repository.rollbackRun(rid, force)) {
+                is NetworkResult.Success -> RollbackResult.Done
+                is NetworkResult.Error ->
+                    if (r.apiCode == "later_runs_exist") RollbackResult.NeedForce else RollbackResult.Failed(r.message)
+            }
+        }
+    }
+
+    fun consumeRollbackResult() {
+        _rollbackResult.value = null
     }
 
     override fun onCleared() {
