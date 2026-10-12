@@ -51,7 +51,7 @@
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
 | `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
-| `POST /api/chat` | 是 | 发指令，返回 SSE 流。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
+| `POST /api/chat` | 是 | 发指令，返回 SSE 流。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
@@ -115,11 +115,16 @@ tool_result | usage | turn_end | error | permission_request | question
 content 说明未返回结果）。客户端因此可以把「没有配对的 tool_use」一律当成"仍在运行"，不必各自兜底；
 历史回放读到的也是同一份自洽的流。
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode?, commandId? }`。
 
 - 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
 - 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
 - `permissionMode` 是 Session 级配置，切换后只影响后续 Run。
+- **幂等（`commandId`）**：客户端可为一次「发送」生成一个 `commandId` 并随重试一并发回。daemon 把
+  它记在 `runs.command_id`（唯一）。同一个 `commandId` 再次到达时，**重连到它已经起的那个 run**
+  （回放 + 续直播，等价于 `GET /api/runs/:id/stream`），而不是起第二个 run——覆盖「响应丢失后重发」
+  和「弱网重试」两种场景。此检查排在 Session 守卫之前：重试无论原 run 仍在跑还是已结束都要重连。
+  同一 `commandId` 用于**不同 Session** → 409 `command_id_conflict`。不传 `commandId` 则每次请求都起新 run（旧行为）。
 - **一个 Session 同时只跑一个 Run**：该 Session 已有在跑的 run 时，请求返回 409
   `session_busy`（响应带 `runId`，即正在跑的那个）。否则第二个 run 会 `--resume` 同一个
   native session id，两个 agent 进程写同一份会话记录。客户端在 run 期间禁用发送只是礼貌，

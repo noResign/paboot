@@ -64,6 +64,7 @@ export interface RunRow {
   ended_at: number | null;
   exit_code: number | null;
   error: string | null;
+  command_id: string | null;
 }
 
 export interface EventRow {
@@ -132,7 +133,8 @@ export class Db {
         started_at INTEGER NOT NULL,
         ended_at INTEGER,
         exit_code INTEGER,
-        error TEXT
+        error TEXT,
+        command_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS events (
@@ -214,6 +216,11 @@ export class Db {
     this.ensureColumn('sessions', 'workspace_id', 'TEXT');
     this.ensureColumn('sessions', 'permission_mode', "TEXT NOT NULL DEFAULT 'ask'");
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions (workspace_id, last_active_at DESC);`);
+    // A client-supplied command id makes `POST /api/chat` idempotent: a retry
+    // (dropped response, flaky link) re-attaches to the run it already started
+    // instead of starting a second one. NULL for callers that don't send one.
+    this.ensureColumn('runs', 'command_id', 'TEXT');
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
     // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
     // 会留下重复行，tab 行上于是出现两个相同目录。`addWorkspaceDir` 现在顺手删书签，
@@ -629,13 +636,23 @@ export class Db {
     model: string | null;
     prompt: string;
     status: string;
+    commandId?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, status, prompt, started_at, ended_at, exit_code, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
+        `INSERT INTO runs (id, session_id, runtime, model, status, prompt, started_at, ended_at, exit_code, error, command_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
       )
-      .run(input.id, input.sessionId, input.runtime, input.model, input.status, input.prompt, Date.now());
+      .run(
+        input.id,
+        input.sessionId,
+        input.runtime,
+        input.model,
+        input.status,
+        input.prompt,
+        Date.now(),
+        input.commandId ?? null,
+      );
   }
 
   updateRun(
@@ -657,6 +674,11 @@ export class Db {
 
   getRun(id: string): RunRow | undefined {
     return this.db.prepare(`SELECT * FROM runs WHERE id = ?`).get(id) as unknown as RunRow | undefined;
+  }
+
+  /** The run a client command id already started, if any (see `createRun`). */
+  getRunByCommandId(commandId: string): RunRow | undefined {
+    return this.db.prepare(`SELECT * FROM runs WHERE command_id = ?`).get(commandId) as unknown as RunRow | undefined;
   }
 
   /**

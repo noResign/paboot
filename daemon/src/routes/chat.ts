@@ -7,6 +7,7 @@ import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
 import { activeRunIdForSession } from '../session-runs.js';
+import { streamRunToResponse } from './runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
 import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
 
@@ -20,6 +21,12 @@ interface ChatBody {
   runtime?: string;
   /** Product permission mode: ask | acceptEdits | bypass. Only used for new sessions. */
   permissionMode?: string;
+  /**
+   * Idempotency key. A retry carrying the same id re-attaches to the run it
+   * already started instead of starting a second one. Optional — omit and every
+   * request starts a fresh run.
+   */
+  commandId?: string;
 }
 
 /**
@@ -42,6 +49,24 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     if (body.permissionMode !== undefined && !isProductPermissionMode(body.permissionMode)) {
       res.status(400).json({ error: 'permissionMode must be ask, acceptEdits or bypass', code: 'bad_request' });
       return;
+    }
+
+    // Idempotency: if this command already started a run, re-attach to it rather
+    // than starting a second one. Checked before the session/busy guards, since
+    // a retry must attach whether the original run is still live or finished.
+    const commandId = typeof body.commandId === 'string' && body.commandId.trim() ? body.commandId.trim() : undefined;
+    if (commandId) {
+      const existing = ctx.db.getRunByCommandId(commandId);
+      if (existing) {
+        // Reusing a command id for a different session would stream a run the
+        // caller never asked for; refuse instead of silently reporting it.
+        if (body.sessionId && existing.session_id !== body.sessionId) {
+          res.status(409).json({ error: 'commandId already used for another session', code: 'command_id_conflict' });
+          return;
+        }
+        streamRunToResponse(ctx, existing, 0, res);
+        return;
+      }
     }
 
     // Resolve or create the session, and decide resume vs. fresh-start.
@@ -170,7 +195,15 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('chat', JSON.stringify({ sessionId: session.id, runtime, model: model ?? null }));
 
     const runId = randomUUID();
-    ctx.db.createRun({ id: runId, sessionId: session.id, runtime, model: model ?? null, prompt, status: 'running' });
+    ctx.db.createRun({
+      id: runId,
+      sessionId: session.id,
+      runtime,
+      model: model ?? null,
+      prompt,
+      status: 'running',
+      commandId: commandId ?? null,
+    });
 
     res.writeHead(200, sseHeaders());
     res.write(': connected\n\n');
