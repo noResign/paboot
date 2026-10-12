@@ -1,5 +1,6 @@
 import { claudeAdapter } from './claude/adapter.js';
 import { detectCodex } from './codex/detect.js';
+import type { RuntimeDriver } from './RuntimeDriver.js';
 import type { RuntimeAdapter, RuntimeDetection } from './types.js';
 
 /**
@@ -19,13 +20,17 @@ export interface RuntimeDetector {
 }
 
 export interface Registry {
-  /** The linear (argv-based) adapter, when the runtime has one. */
-  get(id: string): RuntimeAdapter | undefined;
+  /** argv-driven runtimes, for wiring their drivers at bootstrap. */
+  adapters(): RuntimeAdapter[];
   list(): Array<Pick<RuntimeAdapter, 'id' | 'name' | 'bin'>>;
   /** Probe a runtime and cache the detection. */
   detect(id: string, env: NodeJS.ProcessEnv): Promise<RuntimeDetection | undefined>;
   /** Return the cached detection without re-probing. */
   detection(id: string): RuntimeDetection | undefined;
+  /** Register the execution driver for a runtime id (argv or RPC). */
+  registerDriver(driver: RuntimeDriver): void;
+  /** The driver for a runtime, if one is registered. */
+  driver(id: string): RuntimeDriver | undefined;
 }
 
 const DETECTORS: RuntimeDetector[] = [
@@ -34,21 +39,23 @@ const DETECTORS: RuntimeDetector[] = [
 
 /**
  * Runtime registry. Claude enters through `RuntimeAdapter`; Codex enters
- * through `RuntimeDetector` because it is driven over RPC. The chat route
- * decides which engine to use by runtime id, not by which map answered here.
+ * through `RuntimeDetector` because it is driven over RPC. Detection (is it
+ * installed? which models?) is orthogonal to driving: every runtime is
+ * probeable, and drivers are registered separately by id.
  */
 export function createRegistry(): Registry {
   const adapters = new Map<string, RuntimeAdapter>();
   const detectors = new Map<string, RuntimeDetector>();
   const detections = new Map<string, RuntimeDetection>();
+  const drivers = new Map<string, RuntimeDriver>();
 
   adapters.set(claudeAdapter.id, claudeAdapter);
   for (const detector of DETECTORS) detectors.set(detector.id, detector);
   // Future: adapters.set(deepseekHarnessAdapter.id, deepseekHarnessAdapter);
 
   return {
-    get(id) {
-      return adapters.get(id);
+    adapters() {
+      return [...adapters.values()];
     },
     list() {
       return [...adapters.values(), ...detectors.values()];
@@ -62,6 +69,12 @@ export function createRegistry(): Registry {
     },
     detection(id) {
       return detections.get(id);
+    },
+    registerDriver(driver) {
+      drivers.set(driver.id, driver);
+    },
+    driver(id) {
+      return drivers.get(id);
     },
   };
 }

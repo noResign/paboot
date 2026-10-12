@@ -2,14 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
-import { startRun } from '../runtimes/engine.js';
-import { startCodexRun } from '../runtimes/codex/session.js';
 import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
 import { activeRunIdForSession } from '../session-runs.js';
-import { getDefaultPermissionMode, isProductPermissionMode, toClaudePermissionMode, type ProductPermissionMode } from '../permission-mode.js';
+import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
 import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
 
 interface ChatBody {
@@ -80,11 +78,11 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    // Codex has no `RuntimeAdapter` — it is driven over RPC, not argv — so
-    // "has an adapter" is not the test for "is a known runtime".
-    const isCodex = runtime === 'codex';
-    const adapter = ctx.registry.get(runtime);
-    if (!adapter && !isCodex) {
+    // The execution seam is the registered driver; argv (Claude) and RPC
+    // (Codex) runtimes both provide one. The route never branches on the
+    // runtime name — an unknown runtime is simply one without a driver.
+    const driver = ctx.registry.driver(runtime);
+    if (!driver) {
       res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
       return;
     }
@@ -136,15 +134,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       importedTitle = found.summary || null;
     }
 
-    let resumeSessionId: string | undefined;
-    let newSessionId: string | undefined;
-    // Claude takes a host-chosen `--session-id`; Codex allocates its own thread
-    // id and reports it after `thread/start`, so there is nothing to pre-make.
-    const hostPicksSessionId = runtime !== 'codex';
+    // A session with a native id resumes it. Otherwise the driver decides how
+    // the session gets named — a host-picking runtime (Claude `--session-id`)
+    // names it up front; one that allocates its own (Codex) reports it later.
+    let resumeNativeSessionId: string | undefined;
     if (!session) {
       const id = randomUUID();
       if (body.claudeSessionId && importedCwd) {
-        resumeSessionId = body.claudeSessionId;
+        resumeNativeSessionId = body.claudeSessionId;
         session = ctx.db.createSession({
           id,
           runtime,
@@ -155,24 +152,17 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           title: importedTitle ?? null,
         });
       } else {
-        newSessionId = hostPicksSessionId ? randomUUID() : undefined;
         session = ctx.db.createSession({
           id,
           runtime,
           workspaceId: workspace.id,
           permissionMode: sessionPermissionMode,
           cwd: workspace.path,
-          native_session_id: newSessionId ?? null,
           title: titleFromPrompt(prompt),
         });
       }
-    } else if (!session.native_session_id) {
-      if (hostPicksSessionId) {
-        newSessionId = randomUUID();
-        ctx.db.setNativeSessionId(session.id, newSessionId);
-      }
-    } else {
-      resumeSessionId = session.native_session_id;
+    } else if (session.native_session_id) {
+      resumeNativeSessionId = session.native_session_id;
     }
     ctx.db.touchWorkspace(workspace.id);
 
@@ -208,9 +198,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
 
     send({ type: 'status', label: 'starting', runtime, sessionId: session.id });
 
-    const daemonHost = ['0.0.0.0', '::'].includes(ctx.config.host) ? '127.0.0.1' : ctx.config.host;
-    const daemonUrl = `${ctx.config.tls ? 'https' : 'http'}://${daemonHost}:${ctx.config.port}`;
-
     // Roots this session may touch without an ask: the workspace's primary dir
     // plus every dir granted to it. `--add-dir` covers the ones that aren't the
     // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
@@ -226,51 +213,21 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     // Captured so the closure below keeps the narrowed, non-optional session.
     const sessionId = session.id;
 
-    const active = adapter
-      ? startRun({
-          id: runId,
-          adapter,
-          prompt,
-          cwd: session.cwd,
-          model,
-          resumeSessionId,
-          newSessionId,
-          permissionMode: toClaudePermissionMode(sessionPermissionMode),
-          capabilities: detection.capabilities,
-          env: process.env,
-          extraDirs,
-          permissionHook:
-            sessionPermissionMode === 'bypass'
-              ? undefined
-              : {
-                  hookPath: ctx.hookPath,
-                  daemonUrl,
-                  token: ctx.config.token,
-                  timeoutMs: ctx.config.permissionTimeoutMs,
-                  matcher:
-                    sessionPermissionMode === 'ask'
-                      ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
-                      : 'Bash|mcp__.*',
-                },
-          idleTimeoutMs: ctx.config.runIdleTimeoutMs,
-          onEvent: send,
-        })
-      : startCodexRun({
-          id: runId,
-          sessionId,
-          prompt,
-          cwd: session.cwd,
-          model,
-          resumeThreadId: resumeSessionId,
-          extraDirs,
-          // Codex picks its own thread id; persist it so the next run resumes.
-          onNativeSessionId: (threadId) => ctx.db.setNativeSessionId(sessionId, threadId),
-          permissionMode: sessionPermissionMode,
-          env: process.env,
-          idleTimeoutMs: ctx.config.runIdleTimeoutMs,
-          deps: { permissions: ctx.permissions, notifier: ctx.notifier, db: ctx.db },
-          onEvent: send,
-        });
+    const active = driver.start({
+      runId,
+      sessionId,
+      prompt,
+      cwd: session.cwd,
+      model,
+      permissionMode: sessionPermissionMode,
+      resumeNativeSessionId,
+      // The driver reports the session's native id once known: a host-picking
+      // runtime names it up front, a self-allocating one (Codex) when the
+      // provider reports it.
+      onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
+      extraDirs,
+      onEvent: send,
+    });
 
     ctx.notifier.register(runId, send);
 

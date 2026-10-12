@@ -49,7 +49,9 @@ function makeCtx(db: Db): AppContext {
   return {
     db,
     registry: {
-      get: () => ({}),
+      // A known runtime (has a driver) that is unavailable, so a request past
+      // the session guard stops at a deterministic 503.
+      driver: () => ({}),
       detection: () => ({ available: false }),
       detect: async () => ({ available: false }),
     },

@@ -9,6 +9,7 @@ import { Db } from '../src/db';
 import type { AppContext } from '../src/context';
 import { PermissionManager } from '../src/permissions';
 import { RunNotifier } from '../src/run-notifier';
+import { registerRuntimeDrivers } from '../src/runtimes/drivers';
 import { createRegistry } from '../src/runtimes/registry';
 import { defaultCapabilities } from '../src/runtimes/types';
 import { getActiveRun, listActiveRuns } from '../src/runtimes/active-runs';
@@ -84,6 +85,7 @@ async function api(config: Record<string, unknown> = {}) {
     db, registry, permissions: new PermissionManager(), notifier: new RunNotifier(),
     config: { permissionMode: 'default', host: '127.0.0.1', port: 1, runIdleTimeoutMs: 0, ...config },
   } as unknown as AppContext;
+  registerRuntimeDrivers(registry, ctx);
   const app = express();
   app.use(express.json());
   registerChatRoutes(app, ctx);

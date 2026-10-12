@@ -1,7 +1,11 @@
-/** Runtime-independent lifecycle used by cancellation, discovery and replay. */
-export interface ManagedRun {
+/**
+ * Runtime-independent lifecycle used by cancellation, discovery and replay.
+ * Generic over the outcome so a caller that awaits `promise` keeps the run's
+ * result type; the registry-wide map stores them with the outcome erased.
+ */
+export interface ManagedRun<O = unknown> {
   id: string;
-  promise: Promise<unknown>;
+  promise: Promise<O>;
   cancel(reason?: string): void;
 }
 

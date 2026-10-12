@@ -11,6 +11,7 @@ import { listLocalAddresses } from './network.js';
 import { PermissionManager } from './permissions.js';
 import { fromLegacyPermissionMode } from './permission-mode.js';
 import { RunNotifier } from './run-notifier.js';
+import { registerRuntimeDrivers } from './runtimes/drivers.js';
 import { createRegistry } from './runtimes/registry.js';
 import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './runtime-info.js';
 import { startServer } from './server.js';
@@ -139,6 +140,10 @@ async function main(): Promise<void> {
     notifier,
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
   };
+
+  // Register the execution driver for each runtime (argv and RPC alike) now
+  // that the daemon services they depend on exist.
+  registerRuntimeDrivers(registry, ctx);
 
   const server = startServer(ctx);
   printConnectInfo(config);
