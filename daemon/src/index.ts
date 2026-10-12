@@ -99,6 +99,11 @@ async function main(): Promise<void> {
   const { Db } = await import('./db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
   db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode), config.workspaceSource);
+  // Runs are only ever `running` while a process is live. After a restart the
+  // active-run registry is empty, so anything still `running` is a run the
+  // previous process left behind — reconcile it before serving requests.
+  const orphanedRuns = db.interruptOrphanedRuns('daemon restarted while the run was in flight');
+  if (orphanedRuns > 0) log.warn(`interrupted ${orphanedRuns} orphaned run(s) left by a previous process`);
   const registry = createRegistry();
 
   log.info('paboot daemon starting');

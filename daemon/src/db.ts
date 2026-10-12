@@ -659,6 +659,33 @@ export class Db {
     return this.db.prepare(`SELECT * FROM runs WHERE id = ?`).get(id) as unknown as RunRow | undefined;
   }
 
+  /**
+   * Mark every run still `running` as `interrupted`, and append a terminal
+   * `status` frame to each so its persisted stream stays well-formed for a
+   * reconnect. Called once at boot: the in-memory active-run registry starts
+   * empty, so a run the DB still calls `running` has no process behind it (the
+   * daemon died mid-run) and would otherwise read as "running" forever.
+   * Returns how many runs were repaired.
+   */
+  interruptOrphanedRuns(reason: string): number {
+    const rows = this.db
+      .prepare(`SELECT id FROM runs WHERE status = 'running'`)
+      .all() as unknown as Array<{ id: string }>;
+    if (rows.length === 0) return 0;
+
+    const now = Date.now();
+    const mark = this.db.prepare(
+      `UPDATE runs SET status = 'interrupted', ended_at = ?, error = ? WHERE id = ?`,
+    );
+    const nextSeq = this.db.prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM events WHERE run_id = ?`);
+    for (const row of rows) {
+      mark.run(now, reason, row.id);
+      const seq = (nextSeq.get(row.id) as unknown as { seq: number }).seq;
+      this.appendEvent(row.id, seq, 'status', { type: 'status', label: 'interrupted', terminal: true });
+    }
+    return rows.length;
+  }
+
   listRuns(sessionId: string): RunRow[] {
     return this.db
       .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC`)
