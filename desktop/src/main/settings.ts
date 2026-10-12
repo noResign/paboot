@@ -26,6 +26,15 @@ interface StoredConnection {
   tokenEnc?: string;
 }
 
+/** Last window geometry, so a restart reopens where the user left it. */
+export interface WindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  maximized: boolean;
+}
+
 interface SettingsFile {
   /** Every daemon the user has connected to; main keeps them all alive (§4). */
   connections: StoredConnection[];
@@ -33,6 +42,8 @@ interface SettingsFile {
   activeConnectionId: string | null;
   recent: RecentConnection[];
   prefs: AppPrefs;
+  /** Last window geometry; null until the window has been sized once. */
+  windowBounds: WindowBounds | null;
 }
 
 const EMPTY: SettingsFile = {
@@ -40,6 +51,7 @@ const EMPTY: SettingsFile = {
   activeConnectionId: null,
   recent: [],
   prefs: { closeBehavior: 'ask', desktopNotifications: true, daemonOnQuit: 'ask' },
+  windowBounds: null,
 };
 const MAX_RECENT = 5;
 
@@ -66,6 +78,7 @@ function read(): SettingsFile {
       activeConnectionId: parsed.activeConnectionId ?? null,
       recent: Array.isArray(parsed.recent) ? parsed.recent : [],
       prefs: { ...EMPTY.prefs, ...(parsed.prefs ?? {}) },
+      windowBounds: parsed.windowBounds ?? null,
     };
   } catch {
     return { ...EMPTY };
@@ -194,4 +207,15 @@ export function savePrefs(patch: Partial<AppPrefs>): AppPrefs {
   file.prefs = { ...file.prefs, ...patch };
   write(file);
   return file.prefs;
+}
+
+/** Last window geometry, or null on a first run / after a reset. */
+export function loadWindowBounds(): WindowBounds | null {
+  return read().windowBounds;
+}
+
+export function saveWindowBounds(bounds: WindowBounds): void {
+  const file = read();
+  file.windowBounds = bounds;
+  write(file);
 }

@@ -1,4 +1,5 @@
-import { BrowserWindow, nativeImage, net, protocol, shell, type Session } from 'electron';
+import { BrowserWindow, nativeImage, net, protocol, screen, shell, type Session } from 'electron';
+import { loadWindowBounds, saveWindowBounds, type WindowBounds } from './settings';
 import { existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -127,10 +128,32 @@ export interface WindowOptions {
   onCloseRequested(win: BrowserWindow, event: Electron.Event): void;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/** True when `bounds` still overlaps some connected display's work area. */
+function onSomeDisplay(bounds: WindowBounds): boolean {
+  return screen.getAllDisplays().some(({ workArea }) =>
+    bounds.x < workArea.x + workArea.width &&
+    bounds.x + bounds.width > workArea.x &&
+    bounds.y < workArea.y + workArea.height &&
+    bounds.y + bounds.height > workArea.y,
+  );
+}
+
 export function createWindow(options: WindowOptions): BrowserWindow {
+  // Reopen where the user left it, when that spot is still on a connected
+  // display. Otherwise fall back to a display-relative size: a fixed box is
+  // cramped on a big monitor and overflows a small one, so take 92% of the work
+  // area, capped.
+  const saved = loadWindowBounds();
+  const restore = saved && onSomeDisplay(saved) ? saved : null;
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: restore?.width ?? clamp(Math.round(workArea.width * 0.92), 960, 1600),
+    height: restore?.height ?? clamp(Math.round(workArea.height * 0.92), 640, 1000),
+    ...(restore ? { x: restore.x, y: restore.y } : { center: true }),
     minWidth: 960,
     minHeight: 640,
     show: false,
@@ -146,7 +169,29 @@ export function createWindow(options: WindowOptions): BrowserWindow {
     },
   });
 
+  if (restore?.maximized) win.maximize();
+
   win.on('ready-to-show', () => win.show());
+
+  // Remember geometry for the next launch. move/resize fire continuously, so
+  // persist is debounced; a close flushes immediately.
+  let saveTimer: NodeJS.Timeout | null = null;
+  const persistBounds = (): void => {
+    if (win.isDestroyed()) return;
+    saveWindowBounds({ ...win.getNormalBounds(), maximized: win.isMaximized() });
+  };
+  const scheduleSave = (): void => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistBounds, 400);
+  };
+  win.on('resize', scheduleSave);
+  win.on('move', scheduleSave);
+  win.on('maximize', scheduleSave);
+  win.on('unmaximize', scheduleSave);
+  win.on('close', () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    persistBounds();
+  });
 
   // Closing the window is not quitting the app (the tray keeps it alive and
   // runs continue on the daemon); the decision belongs to the caller.
