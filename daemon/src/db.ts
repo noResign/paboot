@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { WorkspaceSource } from './config.js';
 
-/** Setting key: `--workspace` has already been seeded once. */
+/** Setting key: the `env` / `cwd` startup workspace has already been seeded once. */
 const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
 
 export interface SessionRow {
@@ -332,15 +333,23 @@ export class Db {
   // ---- workspaces ----
 
   /**
-   * Register `--workspace` as the starting Workspace, once per install, and
-   * backfill legacy sessions.
+   * Register the startup Workspace and backfill legacy sessions.
    *
-   * `--workspace` is a seed, not a guarantee: a workspace the user deleted is
-   * not resurrected on the next start (and a directory that no longer exists
-   * cannot make startup throw). A fresh client can always add one back.
+   * An explicit `--workspace` (`source: 'flag'`) is **authoritative**: the dir the
+   * user named must be the default workspace, so it is re-asserted on every
+   * start — an earlier run (or a hand-started daemon) must never lock the default
+   * to wherever it happened to launch from. `env` / `default` (cwd) keep the old
+   * one-time-seed semantics: a workspace the user deleted is not resurrected on
+   * the next start (nor can a directory that no longer exists make startup throw).
    */
-  seedDefaultWorkspace(rawPath: string, defaultPermissionMode: string): WorkspaceRow | null {
-    if (!this.getSetting(SEEDED_WORKSPACE_KEY)) {
+  seedDefaultWorkspace(
+    rawPath: string,
+    defaultPermissionMode: string,
+    source: WorkspaceSource = 'default',
+  ): WorkspaceRow | null {
+    if (source === 'flag') {
+      this.ensureWorkspaceDefault(rawPath);
+    } else if (!this.getSetting(SEEDED_WORKSPACE_KEY)) {
       if (this.listWorkspaces().length === 0) {
         const realPath = fs.realpathSync(path.resolve(rawPath));
         this.createWorkspace({
@@ -369,6 +378,22 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET permission_mode = ? WHERE permission_mode IS NULL OR permission_mode = ''`).run(defaultPermissionMode);
 
     return workspace;
+  }
+
+  /**
+   * Make `rawPath` the default workspace, creating it if absent and re-enabling
+   * it if it had been disabled. The directory itself is created by `loadConfig`
+   * before this runs, so `realpathSync` sees it.
+   */
+  private ensureWorkspaceDefault(rawPath: string): void {
+    const realPath = fs.realpathSync(path.resolve(rawPath));
+    const existing = this.getWorkspaceByPath(realPath);
+    if (!existing) {
+      this.createWorkspace({ name: path.basename(realPath) || realPath, path: realPath, isDefault: true });
+      return;
+    }
+    if (existing.enabled !== 1) this.updateWorkspace(existing.id, { enabled: true });
+    if (existing.is_default !== 1) this.setDefaultWorkspace(existing.id);
   }
 
   createWorkspace(input: { id?: string; name: string; path: string; isDefault?: boolean }): WorkspaceRow {

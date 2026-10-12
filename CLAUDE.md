@@ -137,8 +137,10 @@ paboot/
   经 PreToolUse hook 转发到客户端审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
   持久化 grant，默认拒绝、超时自动拒绝。**读（`Read`/`Grep`）不门控**——读工作区外不审批、
   不加目录；工作区边界只约束写入。
-- **工作空间**：`--workspace` 只在工作区表为空时注册一次（首次安装），删掉的工作区不会在重启后回来；
-  客户端可新增/切换 Workspace。删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；
+- **工作空间**：显式 `--workspace` 是**权威值**——每次启动都确保该目录存在并设为默认 Workspace
+  （桌面端从连接页启动 daemon 走的就是这条）；`PABOOT_WORKSPACE` / 无参（cwd）只在工作区表为空时
+  注册一次（首次安装），删掉的工作区不会在重启后回来。客户端可新增/切换 Workspace。
+  删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；
   **默认工作区不可删**（要删先设别的为默认，顺带保证最后一个工作区删不掉）。
   Session 绑定 `workspace_id + cwd`，cwd 必须位于所属 Workspace 内。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，

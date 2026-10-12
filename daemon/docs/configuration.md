@@ -13,7 +13,7 @@
 |---|---|---|
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
-| `--workspace <path>` | 当前目录 | 初始 Workspace 根目录（首次启动注册为默认 Workspace） |
+| `--workspace <path>` | 当前目录 | 初始 Workspace 根目录。**显式传入时是权威值**：每次启动都确保该目录存在并设为默认 Workspace |
 | `--data-dir <path>` | `~/.paboot` | 数据根（SQLite + token + `daemon_runtime.json`） |
 | `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
 | `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
@@ -27,7 +27,7 @@
 |---|---|---|
 | `PABOOT_HOST` | `0.0.0.0` | 监听地址 |
 | `PABOOT_PORT` | `4780` | 端口 |
-| `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录（首次启动注册为默认 Workspace） |
+| `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
 | `PABOOT_DATA_DIR` | `~/.paboot` | 数据根 |
 | `PABOOT_TOKEN` | 自动生成 | 鉴权密钥 |
 | `PABOOT_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |

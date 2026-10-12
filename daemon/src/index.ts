@@ -97,7 +97,7 @@ async function main(): Promise<void> {
   // (and don't print Node's experimental-sqlite warning on stderr).
   const { Db } = await import('./db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
-  db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode));
+  db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode), config.workspaceSource);
   const registry = createRegistry();
 
   log.info('paboot daemon starting');

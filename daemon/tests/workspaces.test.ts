@@ -1,14 +1,26 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Db } from '../src/db';
 import { existingDirs, workspaceContains, workspaceContainsAny, workspaceRoots } from '../src/workspace-service';
 
 const dbs: Db[] = [];
+const tmpDirs: string[] = [];
 
 function openDb(): Db {
   const db = new Db(':memory:');
   dbs.push(db);
   return db;
+}
+
+/** A real directory under a fresh temp root — `seedDefaultWorkspace` realpaths it. */
+function tmpDir(name: string): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-ws-'));
+  tmpDirs.push(root);
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /** Seed the startup workspace, asserting one was actually created. */
@@ -20,6 +32,7 @@ function seed(db: Db) {
 
 afterEach(() => {
   for (const db of dbs.splice(0)) db.close();
+  for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 describe('Db workspaces + permissions', () => {
@@ -164,8 +177,8 @@ describe('workspace browse shortcuts', () => {
   });
 });
 
-describe('startup workspace seeding', () => {
-  // `--workspace` 是「首次安装的种子」而不是「每次启动都要存在」：以前每次启动都
+describe('startup workspace seeding (env / cwd source)', () => {
+  // env / cwd 来源是「首次安装的种子」而不是「每次启动都要存在」：以前每次启动都
   // 重建，用户删掉默认工作区后重启它又回来了。
   it('does not resurrect a deleted workspace on the next start', () => {
     const db = openDb();
@@ -189,5 +202,47 @@ describe('startup workspace seeding', () => {
     expect(db.seedDefaultWorkspace(process.cwd(), 'ask')?.id).toBe(other.id);
     expect(db.getDefaultWorkspace()?.id).toBe(other.id);
     expect(db.listWorkspaces().map((w) => w.id)).toEqual([other.id]);
+  });
+});
+
+describe('--workspace flag is authoritative', () => {
+  // 连接页填的目录(显式 --workspace)必须每次都成为默认工作区，否则一次更早的
+  // 运行会把默认永久锁死到它启动时所在的目录——真实事故：初次使用填了完整路径，
+  // 设置页却一直显示启动目录(home)。
+  it('repoints the default to the flag dir even when another default exists', () => {
+    const db = openDb();
+    const home = tmpDir('home');
+    const proj = tmpDir('proj');
+    const seeded = db.seedDefaultWorkspace(home, 'ask');
+    expect(db.getDefaultWorkspace()?.id).toBe(seeded?.id);
+
+    const flagged = db.seedDefaultWorkspace(proj, 'ask', 'flag');
+    expect(db.getDefaultWorkspace()?.id).toBe(flagged?.id);
+    expect(db.getWorkspaceByPath(fs.realpathSync(proj))?.id).toBe(flagged?.id);
+    // 旧的还在，只是不再是默认。
+    const paths = db.listWorkspaces().map((w) => w.path).sort();
+    expect(paths).toEqual([fs.realpathSync(home), fs.realpathSync(proj)].sort());
+  });
+
+  it('reuses the existing row instead of adding a duplicate', () => {
+    const db = openDb();
+    const dir = tmpDir('proj');
+    const first = db.seedDefaultWorkspace(dir, 'ask', 'flag');
+    const again = db.seedDefaultWorkspace(dir, 'ask', 'flag');
+    expect(again?.id).toBe(first?.id);
+    expect(db.listWorkspaces()).toHaveLength(1);
+  });
+
+  it('re-enables a disabled default so the flag dir is usable again', () => {
+    const db = openDb();
+    const dir = tmpDir('proj');
+    const ws = db.seedDefaultWorkspace(dir, 'ask', 'flag');
+    db.updateWorkspace(ws!.id, { enabled: false });
+    expect(db.getDefaultWorkspace()).toBeUndefined();
+
+    const again = db.seedDefaultWorkspace(dir, 'ask', 'flag');
+    expect(again?.id).toBe(ws?.id);
+    expect(db.getWorkspace(ws!.id)?.enabled).toBe(1);
+    expect(db.getDefaultWorkspace()?.id).toBe(ws?.id);
   });
 });

@@ -8,12 +8,21 @@ export interface TlsConfig {
   key: string;
 }
 
+/** Where the initial workspace came from — see {@link Config.workspaceSource}. */
+export type WorkspaceSource = 'flag' | 'env' | 'default';
+
 export interface Config {
   host: string;
   port: number;
   dataDir: string;
   /** 初始 Workspace 根目录；首次启动时注册为默认 Workspace，之后可在手机上切换/新增。 */
   workspace: string;
+  /**
+   * 初始 workspace 的来源。`flag`(显式 `--workspace`)是**权威值**——每次启动都
+   * 确保该目录存在并设为默认工作区;`env` / `default`(cwd) 只是首次安装的一次性
+   * 种子,沿用旧语义(删掉的工作区不会重启后复活)。
+   */
+  workspaceSource: WorkspaceSource;
   token: string;
   tokenPath: string;
   tokenGenerated: boolean;
@@ -111,6 +120,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
   // in directly. It defaults to the daemon's own cwd, so `cd <project> &&
   // paboot` makes that project the workspace.
   const workspace = path.resolve(overrides.workspace ?? env.PABOOT_WORKSPACE ?? process.cwd());
+  const workspaceSource: WorkspaceSource =
+    overrides.workspace !== undefined ? 'flag' : env.PABOOT_WORKSPACE?.trim() ? 'env' : 'default';
   fs.mkdirSync(workspace, { recursive: true });
 
   const { token: resolvedToken, tokenPath, generated, source } = resolveToken(env, dataDir);
@@ -127,6 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     port,
     dataDir,
     workspace,
+    workspaceSource,
     token,
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,
