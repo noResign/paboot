@@ -47,14 +47,6 @@ sealed class SessionPermissionsUiState {
     data class Error(val message: String) : SessionPermissionsUiState()
 }
 
-/** 回滚一次尝试的结果，供聊天页弹提示 / 升级为带 force 的二次确认。 */
-sealed interface RollbackResult {
-    data object Done : RollbackResult
-    /** 该 run 之后还有更晚的 run，需要 `force` 才能一并丢弃。 */
-    data object NeedForce : RollbackResult
-    data class Failed(val message: String) : RollbackResult
-}
-
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
     private val sessionRepository: SessionRepository = SessionRepository(),
@@ -119,13 +111,6 @@ class ChatViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
-    private val _rollbackResult = MutableStateFlow<RollbackResult?>(null)
-    val rollbackResult = _rollbackResult.asStateFlow()
-
-    /** 本会话的 run 列表（含各自 checkpoint），供「运行」面板逐轮查看/回滚。 */
-    private val _runs = MutableStateFlow<List<RunDto>>(emptyList())
-    val runs = _runs.asStateFlow()
-
     private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
     val sessionPermissions = _sessionPermissions.asStateFlow()
 
@@ -177,7 +162,6 @@ class ChatViewModel(
                         _sessionRuntime.value = session.runtime
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
                         val runningRunId = session.runningRunId
-                        _runs.value = r.data.runs
                         _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
                         if (session.running && runningRunId != null) {
                             attach(runningRunId)
@@ -203,7 +187,7 @@ class ChatViewModel(
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         for (run in runs) {
-            list += ChatUiMessage.User(run.prompt, runId = run.id)
+            list += ChatUiMessage.User(run.prompt)
             if (run.id == runningRunId) {
                 // 运行中：attach() 会追加并续流
                 list += ChatUiMessage.Assistant()
@@ -444,22 +428,9 @@ class ChatViewModel(
         _streaming.value = false
     }
 
-    /**
-     * 新发送的 user 消息在发送时还不知道 run id（首帧 `status` 才带出来）。收到首帧后把
-     * 最后一条无 runId 的 user 消息补上，让「回滚到这次之前」能在运行中/结束后挂上去。
-     */
-    private fun stampLastUserRunId(runId: String) {
-        val current = _messages.value
-        val idx = current.indexOfLast { it is ChatUiMessage.User && it.runId == null }
-        if (idx < 0) return
-        val message = current[idx] as ChatUiMessage.User
-        _messages.value = current.toMutableList().also { it[idx] = message.copy(runId = runId) }
-    }
-
     private fun handleFrame(evt: ChatStreamEvent.Frame) {
         val frame = evt.frame
         _runId.value = frame.runId
-        stampLastUserRunId(frame.runId)
         val e = frame.event
         if (e is NormalizedEvent.Status) e.runtime?.let { _sessionRuntime.value = it }
         if (e is NormalizedEvent.Status && e.sessionId != null && sessionId == null) {
@@ -759,29 +730,6 @@ class ChatViewModel(
 
     fun consumeError() {
         _error.value = null
-    }
-
-    /**
-     * 回滚工作区到 [runId] 之前（破坏性）。`later_runs_exist` 时不直接 force，
-     * 交给 UI 二次确认后再 `rollback(runId, force = true)`。
-     */
-    fun rollback(runId: String, force: Boolean = false) {
-        viewModelScope.launch {
-            when (val r = repository.rollbackRun(runId, force)) {
-                is NetworkResult.Success -> {
-                    _rollbackResult.value = RollbackResult.Done
-                    // 重新加载：run 状态、合成消息、工作区都变了
-                    load(sessionId)
-                }
-                is NetworkResult.Error ->
-                    _rollbackResult.value =
-                        if (r.apiCode == "later_runs_exist") RollbackResult.NeedForce else RollbackResult.Failed(r.message)
-            }
-        }
-    }
-
-    fun consumeRollbackResult() {
-        _rollbackResult.value = null
     }
 
     override fun onCleared() {

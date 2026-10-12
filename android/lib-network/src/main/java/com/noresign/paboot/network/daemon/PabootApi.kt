@@ -16,7 +16,6 @@ import com.noresign.paboot.network.daemon.dto.OkResponse
 import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
 import com.noresign.paboot.network.daemon.dto.RenameRequest
 import com.noresign.paboot.network.daemon.dto.RenameResponse
-import com.noresign.paboot.network.daemon.dto.RollbackRequest
 import com.noresign.paboot.network.daemon.dto.RunsResponse
 import com.noresign.paboot.network.daemon.dto.SessionDetailResponse
 import com.noresign.paboot.network.daemon.dto.SessionPermissionsResponse
@@ -66,10 +65,6 @@ interface PabootApi {
 
     @POST("api/runs/{id}/cancel")
     suspend fun cancelRun(@Path("id") id: String): OkResponse
-
-    /** 破坏性：把工作区回滚到该 run 之前（见 daemon/docs/protocol.md）。 */
-    @POST("api/runs/{id}/rollback")
-    suspend fun rollbackRun(@Path("id") id: String, @Body body: RollbackRequest): OkResponse
 
     @GET("api/runs/{id}/events")
     suspend fun runEvents(@Path("id") id: String, @Query("after") after: Long? = null): EventsResponse

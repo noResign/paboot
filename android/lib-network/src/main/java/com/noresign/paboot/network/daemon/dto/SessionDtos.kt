@@ -42,15 +42,6 @@ data class MessageDto(
     @SerialName("created_at") val createdAt: Long = 0,
 )
 
-/** 每轮 checkpoint（见 daemon/docs/protocol.md）；`preRef` 为空表示不可回滚。 */
-@Serializable
-data class RunCheckpointDto(
-    val status: String = "",
-    val repoRoot: String = "",
-    val preRef: String? = null,
-    val postRef: String? = null,
-)
-
 @Serializable
 data class RunDto(
     val id: String,
@@ -64,7 +55,6 @@ data class RunDto(
     val endedAt: Long? = null,
     val exitCode: Long? = null,
     val error: String? = null,
-    val checkpoint: RunCheckpointDto? = null,
 )
 
 /** `GET /api/runs`（当前运行中的 run 列表）。 */
