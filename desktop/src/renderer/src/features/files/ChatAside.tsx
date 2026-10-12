@@ -1,43 +1,37 @@
 import { useEffect, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
 import { useChat } from '../../store/chat';
+import { RunList } from '../chat/RunList';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
 
+type AsideTab = 'files' | 'runs';
+
 /**
- * 右栏面板 (`desktop_ui_design.md` §2 / §6.8): the changed-files browser beside
- * the conversation, so you can watch what the agent touches without leaving the
- * chat. Selecting a file pushes the viewer in place — a back arrow returns to
- * the list — because 320px is not enough for a list *and* a viewer.
- *
- * The design also lists 待办 and 已授权工具 here; both already surface in the
- * chat itself (todo panel, session-permissions dialog), so the panel starts with
- * the files half (`§6.8`: 「右栏面板先做改动文件」).
+ * 右栏面板 (`desktop_ui_design.md` §2 / §6.8): the changed-files browser and the
+ * run history beside the conversation. The files half can be scoped to a single
+ * run's checkpoint diff; the run half lists every run with per-run actions.
  */
 export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | null; onCollapse(): void }) {
   const width = useAppearance((state) => state.asideWidth);
   const setWidth = useAppearance((state) => state.setAsideWidth);
   const chatVisible = useAppearance((state) => state.chatVisible);
+  const [tab, setTab] = useState<AsideTab>('files');
   const [mode, setMode] = useState<FileMode>('changes');
   const [root, setRoot] = useState<string | null>(null);
   const [selection, setSelection] = useState<FileSelection | null>(null);
-  // Scope 改动 to the latest completed run's checkpoint (`?runId=`). Opt-in and
-  // only offered once a run has settled, so the panel keeps its live-dirty-state
-  // default the rest of the time.
-  const [runScope, setRunScope] = useState(false);
+  // Files scope: an explicitly picked run (from the run list) or the latest
+  // settled run (the 本轮 button). `null` = live dirty state.
+  const [runId, setRunId] = useState<string | null>(null);
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
-  const scopedRunId = chat && chat.phase === 'settled' ? (chat.runId ?? undefined) : undefined;
-  const runId = runScope ? scopedRunId : undefined;
+  const latestRunId = chat && chat.phase === 'settled' ? (chat.runId ?? null) : null;
 
-  useEffect(() => {
-    if (!scopedRunId) setRunScope(false);
-  }, [scopedRunId]);
-
-  // Root and open file are per-workspace; clear them when it changes so the
-  // panel never shows another workspace's (or host's) files.
+  // Root, scope and open file are per-workspace; clear them when it changes so
+  // the panel never shows another workspace's (or host's) state.
   useEffect(() => {
     setRoot(null);
     setSelection(null);
+    setRunId(null);
   }, [workspaceId]);
 
   /** Drag the left edge; the panel is anchored right, so width is the remainder. */
@@ -68,16 +62,43 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             </span>
           </>
         ) : (
-          <span className="title">文件</span>
-        )}
-        {!selection && scopedRunId && (
-          <button
-            className={`btn ghost tiny${runScope ? ' active' : ''}`}
-            onClick={() => setRunScope((value) => !value)}
-            title="只看本轮运行的改动（对比该 run 前后的快照）"
-          >
-            本轮
-          </button>
+          <>
+            <button
+              className={`btn ghost tiny${tab === 'files' ? ' active' : ''}`}
+              onClick={() => setTab('files')}
+            >
+              文件
+            </button>
+            <button
+              className={`btn ghost tiny${tab === 'runs' ? ' active' : ''}`}
+              onClick={() => {
+                setTab('runs');
+                setSelection(null);
+              }}
+            >
+              运行
+            </button>
+            {tab === 'files' &&
+              (runId ? (
+                <button
+                  className="btn ghost tiny active"
+                  title="当前只显示该轮运行的改动；点击恢复工作区实时改动"
+                  onClick={() => setRunId(null)}
+                >
+                  仅该轮 ✕
+                </button>
+              ) : (
+                latestRunId && (
+                  <button
+                    className="btn ghost tiny"
+                    title="只看最近一轮运行的改动"
+                    onClick={() => setRunId(latestRunId)}
+                  >
+                    本轮
+                  </button>
+                )
+              ))}
+          </>
         )}
         <button className="btn ghost tiny aside-close" onClick={onCollapse} title="收起右栏">
           ✕
@@ -85,9 +106,27 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
       </div>
 
       <div className="aside-body">
-        {selection ? (
+        {tab === 'runs' ? (
+          <RunList
+            runs={chat?.runs ?? []}
+            connectionId={chat?.connectionId ?? ''}
+            sessionId={chat?.sessionId ?? null}
+            onViewChanges={(picked) => {
+              setRunId(picked);
+              setSelection(null);
+              setTab('files');
+            }}
+          />
+        ) : selection ? (
           // Always unified here: the panel is far narrower than the split minimum.
-          <FilePane workspaceId={workspaceId} root={root} selection={selection} view="unified" emptyText="" runId={runId} />
+          <FilePane
+            workspaceId={workspaceId}
+            root={root}
+            selection={selection}
+            view="unified"
+            emptyText=""
+            runId={runId ?? undefined}
+          />
         ) : (
           <FileBrowser
             workspaceId={workspaceId}
@@ -97,7 +136,7 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             onModeChange={setMode}
             selectedPath={null}
             onSelect={setSelection}
-            runId={runId}
+            runId={runId ?? undefined}
           />
         )}
       </div>

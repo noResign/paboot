@@ -2654,3 +2654,68 @@ a.btn {
   font-size: 11px;
   line-height: 1.55;
 }
+
+/* 运行记录 (aside「运行」tab): one row per run with per-run 改动/回滚 actions. */
+.run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+.run-list-empty,
+.run-list-notice {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--muted, #888);
+}
+.run-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+}
+.run-row-main {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 100%;
+}
+.run-status {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2, #222);
+}
+.run-status-rolled_back,
+.run-status-failed,
+.run-status-interrupted {
+  color: var(--danger, #e06c75);
+}
+.run-prompt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-row-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+.run-row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+.rollback-confirm {
+  display: inline-flex;
+  gap: 4px;
+}
+.btn.danger {
+  color: var(--danger, #e06c75);
+}

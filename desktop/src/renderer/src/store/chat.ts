@@ -132,6 +132,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         runtime: session.runtime,
         permissionMode: session.permissionMode,
         messages: rebuilt.messages,
+        runs,
         todos: rebuilt.todos,
         contextUsage: rebuilt.contextUsage,
         historyLoading: false,

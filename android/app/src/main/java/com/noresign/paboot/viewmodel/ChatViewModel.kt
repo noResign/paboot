@@ -122,6 +122,10 @@ class ChatViewModel(
     private val _rollbackResult = MutableStateFlow<RollbackResult?>(null)
     val rollbackResult = _rollbackResult.asStateFlow()
 
+    /** 本会话的 run 列表（含各自 checkpoint），供「运行」面板逐轮查看/回滚。 */
+    private val _runs = MutableStateFlow<List<RunDto>>(emptyList())
+    val runs = _runs.asStateFlow()
+
     private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
     val sessionPermissions = _sessionPermissions.asStateFlow()
 
@@ -173,6 +177,7 @@ class ChatViewModel(
                         _sessionRuntime.value = session.runtime
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
                         val runningRunId = session.runningRunId
+                        _runs.value = r.data.runs
                         _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
                         if (session.running && runningRunId != null) {
                             attach(runningRunId)
@@ -744,16 +749,20 @@ class ChatViewModel(
     }
 
     /**
-     * 回滚工作区到该 run 之前（破坏性）。`later_runs_exist` 时不要 force 直接重试，
-     * 交给 UI 二次确认后再 `rollback(force = true)`。
+     * 回滚工作区到 [runId] 之前（破坏性）。`later_runs_exist` 时不直接 force，
+     * 交给 UI 二次确认后再 `rollback(runId, force = true)`。
      */
-    fun rollback(force: Boolean = false) {
-        val rid = _runId.value ?: return
+    fun rollback(runId: String, force: Boolean = false) {
         viewModelScope.launch {
-            _rollbackResult.value = when (val r = repository.rollbackRun(rid, force)) {
-                is NetworkResult.Success -> RollbackResult.Done
+            when (val r = repository.rollbackRun(runId, force)) {
+                is NetworkResult.Success -> {
+                    _rollbackResult.value = RollbackResult.Done
+                    // 重新加载：run 状态、合成消息、工作区都变了
+                    load(sessionId)
+                }
                 is NetworkResult.Error ->
-                    if (r.apiCode == "later_runs_exist") RollbackResult.NeedForce else RollbackResult.Failed(r.message)
+                    _rollbackResult.value =
+                        if (r.apiCode == "later_runs_exist") RollbackResult.NeedForce else RollbackResult.Failed(r.message)
             }
         }
     }

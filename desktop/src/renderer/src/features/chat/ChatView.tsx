@@ -74,7 +74,8 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
     if (res.ok) {
       setRollback(null);
       setRollbackNotice('已回滚到本轮之前（agent 对话未回退）');
-      if (chat) void useSessions.getState().refreshCurrent(chat.connectionId);
+      // Reload the session: runs, statuses, the tree and the synthetic note.
+      if (chat?.sessionId) void useChat.getState().openSession(chat.connectionId, chat.sessionId);
       return;
     }
     const data = res.data as { code?: string; laterRuns?: number; error?: string };

@@ -1,5 +1,5 @@
 import type { ContextUsage } from '../../../../shared/format';
-import type { PermissionStatus, QuestionDto } from '../../../../shared/contract';
+import type { PermissionStatus, QuestionDto, RunDto } from '../../../../shared/contract';
 
 /** One ordered piece of an assistant turn, in the order the runtime produced it. */
 export type ContentBlock =
@@ -75,6 +75,8 @@ export interface ChatSessionState {
   runtime: string | null;
   permissionMode: string | null;
   messages: ChatMessage[];
+  /** The session's runs, newest last — each carries its checkpoint (or null). */
+  runs: RunDto[];
   runId: string | null;
   streamId: string | null;
   phase: ChatPhase;
@@ -108,6 +110,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     runtime: null,
     permissionMode: null,
     messages: [],
+    runs: [],
     runId: null,
     streamId: null,
     phase: 'idle',

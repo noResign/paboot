@@ -103,17 +103,23 @@ fun ChatScreen(
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
     val runId by viewModel.runId.collectAsState()
+    val runs by viewModel.runs.collectAsState()
     val rollbackResult by viewModel.rollbackResult.collectAsState()
-    var rollbackConfirm by remember { mutableStateOf(false) }
+    // The run a rollback is being confirmed for (latest-run button or a row in the
+    // 运行 sheet). `rollbackForce` escalates the wording once the daemon reports
+    // that later runs would also be discarded.
+    var pendingRollback by remember { mutableStateOf<String?>(null) }
     var rollbackForce by remember { mutableStateOf(false) }
+    var runsOpen by remember { mutableStateOf(false) }
 
     // 回滚结果：成功/失败弹提示；需要 force 时把确认框升级为「会一并丢弃后续运行」。
     LaunchedEffect(rollbackResult) {
         when (val r = rollbackResult) {
             is RollbackResult.Done -> {
-                rollbackConfirm = false
+                pendingRollback = null
                 rollbackForce = false
-                snackbarHostState.showSnackbar("已回滚到本轮之前（对话未回退）")
+                runsOpen = false
+                snackbarHostState.showSnackbar("已回滚（agent 对话未回退）")
                 viewModel.consumeRollbackResult()
             }
             is RollbackResult.NeedForce -> {
@@ -121,7 +127,7 @@ fun ChatScreen(
                 viewModel.consumeRollbackResult()
             }
             is RollbackResult.Failed -> {
-                rollbackConfirm = false
+                pendingRollback = null
                 rollbackForce = false
                 snackbarHostState.showSnackbar(r.message)
                 viewModel.consumeRollbackResult()
@@ -178,8 +184,11 @@ fun ChatScreen(
                 },
                 actions = {
                     contextUsage?.let { ContextIndicator(it) }
-                    if (!streaming && runId != null) {
-                        TextButton(onClick = { rollbackConfirm = true }) { Text("回滚") }
+                    if (runs.isNotEmpty()) {
+                        TextButton(onClick = { runsOpen = true }) { Text("运行") }
+                    }
+                    if (!streaming) {
+                        runId?.let { rid -> TextButton(onClick = { pendingRollback = rid }) { Text("回滚") } }
                     }
                     TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
                 },
@@ -240,29 +249,72 @@ fun ChatScreen(
         )
     }
 
-    if (rollbackConfirm) {
+    if (runsOpen) {
+        ModalBottomSheet(onDismissRequest = { runsOpen = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+            ) {
+                Text("运行记录", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(12.dp))
+                // 最新在前；每个 run 若有 preRef 就能回滚到它之前。
+                runs.asReversed().forEach { run ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                run.prompt,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                run.status,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (run.checkpoint?.preRef != null && run.status != "rolled_back") {
+                            TextButton(onClick = {
+                                pendingRollback = run.id
+                                runsOpen = false
+                            }) { Text("回滚") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pendingRollback?.let { target ->
         AlertDialog(
             onDismissRequest = {
-                rollbackConfirm = false
+                pendingRollback = null
                 rollbackForce = false
             },
             title = { Text(if (rollbackForce) "仍要回滚？" else "回滚此运行？") },
             text = {
                 Text(
                     if (rollbackForce) {
-                        "该运行之后还有更晚的运行，回滚会把它们一并丢弃。文件恢复到本轮之前，agent 对话不回退。"
+                        "该运行之后还有更晚的运行，回滚会把它们一并丢弃。文件恢复到该运行之前，agent 对话不回退。"
                     } else {
-                        "文件将恢复到本轮运行之前，该轮及之后的文件改动会被覆盖。agent 对话不会回退，此操作难以撤销。"
+                        "文件将恢复到该运行之前，该轮及之后的文件改动会被覆盖。agent 对话不会回退，此操作难以撤销。"
                     }
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.rollback(rollbackForce) }) { Text("确认回滚") }
+                TextButton(onClick = { viewModel.rollback(target, rollbackForce) }) { Text("确认回滚") }
             },
             dismissButton = {
                 TextButton(
                     onClick = {
-                        rollbackConfirm = false
+                        pendingRollback = null
                         rollbackForce = false
                     },
                 ) { Text("取消") }
