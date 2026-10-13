@@ -309,6 +309,7 @@ export function FileBrowser({
         ) : mode === 'changes' ? (
           changesLayout === 'diffs' ? (
             <ChangesFeed
+              revision={changes}
               files={changes?.files ?? []}
               workspaceId={workspaceId}
               root={root}

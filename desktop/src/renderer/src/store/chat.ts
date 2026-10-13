@@ -427,6 +427,16 @@ export const useChat = create<ChatStore>((set, get) => ({
       // `refreshCurrent` re-reads the workspace it is displaying — asking with no
       // workspace would pull *every* workspace's sessions into the rail.
       void useSessions.getState().refreshCurrent(chat.connectionId);
+      if (chat.sessionId) {
+        const sessionId = chat.sessionId;
+        const expectedChat = chat;
+        void api.session(sessionId).then((detail) => {
+          // A reopened/reset chat may now occupy the same key. Its newer
+          // metadata must not be replaced by this older request.
+          if (!detail.ok || get().byKey[key] !== expectedChat) return;
+          set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, runs: detail.data.runs })) }));
+        });
+      }
     }
   },
 

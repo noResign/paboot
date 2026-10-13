@@ -20,6 +20,8 @@ interface Props {
   view: DiffView;
   /** Scope every file's diff to one run's checkpoint. */
   runId?: string;
+  /** Identity of the latest change-list response; invalidates loaded patches. */
+  revision: object | null;
 }
 
 /**
@@ -27,12 +29,20 @@ interface Props {
  * stacked. Each file's patch is fetched only once it scrolls near the viewport,
  * so opening a large change set does not fire one request per file up front.
  */
-export function ChangesFeed({ files, workspaceId, root, view, runId }: Props) {
+export function ChangesFeed({ files, workspaceId, root, view, runId, revision }: Props) {
   if (files.length === 0) return <div className="fnotice">没有改动。</div>;
   return (
     <div className="fdiff-feed">
       {files.map((file) => (
-        <FeedFile key={file.path} file={file} workspaceId={workspaceId} root={root} runId={runId} view={view} />
+        <FeedFile
+          key={file.path}
+          file={file}
+          workspaceId={workspaceId}
+          root={root}
+          runId={runId}
+          view={view}
+          revision={revision}
+        />
       ))}
     </div>
   );
@@ -44,12 +54,14 @@ function FeedFile({
   root,
   runId,
   view,
+  revision,
 }: {
   file: ChangedFileDto;
   workspaceId: string | null;
   root: string | null;
   runId?: string;
   view: DiffView;
+  revision: object | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -78,6 +90,7 @@ function FeedFile({
     if (!visible || !workspaceId) return;
     let live = true;
     setLoading(true);
+    setError(null);
     void api
       .changesDiff({ workspaceId, root: root ?? undefined, path: file.path, runId })
       .then((res) => {
@@ -93,7 +106,7 @@ function FeedFile({
     return () => {
       live = false;
     };
-  }, [visible, workspaceId, root, file.path, runId]);
+  }, [visible, workspaceId, root, file.path, runId, revision]);
 
   const stat =
     file.additions !== null || file.deletions !== null

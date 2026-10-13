@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
-import { useChat } from '../../store/chat';
+import { isBusy, useChat } from '../../store/chat';
 import { RunList } from '../chat/RunList';
+import { canDiffRun } from '../chat/runActions';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
 import { SPLIT_MIN_PX, type DiffView } from './DiffViewer';
@@ -30,7 +31,8 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
   const canSplit = width >= SPLIT_MIN_PX;
   const effectiveView: DiffView = canSplit ? view : 'unified';
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
-  const latestRunId = chat && chat.phase === 'settled' ? (chat.runId ?? null) : null;
+  const latestRun = chat?.runs.at(-1);
+  const latestRunId = chat && !isBusy(chat.phase) && canDiffRun(latestRun) ? latestRun!.id : null;
 
   // Root, scope and open file are per-workspace; clear them when it changes so
   // the panel never shows another workspace's (or host's) state.
