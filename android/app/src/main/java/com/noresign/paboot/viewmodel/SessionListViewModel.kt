@@ -29,6 +29,11 @@ class SessionListViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
+    private val _renameSubmitting = MutableStateFlow(false)
+    val renameSubmitting = _renameSubmitting.asStateFlow()
+    private val _renameError = MutableStateFlow<String?>(null)
+    val renameError = _renameError.asStateFlow()
+
     init {
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
@@ -101,6 +106,40 @@ class SessionListViewModel(
                 is NetworkResult.Error -> {
                     _message.value = friendlyError(r)
                 }
+            }
+        }
+    }
+
+    fun clearRenameError() {
+        _renameError.value = null
+    }
+
+    fun rename(id: String, title: String, onSuccess: () -> Unit) {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty() || _renameSubmitting.value) return
+        _renameSubmitting.value = true
+        _renameError.value = null
+        viewModelScope.launch {
+            try {
+                when (val result = repository.renameSession(id, trimmed)) {
+                    is NetworkResult.Success -> {
+                        val current = _uiState.value
+                        if (current is SessionListUiState.Content) {
+                            val sessions = current.model.rootSessions + current.model.subGroups.flatMap { it.sessions }
+                            _uiState.value = SessionListUiState.Content(
+                                groupByCwd(
+                                    sessions.map { if (it.id == id) it.copy(title = trimmed) else it },
+                                    WorkspaceSelection.selectedPath.value,
+                                ),
+                            )
+                        }
+                        onSuccess()
+                        refreshSilently()
+                    }
+                    is NetworkResult.Error -> _renameError.value = friendlyError(result)
+                }
+            } finally {
+                _renameSubmitting.value = false
             }
         }
     }

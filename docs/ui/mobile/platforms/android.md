@@ -135,3 +135,11 @@ connect（门禁，startDestination）
 | 连接 / 新建会话 / 设置 | 已对齐 token |
 
 各组件的逐页规格见 `docs/ui/mobile/pages/`，交互与状态见 `docs/ui/shared/interactions.md`。
+
+## 键盘与系统栏避让
+
+- `MainActivity` 使用 edge-to-edge，同时设置 `windowSoftInputMode="adjustResize"`，键盘弹出时缩小可用布局。
+- 根导航容器 `AppNavHost` 统一使用 `imePadding()` 并消费键盘 inset；连接、聊天等所有普通页面共享缩小后的可用高度，不在各页重复添加键盘 padding。
+- 各页继续处理自己的系统栏 inset；聊天底栏仅使用 `navigationBarsPadding()`，键盘打开时根容器已消费对应高度，不再重复留白。
+- 表单页保留可滚动容器，并消费 `Scaffold.innerPadding`；连接页的输入框可在键盘弹出后滚动到可见区域。弹窗与底部 Sheet 属于独立容器，沿用组件自身的键盘 inset 处理。
+- 消息区域应用并消费 `Scaffold` 的 `innerPadding`，在该区域内裁剪；键盘弹出时缩小消息区域，顶部栏保持原位，文字不得绘制到系统栏后面。

@@ -3,6 +3,7 @@ package com.noresign.paboot.ui.chat
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -149,11 +150,11 @@ internal fun MessageList(
 
 @Composable
 internal fun UserBubble(text: String) {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = 300.dp),
+            modifier = Modifier.widthIn(max = maxWidth * 0.7f),
         ) {
             Text(
                 text = text,

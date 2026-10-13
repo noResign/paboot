@@ -1,10 +1,24 @@
 package com.noresign.paboot.ui
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -49,6 +64,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -75,8 +92,12 @@ fun SessionListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val message by viewModel.message.collectAsState()
+    val renameSubmitting by viewModel.renameSubmitting.collectAsState()
+    val renameError by viewModel.renameError.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
+    var renameTitle by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<SessionDto?>(null) }
     var showNewSession by remember { mutableStateOf(false) }
 
@@ -149,12 +170,52 @@ fun SessionListScreen(
                         SessionGroupedList(
                             model = state.model,
                             onOpenSession = onOpenSession,
-                            onLongClick = { pendingDelete = it },
+                            onRename = { session ->
+                                viewModel.clearRenameError()
+                                renameTitle = session.title.orEmpty()
+                                pendingRename = session
+                            },
+                            onDelete = { pendingDelete = it },
                         )
                     }
                 }
             }
         }
+    }
+
+    pendingRename?.let { session ->
+        val focusRequester = remember(session.id) { FocusRequester() }
+        AlertDialog(
+            onDismissRequest = { if (!renameSubmitting) pendingRename = null },
+            title = { Text("重命名会话") },
+            text = {
+                OutlinedTextField(
+                    value = renameTitle,
+                    onValueChange = {
+                        renameTitle = it
+                        viewModel.clearRenameError()
+                    },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    label = { Text("会话名称") },
+                    singleLine = true,
+                    enabled = !renameSubmitting,
+                    isError = renameError != null,
+                    supportingText = { renameError?.let { Text(it) } },
+                )
+                LaunchedEffect(session.id) { focusRequester.requestFocus() }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = renameTitle.isNotBlank() && !renameSubmitting,
+                    onClick = {
+                        viewModel.rename(session.id, renameTitle) { pendingRename = null }
+                    },
+                ) { Text(if (renameSubmitting) "保存中…" else "保存") }
+            },
+            dismissButton = {
+                TextButton(enabled = !renameSubmitting, onClick = { pendingRename = null }) { Text("取消") }
+            },
+        )
     }
 
     pendingDelete?.let { session ->
@@ -196,11 +257,18 @@ fun SessionListScreen(
 private fun SessionGroupedList(
     model: SessionListModel,
     onOpenSession: (String) -> Unit,
-    onLongClick: (SessionDto) -> Unit,
+    onRename: (SessionDto) -> Unit,
+    onDelete: (SessionDto) -> Unit,
 ) {
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
+    val listState = rememberLazyListState()
+    var revealedId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) revealedId = null
+    }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -208,8 +276,19 @@ private fun SessionGroupedList(
         items(model.rootSessions, key = { it.id }) { session ->
             SessionCard(
                 session = session,
-                onClick = { onOpenSession(session.id) },
-                onLongClick = { onLongClick(session) },
+                revealed = revealedId == session.id,
+                onRevealChange = { revealed -> revealedId = if (revealed) session.id else null },
+                onClick = {
+                    if (revealedId != null) revealedId = null else onOpenSession(session.id)
+                },
+                onRename = {
+                    revealedId = null
+                    onRename(session)
+                },
+                onDelete = {
+                    revealedId = null
+                    onDelete(session)
+                },
             )
         }
         model.subGroups.forEach { group ->
@@ -225,8 +304,19 @@ private fun SessionGroupedList(
                 items(group.sessions, key = { it.id }) { session ->
                     SessionCard(
                         session = session,
-                        onClick = { onOpenSession(session.id) },
-                        onLongClick = { onLongClick(session) },
+                        revealed = revealedId == session.id,
+                        onRevealChange = { revealed -> revealedId = if (revealed) session.id else null },
+                        onClick = {
+                            if (revealedId != null) revealedId = null else onOpenSession(session.id)
+                        },
+                        onRename = {
+                            revealedId = null
+                            onRename(session)
+                        },
+                        onDelete = {
+                            revealedId = null
+                            onDelete(session)
+                        },
                     )
                 }
             }
@@ -281,12 +371,14 @@ private fun WorkspaceHeader(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionCard(
     session: SessionDto,
+    revealed: Boolean,
+    onRevealChange: (Boolean) -> Unit,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val border = if (session.running) {
         BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -294,37 +386,109 @@ private fun SessionCard(
         BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        border = border,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+    SwipeSessionCard(revealed, onRevealChange, onRename, onDelete) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
+            border = border,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (session.running) {
-                    RunningIndicator()
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (session.running) {
+                        RunningIndicator()
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = session.title ?: "未命名会话",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = relativeTime(session.lastActiveAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Text(
-                    text = session.title ?: "未命名会话",
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = relativeTime(session.lastActiveAt),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                AgentBadge(runtimeId = session.runtime)
             }
-            AgentBadge(runtimeId = session.runtime)
         }
+    }
+}
+
+/** Swipe reveals actions; releasing the card never deletes or renames it. */
+@Composable
+private fun SwipeSessionCard(
+    revealed: Boolean,
+    onRevealChange: (Boolean) -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val actionWidth = 80.dp
+    val actionPx = with(LocalDensity.current) { (actionWidth * 2).toPx() }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    var settle by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(revealed, settle, actionPx, dragging) {
+        if (!dragging) {
+            animate(offsetX, if (revealed) -actionPx else 0f, animationSpec = tween(180)) { value, _ ->
+                offsetX = value
+            }
+        }
+    }
+
+    Box(modifier = Modifier.clip(RoundedCornerShape(12.dp))) {
+        if (offsetX < 0f) {
+            Row(
+                modifier = Modifier.matchParentSize(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Box(
+                    modifier = Modifier.width(actionWidth).fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable(onClick = onRename),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("重命名", color = MaterialTheme.colorScheme.onPrimary)
+                }
+                Box(
+                    modifier = Modifier.width(actionWidth).fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.error)
+                        .clickable(onClick = onDelete),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.onError)
+                }
+            }
+        }
+        Box(
+            modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        offsetX = (offsetX + delta).coerceIn(-actionPx, 0f)
+                    },
+                    onDragStarted = { dragging = true },
+                    onDragStopped = { velocity ->
+                        val open = when {
+                            velocity < -800f -> true
+                            velocity > 800f -> false
+                            else -> offsetX < -actionPx / 2f
+                        }
+                        onRevealChange(open)
+                        dragging = false
+                        settle += 1
+                    },
+                ),
+        ) { content() }
     }
 }

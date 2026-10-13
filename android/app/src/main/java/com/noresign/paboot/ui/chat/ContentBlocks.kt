@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -76,7 +75,7 @@ internal fun TextBlock(text: String, streaming: Boolean) {
         // 设计规范：助手气泡用 surface（白）；代码/表格才用 code-bg
         color = MaterialTheme.colorScheme.surface,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.widthIn(max = 320.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Markdown(
             content = content,

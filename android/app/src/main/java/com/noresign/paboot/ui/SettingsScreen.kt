@@ -3,6 +3,7 @@ package com.noresign.paboot.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,7 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -177,36 +180,46 @@ fun SettingsScreen(
                     }
 
                     SectionTitle("通知")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { applyNotifications(!notificationsEnabled) }
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("后台任务提醒", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "任务完成、失败或需要审批时，若你不在该会话页就弹系统通知",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = notificationsEnabled && notificationsGranted,
-                            onCheckedChange = { checked -> applyNotifications(checked) },
-                        )
-                    }
-                    if (notificationsEnabled && !notificationsGranted) {
-                        Text(
-                            text = "系统通知未授权，点这里去系统设置开启",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { NotificationPermission.openSettings(context) }
-                                .padding(vertical = 4.dp),
+                                .heightIn(min = 48.dp)
+                                .toggleable(
+                                    value = notificationsEnabled && notificationsGranted,
+                                    role = Role.Switch,
+                                    onValueChange = { applyNotifications(it) },
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "后台任务提醒",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = notificationsEnabled && notificationsGranted,
+                                onCheckedChange = null,
+                                modifier = Modifier.scale(0.8f),
+                            )
+                        }
+                        Text(
+                            "任务完成、失败或需要审批时，若你不在该会话页就弹系统通知",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (notificationsEnabled && !notificationsGranted) {
+                            Text(
+                                text = "系统通知未授权，点击前往设置开启",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { NotificationPermission.openSettings(context) }
+                                    .padding(vertical = 8.dp),
+                            )
+                        }
                     }
 
                     // 没有配置更新通道（公开构建）时不显示入口

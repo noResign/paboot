@@ -6,6 +6,7 @@ import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 import com.noresign.paboot.network.daemon.dto.SessionDto
+import com.noresign.paboot.network.daemon.dto.RenameRequest
 import com.noresign.paboot.network.daemon.dto.SessionPermissionsResponse
 import com.noresign.paboot.network.daemon.dto.UpdateSessionPermissionsRequest
 
@@ -23,6 +24,14 @@ class SessionRepository(
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.sessions(workspaceId) }) {
             is NetworkResult.Success -> NetworkResult.Success(r.data.sessions)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun renameSession(id: String, title: String): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.renameSession(id, RenameRequest(title)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }
     }

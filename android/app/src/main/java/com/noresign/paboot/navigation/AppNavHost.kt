@@ -1,9 +1,12 @@
 package com.noresign.paboot.navigation
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
@@ -48,7 +51,10 @@ fun AppNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = startDestination,
+        // All destination pages share one IME inset owner. Descendant system
+        // bar padding sees the consumed inset and does not add it a second time.
+        modifier = Modifier.fillMaxSize().imePadding(),
     ) {
         connectNavGraph(navController)
         mainNavGraph(navController)
