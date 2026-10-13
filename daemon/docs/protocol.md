@@ -130,7 +130,8 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
   `session_busy`（响应带 `runId`，即正在跑的那个）。否则第二个 run 会 `--resume` 同一个
   native session id，两个 agent 进程写同一份会话记录。客户端在 run 期间禁用发送只是礼貌，
   多端（桌面 + 手机）可能同时发出，所以由 daemon 兜底。此检查排在 runtime 探测之前，
-  避免为必然被拒的请求去 spawn CLI。
+  避免为必然被拒的请求去 spawn CLI。异步探测完成后会再次检查；开跑前快照和收口后的快照期间
+  也占用该 Session，直到快照完成并持久化终态才允许下一轮开始。
 
 **断线续接**：`/api/chat` 客户端断开后，run **继续在 daemon 上运行**（不因断线取消）；重连
 用 `GET /api/runs` 找运行中的 run，再 `GET /api/runs/:id/stream?after=<seq>` 回放 + 续直播；

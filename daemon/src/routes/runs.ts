@@ -65,7 +65,7 @@ export function streamRunToResponse(
   }
 
   // Run already finished: nothing live left to attach to.
-  if (!getActiveRun(run.id)) {
+  if (run.status !== 'running' && !getActiveRun(run.id)) {
     unsubscribe();
     res.end();
     return;
@@ -83,7 +83,7 @@ export function streamRunToResponse(
 }
 
 export function registerRunRoutes(app: Express, ctx: AppContext): void {
-  // Currently-running runs (in-memory active runs + their DB metadata). This is
+  // In-flight runs, including checkpoint preparation/finalization. This is
   // the phone's "which agents are running right now" list for switching between
   // several in-flight agents.
   app.get('/api/runs', (req, res) => {
@@ -92,10 +92,11 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const runs = listActiveRuns()
-      .map((active) => {
-        const row = ctx.db.getRun(active.id);
-        if (!row) return { id: active.id, sessionId: null, workspaceId: null };
+    const ids = new Set([...ctx.db.listRunningRuns().map((run) => run.id), ...listActiveRuns().map((run) => run.id)]);
+    const runs = [...ids]
+      .map((id) => {
+        const row = ctx.db.getRun(id);
+        if (!row) return { id, sessionId: null, workspaceId: null };
         const session = ctx.db.getSession(row.session_id);
         return {
           id: row.id,
@@ -148,9 +149,8 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
     }
 
     // A live run editing the same repo would race the restore and be clobbered.
-    const clashing = listActiveRuns().some((active) => {
-      const activeRun = ctx.db.getRun(active.id);
-      const session = activeRun ? ctx.db.getSession(activeRun.session_id) : undefined;
+    const clashing = ctx.db.listRunningRuns().some((activeRun) => {
+      const session = ctx.db.getSession(activeRun.session_id);
       return session ? inside(checkpoint.repo_root, session.cwd) : false;
     });
     if (clashing) {

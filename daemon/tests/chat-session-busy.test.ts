@@ -37,7 +37,10 @@ function registerRun(db: Db, runId: string, sessionId: string): void {
     resolve = res;
   });
   registerActiveRun({ id: runId, promise, cancel: () => {} });
-  settle.push(resolve);
+  settle.push(() => {
+    db.updateRun(runId, { status: 'succeeded', endedAt: Date.now() });
+    resolve();
+  });
 }
 
 /**

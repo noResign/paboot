@@ -119,6 +119,33 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
+    // Detection may yield before a run row exists. Recheck both guards before
+    // the synchronous session/run creation below claims the session.
+    if (commandId) {
+      const existing = ctx.db.getRunByCommandId(commandId);
+      if (existing) {
+        if (body.sessionId && existing.session_id !== body.sessionId) {
+          res.status(409).json({ error: 'commandId already used for another session', code: 'command_id_conflict' });
+          return;
+        }
+        streamRunToResponse(ctx, existing, 0, res);
+        return;
+      }
+    }
+    if (session) {
+      const runningRunId = activeRunIdForSession(ctx, session.id);
+      if (runningRunId) {
+        res.status(409).json({ error: 'session already has a running run', code: 'session_busy', runId: runningRunId });
+        return;
+      }
+      // Another request may have established the native id during detection.
+      session = ctx.db.getSession(session.id);
+      if (!session) {
+        res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+        return;
+      }
+    }
+
     // Existing sessions keep their own workspace; new sessions use the
     // requested workspace or the daemon default.
     const requestedWorkspaceId =
@@ -262,24 +289,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     // Captured so the closure below keeps the narrowed, non-optional session.
     const sessionId = session.id;
 
-    const active = driver.start({
-      runId,
-      sessionId,
-      prompt,
-      cwd: session.cwd,
-      model,
-      permissionMode: sessionPermissionMode,
-      resumeNativeSessionId,
-      // The driver reports the session's native id once known: a host-picking
-      // runtime names it up front, a self-allocating one (Codex) when the
-      // provider reports it.
-      onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
-      extraDirs,
-      onEvent: send,
-    });
-
-    ctx.notifier.register(runId, send);
-
     const heartbeat = setInterval(() => {
       if (res.writableEnded) return;
       res.write(': keepalive\n\n');
@@ -297,7 +306,26 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     });
     res.on('finish', cleanup);
 
+    ctx.notifier.register(runId, send);
     try {
+      const active = driver.start({
+        runId,
+        sessionId,
+        prompt,
+        cwd: session.cwd,
+        model,
+        permissionMode: sessionPermissionMode,
+        resumeNativeSessionId,
+        // The driver reports the session's native id once known: a host-picking
+        // runtime names it up front, a self-allocating one (Codex) when the
+        // provider reports it.
+        onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
+        extraDirs,
+        // The route owns the terminal frame: provider errors may arrive before
+        // exit, while the final checkpoint and run metadata are not ready yet.
+        onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),
+      });
+
       const outcome = await active.promise;
       finished = true;
       if (!ctx.db.getRun(runId)) {
@@ -306,12 +334,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         runDeleted = true;
         ctx.db.deleteEventsForRun(runId);
       } else {
-        ctx.db.updateRun(runId, {
-          status: outcome.status,
-          endedAt: Date.now(),
-          exitCode: outcome.exitCode,
-          error: outcome.error,
-        });
         ctx.db.touchSession(session.id);
         // Persist the assistant's aggregated visible text as a message so the
         // transcript is complete without replaying every event. Tool / thinking
@@ -332,6 +354,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           });
         }
       }
+      // Keep the session busy until its post-checkpoint is durable. A new run
+      // must not edit files while the previous run is still taking its snapshot.
+      ctx.db.updateRun(runId, {
+        status: outcome.status,
+        endedAt: Date.now(),
+        exitCode: outcome.exitCode,
+        error: outcome.error,
+      });
       if (outcome.error && outcome.status === 'failed') {
         send({ type: 'error', code: 'run_failed', message: outcome.error, terminal: true });
       }
@@ -339,6 +369,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     } catch (err) {
       finished = true;
       log.error('run failed unexpectedly', err);
+      ctx.db.updateRun(runId, { status: 'failed', endedAt: Date.now(), error: String(err) });
       send({ type: 'error', code: 'run_error', message: String(err), terminal: true });
     } finally {
       ctx.notifier.unregister(runId);

@@ -727,6 +727,11 @@ export class Db {
     return rows.length;
   }
 
+  /** Includes checkpoint preparation and finalization, not just live processes. */
+  listRunningRuns(): RunRow[] {
+    return this.db.prepare(`SELECT * FROM runs WHERE status = 'running'`).all() as unknown as RunRow[];
+  }
+
   listRuns(sessionId: string): RunRow[] {
     return this.db
       .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC`)
