@@ -7,6 +7,12 @@
 优先级：**命令行 flag > 已存在的 shell 环境变量 > `.env` 文件 > 默认值**。
 所有变量都可用 `--env-file <path>` 指定 `.env` 加载（默认 `./.env`）。
 
+> **路径类参数支持开头的 `~`**（`--workspace` / `--data-dir` / `PABOOT_WORKSPACE` /
+> `PABOOT_DATA_DIR`，以及 `POST /api/workspaces` 等的 `path` 字段），展开成 **daemon 进程所在
+> 机器**的用户主目录（只认 `~` 与 `~/`，不认 `~user`）。客户端把路径当**原始 argv / JSON** 交给
+> daemon，这条链路上没有 shell——不展开的话 `~/x` 会被 `path.resolve` 当成相对路径，落到 daemon
+> 的 cwd 下并被 `mkdirSync` 静默建出来。
+
 ### 命令行 flag
 
 | flag | 默认 | 说明 |

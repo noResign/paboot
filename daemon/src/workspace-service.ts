@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Db, WorkspaceRow } from './db.js';
+import { expandHome } from './paths.js';
 import { resolveWorkspaceCwd } from './workspace.js';
 
 export class WorkspaceValidationError extends Error {
@@ -14,7 +15,7 @@ export class WorkspaceValidationError extends Error {
 
 /** Canonical absolute path for an existing directory. */
 export function canonicalizeExistingDirectory(raw: string): string {
-  const abs = path.resolve(raw);
+  const abs = path.resolve(expandHome(raw));
   let real: string;
   try {
     real = fs.realpathSync(abs);

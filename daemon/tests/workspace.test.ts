@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveWorkspaceCwd } from '../src/workspace';
 
@@ -6,6 +8,13 @@ describe('resolveWorkspaceCwd', () => {
 
   it('allows the workspace root itself', () => {
     expect(resolveWorkspaceCwd(root, root)).toBe(root);
+  });
+
+  it('expands a leading ~ in the cwd before checking containment', () => {
+    const home = os.homedir();
+    expect(resolveWorkspaceCwd('~/projects/app', path.join(home, 'projects'))).toBe(
+      path.join(home, 'projects', 'app'),
+    );
   });
 
   it('allows descendants of the workspace root', () => {

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { expandHome } from './paths.js';
 
 /**
  * Resolve `raw` to an absolute path and check it is inside a given workspace
@@ -9,7 +10,7 @@ import path from 'node:path';
  * Claude 会话）都必须通过它（deny-by-default）。
  */
 export function resolveWorkspaceCwd(raw: string, root: string): string | null {
-  const target = path.resolve(raw);
+  const target = path.resolve(expandHome(raw));
   const r = path.resolve(root);
   if (target === r || target.startsWith(r + path.sep)) {
     return target;

@@ -225,6 +225,7 @@ export function ConnectPage() {
             </div>
             <div className="hint" style={{ marginTop: 0 }}>
               这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
+              路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
               数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
               ——手机连任意一个，看到的会话与工作区都一样。
               端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。

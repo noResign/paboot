@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { expandHome } from './paths.js';
 
 export interface TlsConfig {
   cert: string;
@@ -113,13 +114,15 @@ export interface ConfigOverrides {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: ConfigOverrides = {}): Config {
-  const dataDir = path.resolve(overrides.dataDir ?? env.PABOOT_DATA_DIR ?? path.join(os.homedir(), '.paboot'));
+  const dataDir = path.resolve(
+    expandHome(overrides.dataDir ?? env.PABOOT_DATA_DIR ?? path.join(os.homedir(), '.paboot')),
+  );
   fs.mkdirSync(dataDir, { recursive: true });
 
   // The workspace is the directory Claude Code (and future runtimes) operate
   // in directly. It defaults to the daemon's own cwd, so `cd <project> &&
   // paboot` makes that project the workspace.
-  const workspace = path.resolve(overrides.workspace ?? env.PABOOT_WORKSPACE ?? process.cwd());
+  const workspace = path.resolve(expandHome(overrides.workspace ?? env.PABOOT_WORKSPACE ?? process.cwd()));
   const workspaceSource: WorkspaceSource =
     overrides.workspace !== undefined ? 'flag' : env.PABOOT_WORKSPACE?.trim() ? 'env' : 'default';
   fs.mkdirSync(workspace, { recursive: true });

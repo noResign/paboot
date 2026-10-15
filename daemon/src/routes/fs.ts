@@ -1,15 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
+import { expandHome } from '../paths.js';
 import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspace-service.js';
-
-function expandHome(raw: string): string {
-  if (raw === '~') return os.homedir();
-  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
-  return raw;
-}
 
 function listDirectories(dir: string): { name: string; path: string }[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
