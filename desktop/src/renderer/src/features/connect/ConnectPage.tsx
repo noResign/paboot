@@ -30,6 +30,8 @@ export function ConnectPage() {
   // Starting a daemon is a deliberate, multi-step act: a directory that becomes
   // the agent's writable root, and whether to open it to the phone.
   const [spawnOpen, setSpawnOpen] = useState(false);
+  /** A systemd unit owns the daemon's config, so the form has nothing to ask. */
+  const [spawnSystemd, setSpawnSystemd] = useState(false);
   const [spawnDir, setSpawnDir] = useState('');
   const [spawnPhone, setSpawnPhone] = useState(false);
   const [spawnBusy, setSpawnBusy] = useState(false);
@@ -51,6 +53,20 @@ export function ConnectPage() {
   useEffect(() => {
     void connectionApi.recent().then(setRecent);
   }, []);
+
+  // Whether「启动」would go through systemd rather than spawn a daemon of ours:
+  // the unit owns workspace/port then, so the form changes shape (and its values
+  // are ignored). Only asked when the form is actually opened.
+  useEffect(() => {
+    if (!spawnOpen) return;
+    let live = true;
+    void window.paboot.daemonStatus().then((status) => {
+      if (live) setSpawnSystemd(status.systemd);
+    });
+    return () => {
+      live = false;
+    };
+  }, [spawnOpen]);
 
   // A restored connection whose token could not be recovered still knows where
   // it was pointing, and a disconnected one still has its recent targets. The
@@ -77,7 +93,9 @@ export function ConnectPage() {
    */
   async function spawnLocal(): Promise<void> {
     const workspace = spawnDir.trim();
-    if (!workspace) {
+    // With a systemd unit installed, main starts the unit and the unit owns the
+    // workspace/port — the form's values are not used, so they must not block.
+    if (!workspace && !spawnSystemd) {
       setSpawnError('请填写工作目录');
       return;
     }
@@ -116,6 +134,21 @@ export function ConnectPage() {
     const parsed = parseAddress(address);
     if (!parsed) return;
     await connect({ ...parsed, token: token.trim() || undefined });
+  }
+
+  /**
+   * One click on the local daemon: connect straight away. Its token lives in
+   * `<data-dir>/token`, and main auto-reads it for a target that matches a fresh
+   * probe — so a daemon on this machine never asks the user to retype one. If it
+   * still does (an env-provided token, say), the address stays in the form above
+   * for pasting.
+   */
+  async function connectLocal(daemon: DiscoveredDaemon): Promise<void> {
+    const parsed = parseAddress(daemon.listen);
+    if (!parsed) return;
+    setAddress(daemon.listen);
+    setToken('');
+    await connect({ ...parsed, tls: daemon.tls, name: daemon.hostname ?? undefined });
   }
 
   const parsedAddress = parseAddress(address);
@@ -204,40 +237,53 @@ export function ConnectPage() {
           conflict={conflict}
           tried={probe?.tried ?? []}
           tokenHint={probe?.localToken ?? null}
-          onPick={(daemon) => setAddress(daemon.listen)}
+          onPick={(daemon) => void connectLocal(daemon)}
           onChooseLocal={() => setAddress(`127.0.0.1:${4780}`)}
           onStart={() => setSpawnOpen(true)}
         />
 
         {spawnOpen && (
           <div className="local-block" style={{ marginTop: 10 }}>
-            <div className="local-title">启动一个本机 daemon</div>
-            <div className="field">
-              <label htmlFor="spawn-dir">工作目录</label>
-              <input
-                id="spawn-dir"
-                className="mono"
-                placeholder="~/Projects"
-                value={spawnDir}
-                onChange={(event) => setSpawnDir(event.target.value)}
-                autoComplete="off"
-              />
+            <div className="local-title">
+              {spawnSystemd ? '启动 systemd 托管的 daemon' : '启动一个本机 daemon'}
             </div>
-            <div className="hint" style={{ marginTop: 0 }}>
-              这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
-              路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
-              数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
-              ——手机连任意一个，看到的会话与工作区都一样。
-              端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
-            </div>
-            <label className="switch" style={{ marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={spawnPhone}
-                onChange={(event) => setSpawnPhone(event.target.checked)}
-              />
-              <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
-            </label>
+            {spawnSystemd ? (
+              <div className="hint" style={{ marginTop: 0 }}>
+                这台机器上装了 systemd 单元 <span className="mono">paboot.service</span>，
+                「启动」会执行 <span className="mono">systemctl --user start paboot</span>。
+                工作目录、端口、是否开放给手机都由<b>那个单元</b>决定，下面不适用；要改请编辑单元后
+                <span className="mono"> systemctl --user daemon-reload</span>。
+              </div>
+            ) : (
+              <>
+                <div className="field">
+                  <label htmlFor="spawn-dir">工作目录</label>
+                  <input
+                    id="spawn-dir"
+                    className="mono"
+                    placeholder="~/Projects"
+                    value={spawnDir}
+                    onChange={(event) => setSpawnDir(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="hint" style={{ marginTop: 0 }}>
+                  这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
+                  路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
+                  数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
+                  ——手机连任意一个，看到的会话与工作区都一样。
+                  端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
+                </div>
+                <label className="switch" style={{ marginTop: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={spawnPhone}
+                    onChange={(event) => setSpawnPhone(event.target.checked)}
+                  />
+                  <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
+                </label>
+              </>
+            )}
             {spawnError && (
               <div className="error-text">
                 {spawnError}
@@ -301,7 +347,7 @@ interface LocalBlockProps {
   conflict: PortConflict | null;
   tried: string[];
   tokenHint: LocalTokenHint | null;
-  /** Click the found daemon: fill its address into the form above. */
+  /** Click the found daemon: connect to it right away (no token to type). */
   onPick(found: DiscoveredDaemon): void;
   onChooseLocal(): void;
   onStart(): void;
@@ -322,11 +368,7 @@ function LocalDaemonBlock(props: LocalBlockProps) {
 
   if (found) {
     return (
-      <button
-        className="local-block found local-pick"
-        onClick={() => onPick(found)}
-        title="把地址填到上面的地址框"
-      >
+      <button className="local-block found local-pick" onClick={() => onPick(found)} title="直接连接这台 daemon">
         <div className="local-title">
           <span className="dot ok" /> 本机 daemon · v{found.version}
         </div>
@@ -336,10 +378,10 @@ function LocalDaemonBlock(props: LocalBlockProps) {
         </div>
         <div className="local-meta">
           来源：{SOURCE_LABEL[found.source]}
-          {found.source !== 'managed' && '（本应用未托管，只能连接，不能在此启停）'}
+          {found.source !== 'managed' && '（本应用没启动它——但它是本机唯一那台，仍可在设置页停/启）'}
         </div>
-        {tokenHint && <div className="hint">已从 {tokenHint.source} 读到 token（点「连接」时自动使用）</div>}
-        <div className="hint">点这里把地址填到上面的地址框，再按「连接」</div>
+        {tokenHint && <div className="hint">已从 {tokenHint.source} 读到 token，点一下就能连上</div>}
+        <div className="hint">点这里直接连接本机 daemon，不用再输 token</div>
       </button>
     );
   }

@@ -1,6 +1,24 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildDaemonArgs, parseRuntimeFile, resolveDaemonCommand, DaemonSupervisor } from './supervisor';
+import type { ManagedDaemonRecord } from '../settings';
+
+/**
+ * A private data dir per test. `hintForExit` reads the tail of `<dataDir>/daemon.log`,
+ * so a shared dir would let one test's narration decide another's hint.
+ */
+const tempDirs: string[] = [];
+function tempDataDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-sup-'));
+  tempDirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 describe('buildDaemonArgs', () => {
   it('spells out --host, because the daemon defaults to 0.0.0.0', () => {
@@ -119,7 +137,7 @@ describe('DaemonSupervisor.start', () => {
   });
 
   it('reports an early exit with a port hint when the log says EADDRINUSE', async () => {
-    const sup = new DaemonSupervisor('/tmp/paboot-test', {
+    const sup = new DaemonSupervisor(tempDataDir(), {
       spawnImpl: (() => {
         const child = fakeChild();
         setImmediate(() => {
@@ -142,7 +160,7 @@ describe('DaemonSupervisor.start', () => {
   });
 
   it('points at the data-dir lock when another daemon already holds ~/.paboot', async () => {
-    const sup = new DaemonSupervisor('/tmp/paboot-test', {
+    const sup = new DaemonSupervisor(tempDataDir(), {
       spawnImpl: (() => {
         const child = fakeChild();
         setImmediate(() => {
@@ -233,5 +251,136 @@ describe('DaemonSupervisor.start', () => {
     expect(spawnImpl).toHaveBeenCalledOnce();
     const [, , options] = spawnImpl.mock.calls[0] as unknown as [string, string[], { env: Record<string, string> }];
     expect(options.env['PATH']).toBe(process.env['PATH']);
+  });
+});
+
+describe('DaemonSupervisor and the daemon holding the data dir', () => {
+  const LIVE_PID = 4242;
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-sup-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The runtime file a daemon writes once it is listening. */
+  function writeRuntime(body: Record<string, unknown>): void {
+    fs.writeFileSync(path.join(dir, 'daemon_runtime.json'), JSON.stringify({ listen: '127.0.0.1:4780', ...body }));
+  }
+
+  /** A record as this app would have written it after starting a daemon. */
+  function owned(pid: number, startedAt: number): ManagedDaemonRecord {
+    return { running: { pid, startedAt }, launch: null };
+  }
+
+  function supervisor(opts: {
+    record?: ManagedDaemonRecord | null;
+    alive?: () => boolean;
+    saved?: Array<ManagedDaemonRecord | null>;
+  }): DaemonSupervisor {
+    return new DaemonSupervisor(dir, {
+      // A tiny clock keeps a freshly written runtime file "fresh" (freshness is
+      // `now - mtime`), without touching the real clock.
+      now: () => 1_000,
+      sleep: async () => {},
+      env: async () => ({}),
+      isAlive: () => opts.alive?.() ?? true,
+      loadRecord: () => opts.record ?? null,
+      saveRecord: (r) => opts.saved?.push(r),
+    });
+  }
+
+  it('recognises a daemon an earlier app run left running as ours', () => {
+    writeRuntime({ pid: LIVE_PID, startedAt: 777 });
+    expect(supervisor({ record: owned(LIVE_PID, 777) }).pid()).toBe(LIVE_PID);
+  });
+
+  it('does not claim a daemon whose start time is not the one we recorded', () => {
+    // A reused pid with a different start time is a different process.
+    writeRuntime({ pid: LIVE_PID, startedAt: 999 });
+    expect(supervisor({ record: owned(LIVE_PID, 777) }).pid()).toBeNull();
+  });
+
+  it('does not claim anything when we have never started a daemon', () => {
+    writeRuntime({ pid: LIVE_PID, startedAt: 777 });
+    expect(supervisor({ record: null }).pid()).toBeNull();
+  });
+
+  it('still sees the pid of a daemon someone else started', () => {
+    writeRuntime({ pid: LIVE_PID, startedAt: 777 });
+    expect(supervisor({ record: null }).livePid()).toBe(LIVE_PID);
+  });
+
+  it('stops the daemon holding the data dir even though it is not our child', async () => {
+    writeRuntime({ pid: LIVE_PID, startedAt: 777 });
+    const saved: Array<ManagedDaemonRecord | null> = [];
+    let alive = true;
+    const sup = supervisor({ record: owned(LIVE_PID, 777), alive: () => alive, saved });
+    const signalled: number[] = [];
+    const kill = vi.spyOn(process, 'kill').mockImplementation(((pid: number) => {
+      signalled.push(pid);
+      alive = false;
+      return true;
+    }) as never);
+    try {
+      // timeout 0: it is gone the moment we signal it, so there is nothing to wait for.
+      await expect(sup.stop(0)).resolves.toBe(true);
+    } finally {
+      kill.mockRestore();
+    }
+    expect(signalled).toEqual([LIVE_PID]);
+    expect(saved).toEqual([null]); // the ownership record goes with the process
+  });
+
+  it('refuses to start while any daemon holds the data dir', async () => {
+    writeRuntime({ pid: LIVE_PID, startedAt: 777 });
+    const res = await supervisor({ record: null }).start({ command: '/electron', args: [], env: {} }, { workspace: '/w', port: 4780 });
+    expect(res).toMatchObject({ ok: false, code: 'already_running' });
+  });
+});
+
+describe('DaemonSupervisor restarting a daemon an earlier run started', () => {
+  const LAUNCH = { command: '/electron', args: ['/entry.js'], env: {}, workspace: '/w', port: 4780 };
+
+  function supervisor(record: ManagedDaemonRecord | null, spawned: string[][]): DaemonSupervisor {
+    return new DaemonSupervisor(tempDataDir(), {
+      now: movingClock(),
+      sleep: () => new Promise((r) => setImmediate(r)),
+      env: async () => ({}),
+      isAlive: () => false,
+      loadRecord: () => record,
+      saveRecord: () => {},
+      spawnImpl: ((_cmd: string, argv: string[]) => {
+        spawned.push(argv);
+        const child = fakeChild();
+        setImmediate(() => {
+          child.exitCode = 1;
+          child.emit('exit', 1, null);
+        });
+        return child;
+      }) as never,
+    });
+  }
+
+  it('replays the persisted launch spec, not just the one from this run', async () => {
+    const spawned: string[][] = [];
+    // `running: null` — the process is gone; only the launch survived.
+    const sup = supervisor({ running: null, launch: LAUNCH }, spawned);
+
+    expect(sup.hasLaunchSpec()).toBe(true);
+    await sup.startLast();
+
+    expect(spawned[0]).toEqual(['/entry.js', '--workspace', '/w', '--port', '4780', '--host', '127.0.0.1']);
+  });
+
+  it('says so instead of spawning when there is no launch spec at all', async () => {
+    const spawned: string[][] = [];
+    const sup = supervisor(null, spawned);
+
+    expect(sup.hasLaunchSpec()).toBe(false);
+    await expect(sup.startLast()).resolves.toMatchObject({ ok: false, code: 'never_started' });
+    expect(spawned).toEqual([]);
   });
 });

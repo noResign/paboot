@@ -35,6 +35,33 @@ export interface WindowBounds {
   maximized: boolean;
 }
 
+/**
+ * The daemon this app spawned, remembered across app runs. Two separate facts:
+ *
+ * - `running` answers "is the daemon now holding `~/.paboot` the one *we* left
+ *   running?" — which nothing else can: the data dir is fixed, so every local
+ *   daemon (ours, systemd's, one started by hand) shares its `serverId`. Only
+ *   `pid` + `startedAt` of the process we launched is unique to ours.
+ * - `launch` is how we started it, so a later app run can start it again (the
+ *   command used to live only in memory, so a restart could stop a daemon and
+ *   then find it had no way to bring it back).
+ *
+ * The identity half decides labelling and the quit default **only**. Starting and
+ * stopping are open to whichever daemon owns the data dir, whoever started it.
+ */
+export interface ManagedDaemonRecord {
+  running: { pid: number; startedAt: number } | null;
+  launch: {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+    /** The daemon's own argv: `--workspace` / `--port` / `--host`. */
+    workspace: string;
+    port: number;
+    host?: string;
+  } | null;
+}
+
 interface SettingsFile {
   /** Every daemon the user has connected to; main keeps them all alive (§4). */
   connections: StoredConnection[];
@@ -44,6 +71,8 @@ interface SettingsFile {
   prefs: AppPrefs;
   /** Last window geometry; null until the window has been sized once. */
   windowBounds: WindowBounds | null;
+  /** See {@link ManagedDaemonRecord}. Null when we have never started one. */
+  managedDaemon: ManagedDaemonRecord | null;
 }
 
 const EMPTY: SettingsFile = {
@@ -52,6 +81,7 @@ const EMPTY: SettingsFile = {
   recent: [],
   prefs: { closeBehavior: 'ask', desktopNotifications: true, daemonOnQuit: 'ask' },
   windowBounds: null,
+  managedDaemon: null,
 };
 const MAX_RECENT = 5;
 
@@ -79,10 +109,34 @@ function read(): SettingsFile {
       recent: Array.isArray(parsed.recent) ? parsed.recent : [],
       prefs: { ...EMPTY.prefs, ...(parsed.prefs ?? {}) },
       windowBounds: parsed.windowBounds ?? null,
+      managedDaemon: normalizeManagedDaemon(parsed.managedDaemon),
     };
   } catch {
     return { ...EMPTY };
   }
+}
+
+/** Read back a persisted record, dropping anything that is not the shape we wrote. */
+function normalizeManagedDaemon(raw: unknown): ManagedDaemonRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<ManagedDaemonRecord>;
+  const running =
+    value.running && typeof value.running.pid === 'number' && typeof value.running.startedAt === 'number'
+      ? { pid: value.running.pid, startedAt: value.running.startedAt }
+      : null;
+  const l = value.launch;
+  const launch =
+    l && typeof l.command === 'string' && Array.isArray(l.args) && typeof l.workspace === 'string' && typeof l.port === 'number'
+      ? {
+          command: l.command,
+          args: l.args.filter((a): a is string => typeof a === 'string'),
+          env: l.env && typeof l.env === 'object' ? (l.env as Record<string, string>) : {},
+          workspace: l.workspace,
+          port: l.port,
+          host: typeof l.host === 'string' ? l.host : undefined,
+        }
+      : null;
+  return running || launch ? { running, launch } : null;
 }
 
 function write(next: SettingsFile): void {
@@ -200,6 +254,17 @@ export function rememberConnection(baseUrl: string, name: string | null): void {
  */
 export function loadPrefs(): AppPrefs {
   return read().prefs;
+}
+
+/** The daemon we spawned (and may have left running) — see {@link ManagedDaemonRecord}. */
+export function loadManagedDaemon(): ManagedDaemonRecord | null {
+  return read().managedDaemon;
+}
+
+export function saveManagedDaemon(record: ManagedDaemonRecord | null): void {
+  const next = read();
+  next.managedDaemon = record;
+  write(next);
 }
 
 export function savePrefs(patch: Partial<AppPrefs>): AppPrefs {

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loginShellEnv } from './login-shell-env';
+import type { ManagedDaemonRecord } from '../settings';
 
 /**
  * Runs a daemon **we** own. Attaching to someone else's daemon is
@@ -81,16 +82,38 @@ export function resolveDaemonCommand(input: CommandInput): DaemonCommand | null 
 /** The shape the daemon writes once it is *listening* (see `daemon_runtime.json`). */
 export interface RuntimeFile {
   pid: number;
+  /** When that process started — half of `ManagedDaemonRecord`'s identity. */
+  startedAt: number;
   listen: string;
+  /** Whether the listen address speaks TLS — needed to dial `listen` ourselves. */
+  tls: boolean;
   version?: string;
 }
 
+/** `kill(pid, 0)` probes liveness; `EPERM` means it exists but is someone else's. */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 /**
- * A runtime file only counts when it is *this* process and it is fresh: the file
- * survives a `kill -9`, so "it exists" alone would let a stale one convince us a
- * dead daemon is up.
+ * A runtime file only counts when it is fresh: the file survives a `kill -9`, so
+ * "it exists" alone would let a stale one convince us a dead daemon is up.
+ *
+ * `expectedPid` pins it to our own child while a start is in flight. Pass `null`
+ * for "whichever daemon holds this data dir" — how we find one an earlier app
+ * run left running.
  */
-export function parseRuntimeFile(raw: string, expectedPid: number, now: number, mtimeMs: number): RuntimeFile | null {
+export function parseRuntimeFile(
+  raw: string,
+  expectedPid: number | null,
+  now: number,
+  mtimeMs: number,
+): RuntimeFile | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -100,9 +123,15 @@ export function parseRuntimeFile(raw: string, expectedPid: number, now: number, 
   if (!parsed || typeof parsed !== 'object') return null;
   const file = parsed as Partial<RuntimeFile>;
   if (typeof file.pid !== 'number' || typeof file.listen !== 'string' || !file.listen) return null;
-  if (file.pid !== expectedPid) return null;
+  if (expectedPid !== null && file.pid !== expectedPid) return null;
   if (now - mtimeMs > 60_000) return null;
-  return { pid: file.pid, listen: file.listen, version: file.version };
+  return {
+    pid: file.pid,
+    startedAt: typeof file.startedAt === 'number' ? file.startedAt : 0,
+    listen: file.listen,
+    tls: (file as { tls?: unknown }).tls === true,
+    version: file.version,
+  };
 }
 
 export type StartResult =
@@ -115,6 +144,19 @@ export interface SupervisorDeps {
   sleep?: (ms: number) => Promise<void>;
   spawnImpl?: typeof spawn;
   env?: () => Promise<Record<string, string>>;
+  /**
+   * Persisted record of the daemon we spawned (`settings.loadManagedDaemon` /
+   * `saveManagedDaemon`). Injected so the supervisor stays free of settings and
+   * testable; the defaults are a no-op, which simply means "we own only what we
+   * are currently running".
+   */
+  loadRecord?: () => ManagedDaemonRecord | null;
+  saveRecord?: (record: ManagedDaemonRecord | null) => void;
+  /**
+   * Liveness probe for a pid. Injected so ownership/stop can be tested without
+   * spawning real processes; defaults to `kill(pid, 0)`.
+   */
+  isAlive?: (pid: number) => boolean;
 }
 
 const READY_TIMEOUT_MS = 15_000;
@@ -127,6 +169,9 @@ export class DaemonSupervisor {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly spawnImpl: typeof spawn;
   private readonly env: () => Promise<Record<string, string>>;
+  private readonly loadRecord: () => ManagedDaemonRecord | null;
+  private readonly saveRecord: (record: ManagedDaemonRecord | null) => void;
+  private readonly isAlive: (pid: number) => boolean;
   /** The last command/args we launched, so we can start the same daemon again. */
   private lastStart: { command: DaemonCommand; args: DaemonArgsInput } | null = null;
 
@@ -135,6 +180,9 @@ export class DaemonSupervisor {
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.spawnImpl = deps.spawnImpl ?? spawn;
     this.env = deps.env ?? loginShellEnv;
+    this.loadRecord = deps.loadRecord ?? (() => null);
+    this.saveRecord = deps.saveRecord ?? (() => {});
+    this.isAlive = deps.isAlive ?? isAlive;
   }
 
   get logPath(): string {
@@ -145,17 +193,41 @@ export class DaemonSupervisor {
     return path.join(this.dataDir, 'daemon_runtime.json');
   }
 
+  /** Whether we hold a *live child* — the one process this app can call its own. */
   running(): boolean {
     return this.child !== null && this.child.exitCode === null;
   }
 
   /**
-   * pid of the daemon we spawned, or null when we hold no live child. Discovery
-   * uses it to tell "the daemon this app owns" from "some daemon on this machine"
-   * now that both share `~/.paboot` (there is no longer a path to tell them apart).
+   * pid of the daemon **we started**, if it is the one currently running: this
+   * run's child, or a leftover from an earlier run recognised by the persisted
+   * `{pid, startedAt}`. Null when the daemon up is somebody else's.
+   *
+   * Discovery uses this to label the daemon on `~/.paboot` as "ours" — the data
+   * dir is fixed now, so there is no longer a *path* to tell them apart.
    */
   pid(): number | null {
-    return this.running() ? (this.child?.pid ?? null) : null;
+    if (this.running()) return this.child?.pid ?? null;
+    const live = this.liveRuntime();
+    if (!live || !this.isAlive(live.pid)) return null;
+    const left = this.loadRecord()?.running;
+    return left && left.pid === live.pid && left.startedAt === live.startedAt ? live.pid : null;
+  }
+
+  /**
+   * pid of **whatever** daemon holds this data dir right now, whoever started it
+   * (us, systemd, or by hand). Stopping targets this; there is at most one, by
+   * construction — the daemon holds `paboot.lock` for as long as it runs.
+   */
+  livePid(): number | null {
+    if (this.running()) return this.child?.pid ?? null;
+    const live = this.liveRuntime();
+    return live && this.isAlive(live.pid) ? live.pid : null;
+  }
+
+  /** The daemon the runtime file names, with no ownership filter — see `livePid`. */
+  liveRuntime(): RuntimeFile | null {
+    return this.readRuntime(null);
   }
 
   /** Append one line of our own narration next to the daemon's output. */
@@ -186,7 +258,12 @@ export class DaemonSupervisor {
    * failure comes back as `{ ok: false, code }` so the UI can explain it.
    */
   async start(command: DaemonCommand, args: DaemonArgsInput): Promise<StartResult> {
-    if (this.running()) return { ok: false, code: 'already_running', message: '本机 daemon 已经在运行' };
+    // Anything already holding the data dir blocks a start — including a daemon
+    // we did not spawn. The daemon's own lock would refuse us too, but only
+    // after spawning a child and reading its log back.
+    if (this.livePid() !== null) {
+      return { ok: false, code: 'already_running', message: '本机 daemon 已经在运行' };
+    }
 
     let env: Record<string, string>;
     try {
@@ -254,6 +331,19 @@ export class DaemonSupervisor {
       }
       const ready = this.readRuntime(pid);
       if (ready) {
+        // Remember whose daemon this is (so a later app run can still call it
+        // ours) *and* how we launched it (so that run can start it again).
+        this.saveRecord({
+          running: { pid: ready.pid, startedAt: ready.startedAt },
+          launch: {
+            command: command.command,
+            args: command.args,
+            env: command.env,
+            workspace: args.workspace,
+            port: args.port,
+            host: args.host,
+          },
+        });
         this.log(`ready at ${ready.listen}`);
         return { ok: true, pid, listen: ready.listen };
       }
@@ -264,44 +354,100 @@ export class DaemonSupervisor {
     return { ok: false, code: 'timeout', message: `启动超时（${READY_TIMEOUT_MS / 1000}s）` };
   }
 
-  /** SIGTERM → wait for the runtime file to disappear → SIGKILL. */
+  /**
+   * SIGTERM → wait for the daemon to exit → SIGKILL.
+   *
+   * Stops whichever daemon holds the data dir, not only one we spawned: a
+   * daemon left running by an earlier app run is one we *did* start, and a
+   * daemon someone else started is still the single owner of `~/.paboot`. The
+   * caller decides whether stopping it is the right thing to do.
+   */
   async stop(timeoutMs = 8_000): Promise<boolean> {
-    const child = this.child;
-    if (!child || child.exitCode !== null) {
+    const pid = this.livePid();
+    if (pid === null) {
+      this.forgetOwnership();
       this.cleanupFd();
       return true;
     }
     try {
-      child.kill('SIGTERM');
+      process.kill(pid, 'SIGTERM');
     } catch (err) {
-      this.log(`SIGTERM failed: ${describe(err)}`);
+      this.log(`SIGTERM to ${pid} failed: ${describe(err)}`);
     }
     const deadline = this.now() + timeoutMs;
     while (this.now() < deadline) {
-      // The daemon's own handler deletes the runtime file, so its absence means
-      // it really stopped — not merely that it stopped answering.
-      if (!this.running() && !fs.existsSync(this.runtimePath)) {
-        this.cleanupFd();
-        this.log('stopped cleanly');
-        return true;
+      // The daemon's own handler deletes the runtime file as it exits, so its
+      // absence means it really stopped — not merely that it stopped answering.
+      if (!this.isAlive(pid) && !fs.existsSync(this.runtimePath)) break;
+      await this.sleep(READY_POLL_MS);
+    }
+    const stopped = !this.isAlive(pid);
+    if (stopped) {
+      this.log(`stopped pid ${pid}`);
+    } else {
+      this.log(`stop timed out, sending SIGKILL to ${pid}`);
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (err) {
+        this.log(`SIGKILL failed: ${describe(err)}`);
+      }
+    }
+    this.child = null;
+    this.forgetOwnership();
+    this.cleanupFd();
+    return stopped;
+  }
+
+  /**
+   * Drop the running identity — it no longer describes a live daemon. The launch
+   * spec stays: knowing how to start it is exactly what makes it restartable.
+   */
+  private forgetOwnership(): void {
+    const launch = this.loadRecord()?.launch ?? null;
+    this.saveRecord(launch ? { running: null, launch } : null);
+  }
+
+  /**
+   * Wait for *any* daemon to take the data dir. Used after `systemctl start`,
+   * where the process is not our child, so `start`'s own readiness loop (which
+   * pins the runtime file to that child) cannot be used.
+   */
+  async waitReady(timeoutMs = READY_TIMEOUT_MS): Promise<RuntimeFile | null> {
+    const deadline = this.now() + timeoutMs;
+    while (this.now() < deadline) {
+      const live = this.liveRuntime();
+      if (live && this.isAlive(live.pid)) {
+        this.log(`ready at ${live.listen} (pid ${live.pid})`);
+        return live;
       }
       await this.sleep(READY_POLL_MS);
     }
-    this.log('stop timed out, sending SIGKILL');
-    try {
-      child.kill('SIGKILL');
-    } catch (err) {
-      this.log(`SIGKILL failed: ${describe(err)}`);
-    }
-    this.cleanupFd();
-    return false;
+    return null;
   }
 
-  /** Start again with the last command/args we used — the other half of a restart. */
+  /**
+   * Whether `startLast` can work: we know how the daemon was launched — this run
+   * (`lastStart`) or a previous one (the persisted launch spec).
+   */
+  hasLaunchSpec(): boolean {
+    return this.lastStart !== null || this.launchFromRecord() !== null;
+  }
+
+  /** Start again with the command/args we launched it with — half of a restart. */
   async startLast(): Promise<StartResult> {
-    const last = this.lastStart;
+    const last = this.lastStart ?? this.launchFromRecord();
     if (!last) return { ok: false, code: 'never_started', message: '没有本应用启动过的 daemon 可以重启' };
     return this.start(last.command, last.args);
+  }
+
+  /** The launch spec a previous app run persisted, rebuilt into what `start` takes. */
+  private launchFromRecord(): { command: DaemonCommand; args: DaemonArgsInput } | null {
+    const launch = this.loadRecord()?.launch;
+    if (!launch) return null;
+    return {
+      command: { command: launch.command, args: launch.args, env: launch.env },
+      args: { workspace: launch.workspace, port: launch.port, host: launch.host },
+    };
   }
 
   /** Stop, then start again with the same command/args. */
@@ -310,8 +456,8 @@ export class DaemonSupervisor {
     return this.startLast();
   }
 
-  /** Read the runtime file and accept it only if it belongs to our child. */
-  private readRuntime(pid: number): RuntimeFile | null {
+  /** Read the runtime file; `pid` pins it to our child, `null` accepts any daemon. */
+  private readRuntime(pid: number | null): RuntimeFile | null {
     try {
       const stat = fs.statSync(this.runtimePath);
       return parseRuntimeFile(fs.readFileSync(this.runtimePath, 'utf8'), pid, this.now(), stat.mtimeMs);

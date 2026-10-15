@@ -5,6 +5,7 @@ import type {
   ManagedDaemonStartInput,
   ManagedDaemonStartResult,
   ManagedDaemonStatus,
+  ManagedDaemonStopResult,
   ManagedDaemonTokenResult,
   ConnectInput,
   DaemonRequest,
@@ -32,7 +33,7 @@ export interface ShellDeps {
   daemon: {
     status(): ManagedDaemonStatus;
     start(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
-    stop(): Promise<void>;
+    stop(): Promise<ManagedDaemonStopResult>;
     logs(lines?: number): string[];
     setToken(token?: string): Promise<ManagedDaemonTokenResult>;
   };
@@ -124,6 +125,12 @@ export function registerIpc(
 
   ipcMain.handle(IPC.daemonStatus, () => shell.daemon.status());
   ipcMain.handle(IPC.daemonStart, async (_event, input: ManagedDaemonStartInput) => {
+    // An installed systemd unit owns the daemon's configuration, so「启动」means
+    // `systemctl start` and the form's workspace/port are neither required nor
+    // used (see `index.ts` `startLocalDaemon`).
+    if (shell.daemon.status().systemd) {
+      return shell.daemon.start({ workspace: '', port: 0 });
+    }
     // Validation lives here, not in preload: the renderer is not trusted, and a
     // workspace path is exactly the value we must not take on faith.
     if (!input || typeof input.workspace !== 'string' || !input.workspace.trim()) {

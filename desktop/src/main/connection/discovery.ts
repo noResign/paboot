@@ -21,6 +21,13 @@ export interface RuntimeInfoFile {
 /** Age past which a runtime-info file is treated as stale (daemon touches every 30s). */
 export const STALE_AFTER_MS = 90_000;
 
+/** The user unit a local daemon is conventionally installed as (Linux). */
+export const SYSTEMD_UNIT_NAME = 'paboot.service';
+
+export function systemdUnitPath(homeDir: string): string {
+  return `${homeDir}/.config/systemd/user/${SYSTEMD_UNIT_NAME}`;
+}
+
 /** Fixed small port list — ten loopback requests, not a port scan. */
 export const PORT_SCAN_FROM = 4780;
 export const PORT_SCAN_TO = 4789;
@@ -260,7 +267,7 @@ export async function probeDaemons(deps: ProbeDeps): Promise<ProbeResult> {
   // 3. systemd user unit (Linux) — also the place we might learn a token from.
   // A unit routinely declares neither --port nor --host (both come from the
   // EnvironmentFile), and paths carry `%h`; both have to be resolved here.
-  const unitPath = `${deps.homeDir}/.config/systemd/user/paboot.service`;
+  const unitPath = systemdUnitPath(deps.homeDir);
   const unitText = deps.readFile(unitPath);
   if (unitText) {
     const unit = parseSystemdUnit(unitText);

@@ -18,6 +18,13 @@ const SOURCE_LABEL: Record<string, string> = {
   'port-scan': '端口探测',
 };
 
+/** Who started the daemon holding `~/.paboot` — labelling only, not a permission. */
+const PROVENANCE_LABEL: Record<ManagedDaemonStatus['provenance'] & string, string> = {
+  app: '本应用启动',
+  systemd: 'systemd 托管',
+  manual: '手动启动',
+};
+
 /** 小节导航的顺序与命名沿用 `docs/local/pages/settings.md` §6.7。 */
 export type SettingsSection =
   | 'connection'
@@ -71,6 +78,8 @@ export function SettingsPage({
   const [daemon, setDaemon] = useState<ManagedDaemonStatus | null>(null);
   const [daemonLogs, setDaemonLogs] = useState<string[]>([]);
   const [daemonBusy, setDaemonBusy] = useState(false);
+  /** Why the last stop attempt failed — see `ManagedDaemonStopResult`. */
+  const [stopError, setStopError] = useState<string | null>(null);
   const [tokenInput, setTokenInput] = useState('');
   const [tokenBusy, setTokenBusy] = useState(false);
   const [tokenConfirm, setTokenConfirm] = useState(false);
@@ -99,8 +108,10 @@ export function SettingsPage({
 
   async function stopManaged(): Promise<void> {
     setDaemonBusy(true);
-    await window.paboot.daemonStop();
+    setStopError(null);
+    const res = await window.paboot.daemonStop();
     setDaemonBusy(false);
+    if (!res.ok) setStopError(res.message);
     await refreshManaged();
   }
 
@@ -109,7 +120,8 @@ export function SettingsPage({
    * it, so the first click only warns about the disruption and the second commits.
    */
   async function changeToken(): Promise<void> {
-    if (daemon?.running && !tokenConfirm) {
+    // Only warn about the disruption when we will actually restart it.
+    if (daemon?.running && daemon.restartable && !tokenConfirm) {
       setTokenConfirm(true);
       return;
     }
@@ -187,6 +199,10 @@ export function SettingsPage({
                     <dl className="kv">
                       <dt>状态</dt>
                       <dd>● 运行中 · v{found.version}</dd>
+                      <dt>PID</dt>
+                      <dd className="mono">{daemon?.pid ?? '—'}</dd>
+                      <dt>归属</dt>
+                      <dd>{daemon?.provenance ? PROVENANCE_LABEL[daemon.provenance] : '—'}</dd>
                       <dt>地址</dt>
                       <dd className="mono">{found.listen}</dd>
                       <dt>主机</dt>
@@ -198,12 +214,6 @@ export function SettingsPage({
                       <dt>发现方式</dt>
                       <dd>{SOURCE_LABEL[found.source] ?? found.source}</dd>
                     </dl>
-                    {found.source !== 'managed' && (
-                      <div className="hint">
-                        这个 daemon 不是本应用启动的，所以只能连接与查看，不能在这里启停或改手机访问开关。
-                        {found.source === 'systemd' && ' 它由 systemd 管理，请在系统层面操作。'}
-                      </div>
-                    )}
                   </>
                 ) : (
                   <div className="hint" style={{ marginTop: 0 }}>
@@ -216,8 +226,10 @@ export function SettingsPage({
                   </div>
                 )}
                 <div className="hint">
-                  启动/停止/日志只对<b>本应用托管的 daemon</b> 生效；附着来的（systemd、别人手动起的）
-                  一律只读，不去 shell out <span className="mono">systemctl</span>。
+                  本机只有一台 daemon（数据目录固定，由它自己的锁保证独占），所以不论谁启动的，
+                  都能在下面停止/重启。
+                  {daemon?.provenance === 'systemd' &&
+                    ' 它由 systemd 托管，启停会走 systemctl --user，停止后要重新起来得用 systemctl --user start paboot。'}
                 </div>
               </section>
             )}
@@ -225,7 +237,7 @@ export function SettingsPage({
             {section === 'daemon' && (
               <section className="settings-section">
                 <div className="section-head">
-                  <h3>本应用托管的 daemon</h3>
+                  <h3>本机 daemon 的启停</h3>
                   <button className="btn tiny" onClick={() => void refreshManaged()}>
                     刷新
                   </button>
@@ -237,7 +249,14 @@ export function SettingsPage({
                 </div>
                 <dl className="kv">
                   <dt>状态</dt>
-                  <dd>{daemon?.running ? '● 本应用启动，运行中' : '○ 未运行（本应用没有启动 daemon）'}</dd>
+                  <dd>
+                    {daemon?.running
+                      ? `● 运行中（pid ${daemon.pid ?? '?'}）${
+                          daemon.provenance ? ` · ${PROVENANCE_LABEL[daemon.provenance]}` : ''
+                        }`
+                      : '○ 未运行'}
+                    {stopError && <div className="error-text">停止失败：{stopError}</div>}
+                  </dd>
                   <dt>日志</dt>
                   <dd className="mono">{daemon?.logPath ?? '—'}</dd>
                 </dl>
@@ -260,7 +279,7 @@ export function SettingsPage({
                         ? '处理中…'
                         : tokenConfirm
                           ? '确认：会重启 daemon、断开手机'
-                          : daemon?.running
+                          : daemon?.running && daemon.restartable
                             ? '保存并重启'
                             : '保存'}
                     </button>
@@ -275,7 +294,11 @@ export function SettingsPage({
                   )}
                   <div className="hint">
                     daemon 只在启动时读 token，所以保存后会重启它——<b>正在跑的任务会被中断</b>。
-                    改 token 等于换掉远程 shell 的钥匙；只对本应用托管的 daemon 生效。
+                    改 token 等于换掉远程 shell 的钥匙。
+                    {daemon?.provenance === 'systemd' ? '这台由 systemd 托管，重启会走 systemctl --user。' : ''}
+                    {daemon && !daemon.restartable
+                      ? '这台本应用没法替你重启（不是它启动的，或已经不知道它当初的启动命令），所以只写文件——需要你手动重启，新 token 才生效。'
+                      : ''}
                   </div>
                 </div>
                 {!daemon?.running && (
@@ -285,12 +308,12 @@ export function SettingsPage({
                   </div>
                 )}
                 <div className="field">
-                  <label>退出应用时，本应用启动的 daemon</label>
+                  <label>退出应用时，本机 daemon</label>
                   <div className="mode-picker">
                     {(
                       [
                         { value: 'ask', title: '每次询问', desc: '退出时弹一次确认' },
-                        { value: 'stop', title: '一并停止', desc: '默认：不留后台进程' },
+                        { value: 'stop', title: '一并停止', desc: '不留后台进程（含 systemd 托管的）' },
                         { value: 'keep', title: '保留', desc: '手机与其它电脑仍可连接' },
                       ] as const
                     ).map((option) => (

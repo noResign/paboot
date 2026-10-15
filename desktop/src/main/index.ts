@@ -1,10 +1,22 @@
 import { app, BrowserWindow, dialog, session } from 'electron';
-import { IPC, type ManagedDaemonTokenResult } from '../shared/ipc';
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import {
+  IPC,
+  type ManagedDaemonStartResult,
+  type ManagedDaemonStopResult,
+  type ManagedDaemonTokenResult,
+} from '../shared/ipc';
 import { createWindow, installAppProtocol, installCsp, registerAppScheme } from './window';
 import { ConnectionManager, daemonDataDir } from './connection/manager';
+import { SYSTEMD_UNIT_NAME, baseUrlOf, systemdUnitPath } from './connection/discovery';
+import { DaemonClient } from './daemon/client';
+import { isLoopback } from '../shared/net';
+import { ROUTES } from '../shared/routes';
 import { StreamManager } from './streams/manager';
 import { registerIpc } from './ipc';
-import { loadPrefs, savePrefs } from './settings';
+import { loadManagedDaemon, loadPrefs, saveManagedDaemon, savePrefs } from './settings';
 import { AppTray } from './tray';
 import { closeAllNotifications } from './notify';
 import { resolveCloseAction } from './lifecycle';
@@ -12,7 +24,7 @@ import { installMenu } from './menu';
 import { WindowRegistry } from './windows';
 import { DaemonSupervisor } from './daemon/supervisor';
 import { startManagedDaemon } from './daemon/managed-daemon';
-import { generateToken, writeManagedToken } from './daemon/managed-token';
+import { ensureManagedToken, generateToken, writeManagedToken } from './daemon/managed-token';
 
 // Must happen before app.ready.
 registerAppScheme();
@@ -39,41 +51,186 @@ const registry = new WindowRegistry();
  * The daemon we start and own. Left running across app exits on purpose
  * (`detached` + §5): tasks live on the daemon, and the phone may still be
  * connected. Stopping it is an explicit action, not a side effect of quitting.
+ *
+ * `loadRecord`/`saveRecord` persist its `{pid, startedAt}` so a *later* app run
+ * can still recognise a daemon we left running as ours (see
+ * `settings.ManagedDaemonRecord`).
  */
-const managedDaemon = new DaemonSupervisor(daemonDataDir());
+const managedDaemon = new DaemonSupervisor(daemonDataDir(), {
+  loadRecord: loadManagedDaemon,
+  saveRecord: saveManagedDaemon,
+});
 // Both this daemon and any hand-started one live in `~/.paboot`, so discovery
 // can only tell "ours" from "someone else's" by pid (§已定 6).
 manager.setManagedPidProvider(() => managedDaemon.pid());
+
+/** Who holds `~/.paboot` right now — for labelling and the quit default only. */
+type DaemonProvenance = 'app' | 'systemd' | 'manual';
+
+/** The user unit a local daemon is installed as, if one is installed at all. */
+function systemdUnit(): string | null {
+  return fs.existsSync(systemdUnitPath(os.homedir())) ? SYSTEMD_UNIT_NAME : null;
+}
+
+/**
+ * `systemctl --user` talks to this user's own systemd instance, so it needs
+ * neither sudo nor a root context — but it does need the session bus, which a
+ * launch outside a desktop session (or with a stripped env) may not set.
+ */
+function systemctlEnv(): NodeJS.ProcessEnv {
+  const uid = process.getuid?.();
+  const runtimeDir = process.env['XDG_RUNTIME_DIR'] ?? (uid === undefined ? undefined : `/run/user/${uid}`);
+  if (!runtimeDir) return process.env;
+  return {
+    ...process.env,
+    XDG_RUNTIME_DIR: runtimeDir,
+    ...(process.env['DBUS_SESSION_BUS_ADDRESS'] ? {} : { DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus` }),
+  };
+}
+
+/** `systemctl --user <args>`, carrying what it said on stderr when it fails. */
+function runSystemctl(args: string[]): Promise<{ ok: boolean; message: string }> {
+  return new Promise((resolve) => {
+    execFile('systemctl', ['--user', ...args], { timeout: 20_000, env: systemctlEnv() }, (err, _stdout, stderr) => {
+      if (!err) return resolve({ ok: true, message: '' });
+      const detail = String(stderr ?? '').trim().split('\n')[0]?.trim() || (err as Error).message;
+      resolve({ ok: false, message: detail });
+    });
+  });
+}
+
+/** The unit's live MainPID, or null when systemd cannot say. */
+function systemdMainPid(): Promise<number | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'systemctl',
+      ['--user', 'show', '-p', 'MainPID', '--value', SYSTEMD_UNIT_NAME],
+      { timeout: 10_000, env: systemctlEnv() },
+      (err, stdout) => {
+        if (err) return resolve(null);
+        const pid = Number.parseInt(String(stdout).trim(), 10);
+        resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+      },
+    );
+  });
+}
+
+/**
+ * Whether the daemon holding the data dir *is* the systemd unit's process — the
+ * check that decides between `systemctl stop` and signalling a pid, so an
+ * installed-but-inactive unit never swallows a stop meant for a hand-started
+ * daemon.
+ */
+async function systemdOwnsLive(): Promise<boolean> {
+  if (systemdUnit() === null) return false;
+  const live = managedDaemon.livePid();
+  if (live === null) return false;
+  return (await systemdMainPid()) === live;
+}
+
+/**
+ * Start the local daemon. With a systemd unit installed the unit owns the
+ * daemon's configuration (workspace, port, env), so starting means
+ * `systemctl start` and the form's values do not apply; otherwise we spawn our
+ * own detached daemon from the bundled copy.
+ */
+async function startLocalDaemon(input: {
+  workspace: string;
+  port: number;
+  host?: string;
+}): Promise<ManagedDaemonStartResult> {
+  if (systemdUnit() !== null) {
+    const started = await runSystemctl(['start', SYSTEMD_UNIT_NAME]);
+    if (!started.ok) {
+      return {
+        ok: false,
+        code: 'systemd_failed',
+        message: `systemctl --user start ${SYSTEMD_UNIT_NAME} 失败：${started.message}`,
+      };
+    }
+    const ready = await managedDaemon.waitReady();
+    if (!ready) return { ok: false, code: 'timeout', message: 'systemd 已启动 paboot，但没有等到它就绪' };
+    const token = ensureManagedToken(daemonDataDir());
+    if (!token) return { ok: false, code: 'no_token', message: `无法读取 ${daemonDataDir()}/token` };
+    return { ok: true, pid: ready.pid, listen: ready.listen, token };
+  }
+  return startManagedDaemon(managedDaemon, {
+    ...input,
+    dataDir: daemonDataDir(),
+    userCommand: null,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
+  });
+}
+
 const daemonApi = {
-  status: () => ({ running: managedDaemon.running(), logPath: managedDaemon.logPath }),
-  start: (input: { workspace: string; port: number; host?: string }) =>
-    startManagedDaemon(managedDaemon, {
-      ...input,
-      dataDir: daemonDataDir(),
-      userCommand: null,
-      appPath: app.getAppPath(),
-      resourcesPath: process.resourcesPath,
-      isPackaged: app.isPackaged,
-      execPath: process.execPath,
-    }),
-  stop: () => managedDaemon.stop().then(() => undefined),
+  status: () => {
+    const pid = managedDaemon.livePid();
+    const provenance: DaemonProvenance | null =
+      pid === null ? null : managedDaemon.pid() !== null ? 'app' : systemdUnit() !== null ? 'systemd' : 'manual';
+    return {
+      running: pid !== null,
+      pid,
+      provenance,
+      /** A unit is installed, so 启动 goes through systemd (see `startLocalDaemon`). */
+      systemd: systemdUnit() !== null,
+      restartable: systemdUnit() !== null || managedDaemon.hasLaunchSpec(),
+      logPath: managedDaemon.logPath,
+    };
+  },
+  start: (input: { workspace: string; port: number; host?: string }) => startLocalDaemon(input),
+  // A failed stop has to reach the user: without it the only symptom is "the
+  // status still says running", which reads as a dead button.
+  stop: async (): Promise<ManagedDaemonStopResult> => {
+    if (await systemdOwnsLive()) {
+      const res = await runSystemctl(['stop', SYSTEMD_UNIT_NAME]);
+      if (res.ok) return { ok: true };
+      console.warn('[paboot] systemctl stop failed, falling back to a direct signal:', res.message);
+      if (await managedDaemon.stop()) return { ok: true };
+      return {
+        ok: false,
+        message: `systemctl --user stop 失败（${res.message}），直接向 pid 发信号也没能停下它`,
+      };
+    }
+    if (await managedDaemon.stop()) return { ok: true };
+    return { ok: false, message: 'daemon 没有在超时内退出（详见日志）' };
+  },
   logs: (lines?: number) => managedDaemon.tail(lines ?? 200),
   // 「改 token」: the running daemon only reads <data-dir>/token at startup, so we
   // stop it, swap the file, and start it again — leaving it down would make the
   // change look like it "didn't take".
   setToken: async (token?: string): Promise<ManagedDaemonTokenResult> => {
     const next = token ?? generateToken();
-    const wasRunning = managedDaemon.running();
-    if (wasRunning && !(await managedDaemon.stop())) {
-      return { ok: false, code: 'stop_failed', message: '无法停止 daemon，token 未改（详见日志）' };
+    const viaSystemd = systemdUnit() !== null;
+    const status = daemonApi.status();
+    const wasRunning = status.running;
+    // We can only bring back a daemon we know how to start: through its unit, or
+    // one *this run* spawned (`startLast` needs the command we launched, which
+    // lives in memory). A daemon an earlier run left behind qualifies as ours but
+    // not as restartable — stopping it there would strand it.
+    const canRestart = viaSystemd || (status.provenance === 'app' && managedDaemon.hasLaunchSpec());
+    const restart = () =>
+      viaSystemd ? startLocalDaemon({ workspace: '', port: 0 }) : managedDaemon.startLast();
+
+    if (wasRunning && !canRestart) {
+      // Someone else's daemon, started in a way we do not know: write the token
+      // and leave it running — taking it down would strand it with no way back.
+      if (!writeManagedToken(daemonDataDir(), next)) {
+        return { ok: false, code: 'token_write_failed', message: `无法写入 ${daemonDataDir()}/token` };
+      }
+      return { ok: true, token: next, restarted: false, listen: null };
     }
+
+    if (wasRunning) await daemonApi.stop();
     if (!writeManagedToken(daemonDataDir(), next)) {
       // We may have just stopped it — bring it back rather than leave it down.
-      if (wasRunning) await managedDaemon.startLast();
+      if (wasRunning) await restart();
       return { ok: false, code: 'token_write_failed', message: `无法写入 ${daemonDataDir()}/token` };
     }
     if (!wasRunning) return { ok: true, token: next, restarted: false, listen: null };
-    const res = await managedDaemon.startLast();
+    const res = await restart();
     if (!res.ok) {
       return { ok: false, code: res.code, message: `token 已改，但 daemon 重启失败：${res.message}` };
     }
@@ -120,24 +277,64 @@ function showWindow(sessionId?: string): void {
 let quitResolved = false;
 let quitPromptOpen = false;
 
-async function resolveDaemonOnQuit(): Promise<void> {
-  if (!managedDaemon.running()) return;
+/**
+ * What the quit prompt needs beyond ownership: can the phone reach this daemon,
+ * and is anything actually running on it. One short authenticated round trip
+ * each, best-effort — a failure just means the default falls back to ownership
+ * (design §7.5's「自适应默认」).
+ */
+async function localDaemonFacts(): Promise<{ exposed: boolean; runningTasks: number } | null> {
+  const live = managedDaemon.liveRuntime();
+  if (!live) return null;
+  const token = ensureManagedToken(daemonDataDir());
+  if (!token) return null;
+  const client = new DaemonClient({ baseUrl: baseUrlOf(live.listen, live.tls), token });
+  const [config, sessions] = await Promise.all([
+    client.request<{ server?: { host?: string } }>({ method: 'GET', path: ROUTES.config, timeoutMs: 2_000 }),
+    client.request<{ sessions?: Array<{ runningRunId?: string | null }> }>({
+      method: 'GET',
+      path: ROUTES.sessions,
+      timeoutMs: 2_000,
+    }),
+  ]);
+  if (!config.ok && !sessions.ok) return null;
+  const host = config.ok ? (config.data.server?.host ?? null) : null;
+  const runningTasks = sessions.ok
+    ? (sessions.data.sessions ?? []).filter((session) => session.runningRunId).length
+    : 0;
+  return { exposed: host !== null && !isLoopback(host), runningTasks };
+}
+
+async function resolveDaemonOnQuit(): Promise<boolean> {
+  const status = daemonApi.status();
+  if (!status.running) return true;
   const { daemonOnQuit } = loadPrefs();
   if (daemonOnQuit === 'stop') {
-    await managedDaemon.stop();
-    return;
+    await daemonApi.stop();
+    return true;
   }
-  if (daemonOnQuit === 'keep') return;
-  if (quitPromptOpen) return;
+  if (daemonOnQuit === 'keep') return true;
+  if (quitPromptOpen) return false;
 
   quitPromptOpen = true;
   try {
+    const ours = status.provenance === 'app';
+    const systemd = status.provenance === 'systemd';
+    const facts = await localDaemonFacts();
+    const tasks = facts?.runningTasks ?? 0;
+    // 自适应默认 (design §7.5): keep when someone else could be relying on it —
+    // it is not ours, or the phone can reach it, or work is in flight. Stopping
+    // is then a deliberate click, never a stray Enter.
+    const keepByDefault = !ours || facts?.exposed === true || tasks > 0;
     const options: Electron.MessageBoxOptions = {
       type: 'question',
-      message: '本应用启动的本机 daemon 还在运行',
-      detail: '保留的话，手机和其它电脑仍能连上它，正在跑的任务也不会中断；停止则这台机器上的 agent 全部结束。',
+      message: ours ? '本应用启动的本机 daemon 还在运行' : '本机 daemon 还在运行（不是本应用启动的）',
+      detail:
+        (tasks > 0 ? `有 ${tasks} 个任务在跑，停止会中断它们。` : '') +
+        '保留的话，手机和其它电脑仍能连上它，正在跑的任务也不会中断；停止则这台机器上的 agent 全部结束。' +
+        (systemd ? '它由 systemd 托管，停止后要重新起来得用 systemctl --user start paboot。' : ''),
       buttons: ['一并停止', '保留（手机仍可连接）', '取消'],
-      defaultId: 0,
+      defaultId: keepByDefault ? 1 : 0,
       cancelId: 2,
       checkboxLabel: '记住我的选择',
       noLink: true,
@@ -146,13 +343,14 @@ async function resolveDaemonOnQuit(): Promise<void> {
     const { response, checkboxChecked } = win
       ? await dialog.showMessageBox(win, options)
       : await dialog.showMessageBox(options);
-    if (response === 2) return; // cancelled → the app stays up
+    if (response === 2) return false; // cancelled → the app stays up
     if (response === 1) {
       if (checkboxChecked) savePrefs({ daemonOnQuit: 'keep' });
-      return;
+      return true;
     }
-    await managedDaemon.stop();
+    await daemonApi.stop();
     if (checkboxChecked) savePrefs({ daemonOnQuit: 'stop' });
+    return true;
   } finally {
     quitPromptOpen = false;
   }
@@ -244,11 +442,18 @@ if (!app.requestSingleInstanceLock()) {
     if (quitResolved) return;
     event.preventDefault();
     void (async () => {
+      let proceed = true;
       try {
-        await resolveDaemonOnQuit();
+        proceed = await resolveDaemonOnQuit();
       } catch (err) {
         // A failed stop must not trap the user in a windowless app.
         console.warn('[paboot] resolving the managed daemon on quit failed:', err);
+      }
+      if (!proceed) {
+        // The user cancelled the prompt: undo the quit, or the app exits anyway
+        // and the next window close would sail straight through (`quitting`).
+        quitting = false;
+        return;
       }
       quitResolved = true;
       closeAllNotifications();

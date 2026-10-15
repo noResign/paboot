@@ -156,9 +156,26 @@ export type ConnectResult =
   | { ok: true; view: ConnectionView }
   | { ok: false; code: string; message: string };
 
-/** A daemon this app started and therefore owns (as opposed to one we attached to). */
+/**
+ * The local daemon — whatever holds `~/.paboot`, which the fixed data dir and the
+ * daemon's own lock guarantee is at most one. Starting and stopping are open to
+ * it whoever started it; `provenance` only decides labelling and the quit default.
+ */
 export interface ManagedDaemonStatus {
   running: boolean;
+  /** pid of the running daemon, whoever started it; null when nothing is up. */
+  pid: number | null;
+  /** Who started it: us (this run or an earlier one), systemd, or by hand. */
+  provenance: 'app' | 'systemd' | 'manual' | null;
+  /** A systemd unit is installed, so「启动」goes through `systemctl` and owns its own config. */
+  systemd: boolean;
+  /**
+   * This app can bring the daemon back after stopping it: it owns the unit, or it
+   * knows the command it was launched with. False for one an earlier app run left
+   * behind — then 「改 token」 writes the file without restarting it rather than
+   * stopping something it cannot restart.
+   */
+  restartable: boolean;
   /** Where its stdout/stderr (and our own narration) land — the thing to read when it fails. */
   logPath: string;
 }
@@ -174,6 +191,13 @@ export interface ManagedDaemonStartInput {
 export type ManagedDaemonStartResult =
   | { ok: true; pid: number; listen: string | null; token: string }
   | { ok: false; code: string; message: string };
+
+/**
+ * Outcome of stopping the local daemon. A failure has to come back as one: the
+ * only other symptom would be a status line that still says「运行中」, which reads
+ * as a dead button.
+ */
+export type ManagedDaemonStopResult = { ok: true } | { ok: false; message: string };
 
 /**
  * Outcome of「改 token」. `restarted` says whether the daemon was relaunched so
@@ -341,7 +365,7 @@ export interface PabootBridge {
   daemonStatus(): Promise<ManagedDaemonStatus>;
   /** Start one we own. Every failure is a `{ ok: false, code }`, never a rejection. */
   daemonStart(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
-  daemonStop(): Promise<void>;
+  daemonStop(): Promise<ManagedDaemonStopResult>;
   /** Recent lines of the managed daemon's log. */
   daemonLogs(lines?: number): Promise<string[]>;
   /**

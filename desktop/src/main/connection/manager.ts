@@ -30,6 +30,9 @@ interface Target {
   name: string | null;
 }
 
+/** Past this, a probe is too old to vouch for "this address is a local daemon". */
+const PROBE_MAX_AGE_MS = 5 * 60_000;
+
 interface Entry {
   target: Target;
   /** The daemon's own identity once known — see `ConnectionView.serverId`. */
@@ -153,6 +156,9 @@ export class ConnectionManager {
     let token = input.token?.trim() || null;
     let source: string | null = null;
     if (!token) {
+      // A local daemon must not make the user retype its token just because the
+      // probe aged out while this page sat open: refresh it and look again.
+      if (settings.isLoopback(host)) await this.refreshProbeIfStale();
       const local = this.readLocalToken(host, port, tls);
       if (local) {
         token = local.token;
@@ -272,11 +278,16 @@ export class ConnectionManager {
   private readLocalToken(host: string, port: number, tls: boolean): { token: string; source: string } | null {
     const probe = this.lastProbe;
     if (!probe?.found || !probe.localToken) return null;
-    if (Date.now() - this.lastProbedAt > 5 * 60_000) return null;
+    if (Date.now() - this.lastProbedAt > PROBE_MAX_AGE_MS) return null;
     const foundAt = splitListen(probe.found.listen);
     if (!foundAt || foundAt.host !== host || foundAt.port !== port) return null;
     if (probe.found.tls !== tls) return null;
     return readTokenHint(probe.localToken);
+  }
+
+  /** Re-probe when the last scan is too old to vouch for a local token read. */
+  private async refreshProbeIfStale(): Promise<void> {
+    if (Date.now() - this.lastProbedAt > PROBE_MAX_AGE_MS) await this.probe();
   }
 
   private probeDeps(): ProbeDeps {
