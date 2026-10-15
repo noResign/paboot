@@ -41,7 +41,6 @@ pnpm test             # Vitest
 | `--host` | `PABOOT_HOST` | `0.0.0.0` | 监听地址（`127.0.0.1` = 仅本机） |
 | `--port` | `PABOOT_PORT` | `4780` | 端口 |
 | `--workspace` | `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录 |
-| `--data-dir` | `PABOOT_DATA_DIR` | `~/.paboot` | SQLite + token |
 | `--token` | `PABOOT_TOKEN` | 自动生成 | Bearer 鉴权密钥 |
 | `--permission-mode` | `PABOOT_PERMISSION_MODE` | `default`(=ask) | 新 Session 权限模式 seed |
 | `--env-file` | `PABOOT_ENV_FILE` | `./.env` | `.env` 路径 |

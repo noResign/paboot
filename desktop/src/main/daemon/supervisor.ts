@@ -22,7 +22,6 @@ import { loginShellEnv } from './login-shell-env';
  */
 
 export interface DaemonArgsInput {
-  dataDir: string;
   /** The agent's writable root — must come from the user, never guessed (§2). */
   workspace: string;
   port: number;
@@ -30,11 +29,13 @@ export interface DaemonArgsInput {
   host?: string;
 }
 
-/** `--host` is spelled out: the daemon defaults to `0.0.0.0`. */
+/**
+ * `--host` is spelled out: the daemon defaults to `0.0.0.0`. The data root is
+ * deliberately not passed — it is fixed at `~/.paboot` inside the daemon, so the
+ * two can never disagree about where the DB (and the `serverId` in it) lives.
+ */
 export function buildDaemonArgs(input: DaemonArgsInput): string[] {
   return [
-    '--data-dir',
-    input.dataDir,
     '--workspace',
     input.workspace,
     '--port',
@@ -322,6 +323,11 @@ export class DaemonSupervisor {
   /** The daemon's last words are in the log; point at the likely cause. */
   private hintForExit(): string {
     const tail = this.tail(20).join('\n');
+    // The daemon refuses to start when another one holds the (fixed) data dir —
+    // that is a different fix from "the port is taken".
+    if (/已经有 daemon 在运行/.test(tail)) {
+      return '这个数据目录上已经有一个 daemon 在运行——同一台机器同时只能跑一个，先停掉它（详见日志）';
+    }
     if (/EADDRINUSE|address already in use/i.test(tail)) {
       return '端口被占用，换一个端口或先关掉占用它的程序（详见日志）';
     }

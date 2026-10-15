@@ -4,8 +4,13 @@
 
 ## 数据模型（SQLite）
 
-数据根默认 `~/.paboot`（`--data-dir` 可改），下面有 `paboot.sqlite`、`token`
-与 `daemon_runtime.json`（见运行信息）。
+数据根固定 `~/.paboot`（不可配置），下面有 `paboot.sqlite`、`token`、
+`daemon_runtime.json`（见运行信息）与 `paboot.lock`。
+
+**`paboot.lock` —— 单实例锁**：同一数据目录同时只允许一个 daemon。启动时用 `O_EXCL` 原子创建，
+内容包括 `{pid, startedAt}`；拿不到且持有者 pid 仍存活就**拒绝启动**（退出码 1，日志给出 pid），
+持有者已死的僵死锁会被接管（那正是「进程确实死了」的情形，此时 boot 时的
+`interruptOrphanedRuns` 才成立）。正常退出（SIGTERM/SIGINT）会删掉它。
 
 | 表 | 内容 |
 |---|---|

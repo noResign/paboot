@@ -4,9 +4,7 @@ import { buildDaemonArgs, parseRuntimeFile, resolveDaemonCommand, DaemonSupervis
 
 describe('buildDaemonArgs', () => {
   it('spells out --host, because the daemon defaults to 0.0.0.0', () => {
-    expect(buildDaemonArgs({ dataDir: '/d', workspace: '/w', port: 4780 })).toEqual([
-      '--data-dir',
-      '/d',
+    expect(buildDaemonArgs({ workspace: '/w', port: 4780 })).toEqual([
       '--workspace',
       '/w',
       '--port',
@@ -16,8 +14,12 @@ describe('buildDaemonArgs', () => {
     ]);
   });
 
+  it('never passes --data-dir: the daemon owns a fixed ~/.paboot', () => {
+    expect(buildDaemonArgs({ workspace: '/w', port: 4780 })).not.toContain('--data-dir');
+  });
+
   it('honours an explicit host (opening it to the phone is opt-in)', () => {
-    expect(buildDaemonArgs({ dataDir: '/d', workspace: '/w', port: 1, host: '0.0.0.0' })).toContain('0.0.0.0');
+    expect(buildDaemonArgs({ workspace: '/w', port: 1, host: '0.0.0.0' })).toContain('0.0.0.0');
   });
 });
 
@@ -97,7 +99,7 @@ function fakeChild(pid = 1234): EventEmitter & { pid: number; exitCode: number |
 
 describe('DaemonSupervisor.start', () => {
   const command = { command: '/electron', args: ['/entry.js'], env: {} };
-  const args = { dataDir: '/tmp/paboot-test', workspace: '/w', port: 4780 };
+  const args = { workspace: '/w', port: 4780 };
 
   it('reports a spawn error as a result, and never throws', async () => {
     const sup = new DaemonSupervisor('/tmp/paboot-test', {
@@ -136,6 +138,29 @@ describe('DaemonSupervisor.start', () => {
     if (!result.ok) {
       expect(result.code).toBe('exited_early');
       expect(result.message).toContain('端口被占用');
+    }
+  });
+
+  it('points at the data-dir lock when another daemon already holds ~/.paboot', async () => {
+    const sup = new DaemonSupervisor('/tmp/paboot-test', {
+      spawnImpl: (() => {
+        const child = fakeChild();
+        setImmediate(() => {
+          child.exitCode = 1;
+          child.emit('exit', 1, null);
+        });
+        return child;
+      }) as never,
+      env: async () => ({}),
+      sleep: () => new Promise((r) => setImmediate(r)),
+      now: movingClock(),
+    });
+    sup.log('[2026-01-01T00:00:00.000Z] ERROR /home/me/.paboot 上已经有 daemon 在运行（pid 42）——一个数据目录同时只能跑一个 daemon。');
+    const result = await sup.start(command, args);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('exited_early');
+      expect(result.message).toContain('已经有一个 daemon 在运行');
     }
   });
 

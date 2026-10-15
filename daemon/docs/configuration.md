@@ -7,11 +7,18 @@
 优先级：**命令行 flag > 已存在的 shell 环境变量 > `.env` 文件 > 默认值**。
 所有变量都可用 `--env-file <path>` 指定 `.env` 加载（默认 `./.env`）。
 
-> **路径类参数支持开头的 `~`**（`--workspace` / `--data-dir` / `PABOOT_WORKSPACE` /
-> `PABOOT_DATA_DIR`，以及 `POST /api/workspaces` 等的 `path` 字段），展开成 **daemon 进程所在
-> 机器**的用户主目录（只认 `~` 与 `~/`，不认 `~user`）。客户端把路径当**原始 argv / JSON** 交给
-> daemon，这条链路上没有 shell——不展开的话 `~/x` 会被 `path.resolve` 当成相对路径，落到 daemon
-> 的 cwd 下并被 `mkdirSync` 静默建出来。
+> **路径类参数支持开头的 `~`**（`--workspace` / `PABOOT_WORKSPACE`，以及
+> `POST /api/workspaces` 等的 `path` 字段），展开成 **daemon 进程所在机器**的用户主目录
+> （只认 `~` 与 `~/`，不认 `~user`）。客户端把路径当**原始 argv / JSON** 交给 daemon，这条链路上
+> 没有 shell——不展开的话 `~/x` 会被 `path.resolve` 当成相对路径，落到 daemon 的 cwd 下并被
+> `mkdirSync` 静默建出来。
+>
+> **数据根不可配置**：固定 `~/.paboot`，没有 `--data-dir`、也没有 `PABOOT_DATA_DIR`。这样
+> `serverId`（首次启动生成、持久化在这个库的 settings 表里）才是**这台机器上这个用户的稳定身份**，
+> 客户端才能认出「用不同地址连上的是同一台 daemon」。
+>
+> **同一数据目录同时只能跑一个 daemon**：启动时靠 `~/.paboot/paboot.lock` 单实例锁判定，
+> 已有存活实例则拒绝启动（详见 [protocol.md](protocol.md) 的数据模型一节）。
 
 ### 命令行 flag
 
@@ -20,7 +27,6 @@
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
 | `--workspace <path>` | 当前目录 | 初始 Workspace 根目录。**显式传入时是权威值**：每次启动都确保该目录存在并设为默认 Workspace |
-| `--data-dir <path>` | `~/.paboot` | 数据根（SQLite + token + `daemon_runtime.json`） |
 | `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
 | `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
 | `--env-file <path>` | `./.env` | `.env` 文件路径 |
@@ -34,7 +40,6 @@
 | `PABOOT_HOST` | `0.0.0.0` | 监听地址 |
 | `PABOOT_PORT` | `4780` | 端口 |
 | `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
-| `PABOOT_DATA_DIR` | `~/.paboot` | 数据根 |
 | `PABOOT_TOKEN` | 自动生成 | 鉴权密钥 |
 | `PABOOT_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |
 | `PABOOT_PERMISSION_TIMEOUT_SECONDS` | `120` | 工具审批决策窗口（秒，超时自动拒绝；`0`/非法值回退 `120`） |

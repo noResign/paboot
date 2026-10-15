@@ -59,7 +59,6 @@ export async function startManagedDaemon(
   }
 
   const started: StartResult = await supervisor.start(command, {
-    dataDir: input.dataDir,
     workspace: input.workspace,
     port: input.port,
     host: input.host,

@@ -107,16 +107,17 @@ function resolveRunIdleTimeoutMs(env: NodeJS.ProcessEnv): number {
 export interface ConfigOverrides {
   host?: string;
   port?: number;
-  dataDir?: string;
   workspace?: string;
   token?: string;
   permissionMode?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: ConfigOverrides = {}): Config {
-  const dataDir = path.resolve(
-    expandHome(overrides.dataDir ?? env.PABOOT_DATA_DIR ?? path.join(os.homedir(), '.paboot')),
-  );
+  // Fixed, not configurable: one data root per user keeps `serverId` a stable
+  // identity for this machine (it is minted once and persisted in the DB here),
+  // which is what lets a client recognise the same daemon behind a different
+  // address. A movable root would move the identity with it.
+  const dataDir = path.join(os.homedir(), '.paboot');
   fs.mkdirSync(dataDir, { recursive: true });
 
   // The workspace is the directory Claude Code (and future runtimes) operate

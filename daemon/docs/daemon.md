@@ -69,6 +69,7 @@ agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输�
 | `session-runs.ts` | 「在跑的 run 按 session 索引」的查询：会话列表的运行标记、`/api/chat` 的同会话守卫 |
 | `session-title.ts` | 从首条 prompt 生成会话标题 |
 | `runtime-info.ts` | 写/刷/删 `<data-dir>/daemon_runtime.json`（见 [protocol.md](protocol.md) 的「运行信息文件」） |
+| `data-dir-lock.ts` | 单实例锁 `<data-dir>/paboot.lock`（`O_EXCL` 创建 + pid 探活）：同一数据目录只允许一个 daemon |
 | `command-safety.ts` | Bash 只读命令白名单（只读自动放行，其余询问） |
 | `tool-grants.ts` | grant key 映射：MCP 工具 → server 级 `mcp__<server>__*`，其余用 toolName |
 | `workspace.ts` / `workspace-service.ts` | Workspace 路径校验/包含关系；目录选择器复用 |

@@ -21,9 +21,11 @@ function configDto(ctx: AppContext) {
     server: {
       host: ctx.config.host,
       port: ctx.config.port,
+      // Read-only: the data root is fixed at `~/.paboot` and no longer settable,
+      // so it is reported for diagnostics only, never as a restart-required knob.
       dataDir: ctx.config.dataDir,
       tls: ctx.config.tls !== null,
-      restartRequired: ['host', 'port', 'dataDir', 'tls'],
+      restartRequired: ['host', 'port', 'tls'],
     },
   };
 }

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseCliArgs, printHelp, VERSION, type CliOptions } from './cli.js';
 import { loadConfig, type Config } from './config.js';
 import type { AppContext } from './context.js';
+import { acquireDataDirLock, lockPath } from './data-dir-lock.js';
 import type { Db } from './db.js';
 import { log } from './log.js';
 import { listLocalAddresses } from './network.js';
@@ -90,10 +91,24 @@ async function main(): Promise<void> {
     host: cli.host,
     port: cli.port,
     workspace: cli.workspace,
-    dataDir: cli.dataDir,
     token: cli.token,
     permissionMode: cli.permissionMode,
   });
+  // Take the data dir *before* anything opens the DB. A second daemon on the
+  // same root would fight over the SQLite file and, worse, its boot-time
+  // `interruptOrphanedRuns` would rewrite this process's live runs as
+  // interrupted — killing runs that are still streaming (see data-dir-lock.ts).
+  const lock = acquireDataDirLock(config.dataDir);
+  if (!lock.ok) {
+    log.error(
+      `${config.dataDir} 上已经有 daemon 在运行${lock.pid ? `（pid ${lock.pid}）` : ''}——` +
+        `一个数据目录同时只能跑一个 daemon。确认它已停止后重试，` +
+        `或确认没有它的进程后删除 ${lockPath(config.dataDir)}。`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   // Lazy-import the DB so `--help` / `--version` don't load node:sqlite
   // (and don't print Node's experimental-sqlite warning on stderr).
   const { Db } = await import('./db.js');
@@ -174,6 +189,7 @@ async function main(): Promise<void> {
     log.info(`${signal} received, shutting down`);
     stopHeartbeat?.();
     clearRuntimeInfo(config.dataDir);
+    lock.release();
     process.exit(0);
   };
   process.once('SIGTERM', () => shutdown('SIGTERM'));
