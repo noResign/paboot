@@ -36,6 +36,7 @@ function view(id: string, over: Partial<ConnectionView> = {}): ConnectionView {
   return {
     id,
     baseUrl: id,
+    serverId: null,
     connected: true,
     name: null,
     host: null,

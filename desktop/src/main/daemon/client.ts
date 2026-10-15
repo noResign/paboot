@@ -34,6 +34,9 @@ export async function probeHealth(baseUrl: string, timeoutMs = 1000): Promise<He
       service: 'paboot',
       version: typeof data.version === 'string' ? data.version : 'unknown',
       workspace: typeof data.workspace === 'string' ? data.workspace : null,
+      // Absent from older daemons — left off entirely rather than set to
+      // undefined, so "unknown" stays distinguishable from "empty".
+      ...(typeof data.serverId === 'string' && data.serverId ? { serverId: data.serverId } : {}),
     };
   } catch {
     return null;

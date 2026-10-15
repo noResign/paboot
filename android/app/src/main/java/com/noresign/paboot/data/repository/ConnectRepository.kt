@@ -39,6 +39,7 @@ class ConnectRepository {
                 version = healthData.version ?: "unknown",
                 sessionCount = sessionsData.sessions.size,
                 workspace = healthData.workspace,
+                serverId = healthData.serverId,
             )
         )
     }

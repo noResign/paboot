@@ -103,16 +103,20 @@ class ConnectViewModel(
             when (val result = repository.testConnection(url, tk)) {
                 is NetworkResult.Success -> {
                     val previousBaseUrl = settings.baseUrl
+                    // 上一次那台 daemon 的身份。要在 rememberConnection 之前读，它会把旧地址那条合并掉。
+                    val previousServerId = settings.savedConnections
+                        .firstOrNull { it.baseUrl == previousBaseUrl }?.serverId
+                    val sameDaemon = result.data.serverId != null && result.data.serverId == previousServerId
                     settings.name = nm
                     settings.baseUrl = url
                     settings.token = tk
                     settings.workspace = result.data.workspace
                     // 换了 daemon：旧 runId 的监听与残留通知在新 daemon 上没有意义。
-                    // 同一地址重连不动监听，任务照旧接着提醒。
-                    if (previousBaseUrl != null && previousBaseUrl != url) {
+                    // 同一地址重连、或同一台 daemon 换地址（回环 ↔ 局域网），都照旧接着提醒。
+                    if (previousBaseUrl != null && previousBaseUrl != url && !sameDaemon) {
                         RunWatchCenter.clearAll()
                     }
-                    settings.rememberConnection(nm, url, tk)
+                    settings.rememberConnection(nm, url, tk, result.data.serverId)
                     _savedConnections.value = settings.savedConnections
                     val workspaces = workspaceRepository.listWorkspaces()
                     if (workspaces is NetworkResult.Success) {

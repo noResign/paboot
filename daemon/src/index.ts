@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCliArgs, printHelp, VERSION, type CliOptions } from './cli.js';
 import { loadConfig, type Config } from './config.js';
 import type { AppContext } from './context.js';
 import { acquireDataDirLock, lockPath } from './data-dir-lock.js';
-import type { Db } from './db.js';
 import { log } from './log.js';
 import { listLocalAddresses } from './network.js';
 import { PermissionManager } from './permissions.js';
@@ -16,6 +14,7 @@ import { registerRuntimeDrivers } from './runtimes/drivers.js';
 import { createRegistry } from './runtimes/registry.js';
 import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './runtime-info.js';
 import { startServer } from './server.js';
+import { resolveServerId } from './server-id.js';
 
 /**
  * Load a `.env` file into `process.env` (never overrides an already-set env
@@ -52,19 +51,6 @@ function printConnectInfo(config: Config): void {
   } else {
     log.info(`listening on ${protocol}://${config.host}:${port} (no LAN IPv4 detected)`);
   }
-}
-
-/**
- * This daemon's stable identity, minted once and kept in the DB so it survives
- * restarts. Clients use it to recognise the same machine reached by a different
- * address (LAN today, a tunnel or relay later).
- */
-function resolveServerId(db: Db): string {
-  const existing = db.getSetting('server_id');
-  if (existing) return existing;
-  const id = randomUUID();
-  db.setSetting('server_id', id);
-  return id;
 }
 
 async function main(): Promise<void> {

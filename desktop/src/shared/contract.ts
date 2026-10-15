@@ -11,13 +11,8 @@ export type * from '@noresign/paboot/protocol';
 
 import type { ProductPermissionMode, RunDto, SessionDto, WorkspaceDto } from '@noresign/paboot/protocol';
 
-/** `GET /api/health` — unauthenticated discovery/readiness signal. */
-export interface HealthDto {
-  ok: boolean;
-  service: string;
-  version: string;
-  workspace: string | null;
-}
+// `HealthDto` is part of the protocol now (`daemon/src/types/api.ts`) and reaches
+// here through the re-export above — declaring it again would be a copy.
 
 export interface AgentDto {
   id: string;

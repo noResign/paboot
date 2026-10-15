@@ -110,6 +110,16 @@ export interface ConnectionView {
   id: string;
   baseUrl: string | null;
   /**
+   * The daemon's own identity (`GET /api/health` → `serverId`), learned once a
+   * connection or probe has reached it. Null until then — and null forever
+   * against a daemon too old to send it.
+   *
+   * This is the *host* level of the id chain (host → workspace → session → run).
+   * It is what distinguishes two addresses of one daemon from two daemons, so it
+   * is kept alongside the address today while the address is still the key.
+   */
+  serverId: string | null;
+  /**
    * A usable client exists. Deliberately separate from `baseUrl`: a restored
    * loopback target has an address but no token (loopback tokens are never
    * persisted), and showing the app shell in that state means every request

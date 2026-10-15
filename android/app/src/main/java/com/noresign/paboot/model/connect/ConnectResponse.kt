@@ -9,4 +9,6 @@ data class ConnectResponse(
     val version: String,
     val sessionCount: Int,
     val workspace: String? = null,
+    /** daemon 的身份（`/api/health` 的 `serverId`）；老 daemon 为 null。 */
+    val serverId: String? = null,
 )

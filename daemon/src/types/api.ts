@@ -15,6 +15,26 @@
  * the missing result with `interrupted: true` — clients can therefore treat a
  * `tool_use` without a result as "still running" and nothing else.
  */
+/**
+ * `GET /api/health` — the unauthenticated readiness/discovery signal, and the
+ * only place a client can learn `serverId`.
+ */
+export interface HealthDto {
+  ok: boolean;
+  service: string;
+  version: string;
+  workspace: string | null;
+  /**
+   * This daemon's stable identity (minted once, kept in its DB). It is what lets
+   * a client tell that two addresses — `127.0.0.1:4780` and a LAN IP, a tunnel
+   * later — are the *same* daemon rather than two hosts.
+   *
+   * Optional on purpose: an older daemon does not send it, and clients must read
+   * "absent" as *unknown*, never as "a different daemon".
+   */
+  serverId?: string;
+}
+
 export interface QuestionOption {
   label: string;
   description?: string;

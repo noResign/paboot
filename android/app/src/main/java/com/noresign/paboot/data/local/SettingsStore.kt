@@ -71,8 +71,8 @@ object SettingsStore {
      * 存成一条字符串（条目用 `\n`、字段用 `\t` 分隔）而不是 MMKV 的 StringSet：
      * 顺序即"最近优先"，必须保留。
      *
-     * 字段顺序：`name\tbaseUrl\ttoken`。旧版本只存 `baseUrl\ttoken`（两段），
-     * 解析时按段数兼容，旧记录 name 视为空。
+     * 字段顺序：`name\tbaseUrl\ttoken\tserverId`。旧版本存过 3 段（无 serverId）
+     * 与 2 段（无 name、无 serverId），解析时按段数兼容，缺失的字段视为空。
      */
     val savedConnections: List<SavedConnection>
         get() = kv.decodeString(KEY_SAVED_CONNECTIONS)
@@ -81,6 +81,8 @@ object SettingsStore {
             .mapNotNull { entry ->
                 val parts = entry.split(FIELD_SEPARATOR)
                 when {
+                    parts.size == 4 && parts[1].isNotBlank() && parts[2].isNotBlank() ->
+                        SavedConnection(baseUrl = parts[1], token = parts[2], name = parts[0], serverId = parts[3])
                     parts.size == 3 && parts[1].isNotBlank() && parts[2].isNotBlank() ->
                         SavedConnection(baseUrl = parts[1], token = parts[2], name = parts[0])
                     parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank() ->
@@ -108,14 +110,20 @@ object SettingsStore {
             kv.encode(KEY_NOTIFICATION_PROMPT_SHOWN, value)
         }
 
-    /** 记录一次成功的连接：同一地址只保留最新一条（token 轮换或改名后自动覆盖）。 */
-    fun rememberConnection(name: String, baseUrl: String, token: String) {
+    /**
+     * 记录一次成功的连接：同一地址、或**同一台 daemon 的另一个地址**，都只保留最新一条
+     * （token 轮换 / 改名 / 换地址后自动覆盖）。
+     *
+     * `serverId` 为空（老 daemon）时退回按地址去重——那时无从判断是不是同一台。
+     */
+    fun rememberConnection(name: String, baseUrl: String, token: String, serverId: String? = null) {
         val nm = sanitizeField(name)
         val url = baseUrl.trim()
         val tk = token.trim()
         if (url.isEmpty() || tk.isEmpty()) return
-        val updated = listOf(SavedConnection(url, tk, nm)) +
-            savedConnections.filterNot { it.baseUrl == url }
+        val sid = sanitizeField(serverId.orEmpty())
+        val updated = listOf(SavedConnection(url, tk, nm, sid)) +
+            savedConnections.filterNot { it.baseUrl == url || (sid.isNotEmpty() && it.serverId == sid) }
         writeSavedConnections(updated.take(MAX_SAVED_CONNECTIONS))
     }
 
@@ -125,7 +133,8 @@ object SettingsStore {
 
     private fun writeSavedConnections(connections: List<SavedConnection>) {
         val encoded = connections.joinToString(ENTRY_SEPARATOR) {
-            "${sanitizeField(it.name)}$FIELD_SEPARATOR${it.baseUrl}$FIELD_SEPARATOR${it.token}"
+            "${sanitizeField(it.name)}$FIELD_SEPARATOR${it.baseUrl}$FIELD_SEPARATOR${it.token}" +
+                "$FIELD_SEPARATOR${sanitizeField(it.serverId)}"
         }
         if (encoded.isBlank()) {
             kv.removeValueForKey(KEY_SAVED_CONNECTIONS)

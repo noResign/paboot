@@ -32,6 +32,8 @@ interface Target {
 
 interface Entry {
   target: Target;
+  /** The daemon's own identity once known — see `ConnectionView.serverId`. */
+  serverId: string | null;
   token: string | null;
   client: DaemonClient | null;
   /** Why a connect attempt failed, so the switcher can say more than "未连接". */
@@ -85,6 +87,7 @@ export class ConnectionManager {
     return {
       id,
       baseUrl: baseUrlOf(`${dialHost(t.host)}:${t.port}`, t.tls),
+      serverId: entry.serverId,
       connected: entry.client !== null,
       name: t.name,
       host: t.host,
@@ -115,6 +118,8 @@ export class ConnectionManager {
     }
 
     // Hosts that were only restored (no client yet) get a background attempt.
+    // Best-effort and non-blocking on purpose: bootstrap must not wait on a
+    // slow dial. The dial is also where a restored entry learns its `serverId`.
     void Promise.all(
       this.ids()
         .filter((id) => !this.entries.get(id)?.client)
@@ -174,10 +179,20 @@ export class ConnectionManager {
     }
 
     const target: Target = { host, port, tls, name: input.name ?? null };
-    this.applyTarget(target, token, source);
-    settings.saveConnection(target, token);
-    settings.saveActiveConnectionId(settings.connectionId(target));
     const id = settings.connectionId(target);
+    // Same daemon, new address (LAN ↔ loopback ↔ a tunnel later): re-point the
+    // entry we already have instead of adding a second one for it. A daemon too
+    // old to send `serverId` leaves us unable to tell, so the address stays the
+    // identity there.
+    const serverId = health.serverId ?? null;
+    const existing = serverId ? this.findByServerId(serverId) : null;
+    if (existing && existing !== id) {
+      this.entries.delete(existing);
+      settings.removeConnection(existing);
+    }
+    this.applyTarget(target, token, source, serverId);
+    settings.saveConnection(target, token);
+    settings.saveActiveConnectionId(id);
     return { ok: true, view: this.view(id) as ConnectionView };
   }
 
@@ -191,6 +206,9 @@ export class ConnectionManager {
         entry.error = '连不上';
         return;
       }
+      // A restored entry learns who it is talking to here (it did not go through
+      // the connect flow, so it had no chance to).
+      entry.serverId = health.serverId ?? entry.serverId;
       entry.client = entry.token
         ? new DaemonClient({ baseUrl: baseUrlOf(`${entry.target.host}:${entry.target.port}`, entry.target.tls), token: entry.token })
         : null;
@@ -218,10 +236,24 @@ export class ConnectionManager {
     settings.clearConnections();
   }
 
-  private applyTarget(target: Target, token: string | null, localTokenSource: string | null = null): void {
+  /** The entry already holding this daemon identity, if any. */
+  private findByServerId(serverId: string): string | null {
+    for (const [id, entry] of this.entries) {
+      if (entry.serverId === serverId) return id;
+    }
+    return null;
+  }
+
+  private applyTarget(
+    target: Target,
+    token: string | null,
+    localTokenSource: string | null = null,
+    serverId: string | null = null,
+  ): void {
     const id = settings.connectionId(target);
     this.entries.set(id, {
       target,
+      serverId,
       token,
       localTokenSource,
       error: null,

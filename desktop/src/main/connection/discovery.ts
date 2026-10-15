@@ -310,7 +310,9 @@ export async function probeDaemons(deps: ProbeDeps): Promise<ProbeResult> {
           tls: cand.tls,
           version: outcome.health.version,
           workspace: outcome.health.workspace,
-          serverId: meta?.serverId ?? null,
+          // Health is authoritative and works against a remote daemon; the local
+          // runtime-info file is only a fallback for daemons too old to send it.
+          serverId: outcome.health.serverId ?? meta?.serverId ?? null,
           dataDir: meta?.dataDir ?? null,
           hostname: meta?.hostname ?? null,
           tokenSource: meta?.tokenSource ?? null,

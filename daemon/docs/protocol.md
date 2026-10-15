@@ -33,7 +33,7 @@
 
 | 方法 & 路径 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 |
+| `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 + `serverId`（见下） |
 | `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置 |
 | `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
 | `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`） |
@@ -200,12 +200,12 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 |---|---|
 | `pid` | daemon 进程号，用于存活判断 |
 | `startedAt` | 本次启动时间（ms） |
-| `serverId` | **该 daemon 的稳定身份**：首次启动生成、持久化在 `settings` 表，重启不变。用于「同一台机器换了地址（LAN / 隧道 / 以后的 relay）」时识别为同一个 host |
+| `serverId` | **该 daemon 的稳定身份**：首次启动生成、持久化在 `settings` 表，重启不变。用于「同一台机器换了地址（LAN / 隧道 / 以后的 relay）」时识别为同一个 host。**也通过 `GET /api/health` 暴露**——那个文件只在本机，远程客户端只能从 health 拿 |
 | `hostname` | 展示用 |
 | `listen` | **可直接连接的** `host:port`。绑定 `0.0.0.0` / `::` 会翻译成 `127.0.0.1` / `[::1]`——原样给出是连不上的 |
 | `tls` | 据此选 `http` / `https` |
 | `version` | daemon 版本 |
-| `dataDir` | 便于判断两个 daemon 是否共用同一个数据根 |
+| `dataDir` | 数据根（现固定 `~/.paboot`），展示/诊断用 |
 | `tokenSource` | 见 [configuration.md](configuration.md) 的「token 解析顺序」：**只有 `file` 时** `<data-dir>/token` 才是权威值 |
 
 **约定**：
