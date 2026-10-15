@@ -22,6 +22,13 @@ interface ConnectionState {
   returnToId: string | null;
   activeView(): ConnectionView | null;
   boot(): Promise<void>;
+  /**
+   * Pull main's views again. Needed after an action that changes them from
+   * outside the connect flow: starting or stopping the local daemon flips a host
+   * between connected and down, and `App` picks shell vs connect page on exactly
+   * that flag.
+   */
+  refreshViews(): Promise<void>;
   probeNow(): Promise<ProbeResult>;
   connect(input: ConnectInput): Promise<boolean>;
   /** Navigate to another host. Nothing is re-established — it is already live. */
@@ -67,6 +74,10 @@ export const useConnection = create<ConnectionState>((set, get) => ({
     } catch (err) {
       set({ booting: false, error: messageOf(err) });
     }
+  },
+
+  async refreshViews() {
+    set({ views: await connectionApi.list() });
   },
 
   async probeNow() {

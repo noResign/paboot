@@ -95,7 +95,7 @@ paboot/
   默认拒绝都属安全边界，改动必须保持 deny-by-default。
 - **Claude Code API 不稳**：CLI flag 随版本变，能力必须先 `--help` 探测再传参
   （`runtimes/claude/detect.ts`），不要假设某 flag 恒存在。
-- **数据路径**：daemon 数据根**固定** `~/.paboot`（不可配置，无 `--data-dir` / `PABOOT_DATA_DIR`），
+- **数据路径**：daemon 数据根**固定** `~/.paboot`，
   SQLite/token/`daemon_runtime.json`/单实例锁 `paboot.lock` 都在其下（同一 data dir 同时只允许一个
   daemon，启动时靠该锁判定）。固定是为了让 `serverId`（首次启动生成、落在该库里）
   成为这台机器上这个用户的**稳定身份**——客户端靠它认出「不同地址连上的是同一台 daemon」。

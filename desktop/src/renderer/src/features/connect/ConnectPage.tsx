@@ -30,8 +30,8 @@ export function ConnectPage() {
   // Starting a daemon is a deliberate, multi-step act: a directory that becomes
   // the agent's writable root, and whether to open it to the phone.
   const [spawnOpen, setSpawnOpen] = useState(false);
-  /** A systemd unit owns the daemon's config, so the form has nothing to ask. */
-  const [spawnSystemd, setSpawnSystemd] = useState(false);
+  /** A systemd unit is installed — worth saying, since we deliberately do not use it. */
+  const [hasSystemdUnit, setHasSystemdUnit] = useState(false);
   const [spawnDir, setSpawnDir] = useState('');
   const [spawnPhone, setSpawnPhone] = useState(false);
   const [spawnBusy, setSpawnBusy] = useState(false);
@@ -54,14 +54,14 @@ export function ConnectPage() {
     void connectionApi.recent().then(setRecent);
   }, []);
 
-  // Whether「启动」would go through systemd rather than spawn a daemon of ours:
-  // the unit owns workspace/port then, so the form changes shape (and its values
-  // are ignored). Only asked when the form is actually opened.
+  // Whether a systemd unit is installed — the form mentions it, because starting
+  // from here deliberately spawns our *own* daemon instead of using the unit.
+  // Only asked when the form is actually opened.
   useEffect(() => {
     if (!spawnOpen) return;
     let live = true;
     void window.paboot.daemonStatus().then((status) => {
-      if (live) setSpawnSystemd(status.systemd);
+      if (live) setHasSystemdUnit(status.systemd);
     });
     return () => {
       live = false;
@@ -93,9 +93,7 @@ export function ConnectPage() {
    */
   async function spawnLocal(): Promise<void> {
     const workspace = spawnDir.trim();
-    // With a systemd unit installed, main starts the unit and the unit owns the
-    // workspace/port — the form's values are not used, so they must not block.
-    if (!workspace && !spawnSystemd) {
+    if (!workspace) {
       setSpawnError('请填写工作目录');
       return;
     }
@@ -244,46 +242,40 @@ export function ConnectPage() {
 
         {spawnOpen && (
           <div className="local-block" style={{ marginTop: 10 }}>
-            <div className="local-title">
-              {spawnSystemd ? '启动 systemd 托管的 daemon' : '启动一个本机 daemon'}
+            <div className="local-title">启动一个本机 daemon</div>
+            <div className="field">
+              <label htmlFor="spawn-dir">工作目录</label>
+              <input
+                id="spawn-dir"
+                className="mono"
+                placeholder="~/Projects"
+                value={spawnDir}
+                onChange={(event) => setSpawnDir(event.target.value)}
+                autoComplete="off"
+              />
             </div>
-            {spawnSystemd ? (
-              <div className="hint" style={{ marginTop: 0 }}>
-                这台机器上装了 systemd 单元 <span className="mono">paboot.service</span>，
-                「启动」会执行 <span className="mono">systemctl --user start paboot</span>。
-                工作目录、端口、是否开放给手机都由<b>那个单元</b>决定，下面不适用；要改请编辑单元后
-                <span className="mono"> systemctl --user daemon-reload</span>。
-              </div>
-            ) : (
-              <>
-                <div className="field">
-                  <label htmlFor="spawn-dir">工作目录</label>
-                  <input
-                    id="spawn-dir"
-                    className="mono"
-                    placeholder="~/Projects"
-                    value={spawnDir}
-                    onChange={(event) => setSpawnDir(event.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="hint" style={{ marginTop: 0 }}>
-                  这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
-                  路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
-                  数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
-                  ——手机连任意一个，看到的会话与工作区都一样。
-                  端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
-                </div>
-                <label className="switch" style={{ marginTop: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={spawnPhone}
-                    onChange={(event) => setSpawnPhone(event.target.checked)}
-                  />
-                  <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
-                </label>
-              </>
-            )}
+            <div className="hint" style={{ marginTop: 0 }}>
+              这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
+              路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
+              数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
+              ——手机连任意一个，看到的会话与工作区都一样。
+              端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
+              {hasSystemdUnit && (
+                <>
+                  {' '}
+                  这台机器还装了 systemd 单元 <span className="mono">paboot.service</span>；
+                  从这里启动的归本应用管（可重启/改 token），<b>不会</b>去动那个单元。
+                </>
+              )}
+            </div>
+            <label className="switch" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={spawnPhone}
+                onChange={(event) => setSpawnPhone(event.target.checked)}
+              />
+              <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
+            </label>
             {spawnError && (
               <div className="error-text">
                 {spawnError}

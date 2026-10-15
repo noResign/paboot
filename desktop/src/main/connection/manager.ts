@@ -202,6 +202,41 @@ export class ConnectionManager {
     return { ok: true, view: this.view(id) as ConnectionView };
   }
 
+  /**
+   * Mark the connections to *this machine* as down. Called when we stop the local
+   * daemon: their client is only an HTTP handle, so it would happily stay "connected"
+   * and leave the window sitting on stale data with no way back to the connect page.
+   * The saved target is kept — only the live client goes.
+   */
+  markLocalDown(): void {
+    for (const entry of this.entries.values()) {
+      if (!settings.isLoopback(entry.target.host)) continue;
+      entry.client = null;
+      entry.error = '本机 daemon 已停止';
+      entry.serverId = null;
+    }
+  }
+
+  /**
+   * Re-dial the connections to this machine, picking up the token file as we go.
+   * Used after the local daemon (re)starts — including a token change, which
+   * rewrites `<data-dir>/token` and would leave the old client 401-ing. Reading
+   * it here is safe: these targets are loopback and we just started that daemon.
+   */
+  async reDialLocal(): Promise<void> {
+    let token: string | null = null;
+    try {
+      token = fs.readFileSync(path.join(daemonDataDir(), 'token'), 'utf8').trim() || null;
+    } catch {
+      token = null; // no token file: fall back to whatever the entry already holds
+    }
+    for (const [id, entry] of [...this.entries]) {
+      if (!settings.isLoopback(entry.target.host)) continue;
+      if (token) entry.token = token;
+      await this.reconnect(id);
+    }
+  }
+
   /** Re-dial a restored connection using the token we already hold for it. */
   private async reconnect(id: string): Promise<void> {
     const entry = this.entries.get(id);

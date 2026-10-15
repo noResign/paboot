@@ -71,7 +71,10 @@ describe('daemon runtime info file', () => {
       startedAt: info?.startedAt,
       serverId: 'server-1',
       hostname: os.hostname(),
+      // `listen` is dial-able; `host` is what it was bound to — the difference is
+      // what tells a client whether the LAN can reach it.
       listen: '127.0.0.1:4780',
+      host: '0.0.0.0',
       tls: false,
       version: expect.any(String),
       dataDir: config.dataDir,

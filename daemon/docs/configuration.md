@@ -13,9 +13,8 @@
 > 没有 shell——不展开的话 `~/x` 会被 `path.resolve` 当成相对路径，落到 daemon 的 cwd 下并被
 > `mkdirSync` 静默建出来。
 >
-> **数据根不可配置**：固定 `~/.paboot`，没有 `--data-dir`、也没有 `PABOOT_DATA_DIR`。这样
-> `serverId`（首次启动生成、持久化在这个库的 settings 表里）才是**这台机器上这个用户的稳定身份**，
-> 客户端才能认出「用不同地址连上的是同一台 daemon」。
+> **数据根不可配置**：固定 `~/.paboot`。这样 serverId`（首次启动生成、持久化在这个库的 settings 表里）
+> 才是**这台机器上这个用户的稳定身份**，客户端才能认出「用不同地址连上的是同一台 daemon」。
 >
 > **同一数据目录同时只能跑一个 daemon**：启动时靠 `~/.paboot/paboot.lock` 单实例锁判定，
 > 已有存活实例则拒绝启动（详见 [protocol.md](protocol.md) 的数据模型一节）。

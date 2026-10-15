@@ -62,6 +62,7 @@ export function SettingsPage({
   const probe = useConnection((state) => state.probe);
   const probing = useConnection((state) => state.probing);
   const probeNow = useConnection((state) => state.probeNow);
+  const refreshViews = useConnection((state) => state.refreshViews);
   const disconnectAll = useConnection((state) => state.disconnectAll);
 
   const theme = useAppearance((state) => state.theme);
@@ -78,8 +79,10 @@ export function SettingsPage({
   const [daemon, setDaemon] = useState<ManagedDaemonStatus | null>(null);
   const [daemonLogs, setDaemonLogs] = useState<string[]>([]);
   const [daemonBusy, setDaemonBusy] = useState(false);
-  /** Why the last stop attempt failed — see `ManagedDaemonStopResult`. */
-  const [stopError, setStopError] = useState<string | null>(null);
+  /** Why the last start/stop attempt failed — a dead-looking button otherwise. */
+  const [daemonError, setDaemonError] = useState<string | null>(null);
+  /** Working directory for「启动」— becomes the daemon's default workspace. */
+  const [startDir, setStartDir] = useState('');
   const [tokenInput, setTokenInput] = useState('');
   const [tokenBusy, setTokenBusy] = useState(false);
   const [tokenConfirm, setTokenConfirm] = useState(false);
@@ -98,6 +101,9 @@ export function SettingsPage({
   async function refreshManaged(): Promise<void> {
     setDaemon(await window.paboot.daemonStatus());
     setDaemonLogs(await window.paboot.daemonLogs(200));
+    // Starting/stopping the local daemon flips our own connection with it, so the
+    // shell has to re-read whether it still has a host to show.
+    void refreshViews();
   }
 
   // Only while this section is on screen — the log tail is not worth polling
@@ -108,10 +114,24 @@ export function SettingsPage({
 
   async function stopManaged(): Promise<void> {
     setDaemonBusy(true);
-    setStopError(null);
+    setDaemonError(null);
     const res = await window.paboot.daemonStop();
     setDaemonBusy(false);
-    if (!res.ok) setStopError(res.message);
+    if (!res.ok) setDaemonError(res.message);
+    await refreshManaged();
+  }
+
+  /**
+   * Start a daemon of our own from here — same as the connect page's flow, and
+   * deliberately not `systemctl start`: one the app starts is the app's, so it is
+   * fully manageable (restart, 改 token) afterwards.
+   */
+  async function startManaged(): Promise<void> {
+    setDaemonBusy(true);
+    setDaemonError(null);
+    const res = await window.paboot.daemonStart({ workspace: startDir.trim(), port: 0 });
+    setDaemonBusy(false);
+    if (!res.ok) setDaemonError(res.message);
     await refreshManaged();
   }
 
@@ -203,8 +223,18 @@ export function SettingsPage({
                       <dd className="mono">{daemon?.pid ?? '—'}</dd>
                       <dt>归属</dt>
                       <dd>{daemon?.provenance ? PROVENANCE_LABEL[daemon.provenance] : '—'}</dd>
-                      <dt>地址</dt>
-                      <dd className="mono">{found.listen}</dd>
+                      <dt>局域网地址</dt>
+                      <dd className="mono">
+                        {/* The dial address is always loopback — useless to the phone, so
+                            it is never shown. What matters is whether the LAN can reach it. */}
+                        {!daemon
+                          ? '—'
+                          : daemon.lanAddresses.length
+                            ? daemon.lanAddresses.join('　')
+                            : daemon.bindHost === null
+                              ? '未知（这台 daemon 没报告绑定地址）'
+                              : '仅本机（未开放给局域网）'}
+                      </dd>
                       <dt>主机</dt>
                       <dd>{found.hostname ?? '—'}</dd>
                       <dt>数据目录</dt>
@@ -255,7 +285,7 @@ export function SettingsPage({
                           daemon.provenance ? ` · ${PROVENANCE_LABEL[daemon.provenance]}` : ''
                         }`
                       : '○ 未运行'}
-                    {stopError && <div className="error-text">停止失败：{stopError}</div>}
+                    {daemonError && <div className="error-text">{daemonError}</div>}
                   </dd>
                   <dt>日志</dt>
                   <dd className="mono">{daemon?.logPath ?? '—'}</dd>
@@ -302,9 +332,28 @@ export function SettingsPage({
                   </div>
                 </div>
                 {!daemon?.running && (
-                  <div className="hint" style={{ marginTop: 0 }}>
-                    启动需要先选一个工作目录（它会成为默认工作区），所以在<b>连接页</b>做：本机没探测到 daemon 时，
-                    会出现「启动一个本机 daemon」。端口在 4780–4789 里自动挑空闲的。
+                  <div className="field">
+                    <label htmlFor="daemon-workspace">工作目录（启动时用）</label>
+                    <input
+                      id="daemon-workspace"
+                      className="mono"
+                      placeholder="~/Projects"
+                      value={startDir}
+                      onChange={(event) => setStartDir(event.target.value)}
+                      autoComplete="off"
+                    />
+                    <div className="settings-actions">
+                      <button className="btn primary" disabled={daemonBusy} onClick={() => void startManaged()}>
+                        {daemonBusy ? '启动中…' : '启动'}
+                      </button>
+                    </div>
+                    <div className="hint">
+                      这个目录会成为<b>默认工作区</b>（之后不可删除），agent 的写入被限制在它里面；支持
+                      <span className="mono"> ~</span>，目录不存在会自动创建。端口在 4780–4789 里自动挑空闲的，
+                      绑 <span className="mono">127.0.0.1</span>；要开放给手机请到<b>连接页</b>启动。
+                      {daemon?.systemd &&
+                        ' 这台机器装了 systemd 单元 paboot.service——从这里启动的归本应用管（可重启/改 token），不会去动那个单元。'}
+                    </div>
                   </div>
                 )}
                 <div className="field">

@@ -36,6 +36,12 @@ export interface RuntimeInfo {
   hostname: string;
   /** Connectable `host:port`; a wildcard bind is translated to loopback. */
   listen: string;
+  /**
+   * The bind host as given: `0.0.0.0` / `::` means every interface, `127.0.0.1`
+   * means this machine only. `listen` cannot say which — it is the dial-able form
+   * of this value — and "can the phone reach it?" is exactly that question.
+   */
+  host: string;
   tls: boolean;
   version: string;
   dataDir: string;
@@ -64,6 +70,7 @@ export function writeRuntimeInfo(config: Config, serverId: string): RuntimeInfo 
     serverId,
     hostname: os.hostname(),
     listen: connectableAddress(config.host, config.port),
+    host: config.host,
     tls: config.tls !== null,
     version: VERSION,
     dataDir: config.dataDir,

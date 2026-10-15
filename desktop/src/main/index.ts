@@ -129,31 +129,17 @@ async function systemdOwnsLive(): Promise<boolean> {
 }
 
 /**
- * Start the local daemon. With a systemd unit installed the unit owns the
- * daemon's configuration (workspace, port, env), so starting means
- * `systemctl start` and the form's values do not apply; otherwise we spawn our
- * own detached daemon from the bundled copy.
+ * Start a daemon of our own, from the bundled copy — what both「启动」flows
+ * (connect page and settings) do. Deliberately *not* `systemctl start` even when
+ * a unit is installed: a daemon the user starts from the app is the app's, which
+ * is what makes it fully manageable (restart, 改 token) afterwards. The unit is
+ * only consulted to *stop* a daemon it owns, and to bounce one it owns.
  */
-async function startLocalDaemon(input: {
+function spawnLocalDaemon(input: {
   workspace: string;
   port: number;
   host?: string;
 }): Promise<ManagedDaemonStartResult> {
-  if (systemdUnit() !== null) {
-    const started = await runSystemctl(['start', SYSTEMD_UNIT_NAME]);
-    if (!started.ok) {
-      return {
-        ok: false,
-        code: 'systemd_failed',
-        message: `systemctl --user start ${SYSTEMD_UNIT_NAME} 失败：${started.message}`,
-      };
-    }
-    const ready = await managedDaemon.waitReady();
-    if (!ready) return { ok: false, code: 'timeout', message: 'systemd 已启动 paboot，但没有等到它就绪' };
-    const token = ensureManagedToken(daemonDataDir());
-    if (!token) return { ok: false, code: 'no_token', message: `无法读取 ${daemonDataDir()}/token` };
-    return { ok: true, pid: ready.pid, listen: ready.listen, token };
-  }
   return startManagedDaemon(managedDaemon, {
     ...input,
     dataDir: daemonDataDir(),
@@ -165,37 +151,101 @@ async function startLocalDaemon(input: {
   });
 }
 
+/** Start the installed unit and wait for it — used when bouncing a systemd daemon. */
+async function startSystemdUnit(): Promise<ManagedDaemonStartResult> {
+  const started = await runSystemctl(['start', SYSTEMD_UNIT_NAME]);
+  if (!started.ok) {
+    return {
+      ok: false,
+      code: 'systemd_failed',
+      message: `systemctl --user start ${SYSTEMD_UNIT_NAME} 失败：${started.message}`,
+    };
+  }
+  const ready = await managedDaemon.waitReady();
+  if (!ready) return { ok: false, code: 'timeout', message: 'systemd 已启动 paboot，但没有等到它就绪' };
+  const token = ensureManagedToken(daemonDataDir());
+  if (!token) return { ok: false, code: 'no_token', message: `无法读取 ${daemonDataDir()}/token` };
+  return { ok: true, pid: ready.pid, listen: ready.listen, token };
+}
+
+/** Stop whatever holds the data dir: the unit when systemd owns it, else the pid. */
+async function stopLocalDaemon(): Promise<ManagedDaemonStopResult> {
+  if (await systemdOwnsLive()) {
+    const res = await runSystemctl(['stop', SYSTEMD_UNIT_NAME]);
+    if (res.ok) return { ok: true };
+    console.warn('[paboot] systemctl stop failed, falling back to a direct signal:', res.message);
+    if (await managedDaemon.stop()) return { ok: true };
+    return { ok: false, message: `systemctl --user stop 失败（${res.message}），直接向 pid 发信号也没能停下它` };
+  }
+  if (await managedDaemon.stop()) return { ok: true };
+  return { ok: false, message: 'daemon 没有在超时内退出（详见日志）' };
+}
+
+/**
+ * Non-loopback IPv4 addresses of this machine, for the「局域网地址」row. Read from
+ * the interfaces rather than from where some outbound request happens to land:
+ * behind a proxy (or a VPN) that reports the proxy's address, which would be a
+ * confident lie about how the phone should reach this machine.
+ */
+function localLanAddresses(): string[] {
+  const found = new Set<string>();
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (iface.family === 'IPv4' && !iface.internal && iface.address) found.add(iface.address);
+    }
+  }
+  return [...found];
+}
+
+/** A bind that means "every interface" rather than one specific address. */
+function isWildcardBind(host: string): boolean {
+  return host === '0.0.0.0' || host === '::' || host === '[::]';
+}
+
 const daemonApi = {
   status: () => {
     const pid = managedDaemon.livePid();
     const provenance: DaemonProvenance | null =
       pid === null ? null : managedDaemon.pid() !== null ? 'app' : systemdUnit() !== null ? 'systemd' : 'manual';
+    const live = pid === null ? null : managedDaemon.liveRuntime();
+    // '' means the daemon did not report a bind host (older build) — treat it as
+    // unknown, never as "open to the LAN".
+    const bindHost = live && live.host !== '' ? live.host : null;
+    const port = live ? Number.parseInt(live.listen.slice(live.listen.lastIndexOf(':') + 1), 10) : Number.NaN;
+    // Only a bind that is not loopback is reachable from the LAN; a wildcard bind
+    // answers on every interface, a specific one only on itself.
+    const lanAddresses: string[] = [];
+    if (bindHost !== null && !isLoopback(bindHost) && Number.isInteger(port)) {
+      for (const ip of isWildcardBind(bindHost) ? localLanAddresses() : [bindHost]) {
+        lanAddresses.push(`${ip}:${port}`);
+      }
+    }
     return {
       running: pid !== null,
       pid,
       provenance,
-      /** A unit is installed, so 启动 goes through systemd (see `startLocalDaemon`). */
+      /** A unit is installed — it owns stopping (and bouncing) that daemon. */
       systemd: systemdUnit() !== null,
       restartable: systemdUnit() !== null || managedDaemon.hasLaunchSpec(),
+      bindHost,
+      lanAddresses,
       logPath: managedDaemon.logPath,
     };
   },
-  start: (input: { workspace: string; port: number; host?: string }) => startLocalDaemon(input),
+  start: async (input: { workspace: string; port: number; host?: string }) => {
+    const res = await spawnLocalDaemon(input);
+    // Bring the app's own connection to it back with the process.
+    if (res.ok) await manager.reDialLocal();
+    return res;
+  },
   // A failed stop has to reach the user: without it the only symptom is "the
   // status still says running", which reads as a dead button.
   stop: async (): Promise<ManagedDaemonStopResult> => {
-    if (await systemdOwnsLive()) {
-      const res = await runSystemctl(['stop', SYSTEMD_UNIT_NAME]);
-      if (res.ok) return { ok: true };
-      console.warn('[paboot] systemctl stop failed, falling back to a direct signal:', res.message);
-      if (await managedDaemon.stop()) return { ok: true };
-      return {
-        ok: false,
-        message: `systemctl --user stop 失败（${res.message}），直接向 pid 发信号也没能停下它`,
-      };
-    }
-    if (await managedDaemon.stop()) return { ok: true };
-    return { ok: false, message: 'daemon 没有在超时内退出（详见日志）' };
+    const outcome = await stopLocalDaemon();
+    // The daemon's death takes our connection with it; say so, or the window sits
+    // on stale data with no way back to the connect page.
+    if (outcome.ok) manager.markLocalDown();
+    return outcome;
   },
   logs: (lines?: number) => managedDaemon.tail(lines ?? 200),
   // 「改 token」: the running daemon only reads <data-dir>/token at startup, so we
@@ -212,7 +262,7 @@ const daemonApi = {
     // not as restartable — stopping it there would strand it.
     const canRestart = viaSystemd || (status.provenance === 'app' && managedDaemon.hasLaunchSpec());
     const restart = () =>
-      viaSystemd ? startLocalDaemon({ workspace: '', port: 0 }) : managedDaemon.startLast();
+      viaSystemd ? startSystemdUnit() : managedDaemon.startLast();
 
     if (wasRunning && !canRestart) {
       // Someone else's daemon, started in a way we do not know: write the token
@@ -234,6 +284,9 @@ const daemonApi = {
     if (!res.ok) {
       return { ok: false, code: res.code, message: `token 已改，但 daemon 重启失败：${res.message}` };
     }
+    // It came back with a new token: re-dial so the app's own connection follows
+    // (its old client would 401 on every request otherwise).
+    await manager.reDialLocal();
     return { ok: true, token: next, restarted: true, listen: res.listen };
   },
 };

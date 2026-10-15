@@ -12,6 +12,8 @@ export interface RuntimeInfoFile {
   serverId: string;
   hostname: string;
   listen: string;
+  /** The bind host (`0.0.0.0` = every interface); `listen` is its dial-able form. */
+  host: string;
   tls: boolean;
   version: string;
   dataDir: string;
@@ -119,6 +121,7 @@ export function parseRuntimeInfo(text: string): RuntimeInfoFile | null {
       serverId: typeof v.serverId === 'string' ? v.serverId : '',
       hostname: typeof v.hostname === 'string' ? v.hostname : '',
       listen: v.listen,
+      host: typeof v.host === 'string' ? v.host : '',
       tls: v.tls === true,
       version: typeof v.version === 'string' ? v.version : 'unknown',
       dataDir: typeof v.dataDir === 'string' ? v.dataDir : '',

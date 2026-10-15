@@ -189,6 +189,7 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
   "serverId": "8fa14743-5888-4f1f-9cfd-50d2fb934a84",
   "hostname": "ubuntu",
   "listen": "127.0.0.1:4780",
+  "host": "0.0.0.0",
   "tls": false,
   "version": "1.7.0",
   "dataDir": "/home/renbin/.paboot",
@@ -203,6 +204,7 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 | `serverId` | **该 daemon 的稳定身份**：首次启动生成、持久化在 `settings` 表，重启不变。用于「同一台机器换了地址（LAN / 隧道 / 以后的 relay）」时识别为同一个 host。**也通过 `GET /api/health` 暴露**——那个文件只在本机，远程客户端只能从 health 拿 |
 | `hostname` | 展示用 |
 | `listen` | **可直接连接的** `host:port`。绑定 `0.0.0.0` / `::` 会翻译成 `127.0.0.1` / `[::1]`——原样给出是连不上的 |
+| `host` | **绑定的原始地址**（`0.0.0.0` / `::` = 所有网卡，`127.0.0.1` = 仅本机）。`listen` 是被翻译过的、看不出这个区别，而「手机能不能连上」恰恰只由它决定 |
 | `tls` | 据此选 `http` / `https` |
 | `version` | daemon 版本 |
 | `dataDir` | 数据根（现固定 `~/.paboot`），展示/诊断用 |

@@ -176,6 +176,19 @@ export interface ManagedDaemonStatus {
    * stopping something it cannot restart.
    */
   restartable: boolean;
+  /**
+   * The bind host the daemon reports (`0.0.0.0` = every interface ⇒ the LAN can
+   * reach it). Null while it is not running, and null when the daemon is too old
+   * to report one — which is *not* the same as "loopback only".
+   */
+  bindHost: string | null;
+  /**
+   * `ip:port` a device on the LAN can reach it at, built from **this machine's own
+   * interfaces** — never a loopback address (useless to a phone) and never
+   * whatever a proxy happens to answer with. Empty when it is loopback-only or
+   * there is no LAN address; the UI says so rather than showing something false.
+   */
+  lanAddresses: string[];
   /** Where its stdout/stderr (and our own narration) land — the thing to read when it fails. */
   logPath: string;
 }

@@ -85,6 +85,8 @@ export interface RuntimeFile {
   /** When that process started — half of `ManagedDaemonRecord`'s identity. */
   startedAt: number;
   listen: string;
+  /** The bind host, as the runtime file reports it (`0.0.0.0` = every interface). */
+  host: string;
   /** Whether the listen address speaks TLS — needed to dial `listen` ourselves. */
   tls: boolean;
   version?: string;
@@ -129,6 +131,7 @@ export function parseRuntimeFile(
     pid: file.pid,
     startedAt: typeof file.startedAt === 'number' ? file.startedAt : 0,
     listen: file.listen,
+    host: typeof (file as { host?: unknown }).host === 'string' ? (file as { host: string }).host : '',
     tls: (file as { tls?: unknown }).tls === true,
     version: file.version,
   };
