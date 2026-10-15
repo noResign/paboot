@@ -151,10 +151,12 @@ internal fun MessageList(
 @Composable
 internal fun UserBubble(text: String) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        // Compact phones need more room per line; keep wider layouts at 70%.
+        val maxBubbleWidth = maxWidth * if (maxWidth < 480.dp) 0.85f else 0.7f
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.widthIn(max = maxWidth * 0.7f),
+            modifier = Modifier.widthIn(max = maxBubbleWidth),
         ) {
             Text(
                 text = text,
