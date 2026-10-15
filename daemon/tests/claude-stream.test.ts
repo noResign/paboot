@@ -146,4 +146,22 @@ describe('createClaudeStreamParser', () => {
     const result = events.find((e) => e.type === 'usage' && e.usage !== null);
     expect(result).toMatchObject({ type: 'usage', contextTokens: 4300, contextWindow: null });
   });
+
+  it('falls back to the result frame when no assistant frame carried usage', () => {
+    const events = parse([
+      JSON.stringify({ type: 'assistant', message: { id: 'm1', stop_reason: 'end_turn', content: [{ type: 'text', text: 'hi' }] } }),
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: 'hi',
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200, output_tokens: 5 },
+      }),
+    ]);
+    // The assistant frame reported none, so no context-only frame fires...
+    expect(events.filter((e) => e.type === 'usage' && e.usage === null)).toHaveLength(0);
+    // ...but the result frame is self-contained, so history rebuild still lands on it.
+    const result = events.find((e): e is Extract<NormalizedEvent, { type: 'usage' }> => e.type === 'usage' && e.usage !== null);
+    expect(result).toMatchObject({ type: 'usage', contextTokens: 5300, contextWindow: null });
+  });
 });

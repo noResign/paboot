@@ -59,26 +59,33 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
   let contextTokens: number | null = null;
 
   /**
-   * Report how full the context window is. Anthropic splits a request's input
-   * into the uncached part (`input_tokens`) plus two cache buckets, and the
-   * three are disjoint, so their sum is what the next request resends.
-   *
-   * Emitted as its own frame with `usage: null` — that keeps it out of the
-   * per-run usage line on the client (`parseUsage` returns null and the message
-   * keeps its previous value) and out of the monotonic total it would otherwise
-   * corrupt. Deduped by value: every message carries this figure, and unlike a
-   * running total it can go back down (compaction).
-   *
-   * Claude Code never reports the window size, so there is no denominator.
+   * Anthropic splits a request's input into the uncached part (`input_tokens`)
+   * plus two cache buckets; the three are disjoint, so their sum is what the
+   * next request resends — i.e. how full the context window is. `null` when the
+   * frame carries nothing useful, which is not the same as zero.
    */
-  function emitContext(usage: unknown): void {
-    if (!isRecord(usage)) return;
+  function contextTokensOf(usage: unknown): number | null {
+    if (!isRecord(usage)) return null;
     const count = (key: string): number => {
       const value = usage[key];
       return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
     };
     const used = count('input_tokens') + count('cache_read_input_tokens') + count('cache_creation_input_tokens');
-    if (used === 0 || used === contextTokens) return;
+    return used > 0 ? used : null;
+  }
+
+  /**
+   * Report context occupancy as its own frame with `usage: null` — that keeps it
+   * out of the per-run usage line on the client (`parseUsage` returns null and
+   * the message keeps its previous value) and out of the monotonic total it
+   * would otherwise corrupt. Deduped by value: every message carries this
+   * figure, and unlike a running total it can go back down (compaction).
+   *
+   * Claude Code never reports the window size, so there is no denominator.
+   */
+  function emitContext(usage: unknown): void {
+    const used = contextTokensOf(usage);
+    if (used === null || used === contextTokens) return;
     contextTokens = used;
     onEvent({ type: 'usage', usage: null, contextTokens: used, contextWindow: null });
   }
@@ -255,6 +262,14 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
 
     if (obj.type === 'result') {
       const isError = obj.is_error === true;
+      // Some CLI builds report usage only on this frame, with the `assistant`
+      // frames carrying none — without this fallback the context ring would
+      // silently vanish on those versions (the assistant branch never fired).
+      // Only a fallback: when the turn already reported a figure, that one wins.
+      if (contextTokens === null) {
+        const fromResult = contextTokensOf(obj.usage);
+        if (fromResult !== null) contextTokens = fromResult;
+      }
       const stopReason =
         (typeof obj.stop_reason === 'string' && obj.stop_reason) ||
         (typeof obj.terminal_reason === 'string' && obj.terminal_reason) ||

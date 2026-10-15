@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import { fallbackWorkspaceId } from '../../store/workspaceList';
@@ -75,7 +75,25 @@ export function AppShell() {
   const chatVisible = useAppearance((state) => state.chatVisible);
   const toggleChat = useAppearance((state) => state.toggleChat);
 
-  const [workspaceId, setWorkspaceId] = useState('');
+  /*
+   * host → workspace → session → run is a nested chain of ids: a workspace id
+   * only means something on the connection it was picked on. Keeping the choice
+   * in one piece with its connection lets the mismatch be resolved *during
+   * render*, so switching hosts never leaves a render holding the previous
+   * host's workspace id. Resetting it in an effect (the obvious version) did:
+   * the sessions effect then fired once with `(new connection, old workspace)`,
+   * and the daemon answered `GET /api/sessions?workspaceId=<unknown>` with 404 —
+   * the rail flashed「加载失败（HTTP 404）」before the real list arrived.
+   */
+  const [workspaceChoice, setWorkspaceChoice] = useState<{ connectionId: string | null; id: string }>({
+    connectionId: null,
+    id: '',
+  });
+  const workspaceId = workspaceChoice.connectionId === connectionId ? workspaceChoice.id : '';
+  const setWorkspaceId = useCallback(
+    (id: string) => setWorkspaceChoice({ connectionId, id }),
+    [connectionId],
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
@@ -95,11 +113,12 @@ export function AppShell() {
   // workspace resolved, or a batch left over mid-switch — must not render.
   const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
 
-  // A different host means a different session list: drop the rail's selection
-  // and let the default-workspace effect pick again.
+  // A different host means a different session list: drop the rail's selection.
+  // The workspace choice needs no reset here — it is scoped to its connection,
+  // so it already reads as empty for the new host; the default-workspace effect
+  // below then picks for that host.
   useEffect(() => {
     setSelectedId(null);
-    setWorkspaceId('');
   }, [connectionId]);
 
   // Workspaces first: they decide which workspace's sessions to ask for.
