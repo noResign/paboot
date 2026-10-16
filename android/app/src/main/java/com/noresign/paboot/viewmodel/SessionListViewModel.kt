@@ -29,6 +29,10 @@ class SessionListViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
+    /** 下拉刷新指示器；只由手势驱动，进页面/切回来时的自动刷新不碰它。 */
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing = _refreshing.asStateFlow()
+
     private val _renameSubmitting = MutableStateFlow(false)
     val renameSubmitting = _renameSubmitting.asStateFlow()
     private val _renameError = MutableStateFlow<String?>(null)
@@ -52,19 +56,35 @@ class SessionListViewModel(
 
     /** Re-fetch without flashing the Loading spinner; keeps current list visible on failure. */
     fun refreshSilently() {
+        viewModelScope.launch { refetchQuietly() }
+    }
+
+    /**
+     * 下拉刷新。与 [refreshSilently] 拉的是同一份数据、走同一套错误处理（有内容时只弹
+     * 一句提示，不退回错误页），区别只在转不转指示器——所以已经有内容时不会闪。
+     */
+    fun pullRefresh() {
+        if (_refreshing.value) return
         viewModelScope.launch {
-            fetchFor(
-                WorkspaceSelection.current(),
-                onError = { error ->
-                    if (_uiState.value !is SessionListUiState.Content) {
-                        _uiState.value = SessionListUiState.Error(friendlyError(error))
-                    } else {
-                        _message.value = friendlyError(error)
-                    }
-                },
-            )
+            _refreshing.value = true
+            try {
+                refetchQuietly()
+            } finally {
+                _refreshing.value = false
+            }
         }
     }
+
+    private suspend fun refetchQuietly() = fetchFor(
+        WorkspaceSelection.current(),
+        onError = { error ->
+            if (_uiState.value !is SessionListUiState.Content) {
+                _uiState.value = SessionListUiState.Error(friendlyError(error))
+            } else {
+                _message.value = friendlyError(error)
+            }
+        },
+    )
 
     private suspend fun fetch(workspaceId: String?, onError: (NetworkResult.Error) -> Unit = { error ->
         _uiState.value = SessionListUiState.Error(friendlyError(error))

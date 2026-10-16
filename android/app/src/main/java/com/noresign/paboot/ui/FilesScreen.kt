@@ -38,7 +38,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -69,6 +68,7 @@ import com.noresign.paboot.model.diff.SplitDiffKind
 import com.noresign.paboot.model.diff.parseSplitDiff
 import com.noresign.paboot.network.daemon.dto.ChangedFileDto
 import com.noresign.paboot.network.daemon.dto.FileEntryDto
+import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.viewmodel.DiffUiState
 import com.noresign.paboot.viewmodel.FileBrowserUiState
 import com.noresign.paboot.viewmodel.FileContentUiState
@@ -150,7 +150,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     onDismissError = viewModel::dismissRootError,
                 )
                 // 下拉刷新只包住列表区：分段控制和根栏在它上面，不参与下拉手势。
-                PullToRefreshBox(
+                PullToRefreshContainer(
                     isRefreshing = refreshing,
                     onRefresh = viewModel::pullRefresh,
                     modifier = Modifier.weight(1f).fillMaxWidth(),

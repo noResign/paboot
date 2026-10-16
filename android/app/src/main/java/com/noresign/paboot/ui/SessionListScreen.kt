@@ -76,6 +76,7 @@ import com.noresign.paboot.network.daemon.dto.SessionDto
 import com.noresign.paboot.model.session.SessionListModel
 import com.noresign.paboot.model.session.WorkspaceGroup
 import com.noresign.paboot.ui.component.AgentBadge
+import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.RunningIndicator
 import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.util.relativeTime
@@ -94,6 +95,7 @@ fun SessionListScreen(
     val message by viewModel.message.collectAsState()
     val renameSubmitting by viewModel.renameSubmitting.collectAsState()
     val renameError by viewModel.renameError.collectAsState()
+    val refreshing by viewModel.refreshing.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
@@ -139,7 +141,13 @@ fun SessionListScreen(
             }
         },
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        // 整页跟手（见 PullToRefreshContainer）。空态 / 错误态的内容不是可滚动组件，
+        // 下拉手势未必触发——所以错误态的「重试」按钮不能省。
+        PullToRefreshContainer(
+            isRefreshing = refreshing,
+            onRefresh = viewModel::pullRefresh,
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+        ) {
             when (val state = uiState) {
                 is SessionListUiState.Loading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
