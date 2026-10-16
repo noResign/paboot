@@ -10,6 +10,10 @@ release/
 .env.*
 !.env.example
 
+# Generated: the bundled daemon the desktop app ships (scripts/bundle-daemon.mjs).
+# `desktop/build/` itself stays tracked — icon.png lives there.
+desktop/build/daemon/
+
 # Local-only: agent skills / machine-specific docs, kept out of the repo
 .claude/
 docs/local/

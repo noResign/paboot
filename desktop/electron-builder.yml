@@ -21,11 +21,15 @@ files:
   # electron-builder 从同一张 PNG 生成的，但窗口的 _NET_WM_ICON 需要文件实际存在。
   - build/icon.png
 
-# The daemon ships inside the app (~900 KB of JS, no native deps) so the app and
-# its daemon can never drift apart in version — see daemon/bundled-entry.ts.
-# Without this, "start a local daemon" has nothing to run on a packaged install.
+# The daemon ships inside the app so「启动一个本机 daemon」works out of the box,
+# with no separate install — see `src/main/daemon/bundled-entry.ts`.
+#
+# `build/daemon/` is *bundled* (`scripts/bundle-daemon.mjs`, run by `prebuild`),
+# not the daemon's raw `dist/`: dist is plain tsc output whose bare imports
+# resolve by walking up the tree, which finds `daemon/node_modules` in the repo
+# and nothing at all inside the app (`Cannot find package 'express'`).
 extraResources:
-  - from: ../daemon/dist
+  - from: build/daemon
     to: daemon
 
 asar: true

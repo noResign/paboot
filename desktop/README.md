@@ -41,14 +41,19 @@ pnpm clean:cache      # 删全局 Electron 下载缓存（见下，影响别的�
 ## 打包
 
 配置在 `electron-builder.yml`：linux `AppImage`+`deb`、mac `dmg`+`zip`、win `nsis`。
-`pnpm dist` 默认只打**当前平台**，要出别的平台用 `pnpm exec electron-builder --mac` 之类的
-（mac 产物需在 macOS 上打）。产物落到 `release/`，命名 `paboot-<version>-<arch>.<ext>`。
-
-macOS 上还可以直接：
+产物落到 `release/`，命名 `paboot-<version>-<arch>.<ext>`。
 
 ```bash
-pnpm dist:mac     # 主机架构，出 dmg + zip（dmg 只能在 macOS 上打）
+pnpm dist          # 当前平台
+pnpm dist:dir      # 只产出 release/<平台>-unpacked/，不打安装包（验证用）
+pnpm dist:linux    # Linux：AppImage + deb
+pnpm dist:mac      # macOS：dmg + zip（只能在 macOS 上打）
+pnpm dist:windows  # Windows：nsis（在 Linux 上打需要 wine）
 ```
+
+> ⚠️ **别直接跑 `pnpm exec electron-builder`**：daemon 的编译与打包都在 `prebuild` 里
+> （`pnpm build` 会触发），绕过去就会把一个**过时或不存在**的 daemon 装进包里。
+> 一律走上面这几个 `pnpm dist*`。
 
 几个刻意的设定：
 
@@ -58,6 +63,18 @@ pnpm dist:mac     # 主机架构，出 dmg + zip（dmg 只能在 macOS 上打）
   运行时不需要任何 `node_modules`，所以 asar 里只有 `out/` + `package.json`（约 1.3MB）。
   `@noresign/paboot` 是 `link:` 的本地包且只提供类型，必须是 `devDependencies`——
   留在 `dependencies` 里 electron-builder 会把 daemon 整个目录连同它的 `node_modules` 打进包里。
+- **随 app 走的 daemon 要先「打包」**（`scripts/bundle-daemon.mjs`，由 `prebuild` 调用）：
+  daemon 的 `dist/` 是 tsc 裸产物，`import express from 'express'` 这种裸导入在仓库里能往上
+  找到 `daemon/node_modules`，**装进 app 之后就什么都没有**——打包版会以
+  `Cannot find package 'express'` 直接崩（dev 永远看不到，因为仓库里依赖就在旁边）。
+  esbuild 把它内联成自包含的单文件，输出到 `desktop/build/daemon/`，`extraResources` 从那里拷进
+  `<resources>/daemon/`。产物**保持 daemon 的包结构**（`package.json` + `dist/`），因为 daemon 在
+  运行时按入口相对路径解析两样东西：旁边的 `permission-hook.js`，和 `../package.json` 里的版本。
+- **不要求「app 版本 == daemon 版本」**。随包只是为了保证「装完就能启动一个本机 daemon」；
+  daemon 有自己的发布链（OSS 上的 npm 包），而且**附着别人机器上/手动起的 daemon 时版本相等根本
+  不成立**——那恰恰是主要用法。版本差异交给协议向后兼容兜（`serverId`、`health` 里那些字段都是可选的）。
+  将来若想提示「你起的这台不是我内置的版本」，比较的对象应该是**运行中的 daemon 版本 vs 随包版本**，
+  而不是两个包的版本号（见 `desktop/docs/local/electron_desktop_plan.md` 的「版本漂移怎么处理」）。
 - **图标**是 `build/icon.png`（1024×1024，程序生成，与托盘图标同一渐变）。换图标只改这个文件。
 - 版本源是 `package.json` 的 `version`，electron-builder 自动读走，无需另建 `src/version.ts`
   （`about` 页的 `appVersion` 走 Electron 的 `app.getVersion()`）。

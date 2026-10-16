@@ -131,8 +131,12 @@ paboot/
   `webSecurity` 固定不变，渲染层**不直接碰 Node/Electron**，一律走 preload 暴露的 API；网络请求
   由主进程发出。`tests/preload-sandbox.test.ts`、`tests/protocol-purity.test.ts` 是这条边界的
   守护测试，改 preload 或协议层之前先看它们。
-- 其余（协议类型走 `@noresign/paboot/protocol` 且构建前要先编译 daemon、三份 tsconfig、打包时
-  daemon 走 `extraResources`、皮肤系统）见 [desktop/README.md](desktop/README.md)。
+- 其余（协议类型走 `@noresign/paboot/protocol`；构建前要先编译**并打包** daemon——`dist` 是裸 tsc
+  产物，带进 app 会以 `Cannot find package 'express'` 崩，所以 `prebuild` 会用 esbuild 打成自包含
+  单文件，再走 `extraResources`；三份 tsconfig、皮肤系统）见 [desktop/README.md](desktop/README.md)。
+- **不要求「app 版本 == daemon 版本」**：随包只保证「装完就能启动一个本机 daemon」；daemon 有独立
+  发布链（OSS 的 npm 包），而且**附着外部 daemon 时版本相等根本不成立**——那恰恰是主要用法。
+  版本差异靠协议向后兼容兜（health/`serverId` 这些字段都是可选的）。
 
 ## 关键设计决策（速览）
 

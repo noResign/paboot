@@ -10,11 +10,13 @@ describe('resolveBundledEntry', () => {
       ...base,
       isPackaged: true,
       exists: (candidate) => {
-        expect(candidate).toBe(path.resolve('/app/resources/daemon/index.js'));
+        // The bundled daemon mirrors the daemon package layout (see
+        // `scripts/bundle-daemon.mjs`): its own package.json sits one level up.
+        expect(candidate).toBe(path.resolve('/app/resources/daemon/dist/index.js'));
         return true;
       },
     });
-    expect(entry).toBe(path.resolve('/app/resources/daemon/index.js'));
+    expect(entry).toBe(path.resolve('/app/resources/daemon/dist/index.js'));
   });
 
   it('falls back to the sibling checkout in dev', () => {
