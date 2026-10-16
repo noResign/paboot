@@ -115,8 +115,7 @@ class SessionListViewModel(
                     // Optimistically drop it from the current list, then re-sync.
                     val current = _uiState.value
                     if (current is SessionListUiState.Content) {
-                        val all = current.model.rootSessions + current.model.subGroups.flatMap { it.sessions }
-                        val remaining = all.filterNot { it.id == id }
+                        val remaining = current.model.allSessions.filterNot { it.id == id }
                         _uiState.value = SessionListUiState.Content(
                             groupByCwd(remaining, WorkspaceSelection.selectedPath.value),
                         )
@@ -145,7 +144,7 @@ class SessionListViewModel(
                     is NetworkResult.Success -> {
                         val current = _uiState.value
                         if (current is SessionListUiState.Content) {
-                            val sessions = current.model.rootSessions + current.model.subGroups.flatMap { it.sessions }
+                            val sessions = current.model.allSessions
                             _uiState.value = SessionListUiState.Content(
                                 groupByCwd(
                                     sessions.map { if (it.id == id) it.copy(title = trimmed) else it },

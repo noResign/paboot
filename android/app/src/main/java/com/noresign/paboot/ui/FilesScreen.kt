@@ -1,5 +1,6 @@
 package com.noresign.paboot.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -98,6 +99,19 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     // 每次进入文件 Tab 自动拉一次：agent 在后台改了文件、或别处动了 tab 行，
     // 切回来就能看到，不用手点「刷新」。切走时本页会离开 composition，切回来再触发。
     LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // 文本 / diff / 媒体都是本页内的浮层，不是导航目的地（见下面的 when）。不拦返回键的话，
+    // 系统返回会冒泡到 NavHost，把 MAIN 弹掉——表现就是「在文件详情里按返回直接退出 App」。
+    // 按渲染优先级逐个关（媒体 > 文本 > diff）：从 diff 再点开全文时 fileContent 叠在
+    // diffState 之上，关掉文本正好回到刚才那张 diff。
+    val hasDetail = media != null || fileContent != null || diffState != null
+    BackHandler(enabled = hasDetail) {
+        when {
+            media != null -> viewModel.closeMedia()
+            fileContent != null -> viewModel.closeFile()
+            diffState != null -> viewModel.closeDiff()
+        }
+    }
 
     when {
         // 媒体预览排在最前：它是从「全部文件」点进来的最上层浮层（和文本/diff 互斥）。

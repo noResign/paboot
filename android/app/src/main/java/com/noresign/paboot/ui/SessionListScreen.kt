@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,6 +68,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -74,7 +78,6 @@ import com.noresign.paboot.data.PendingNewSession
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.network.daemon.dto.SessionDto
 import com.noresign.paboot.model.session.SessionListModel
-import com.noresign.paboot.model.session.WorkspaceGroup
 import com.noresign.paboot.ui.component.AgentBadge
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.RunningIndicator
@@ -269,11 +272,14 @@ private fun SessionGroupedList(
     onDelete: (SessionDto) -> Unit,
 ) {
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
+    // 「更早」默认折叠，展开状态和子目录分组一样只活在本次 composition 里（见 docs）。
+    var olderCollapsed by remember { mutableStateOf(true) }
     val listState = rememberLazyListState()
     var revealedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) revealedId = null
     }
+    val reveal: (String?) -> Unit = { revealedId = it }
 
     LazyColumn(
         state = listState,
@@ -281,62 +287,81 @@ private fun SessionGroupedList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(model.rootSessions, key = { it.id }) { session ->
-            SessionCard(
-                session = session,
-                revealed = revealedId == session.id,
-                onRevealChange = { revealed -> revealedId = if (revealed) session.id else null },
-                onClick = {
-                    if (revealedId != null) revealedId = null else onOpenSession(session.id)
-                },
-                onRename = {
-                    revealedId = null
-                    onRename(session)
-                },
-                onDelete = {
-                    revealedId = null
-                    onDelete(session)
-                },
-            )
+        sessionCards(model.rootSessions, revealedId, reveal, onOpenSession, onRename, onDelete)
+        if (model.olderRootSessions.isNotEmpty()) {
+            stickyHeader(key = "older") {
+                CollapsibleHeader(
+                    label = "更早",
+                    count = model.olderRootSessions.size,
+                    collapsed = olderCollapsed,
+                    onToggle = { olderCollapsed = !olderCollapsed },
+                    icon = Icons.Rounded.History,
+                    labelStyle = MaterialTheme.typography.labelLarge,
+                )
+            }
+            if (!olderCollapsed) {
+                sessionCards(model.olderRootSessions, revealedId, reveal, onOpenSession, onRename, onDelete)
+            }
         }
         model.subGroups.forEach { group ->
             val isCollapsed = collapsed[group.cwd] ?: true
             stickyHeader(key = "cwd-${group.cwd}") {
-                WorkspaceHeader(
-                    group = group,
+                CollapsibleHeader(
+                    label = group.displayName,
+                    count = group.sessions.size,
                     collapsed = isCollapsed,
                     onToggle = { collapsed[group.cwd] = !isCollapsed },
+                    icon = Icons.Rounded.Folder,
+                    // 目录名是路径，用等宽；「更早」不是路径，所以样式由调用方给。
+                    labelStyle = CodeBody.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                 )
             }
             if (!isCollapsed) {
-                items(group.sessions, key = { it.id }) { session ->
-                    SessionCard(
-                        session = session,
-                        revealed = revealedId == session.id,
-                        onRevealChange = { revealed -> revealedId = if (revealed) session.id else null },
-                        onClick = {
-                            if (revealedId != null) revealedId = null else onOpenSession(session.id)
-                        },
-                        onRename = {
-                            revealedId = null
-                            onRename(session)
-                        },
-                        onDelete = {
-                            revealedId = null
-                            onDelete(session)
-                        },
-                    )
-                }
+                sessionCards(group.sessions, revealedId, reveal, onOpenSession, onRename, onDelete)
             }
         }
     }
 }
 
+/** 一段会话卡片。三个地方（根目录近期 / 更早 / 各子目录组）共用，避免同一坨复制三遍。 */
+private fun LazyListScope.sessionCards(
+    sessions: List<SessionDto>,
+    revealedId: String?,
+    onReveal: (String?) -> Unit,
+    onOpenSession: (String) -> Unit,
+    onRename: (SessionDto) -> Unit,
+    onDelete: (SessionDto) -> Unit,
+) {
+    items(sessions, key = { it.id }) { session ->
+        SessionCard(
+            session = session,
+            revealed = revealedId == session.id,
+            onRevealChange = { revealed -> onReveal(if (revealed) session.id else null) },
+            onClick = { if (revealedId != null) onReveal(null) else onOpenSession(session.id) },
+            onRename = {
+                onReveal(null)
+                onRename(session)
+            },
+            onDelete = {
+                onReveal(null)
+                onDelete(session)
+            },
+        )
+    }
+}
+
+/**
+ * 可折叠的段头。子目录分组与「更早」共用一套外观（图标 + 文案 + 条数徽章 + 箭头），
+ * 只有图标与文案样式不同。吸顶时要盖住下面的内容，所以自带不透明背景。
+ */
 @Composable
-private fun WorkspaceHeader(
-    group: WorkspaceGroup,
+private fun CollapsibleHeader(
+    label: String,
+    count: Int,
     collapsed: Boolean,
     onToggle: () -> Unit,
+    icon: ImageVector,
+    labelStyle: TextStyle,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -347,22 +372,22 @@ private fun WorkspaceHeader(
             .padding(top = 12.dp, bottom = 4.dp),
     ) {
         Icon(
-            imageVector = Icons.Rounded.Folder,
+            imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(15.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = group.displayName,
-            style = CodeBody.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            text = label,
+            style = labelStyle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "${group.sessions.size}",
+            text = "$count",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier

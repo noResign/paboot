@@ -11,18 +11,45 @@ data class WorkspaceGroup(
     val sessions: List<SessionDto>,
 )
 
-/** 会话列表的最终展示结构：当前 workspace 根目录的会话平铺，子目录会话分组。 */
-data class SessionListModel(
-    val rootSessions: List<SessionDto>,
-    val subGroups: List<WorkspaceGroup>,
-)
+/**
+ * 根目录会话里「最近」与「更早」的分界：超过这么久没活动就收进折叠分组。
+ *
+ * 只作用于根目录平铺列表——子目录分组本来就默认折叠，不必再套一层。为的是别让翻不到
+ * 的历史一直把当前在用的会话往下挤。
+ */
+const val SESSION_RECENT_WINDOW_MS: Long = 3L * 24 * 60 * 60 * 1000
 
 /**
- * 把会话按 cwd 拆分：cwd 等于 [workspacePath] 的会话平铺进 rootSessions；其余
- * （workspace 内子目录，通常来自续接本机会话）按 cwd 分组进 subGroups。根目录列表
- * 与组内都按 lastActiveAt 倒序，子目录组间按「组内最近活跃」倒序。
+ * 会话列表的最终展示结构：当前 workspace 根目录的会话平铺（近期的在上、更早的折叠成一段），
+ * 子目录会话分组。
  */
-fun groupByCwd(sessions: List<SessionDto>, workspacePath: String?): SessionListModel {
+data class SessionListModel(
+    val rootSessions: List<SessionDto>,
+    /** 根目录里超过 [SESSION_RECENT_WINDOW_MS] 没活动的会话，界面上默认折叠。 */
+    val olderRootSessions: List<SessionDto>,
+    val subGroups: List<WorkspaceGroup>,
+) {
+    /**
+     * 平铺后的全部会话（删除 / 重命名做乐观更新时要把列表拼回来）。放在这里而不是让
+     * 调用方自己拼 `rootSessions + subGroups`：折叠段每加一处，那种写法就会漏一处。
+     */
+    val allSessions: List<SessionDto>
+        get() = rootSessions + olderRootSessions + subGroups.flatMap { it.sessions }
+}
+
+/**
+ * 把会话按 cwd 拆分：cwd 等于 [workspacePath] 的会话平铺进 [SessionListModel.rootSessions]
+ * （按 [SESSION_RECENT_WINDOW_MS] 再切成「近期 / 更早」两段）；其余（workspace 内子目录，
+ * 通常来自续接本机会话）按 cwd 分组进 [SessionListModel.subGroups]。各段内部都按
+ * lastActiveAt 倒序，子目录组间按「组内最近活跃」倒序。
+ *
+ * [now] 只用于判定「更早」，注入是为了可测。
+ */
+fun groupByCwd(
+    sessions: List<SessionDto>,
+    workspacePath: String?,
+    now: Long = System.currentTimeMillis(),
+): SessionListModel {
     val sorted = sessions.sortedByDescending { it.lastActiveAt }
     if (workspacePath.isNullOrBlank()) {
         // 未选中 workspace 时兜底：全部按 cwd 分组（保持旧行为）。
@@ -30,15 +57,17 @@ fun groupByCwd(sessions: List<SessionDto>, workspacePath: String?): SessionListM
             .groupBy { it.cwd.ifBlank { "默认工作目录" } }
             .map { (cwd, list) -> WorkspaceGroup(cwd, cwd, list) }
             .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
-        return SessionListModel(emptyList(), groups)
+        return SessionListModel(emptyList(), emptyList(), groups)
     }
-    val root = sorted.filter { normalize(it.cwd) == normalize(workspacePath) }
+    val (recent, older) = sorted
+        .filter { normalize(it.cwd) == normalize(workspacePath) }
+        .partition { it.lastActiveAt >= now - SESSION_RECENT_WINDOW_MS }
     val subGroups = sorted
         .filter { normalize(it.cwd) != normalize(workspacePath) }
         .groupBy { it.cwd.ifBlank { "默认工作目录" } }
         .map { (cwd, list) -> WorkspaceGroup(cwd, relativeTo(cwd, workspacePath), list) }
         .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
-    return SessionListModel(root, subGroups)
+    return SessionListModel(recent, older, subGroups)
 }
 
 private fun normalize(path: String): String = path.trimEnd('/')
