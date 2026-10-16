@@ -75,7 +75,12 @@ pnpm dist:windows  # Windows：nsis（在 Linux 上打需要 wine）
   不成立**——那恰恰是主要用法。版本差异交给协议向后兼容兜（`serverId`、`health` 里那些字段都是可选的）。
   将来若想提示「你起的这台不是我内置的版本」，比较的对象应该是**运行中的 daemon 版本 vs 随包版本**，
   而不是两个包的版本号（见 `desktop/docs/local/electron_desktop_plan.md` 的「版本漂移怎么处理」）。
-- **图标**是 `build/icon.png`（1024×1024，程序生成，与托盘图标同一渐变）。换图标只改这个文件。
+- **图标**：主图 `build/icon.png`（1024×1024）是 mac / win / 窗口 / AppImage 的唯一来源；
+  Linux 另用 `build/icons/<边长>x<边长>.png`（16…512，由主图缩出）——freedesktop 图标查找只认
+  `hicolor/index.theme` 里列出的尺寸，**给 electron-builder 单个 1024 PNG 会被原样装进
+  `hicolor/1024x1024/`，一个尺寸都匹配不上，启动器就退回通用的齿轮图**。
+  托盘图标是吉祥物头像内联在 `src/main/tray-icon.ts`（22px + 44px 两个尺寸），**不是**主图缩放
+  ——整只狗带平板约 1.8:1，压到菜单栏大小会糊成一团。换图标这三处都要改。
 - 版本源是 `package.json` 的 `version`，electron-builder 自动读走，无需另建 `src/version.ts`
   （`about` 页的 `appVersion` 走 Electron 的 `app.getVersion()`）。
 

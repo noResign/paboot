@@ -50,7 +50,12 @@ linux:
     - AppImage
     - deb
   category: Development
-  icon: build/icon.png
+  # A *directory* of pre-sized PNGs, not the 1024px master: electron-builder
+  # hands a single PNG straight through, and freedesktop icon lookup only
+  # searches the sizes hicolor/index.theme lists — which stops at 512x512. A
+  # lone 1024x1024 installs into hicolor/1024x1024/, is never found, and the
+  # launcher falls back to the generic gear icon.
+  icon: build/icons
   maintainer: noResign
   synopsis: One client for all your agents
   # Makes the .desktop entry's StartupWMClass match the app_id Electron derives

@@ -1,5 +1,5 @@
 import { Menu, Tray, nativeImage } from 'electron';
-import { TRAY_ICON_PNG_BASE64 } from './tray-icon';
+import { TRAY_ICON_1X_PNG_BASE64, TRAY_ICON_2X_PNG_BASE64 } from './tray-icon';
 import type { TrayState } from '../shared/ipc';
 
 export interface TrayDeps {
@@ -9,6 +9,13 @@ export interface TrayDeps {
 }
 
 const MAX_MENU_SESSIONS = 5;
+
+/** Both resolutions in one image, so the menu bar stays sharp on Retina. */
+function trayImage(): Electron.NativeImage {
+  const image = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_1X_PNG_BASE64}`);
+  image.addRepresentation({ scaleFactor: 2, dataURL: `data:image/png;base64,${TRAY_ICON_2X_PNG_BASE64}` });
+  return image;
+}
 
 /**
  * The tray is what keeps the app alive after the window is closed — and being
@@ -30,8 +37,7 @@ export class AppTray {
   create(): boolean {
     if (this.tray) return true;
     try {
-      const image = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_PNG_BASE64}`);
-      this.tray = new Tray(image);
+      this.tray = new Tray(trayImage());
       this.tray.on('click', () => this.deps.onOpen());
       this.rebuild();
       return true;

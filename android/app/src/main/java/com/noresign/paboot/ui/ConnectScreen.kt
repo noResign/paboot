@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.data.SavedConnection
 import com.noresign.paboot.ui.theme.Brand
+import com.noresign.paboot.ui.theme.BrandGlyph
 import com.noresign.paboot.viewmodel.ConnectUiState
 import com.noresign.paboot.viewmodel.ConnectViewModel
 import androidx.compose.foundation.BorderStroke
@@ -53,7 +54,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
-import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -101,10 +101,11 @@ fun ConnectScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.SmartToy,
+                        imageVector = BrandGlyph,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(38.dp),
+                        // 占盒子 70%，与桌面端 BrandMark 一致
+                        modifier = Modifier.size(50.dp),
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
