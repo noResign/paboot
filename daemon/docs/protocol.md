@@ -103,7 +103,18 @@ codex 每次模型调用都会推 `thread/tokenUsage/updated`，但中途只发�
 | runtime | 占用算法 | 窗口 |
 |---|---|---|
 | codex | `thread/tokenUsage/updated` 的 `last.inputTokens`（已是最近一次请求的完整输入，含缓存部分） | `modelContextWindow` |
-| claude | 最近一条主回合 assistant 消息的 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`（三段互不相交，故相加） | 无 |
+| claude | **最近一次请求**的三个输入桶之和（`input_tokens + cache_read_input_tokens + cache_creation_input_tokens`，三段互不相交故相加） | 无 |
+
+Claude 这条的取值来源有讲究，按可靠性排：
+
+1. `stream_event` → `message_start` → `message.usage`：**原生 API 事件**，一次请求一个，最可靠。
+   但它没有 parent id，所以只是**按 message id 暂存**，等对应的 `assistant` 帧到了、确认是主回合
+   （而非子 agent——子 agent 有自己的窗口）才采用。
+2. `assistant` 帧的 `message.usage`：同一个值，但**有些 CLI 版本会漏带**（于是要靠上面那条兜）。
+
+⚠️ **绝不要用 `result` 帧的 `usage` 当占用**：那是**整次 query 的累计值**——它旁边就摆着
+`num_turns` 和 `modelUsage`，工具调用循环里每一次请求都算进去。一次长 agentic run 能累到百万级，
+曾经因此在客户端显示过「上下文 10M+」。那一帧的 `usage` 只作为该 run 的**用量/成本**信息转发。
 
 claude 每来一条主回合 assistant 帧就发一次（值相同则跳过；子代理帧有自己的窗口，不参与），
 `result` 帧带上最后一次的值以便历史重建确定性收尾。这些帧 `usage: null`，所以客户端不会

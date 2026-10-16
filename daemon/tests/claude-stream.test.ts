@@ -147,21 +147,58 @@ describe('createClaudeStreamParser', () => {
     expect(result).toMatchObject({ type: 'usage', contextTokens: 4300, contextWindow: null });
   });
 
-  it('falls back to the result frame when no assistant frame carried usage', () => {
+  it('adopts message_start usage when the assistant frame omits it', () => {
+    // Some CLI builds report usage only in the raw `message_start` event. The
+    // value is adopted at the assistant frame, because that is the first point
+    // where a main-turn message can be told from a sub-agent's.
     const events = parse([
-      JSON.stringify({ type: 'assistant', message: { id: 'm1', stop_reason: 'end_turn', content: [{ type: 'text', text: 'hi' }] } }),
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'message_start',
+          message: {
+            id: 'm1',
+            usage: { input_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200 },
+          },
+        },
+      }),
+      JSON.stringify({ type: 'assistant', message: { id: 'm1', stop_reason: 'end_turn', content: [] } }),
+    ]);
+    expect(events.filter((e) => e.type === 'usage')).toEqual([
+      { type: 'usage', usage: null, contextTokens: 5300, contextWindow: null },
+    ]);
+  });
+
+  it('ignores a sub-agent message_start, whose usage describes its own window', () => {
+    const usage = { input_tokens: 90_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const events = parse([
+      JSON.stringify({ type: 'stream_event', event: { type: 'message_start', message: { id: 'sub', usage } } }),
+      JSON.stringify({
+        type: 'assistant',
+        parent_tool_use_id: 'p1',
+        message: { id: 'sub', stop_reason: 'end_turn', content: [] },
+      }),
+    ]);
+    expect(events.filter((e) => e.type === 'usage')).toHaveLength(0);
+  });
+
+  it('never mistakes the result frame aggregate for occupancy', () => {
+    // `usage` on the result frame is the whole query's total (it sits next to
+    // num_turns / modelUsage): every tool call inside the run is another request.
+    const events = parse([
       JSON.stringify({
         type: 'result',
         subtype: 'success',
-        result: 'hi',
+        result: 'done',
         stop_reason: 'end_turn',
-        usage: { input_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200, output_tokens: 5 },
+        num_turns: 30,
+        usage: { input_tokens: 400_000, cache_read_input_tokens: 9_000_000, cache_creation_input_tokens: 0, output_tokens: 5 },
       }),
     ]);
-    // The assistant frame reported none, so no context-only frame fires...
-    expect(events.filter((e) => e.type === 'usage' && e.usage === null)).toHaveLength(0);
-    // ...but the result frame is self-contained, so history rebuild still lands on it.
     const result = events.find((e): e is Extract<NormalizedEvent, { type: 'usage' }> => e.type === 'usage' && e.usage !== null);
-    expect(result).toMatchObject({ type: 'usage', contextTokens: 5300, contextWindow: null });
+    // It is still forwarded — it carries the stop reason and cost — but claiming
+    // 9.4M tokens of context is exactly the bug this guards.
+    expect(result).toBeDefined();
+    expect(result).not.toHaveProperty('contextTokens');
   });
 });

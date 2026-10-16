@@ -59,6 +59,13 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
   let contextTokens: number | null = null;
 
   /**
+   * Usage announced by `message_start`, held until the owning `assistant` frame
+   * arrives — only then is it known to be the main turn rather than a sub-agent's.
+   */
+  let pendingUsage: unknown = undefined;
+  const pendingUsageById = new Map<string, unknown>();
+
+  /**
    * Anthropic splits a request's input into the uncached part (`input_tokens`)
    * plus two cache buckets; the three are disjoint, so their sum is what the
    * next request resends — i.e. how full the context window is. `null` when the
@@ -109,9 +116,18 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
   function handleStreamEvent(ev: Record<string, unknown>): void {
     switch (ev.type) {
       case 'message_start': {
-        currentMessageId = isRecord(ev.message) && typeof ev.message.id === 'string' ? ev.message.id : null;
+        const message = isRecord(ev.message) ? ev.message : null;
+        currentMessageId = message && typeof message.id === 'string' ? message.id : null;
         currentMessageStreamedText = false;
         currentMessageStreamedThinking = false;
+        // Buffer *this request's* usage. It is the most dependable source — some
+        // CLI builds omit it from the `assistant` frame that follows — but this
+        // frame carries no parent id, so which thread it belongs to (main turn,
+        // or a sub-agent with its own context window) is only knowable later.
+        if (message) {
+          pendingUsage = message.usage;
+          if (typeof message.id === 'string') pendingUsageById.set(message.id, message.usage);
+        }
         if (typeof ev.ttft_ms === 'number') {
           onEvent({ type: 'status', label: 'streaming', ttftMs: ev.ttft_ms });
         }
@@ -232,10 +248,16 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         }
       }
 
-      // Sub-agent frames have their own context window, so only the main
-      // turn's occupancy describes this session. (Checked here rather than in
-      // `message_start`: stream_event frames carry no parent id.)
-      if (obj.parent_tool_use_id == null) emitContext(obj.message.usage);
+      // Sub-agent frames have their own context window, so only the main turn's
+      // occupancy describes this session. (Checked here rather than in
+      // `message_start`: stream_event frames carry no parent id — so the usage was
+      // buffered there and is adopted here, now that the thread is known.)
+      if (obj.parent_tool_use_id == null) {
+        const buffered = (explicitMsgId ? pendingUsageById.get(explicitMsgId) : undefined) ?? pendingUsage;
+        // Prefer what this frame carries; fall back to what its `message_start`
+        // announced, since some builds leave `usage` off the assistant frame.
+        emitContext(contextTokensOf(obj.message.usage) !== null ? obj.message.usage : buffered);
+      }
 
       // Only the MAIN turn's boundary counts. Sub-agent frames carry a
       // non-null parent_tool_use_id and must not close the run early.
@@ -262,14 +284,12 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
 
     if (obj.type === 'result') {
       const isError = obj.is_error === true;
-      // Some CLI builds report usage only on this frame, with the `assistant`
-      // frames carrying none — without this fallback the context ring would
-      // silently vanish on those versions (the assistant branch never fired).
-      // Only a fallback: when the turn already reported a figure, that one wins.
-      if (contextTokens === null) {
-        const fromResult = contextTokensOf(obj.usage);
-        if (fromResult !== null) contextTokens = fromResult;
-      }
+      // ⚠️ Do **not** derive context occupancy from `obj.usage` here. It is the
+      // *query's aggregate* — it sits next to `num_turns` / `modelUsage` and sums
+      // every internal turn, and each tool call is another request. On a long
+      // agentic run that reaches millions, which is how a "context" readout of
+      // 10M+ happened. Occupancy is per-request and comes from `message_start` /
+      // the `assistant` frame; this frame only *repeats* whatever they reported.
       const stopReason =
         (typeof obj.stop_reason === 'string' && obj.stop_reason) ||
         (typeof obj.terminal_reason === 'string' && obj.terminal_reason) ||
