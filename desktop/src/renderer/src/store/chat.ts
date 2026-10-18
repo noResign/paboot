@@ -78,6 +78,8 @@ interface ChatStore {
   decide(decision: 'allow' | 'deny' | 'allow_all', reason?: string, response?: unknown): Promise<void>;
   applyStreamEvent(event: StreamEvent): void;
   setPermissionMode(mode: string): void;
+  /** Persist a model/parameter switch on the daemon; it applies from the next run. */
+  setSessionSelection(model: string | null, modelParameters: Record<string, string>): Promise<void>;
   /** Session id of the chat currently on screen (M1 shows exactly one). */
   activeSessionId(): string | null;
 }
@@ -131,6 +133,8 @@ export const useChat = create<ChatStore>((set, get) => ({
         cwd: session.cwd,
         runtime: session.runtime,
         permissionMode: session.permissionMode,
+        model: session.model,
+        modelParameters: session.modelParameters ?? {},
         messages: rebuilt.messages,
         runs,
         todos: rebuilt.todos,
@@ -345,6 +349,31 @@ export const useChat = create<ChatStore>((set, get) => ({
     const key = get().activeKey;
     if (!key) return;
     set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, permissionMode: mode })) }));
+  },
+
+  async setSessionSelection(model, modelParameters) {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    if (!key || !chat?.sessionId) return;
+
+    const res = await api.updateSessionModel(
+      chat.sessionId,
+      model,
+      Object.keys(modelParameters).length ? modelParameters : null,
+    );
+    if (!res.ok) {
+      const data = res.data as { error?: string; message?: string };
+      const message = data?.message ?? data?.error ?? `保存模型失败（HTTP ${res.status}）`;
+      set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, error: message })) }));
+      return;
+    }
+    set((state) => ({
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        model: res.data.session.model,
+        modelParameters: res.data.session.modelParameters ?? {},
+      })),
+    }));
   },
 
   applyStreamEvent(event) {

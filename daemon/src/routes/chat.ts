@@ -11,6 +11,12 @@ import { activeRunIdForSession } from '../session-runs.js';
 import { streamRunToResponse } from './runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
 import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
+import {
+  isValidModelParameters,
+  normalizeModel,
+  normalizeModelParameters,
+  parseStoredModelParameters,
+} from '../model-selection.js';
 
 interface ChatBody {
   sessionId?: string;
@@ -19,6 +25,8 @@ interface ChatBody {
   claudeSessionId?: string;
   prompt?: string;
   model?: string;
+  /** Generic per-model knobs (e.g. `{reasoningEffort: "high"}`). */
+  modelParameters?: Record<string, string>;
   runtime?: string;
   /** Product permission mode: ask | acceptEdits | bypass. Only used for new sessions. */
   permissionMode?: string;
@@ -41,10 +49,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const body = (req.body ?? {}) as ChatBody;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const requestedRuntime = typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
-    const model = typeof body.model === 'string' && body.model ? body.model : undefined;
+    const model = normalizeModel(body.model) ?? undefined;
 
     if (!prompt) {
       res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
+      return;
+    }
+    if (body.modelParameters !== undefined && !isValidModelParameters(body.modelParameters)) {
+      res.status(400).json({ error: 'modelParameters must be an object or null', code: 'bad_request' });
       return;
     }
     if (body.permissionMode !== undefined && !isProductPermissionMode(body.permissionMode)) {
@@ -168,6 +180,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       : isProductPermissionMode(body.permissionMode)
         ? body.permissionMode
         : defaultPermissionMode;
+    // A request-level model overrides for this run; otherwise the session's
+    // creation-time choice decides, and absent both the runtime's default wins.
+    const effectiveModel = model ?? normalizeModel(session?.model) ?? undefined;
+    // Same precedence for the knobs: a request-level override wins, otherwise
+    // the session's saved selection, otherwise the provider defaults.
+    const effectiveParameters = body.modelParameters !== undefined
+      ? normalizeModelParameters(body.modelParameters)
+      : parseStoredModelParameters(session?.model_parameters);
 
     // Import an existing Claude Code session (e.g. started in the desktop TUI)
     // by its claude session id; its cwd is needed for --resume to find it.
@@ -200,6 +220,8 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           runtime,
           workspaceId: workspace.id,
           permissionMode: sessionPermissionMode,
+          model: effectiveModel ?? null,
+          modelParameters: effectiveParameters,
           cwd: importedCwd,
           native_session_id: body.claudeSessionId,
           title: importedTitle ?? null,
@@ -210,6 +232,8 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           runtime,
           workspaceId: workspace.id,
           permissionMode: sessionPermissionMode,
+          model: effectiveModel ?? null,
+          modelParameters: effectiveParameters,
           cwd: workspace.path,
           title: titleFromPrompt(prompt),
         });
@@ -220,14 +244,23 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     ctx.db.touchWorkspace(workspace.id);
 
     ctx.db.addMessage(session.id, 'user', prompt);
-    ctx.db.audit('chat', JSON.stringify({ sessionId: session.id, runtime, model: model ?? null }));
+    ctx.db.audit(
+      'chat',
+      JSON.stringify({
+        sessionId: session.id,
+        runtime,
+        model: effectiveModel ?? null,
+        modelParameters: effectiveParameters,
+      }),
+    );
 
     const runId = randomUUID();
     ctx.db.createRun({
       id: runId,
       sessionId: session.id,
       runtime,
-      model: model ?? null,
+      model: effectiveModel ?? null,
+      modelParameters: effectiveParameters,
       prompt,
       status: 'running',
       commandId: commandId ?? null,
@@ -313,7 +346,8 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         sessionId,
         prompt,
         cwd: session.cwd,
-        model,
+        model: effectiveModel,
+        modelParameters: effectiveParameters ?? undefined,
         permissionMode: sessionPermissionMode,
         resumeNativeSessionId,
         // The driver reports the session's native id once known: a host-picking

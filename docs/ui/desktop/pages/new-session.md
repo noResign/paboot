@@ -24,7 +24,8 @@
      默认选中**第一个可用的**，而不是列表里的第一个。
      - 桌面形态：**带身份色的分段控件**（2–4 个 agent 时最合适），更多时回落为列表。
        Agent 的身份色/图标沿用 `docs/ui/shared/design-principles.md` §5.2 的映射。
-   - 模型与推理强度不在客户端选，用电脑端 Agent 的默认配置（沿用，一行说明文字）。
+   - 模型与推理强度**不在这里选**：新建会话一律沿用电脑端 Agent 的默认配置。建立会话后可在
+     ③ 聊天页输入框左下角的模型下拉里切换（从下一轮开始生效）。
    - **权限模式**：默认继承当前 Workspace 的全局默认值，可在这里覆盖为 `ask` / `acceptEdits` / `bypass`。
      **每个 runtime 的三档语义不同，描述文案随之切换**（见 §6.9 的 ⑩）；未知 runtime 用中性文案。
 5. **方式 B · 续接本机会话**（🟡 **M2**）：
@@ -37,7 +38,7 @@
 - `⌘N` 打开、`Esc` 关闭、`⌘Enter` 提交。
 - 选择即高亮；创建成功后**自动进入该会话**并关闭模态。两种方式互斥。
 - 新会话在 `POST /api/chat` 里带 `workspaceId`、`runtime`/`claudeSessionId`、`permissionMode`；
-  服务端校验 Workspace 有效并写入 `sessions.workspace_id`。
+  服务端校验 Workspace 有效并写入 `sessions.workspace_id`。新建时不带 `model`，会话模型留空（= CLI 默认）。
 
 **状态**：
 - agents 列表加载中：分段控件占位。

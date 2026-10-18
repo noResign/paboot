@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.PendingNewSession
 import com.noresign.paboot.data.repository.ChatRepository
+import com.noresign.paboot.data.repository.MetaRepository
 import com.noresign.paboot.data.repository.SessionRepository
+import com.noresign.paboot.network.daemon.dto.ModelOptionDto
 import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.notify.RunWatchCenter
 import com.noresign.paboot.util.ReconnectPolicy
@@ -50,6 +52,7 @@ sealed class SessionPermissionsUiState {
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
     private val sessionRepository: SessionRepository = SessionRepository(),
+    private val metaRepository: MetaRepository = MetaRepository(),
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
@@ -114,7 +117,35 @@ class ChatViewModel(
     private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
     val sessionPermissions = _sessionPermissions.asStateFlow()
 
-    private var sessionId: String? = null
+    /** 会话当前使用的模型；`null` = 沿用电脑端 CLI 默认。 */
+    private val _sessionModel = MutableStateFlow<String?>(null)
+    val sessionModel = _sessionModel.asStateFlow()
+
+    /** 模型参数（如 reasoningEffort）；空 map = 全部用默认。 */
+    private val _sessionModelParameters = MutableStateFlow<Map<String, String>>(emptyMap())
+    val sessionModelParameters = _sessionModelParameters.asStateFlow()
+
+    private val _models = MutableStateFlow<List<ModelOptionDto>>(emptyList())
+    val models = _models.asStateFlow()
+
+    private val _modelsLoading = MutableStateFlow(false)
+    val modelsLoading = _modelsLoading.asStateFlow()
+
+    private val _modelsError = MutableStateFlow<String?>(null)
+    val modelsError = _modelsError.asStateFlow()
+
+    /** 目录对应的 runtime；同名时不重复请求。 */
+    private var modelsRuntime: String? = null
+
+    private val _activeSessionId = MutableStateFlow<String?>(null)
+    val activeSessionId = _activeSessionId.asStateFlow()
+
+    /** 内部读写沿用 `sessionId`；界面通过 [activeSessionId] 观察新会话何时拿到 id。 */
+    private var sessionId: String?
+        get() = _activeSessionId.value
+        set(value) {
+            _activeSessionId.value = value
+        }
     private var streamJob: Job? = null
 
     /** 已收到的最大 `seq`，重连时作为 `?after=` 游标（-1 = 本轮还没收到任何帧）。 */
@@ -137,6 +168,12 @@ class ChatViewModel(
         cancelStream()
         // 上下文占用属于上一个会话，必须先清；打开会话时由历史重建填回。
         _contextUsage.value = null
+        // 模型与目录同理：打开会话后从详情填回。
+        _sessionModel.value = null
+        _sessionModelParameters.value = emptyMap()
+        _models.value = emptyList()
+        _modelsError.value = null
+        modelsRuntime = null
         this.sessionId = sessionId
         // 通知的抑制条件：用户此刻正看着这个会话（新会话先登记 null，拿到 id 后再更新）
         ChatVisibility.enter(sessionId)
@@ -160,6 +197,8 @@ class ChatViewModel(
                         _sessionTitle.value = session.title
                         _sessionCwd.value = session.cwd
                         _sessionRuntime.value = session.runtime
+                        _sessionModel.value = session.model
+                        _sessionModelParameters.value = session.modelParameters ?: emptyMap()
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
                         val runningRunId = session.runningRunId
                         _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
@@ -489,6 +528,58 @@ class ChatViewModel(
 
     fun closeSessionPermissions() {
         _sessionPermissions.value = null
+    }
+
+    /** 打开模型选择器时调用；目录只拉一次，失败则下次重试。 */
+    fun loadModels() {
+        val runtime = _sessionRuntime.value ?: return
+        if (modelsRuntime == runtime) return
+        _modelsLoading.value = true
+        _modelsError.value = null
+        viewModelScope.launch {
+            when (val r = metaRepository.models(runtime)) {
+                is NetworkResult.Success -> {
+                    _models.value = r.data.models
+                    modelsRuntime = runtime
+                }
+                is NetworkResult.Error -> {
+                    _models.value = emptyList()
+                    // 不写 modelsRuntime：用户点「重试」时还会再拉一次。
+                    _modelsError.value = friendlyError(r)
+                }
+            }
+            _modelsLoading.value = false
+        }
+    }
+
+    /** 切换模型；新模型不支持的原参数会被丢弃（回到默认）。 */
+    fun selectSessionModel(model: String?) {
+        val supported = _models.value.find { it.id == model }?.parameters
+        val next = _sessionModelParameters.value.filter { (key, value) ->
+            supported?.find { it.id == key }?.values?.any { it.id == value } == true
+        }
+        updateSessionSelection(model, next)
+    }
+
+    /** 设置某个模型参数；`valueId = null` 表示回到默认。 */
+    fun selectSessionParameter(parameterId: String, valueId: String?) {
+        val next = _sessionModelParameters.value.toMutableMap()
+        if (valueId == null) next.remove(parameterId) else next[parameterId] = valueId
+        updateSessionSelection(_sessionModel.value, next)
+    }
+
+    /** 切换后续 run 的模型与参数；正在运行的那一轮不受影响。 */
+    private fun updateSessionSelection(model: String?, parameters: Map<String, String>) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = sessionRepository.updateSessionModel(id, model, parameters.ifEmpty { null })) {
+                is NetworkResult.Success -> {
+                    _sessionModel.value = r.data.model
+                    _sessionModelParameters.value = r.data.modelParameters ?: emptyMap()
+                }
+                is NetworkResult.Error -> _error.value = friendlyError(r)
+            }
+        }
     }
 
     fun updateSessionPermissionMode(mode: String) {

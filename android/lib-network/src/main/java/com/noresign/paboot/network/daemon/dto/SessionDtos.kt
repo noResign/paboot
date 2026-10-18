@@ -12,6 +12,10 @@ data class SessionDto(
     val runtime: String = "",
     val workspaceId: String? = null,
     val permissionMode: String = "ask",
+    /** 建会话时选择的模型；`null` 表示沿用电脑端 Agent 默认配置。 */
+    val model: String? = null,
+    /** 模型参数（如 `reasoningEffort`）；`null` = 全部用默认。 */
+    val modelParameters: Map<String, String>? = null,
     val cwd: String = "",
     val title: String? = null,
     val createdAt: Long = 0,
@@ -55,6 +59,21 @@ data class RunDto(
     val endedAt: Long? = null,
     val exitCode: Long? = null,
     val error: String? = null,
+)
+
+/** `PATCH /api/sessions/:id/model`；`null` 表示回到默认。 */
+@Serializable
+data class UpdateSessionModelRequest(
+    // 不设默认值：kotlinx.serialization 会省略等于默认值的字段，
+    // 那样 `{"model":null}` 会变成 `{}`，daemon 无法区分「清空」和「没传」。
+    val model: String?,
+    val modelParameters: Map<String, String>?,
+)
+
+@Serializable
+data class SessionResponse(
+    val ok: Boolean = true,
+    val session: SessionDto,
 )
 
 /** `GET /api/runs`（当前运行中的 run 列表）。 */

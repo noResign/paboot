@@ -16,11 +16,12 @@
 | daemon 版本号 | `GET /api/health` |
 | 全局默认配置 | `GET /api/config`；`PATCH /api/config` 更新默认 Workspace/权限模式 |
 | 可用 agent 列表 | `GET /api/agents` |
+| 某 agent 的模型目录 | `GET /api/agents/:id/models` |
 | 当前 Workspace 的会话列表 | `GET /api/sessions?workspaceId=<id>` |
 | 单个会话的消息历史 + runs | `GET /api/sessions/:id` |
 | 续接本机 Claude 会话列表 | `GET /api/claude-sessions?workspaceId=<id>` |
 | Session 权限模式与 grants | `GET /api/sessions/:id/permissions`；`PATCH /api/sessions/:id/permissions`；`DELETE /api/sessions/:id/permissions/grants/:toolName` |
-| 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, runtime?}`） |
+| 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, modelParameters?, runtime?}`） |
 | 停止运行中的任务 | `POST /api/runs/:id/cancel` |
 | 工具审批决策 | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
 | 当前 Workspace 的改动文件列表 | 🟡 `GET /api/changes?workspaceId=<id>`（**待后端实现**） |
@@ -88,7 +89,9 @@
 | `/api/runs/:id/cancel` | POST | 是 | `{ok, id}` |
 | `/api/runs/:id/events` | GET | 是 | `?after=<seq>` 一次性回放 |
 | `/api/runs/:id/stream` | GET | 是 | SSE：回放 + 续直播 |
-| `/api/agents` | GET | 是 | `{agents:[{id,name,bin}]}` |
+| `/api/agents` | GET | 是 | `{agents:[{id,name,bin,available}]}` |
+| `/api/agents/:id/models` | GET | 是 | `{models:[{id,label,parameters?:[{id,label,values,defaultId?}]}]}`；未知 runtime → 404 `unknown_runtime` |
+| `/api/sessions/:id/model` | PATCH | 是 | body `{model?: string|null, modelParameters?: object|null}`；至少给一个，`null` = 回到默认。返回 `{ok, effective:"next_run", session}` |
 | `/api/agent` | GET | 是 | 检测信息 |
 | `/api/claude-sessions` | GET | 是 | `?workspaceId=<id>`；枚举该 Workspace 内的 Claude 会话 |
 | `/api/permissions/:id/decision` | POST | 是 | body `{decision:"allow"|"deny"|"allow_all", reason?}` |
@@ -118,7 +121,7 @@
 | 运行中 run 列表 | 7.2 运行状态 | 🟢 已实现（需补 `workspaceId` 过滤） |
 | 会话列表 running 状态 | 会话列表运行指示 | 🟢 已实现 |
 | 会话最后一条消息预览 | 会话列表卡片 | 🟡 未实现 |
-| 模型列表 | 设置页默认模型 | 🟡 `GET /api/agent` 可返回 models，需确认 |
+| 模型/参数列表 | 会话页切换模型与推理强度 | 🟢 `GET /api/agents/:id/models`（含 parameters）+ `PATCH /api/sessions/:id/model`（下一轮生效） |
 | 扫码连接（二维码） | 连接页扫码 | 🟡 未实现 |
 | 语音输入（ASR 转文字） | 聊天输入区麦克风 | 🟡 未实现，需决策客户端系统 ASR / daemon 服务端 ASR |
 

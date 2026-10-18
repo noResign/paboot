@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { WorkspaceSource } from './config.js';
+import { serializeModelParameters } from './model-selection.js';
 
 /** Setting key: the `env` / `cwd` startup workspace has already been seeded once. */
 const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
@@ -17,6 +18,10 @@ export interface SessionRow {
   native_session_id: string | null;
   workspace_id: string | null;
   permission_mode: string;
+  /** Chosen at creation; `null` means the runtime's own default. */
+  model: string | null;
+  /** JSON object of generic model parameters (e.g. `{"reasoningEffort":"high"}`). */
+  model_parameters: string | null;
   cwd: string;
   title: string | null;
   created_at: number;
@@ -58,6 +63,7 @@ export interface RunRow {
   session_id: string;
   runtime: string;
   model: string | null;
+  model_parameters: string | null;
   status: string;
   prompt: string;
   started_at: number;
@@ -234,11 +240,14 @@ export class Db {
     this.ensureRenamedColumn('sessions', 'claude_session_id', 'native_session_id');
     this.ensureColumn('sessions', 'workspace_id', 'TEXT');
     this.ensureColumn('sessions', 'permission_mode', "TEXT NOT NULL DEFAULT 'ask'");
+    this.ensureColumn('sessions', 'model', 'TEXT');
+    this.ensureColumn('sessions', 'model_parameters', 'TEXT');
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions (workspace_id, last_active_at DESC);`);
     // A client-supplied command id makes `POST /api/chat` idempotent: a retry
     // (dropped response, flaky link) re-attaches to the run it already started
     // instead of starting a second one. NULL for callers that don't send one.
     this.ensureColumn('runs', 'command_id', 'TEXT');
+    this.ensureColumn('runs', 'model_parameters', 'TEXT');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
     // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
@@ -285,14 +294,16 @@ export class Db {
     workspaceId: string;
     permissionMode: string;
     cwd: string;
+    model?: string | null;
+    modelParameters?: Record<string, string> | null;
     native_session_id?: string | null;
     title?: string | null;
   }): SessionRow {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO sessions (id, runtime, native_session_id, workspace_id, permission_mode, cwd, title, created_at, last_active_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id, runtime, native_session_id, workspace_id, permission_mode, model, model_parameters, cwd, title, created_at, last_active_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -300,6 +311,8 @@ export class Db {
         input.native_session_id ?? null,
         input.workspaceId,
         input.permissionMode,
+        input.model ?? null,
+        serializeModelParameters(input.modelParameters ?? null),
         input.cwd,
         input.title ?? null,
         now,
@@ -329,6 +342,16 @@ export class Db {
 
   setSessionTitle(id: string, title: string): void {
     this.db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`).run(title, id);
+  }
+
+  setSessionModelSelection(
+    id: string,
+    model: string | null,
+    modelParameters: Record<string, string> | null,
+  ): void {
+    this.db
+      .prepare(`UPDATE sessions SET model = ?, model_parameters = ? WHERE id = ?`)
+      .run(model, serializeModelParameters(modelParameters), id);
   }
 
   setNativeSessionId(id: string, nativeSessionId: string): void {
@@ -653,20 +676,22 @@ export class Db {
     sessionId: string;
     runtime: string;
     model: string | null;
+    modelParameters?: Record<string, string> | null;
     prompt: string;
     status: string;
     commandId?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, status, prompt, started_at, ended_at, exit_code, error, command_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, started_at, ended_at, exit_code, error, command_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
       )
       .run(
         input.id,
         input.sessionId,
         input.runtime,
         input.model,
+        serializeModelParameters(input.modelParameters ?? null),
         input.status,
         input.prompt,
         Date.now(),

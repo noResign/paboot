@@ -14,6 +14,8 @@ export interface RuntimeDriverRequest {
   prompt: string;
   cwd: string;
   model?: string;
+  /** Generic model knobs (e.g. reasoningEffort) passed through to the runtime. */
+  modelParameters?: Record<string, string>;
   permissionMode: ProductPermissionMode;
   /** Native session/thread id to resume, if the session already has one. */
   resumeNativeSessionId?: string;

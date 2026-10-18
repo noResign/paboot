@@ -8,6 +8,7 @@ import com.noresign.paboot.network.http.safeApiCall
 import com.noresign.paboot.network.daemon.dto.SessionDto
 import com.noresign.paboot.network.daemon.dto.RenameRequest
 import com.noresign.paboot.network.daemon.dto.SessionPermissionsResponse
+import com.noresign.paboot.network.daemon.dto.UpdateSessionModelRequest
 import com.noresign.paboot.network.daemon.dto.UpdateSessionPermissionsRequest
 
 class SessionRepository(
@@ -40,6 +41,23 @@ class SessionRepository(
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.deleteSession(id) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    /** 切换会话后续 run 使用的模型与参数；`null` 表示回到默认。 */
+    suspend fun updateSessionModel(
+        id: String,
+        model: String?,
+        modelParameters: Map<String, String>?,
+    ): NetworkResult<SessionDto> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (
+            val r = safeApiCall {
+                api.updateSessionModel(id, UpdateSessionModelRequest(model, modelParameters))
+            }
+        ) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.session)
             is NetworkResult.Error -> r
         }
     }

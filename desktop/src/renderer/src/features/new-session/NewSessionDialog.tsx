@@ -151,7 +151,7 @@ export function NewSessionDialog({ workspaceName, workspaceId, onCancel, onCreat
                   ))}
                 </div>
               )}
-              <div className="hint">模型与推理强度用电脑端 Agent 的默认配置。</div>
+              <div className="hint">模型与推理强度用电脑端 Agent 的默认配置；建立会话后可在会话页切换模型。</div>
             </div>
           </>
         ) : (

@@ -3,6 +3,7 @@ package com.noresign.paboot.data.repository
 import com.noresign.paboot.network.daemon.PabootApi
 import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.data.local.SettingsStore
+import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
 import com.noresign.paboot.network.daemon.dto.ClaudeSessionsResponse
 import com.noresign.paboot.network.daemon.dto.HealthResponse
@@ -23,6 +24,11 @@ class MetaRepository(
     suspend fun agents(): NetworkResult<AgentsResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return safeApiCall { api.agents() }
+    }
+
+    suspend fun models(agentId: String): NetworkResult<AgentModelsResponse> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return safeApiCall { api.agentModels(agentId) }
     }
 
     suspend fun claudeSessions(workspaceId: String? = null): NetworkResult<ClaudeSessionsResponse> {

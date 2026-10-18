@@ -25,6 +25,37 @@ export interface AgentsResponse {
   agents: AgentDto[];
 }
 
+export interface ModelParameterValueDto {
+  id: string;
+  label: string;
+}
+
+/** A knob a model accepts (e.g. reasoning effort), described by the daemon. */
+export interface ModelParameterDto {
+  id: string;
+  label: string;
+  values: ModelParameterValueDto[];
+  defaultId?: string;
+}
+
+/** `GET /api/agents/:id/models` — the models one runtime offers. */
+export interface ModelOptionDto {
+  id: string;
+  label: string;
+  parameters?: ModelParameterDto[];
+}
+
+export interface AgentModelsResponse {
+  models: ModelOptionDto[];
+}
+
+/** `PATCH /api/sessions/:id/model` — applies from the next run onward. */
+export interface UpdateSessionModelResponse {
+  ok: boolean;
+  effective: 'next_run';
+  session: SessionDto;
+}
+
 export interface SessionsResponse {
   sessions: SessionDto[];
 }

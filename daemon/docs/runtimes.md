@@ -24,8 +24,28 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。目前只有 
 
 **② RPC 对等进程（`RuntimeDetector`）**——Codex 走 `codex app-server` 的 stdio JSON-RPC，
 没有 argv 可拼、也没有逐行 stdout 可解析，所以不实现 `RuntimeAdapter`：`registry.ts` 用
-`RuntimeDetector`（只回答「装没装」「有哪些 model」）登记它，运行由 `runtimes/codex/session.ts`
-自行驱动。`routes/chat.ts` 按 runtime id 选择引擎，**接入这类运行时需要改 chat 路由**——
-这是两条路径的区别所在。
+`RuntimeDetector` 登记它（回答「装没装」「有哪些 model」；需要目录时短启 app-server 调
+`model/list`，由 Registry 缓存），运行由 `runtimes/codex/session.ts` 自行驱动。
+两种运行时都通过 `RuntimeDriver` 注册执行驱动，`routes/chat.ts` 只按 id 取
+`registry.driver(id)` 并调用 `start`，**接入新运行时不需要改 chat 路由**。
 
 **事件流是 runtime 无关的**：客户端只认 `NormalizedEvent`，不感知底层是哪个 CLI。
+
+## 模型参数（可扩展）
+
+`ModelOption` 除 `id` / `label` 外可带 `parameters: ModelParameter[]`，每个参数是一个
+`{id, label, values[], defaultId?}` 描述符（例如 `reasoningEffort`）。约定：
+
+- **目录由 runtime 声明**：argv runtime 通过 `detect().models` 返回，RPC runtime 通过
+  `RuntimeDetector.listModels` 返回。某个能力没探测到（如老版本 Claude 没有 `--effort`），
+  就不要声明对应参数。
+- **daemon 只做通用存储与透传**：`sessions.model_parameters` / `runs.model_parameters` 是 JSON
+  map，chat 请求体用 `modelParameters` 透传；不认识的参数 id 也保留，由 runtime 决定是否使用。
+- **参数 id 保持 runtime 无关**（目前统一为 `reasoningEffort`），这样换模型/换 runtime 时客户端
+  的选择语义一致。各 runtime 自己把它映射到原生机制：Claude → `--effort`，Codex →
+  `turn/start.effort`。
+- **客户端按描述符渲染**：新增参数（`serviceTier`、`contextTier` 等）不需要改协议或 UI 结构，
+  只需 runtime 在目录里声明 + 在自己的驱动里读取。
+
+新增 runtime 时，只要它的 `listModels` 返回带 `parameters` 的目录，并在 spawn/RPC 参数里消费
+`modelParameters`，就自动获得模型与参数选择能力。

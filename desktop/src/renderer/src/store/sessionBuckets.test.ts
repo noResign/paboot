@@ -8,6 +8,8 @@ function session(id: string, over: Partial<SessionDto> = {}): SessionDto {
     runtime: 'claude',
     workspaceId: 'ws',
     permissionMode: 'ask',
+    model: null,
+    modelParameters: null,
     cwd: '/p',
     title: id,
     createdAt: 0,

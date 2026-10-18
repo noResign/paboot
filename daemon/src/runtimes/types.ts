@@ -1,8 +1,31 @@
 import type { NormalizedEvent } from '../types/api.js';
 
+export interface ModelParameterValue {
+  id: string;
+  label: string;
+}
+
+/**
+ * A provider-defined knob the client may set alongside the model
+ * (e.g. reasoning effort). Parameter ids are stable and runtime-agnostic so a
+ * new runtime can advertise new knobs without changing the wire contract or
+ * the clients' rendering: the catalog describes them, and `modelParameters`
+ * carries the chosen values as a plain string map.
+ */
+export interface ModelParameter {
+  id: string;
+  /** Fallback label for clients that don't know this parameter id. */
+  label: string;
+  values: ModelParameterValue[];
+  /** The provider's default for this model, when it reports one. */
+  defaultId?: string;
+}
+
 export interface ModelOption {
   id: string;
   label: string;
+  /** Knobs this specific model accepts. Absent/empty = none. */
+  parameters?: ModelParameter[];
 }
 
 /**
@@ -23,6 +46,8 @@ export interface RuntimeCapabilities {
   addDir: boolean;
   /** `--settings` lets the adapter inject a PreToolUse hook for permission asks. */
   permissionHook: boolean;
+  /** `--effort <level>` accepts a reasoning-effort level. */
+  effort: boolean;
 }
 
 export const defaultCapabilities: RuntimeCapabilities = {
@@ -32,6 +57,7 @@ export const defaultCapabilities: RuntimeCapabilities = {
   sessionId: true,
   addDir: false,
   permissionHook: false,
+  effort: false,
 };
 
 export interface RuntimeDetection {
@@ -61,6 +87,8 @@ export interface SpawnContext {
   prompt: string;
   cwd: string;
   model?: string;
+  /** Model parameters resolved from the session / request (e.g. reasoningEffort). */
+  modelParameters?: Record<string, string>;
   resumeSessionId?: string;
   newSessionId?: string;
   permissionMode: string;

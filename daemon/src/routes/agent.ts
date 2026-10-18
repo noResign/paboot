@@ -26,4 +26,15 @@ export function registerAgentRoutes(app: Express, ctx: AppContext): void {
     );
     res.json({ agents });
   });
+
+  // Models offered by one runtime. Claude answers from its alias list; Codex
+  // spawns a short-lived app-server (`model/list`) and Registry caches it.
+  app.get('/api/agents/:id/models', async (req, res) => {
+    const models = await ctx.registry.listModels(req.params.id, process.env);
+    if (!models) {
+      res.status(404).json({ error: `unknown runtime: ${req.params.id}`, code: 'unknown_runtime' });
+      return;
+    }
+    res.json({ models });
+  });
 }

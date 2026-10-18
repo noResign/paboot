@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { ModelOption, RuntimeCapabilities, RuntimeDetection } from '../types.js';
+import type { RuntimeCapabilities, RuntimeDetection } from '../types.js';
+import { CLAUDE_MODELS } from './models.js';
 
 const execFileP = promisify(execFile);
 
@@ -38,15 +39,9 @@ function probeCapabilities(help: string): RuntimeCapabilities {
     sessionId: help.includes('--session-id'),
     addDir: help.includes('--add-dir'),
     permissionHook: help.includes('--settings'),
+    effort: help.includes('--effort'),
   };
 }
-
-const FALLBACK_MODELS: ModelOption[] = [
-  { id: 'default', label: 'Default' },
-  { id: 'sonnet', label: 'Sonnet (alias)' },
-  { id: 'opus', label: 'Opus (alias)' },
-  { id: 'haiku', label: 'Haiku (alias)' },
-];
 
 const FALLBACK_CAPS: RuntimeCapabilities = {
   partialMessages: false,
@@ -55,6 +50,7 @@ const FALLBACK_CAPS: RuntimeCapabilities = {
   sessionId: true,
   addDir: false,
   permissionHook: false,
+  effort: false,
 };
 
 /**
@@ -89,6 +85,10 @@ export async function detectClaude(bin: string, env: NodeJS.ProcessEnv): Promise
     ? !/not (?:logged|signed|authenticated) in/i.test(`${authRes.stdout}\n${authRes.stderr}`)
     : null;
   const capabilities = helpRes.ok ? probeCapabilities(helpRes.stdout) : FALLBACK_CAPS;
+  // Only advertise the effort knob when this build actually accepts the flag.
+  const models = capabilities.effort
+    ? CLAUDE_MODELS
+    : CLAUDE_MODELS.map((option) => ({ id: option.id, label: option.label }));
 
-  return { ...base, available: true, version, authed, capabilities, models: FALLBACK_MODELS, error: null };
+  return { ...base, available: true, version, authed, capabilities, models, error: null };
 }

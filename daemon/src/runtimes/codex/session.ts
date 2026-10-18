@@ -42,6 +42,8 @@ export interface CodexRunRequest {
   prompt: string;
   cwd: string;
   model?: string;
+  /** Model parameters resolved by the chat route (e.g. reasoningEffort). */
+  modelParameters?: Record<string, string>;
   /** Existing, canonical workspace grants, refreshed for every run. */
   extraDirs?: string[];
   /** Codex thread id to continue; omit to start a new thread. */
@@ -324,6 +326,9 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
           ? { type: 'dangerFullAccess' }
           : { type: 'workspaceWrite', writableRoots: [...new Set([req.cwd, ...(req.extraDirs ?? [])])], networkAccess: false },
         ...(req.model ? { model: req.model } : {}),
+        ...(req.modelParameters?.['reasoningEffort']
+          ? { effort: req.modelParameters['reasoningEffort'] }
+          : {}),
         approvalPolicy: codexApprovalPolicy(req.permissionMode),
         // Ask for reasoning summaries explicitly: without them Codex reports
         // `summary: []` / `content: []` and the phone shows no thinking card at

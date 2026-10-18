@@ -7,6 +7,7 @@ import type {
   StreamSpec,
 } from '../../../shared/ipc';
 import type {
+  AgentModelsResponse,
   AgentsResponse,
   ChangesResponse,
   ConfigResponse,
@@ -23,6 +24,7 @@ import type {
   RunRollbackResponse,
   SessionDetailResponse,
   SessionsResponse,
+  UpdateSessionModelResponse,
   SseFrame,
   WorkspaceDirsResponse,
   WorkspaceResponse,
@@ -79,6 +81,14 @@ export const connectionApi = {
 export const api = {
   health: () => request<HealthDto>({ method: 'GET', path: ROUTES.health }),
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
+  agentModels: (id: string) =>
+    request<AgentModelsResponse>({ method: 'GET', path: ROUTES.agentModels(id) }),
+  updateSessionModel: (id: string, model: string | null, modelParameters: Record<string, string> | null) =>
+    request<UpdateSessionModelResponse>({
+      method: 'PATCH',
+      path: ROUTES.sessionModel(id),
+      body: { model, modelParameters },
+    }),
   workspaces: () => request<WorkspacesResponse>({ method: 'GET', path: ROUTES.workspaces }),
   config: () => request<ConfigResponse>({ method: 'GET', path: ROUTES.config }),
   updateConfig: (patch: { defaultPermissionMode?: ProductPermissionMode; defaultWorkspaceId?: string }) =>

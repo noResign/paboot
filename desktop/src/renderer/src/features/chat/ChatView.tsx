@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useChat } from '../../store/chat';
 import { api } from '../../ipc/client';
 import { useSessions } from '../../store/sessions';
@@ -17,6 +17,7 @@ import { PermissionDialog, InlinePermissionCard } from '../permissions/Permissio
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
+import type { ModelOptionDto } from '../../../../shared/contract';
 
 interface Props {
   workspaceName: string | null;
@@ -33,6 +34,7 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
   const decide = useChat((state) => state.decide);
   const patchTitle = useSessions((state) => state.patchTitle);
   const setPermissionMode = useChat((state) => state.setPermissionMode);
+  const setSessionSelection = useChat((state) => state.setSessionSelection);
 
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
@@ -42,6 +44,33 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
   const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelOptionDto[]>([]);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+
+  // The catalogue belongs to the runtime. The daemon caches it, so refetching
+  // per session is cheap after the first call.
+  useEffect(() => {
+    const sessionId = chat?.sessionId;
+    const runtime = chat?.runtime;
+    setModelsError(null);
+    if (!sessionId || !runtime) {
+      setModels([]);
+      return;
+    }
+    let live = true;
+    void api.agentModels(runtime).then((res) => {
+      if (!live) return;
+      if (res.ok) {
+        setModels(res.data.models);
+      } else {
+        setModels([]);
+        setModelsError('模型列表加载失败');
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [chat?.sessionId, chat?.runtime]);
 
   // Hooks must run before the early return below.
   const { ref: scrollRef, showJump, jumpToBottom, onScroll } = useStickToBottom({
@@ -218,6 +247,32 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
             : null
         }
         placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
+        showModel={Boolean(chat.sessionId)}
+        model={chat.model}
+        models={models}
+        modelsError={modelsError}
+        parameters={models.find((option) => option.id === chat.model)?.parameters ?? []}
+        modelParameters={chat.modelParameters}
+        onModelChange={(model) => {
+          // Keep only knobs the new model still supports; the rest fall back
+          // to that model's defaults.
+          const supported = models.find((option) => option.id === model)?.parameters ?? [];
+          const next = Object.fromEntries(
+            Object.entries(chat.modelParameters).filter(([key, value]) =>
+              supported.some(
+                (parameter) =>
+                  parameter.id === key && parameter.values.some((option) => option.id === value),
+              ),
+            ),
+          );
+          void setSessionSelection(model, next);
+        }}
+        onParameterChange={(parameterId, valueId) => {
+          const next = { ...chat.modelParameters };
+          if (valueId === null) delete next[parameterId];
+          else next[parameterId] = valueId;
+          void setSessionSelection(chat.model, next);
+        }}
         onSend={(text) => void send(text)}
       />
 

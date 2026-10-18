@@ -1,4 +1,5 @@
 import { detectClaude } from './detect.js';
+import { CLAUDE_EFFORT_LEVELS } from './models.js';
 import { createClaudeStreamParser } from './stream.js';
 import type { RuntimeAdapter, SpawnContext } from '../types.js';
 
@@ -27,6 +28,10 @@ export const claudeAdapter: RuntimeAdapter = {
     if (c.inputStreamJson) args.push('--input-format', 'stream-json');
     if (c.partialMessages) args.push('--include-partial-messages');
     if (ctx.model && ctx.model !== 'default') args.push('--model', ctx.model);
+    const effort = ctx.modelParameters?.['reasoningEffort'];
+    if (c.effort && effort && (CLAUDE_EFFORT_LEVELS as readonly string[]).includes(effort)) {
+      args.push('--effort', effort);
+    }
     if (ctx.resumeSessionId) {
       args.push('--resume', ctx.resumeSessionId);
     } else if (ctx.newSessionId) {

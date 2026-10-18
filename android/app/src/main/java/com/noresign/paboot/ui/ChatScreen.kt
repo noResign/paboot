@@ -95,6 +95,12 @@ fun ChatScreen(
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val reconnecting by viewModel.reconnecting.collectAsState()
+    val activeSessionId by viewModel.activeSessionId.collectAsState()
+    val sessionModel by viewModel.sessionModel.collectAsState()
+    val sessionModelParameters by viewModel.sessionModelParameters.collectAsState()
+    val models by viewModel.models.collectAsState()
+    val modelsLoading by viewModel.modelsLoading.collectAsState()
+    val modelsError by viewModel.modelsError.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -103,6 +109,19 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
+    var showModels by remember { mutableStateOf(false) }
+
+    // 输入框下方的模型标签：模型名 + 第一个显式参数的展示名（通常是推理强度）。
+    val selectedModelOption = models.find { it.id == sessionModel }
+    val explicitParameterLabel = selectedModelOption?.parameters?.firstNotNullOfOrNull { parameter ->
+        sessionModelParameters[parameter.id]?.let { valueId ->
+            parameter.values.find { it.id == valueId }?.label ?: valueId
+        }
+    }
+    val modelDisplayLabel = listOfNotNull(
+        sessionModel?.let { id -> selectedModelOption?.label?.ifBlank { id } ?: id } ?: "默认",
+        explicitParameterLabel,
+    ).joinToString(" · ")
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -175,6 +194,9 @@ fun ChatScreen(
                 InputBar(
                     input = input,
                     streaming = streaming,
+                    showModel = activeSessionId != null,
+                    modelLabel = modelDisplayLabel,
+                    modelIsExplicit = sessionModel != null || sessionModelParameters.isNotEmpty(),
                     onInputChange = { input = it },
                     onSend = {
                         viewModel.send(input)
@@ -182,6 +204,10 @@ fun ChatScreen(
                     },
                     onStop = viewModel::stop,
                     onMic = { scope.launch { snackbarHostState.showSnackbar("语音输入即将上线") } },
+                    onModelClick = {
+                        viewModel.loadModels()
+                        showModels = true
+                    },
                 )
             }
         },
@@ -289,6 +315,112 @@ fun ChatScreen(
             }
         }
     }
+
+    if (showModels && activeSessionId != null) {
+        ModalBottomSheet(onDismissRequest = { showModels = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+            ) {
+                Text("模型", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "切换后从下一轮开始生效；正在运行的任务不受影响。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (modelsLoading && models.isEmpty()) {
+                    CircularProgressIndicator()
+                } else {
+                    modelsError?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = { viewModel.loadModels() }) { Text("重试") }
+                    }
+                    val options = buildList<Pair<String?, String>> {
+                        add(null to "默认（沿用电脑端配置）")
+                        models.forEach { add(it.id to it.label.ifBlank { it.id }) }
+                    }
+                    options.forEach { (value, label) ->
+                        SelectionRadioRow(
+                            label = label,
+                            description = value,
+                            selected = sessionModel == value,
+                            onClick = { viewModel.selectSessionModel(value) },
+                        )
+                    }
+
+                    // 目录里声明的参数（例如推理强度）。没有声明就不显示。
+                    val selectedModel = models.find { it.id == sessionModel }
+                    selectedModel?.parameters?.forEach { parameter ->
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            parameterLabel(parameter.id, parameter.label),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        val current = sessionModelParameters[parameter.id]
+                        val parameterOptions = buildList<Pair<String?, String>> {
+                            add(null to "默认")
+                            parameter.values.forEach { add(it.id to it.label.ifBlank { it.id }) }
+                        }
+                        parameterOptions.forEach { (value, label) ->
+                            SelectionRadioRow(
+                                label = label,
+                                description = value,
+                                selected = current == value,
+                                onClick = { viewModel.selectSessionParameter(parameter.id, value) },
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = { showModels = false }) { Text("完成") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionRadioRow(
+    label: String,
+    description: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** 已知参数 id 的中文名；新参数沿用 daemon 给的 fallback label。 */
+private fun parameterLabel(id: String, fallback: String): String = when (id) {
+    "reasoningEffort" -> "推理强度"
+    else -> fallback.ifBlank { id }
 }
 
 /**

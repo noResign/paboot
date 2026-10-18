@@ -28,4 +28,30 @@ describe('claudeAdapter.buildArgs', () => {
   it('omits --add-dir when there is nothing extra to grant', () => {
     expect(claudeAdapter.buildArgs(spawnContext([]))).not.toContain('--add-dir');
   });
+
+  it('passes --effort only when the probed CLI advertises it', () => {
+    const withEffort = claudeAdapter.buildArgs({
+      ...spawnContext([]),
+      capabilities: { ...defaultCapabilities, effort: true },
+      modelParameters: { reasoningEffort: 'high' },
+    });
+    expect(withEffort).toEqual(expect.arrayContaining(['--effort', 'high']));
+
+    // An older CLI without the flag must not receive it.
+    expect(
+      claudeAdapter.buildArgs({
+        ...spawnContext([]),
+        modelParameters: { reasoningEffort: 'high' },
+      }),
+    ).not.toContain('--effort');
+
+    // Unknown levels are dropped rather than forwarded to the CLI.
+    expect(
+      claudeAdapter.buildArgs({
+        ...spawnContext([]),
+        capabilities: { ...defaultCapabilities, effort: true },
+        modelParameters: { reasoningEffort: 'bogus' },
+      }),
+    ).not.toContain('--effort');
+  });
 });

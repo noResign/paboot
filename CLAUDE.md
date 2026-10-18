@@ -12,7 +12,8 @@
 
 运行时按驱动方式分**两条路径**接入：argv + stdout 流式的实现 `RuntimeAdapter`（当前只有
 Claude Code），RPC 对等的用 `RuntimeDetector` 登记 + 专用会话驱动（Codex 走 `codex app-server`
-的 JSON-RPC，**不实现 `RuntimeAdapter`，接入时 chat 路由要按 runtime id 分支**）。未来可加
+的 JSON-RPC，**不实现 `RuntimeAdapter`**；两种运行时都注册 `RuntimeDriver`，chat 路由按 id 取
+driver、不写 runtime 分支）。未来可加
 OpenCode / DeepSeek Harness 等。客户端**多 runtime 可扩展**：事件流是 runtime 无关的，
 UI 只对「agent 身份」做可配置映射。
 
@@ -88,7 +89,7 @@ paboot/
 - **接入新 agent**：先看驱动方式——argv + stdout 流式的实现 `src/runtimes/types.ts` 的
   `RuntimeAdapter`，在 `src/runtimes/registry.ts` 注册一行，路由/引擎/持久化/传输都不用动；
   RPC 对等的（如 Codex）用 `RuntimeDetector` 登记并自写会话驱动（`runtimes/codex/session.ts`），
-  且要在 `src/routes/chat.ts` 按 runtime id 分支。
+  再在 `runtimes/drivers.ts` 注册 `RuntimeDriver`；chat 路由只按 id 取 driver，不写分支。
 - **路由归属**：daemon 域端点放 `src/routes/<domain>.ts`，只有进程级元数据（health）留在
   `server.ts`。
 - **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录、

@@ -19,6 +19,7 @@ export interface RunRequest {
   prompt: string;
   cwd: string;
   model?: string;
+  modelParameters?: Record<string, string>;
   resumeSessionId?: string;
   newSessionId?: string;
   permissionMode: string;
@@ -109,6 +110,7 @@ export function startRun(req: RunRequest): ActiveRun {
     prompt: req.prompt,
     cwd: req.cwd,
     model: req.model,
+    modelParameters: req.modelParameters,
     resumeSessionId: req.resumeSessionId,
     newSessionId: req.newSessionId,
     permissionMode: req.permissionMode,

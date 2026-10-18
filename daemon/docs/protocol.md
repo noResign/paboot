@@ -14,14 +14,14 @@
 
 | 表 | 内容 |
 |---|---|
-| `sessions` | 会话：`id`、`runtime`、`native_session_id`、`workspace_id`、`permission_mode`、`cwd`、`title`、时间戳 |
+| `sessions` | 会话：`id`、`runtime`、`native_session_id`、`workspace_id`、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
 | `workspaces` | 工作区**主目录**：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
 | `workspace_dirs` | 工作区**附加目录**（agent 可读写、该工作区所有会话继承）：`workspace_id`、`path`、`created_at`；随工作区级联删除 |
 | `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
-| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error` |
+| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters` |
 | `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放 |
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
@@ -52,6 +52,8 @@
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
+| `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`），Registry 缓存 5 分钟（失败 30 秒） |
+| `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
@@ -135,6 +137,8 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 `POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode?, commandId? }`。
 
 - 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
+- `model` 缺省 / 空串 / `'default'` 都表示沿用 CLI 默认。新建会话通常不带 `model`（`sessions.model` 留空）；会话模型用 `PATCH /api/sessions/:id/model` 切换，下一轮生效。单轮请求仍可用 `body.model` 覆盖（`runs.model` 记录实际使用的值），但不会改写会话。
+- `modelParameters` 是通用字符串 map（当前只有 `reasoningEffort`）。解析顺序与 `model` 相同：请求体 > 会话保存值 > provider 默认。Claude 映射为 `--effort`（探测到才传），Codex 写进 `turn/start.effort`。新增参数不需要改协议：目录声明描述符，daemon 原样存储/透传，客户端按描述符渲染。
 - 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
 - `permissionMode` 是 Session 级配置，切换后只影响后续 Run。
 - **幂等（`commandId`）**：客户端可为一次「发送」生成一个 `commandId` 并随重试一并发回。daemon 把

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { ModelOption, RuntimeCapabilities, RuntimeDetection } from '../types.js';
+import type { RuntimeCapabilities, RuntimeDetection } from '../types.js';
 
 const execFileP = promisify(execFile);
 
@@ -46,14 +46,8 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   sessionId: false,
   addDir: false,
   permissionHook: false,
+  effort: false,
 };
-
-/**
- * Placeholder until the model picker reads the app-server's `model/list`. A
- * single honest entry beats a stale hardcoded catalogue; the daemon accepts an
- * omitted model and lets Codex choose its default.
- */
-const FALLBACK_MODELS: ModelOption[] = [{ id: 'default', label: 'Default' }];
 
 /**
  * Probe the `codex` CLI. Only `--version` decides availability; a failed auth
@@ -87,7 +81,9 @@ export async function detectCodex(bin: string, env: NodeJS.ProcessEnv): Promise<
     version: parseVersion(versionRes.stdout),
     authed,
     capabilities: NO_CAPABILITIES,
-    models: FALLBACK_MODELS,
+    // The real catalogue needs a short-lived app-server; Registry lists it
+    // lazily through the detector's `listModels`, not during detection.
+    models: [],
     error: null,
   };
 }

@@ -115,6 +115,10 @@ export interface SessionDto {
   runtime: string;
   workspaceId: string | null;
   permissionMode: ProductPermissionMode;
+  /** Explicit model chosen at creation; `null` means the runtime default. */
+  model: string | null;
+  /** Generic per-model knobs (e.g. `{reasoningEffort: "high"}`); `null` = defaults. */
+  modelParameters: Record<string, string> | null;
   cwd: string;
   title: string | null;
   createdAt: number;
@@ -168,6 +172,7 @@ export interface RunDto {
   workspaceId: string | null;
   runtime: string;
   model: string | null;
+  modelParameters: Record<string, string> | null;
   status: string;
   prompt: string;
   startedAt: number;

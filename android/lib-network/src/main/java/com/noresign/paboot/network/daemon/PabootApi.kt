@@ -1,5 +1,6 @@
 package com.noresign.paboot.network.daemon
 
+import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
 import com.noresign.paboot.network.daemon.dto.ChangesResponse
 import com.noresign.paboot.network.daemon.dto.ClaudeSessionsResponse
@@ -19,7 +20,9 @@ import com.noresign.paboot.network.daemon.dto.RenameResponse
 import com.noresign.paboot.network.daemon.dto.RunsResponse
 import com.noresign.paboot.network.daemon.dto.SessionDetailResponse
 import com.noresign.paboot.network.daemon.dto.SessionPermissionsResponse
+import com.noresign.paboot.network.daemon.dto.SessionResponse
 import com.noresign.paboot.network.daemon.dto.SessionsResponse
+import com.noresign.paboot.network.daemon.dto.UpdateSessionModelRequest
 import com.noresign.paboot.network.daemon.dto.UpdateConfigRequest
 import com.noresign.paboot.network.daemon.dto.UpdateSessionPermissionsRequest
 import com.noresign.paboot.network.daemon.dto.UpdateWorkspaceRequest
@@ -51,11 +54,20 @@ interface PabootApi {
     @PATCH("api/sessions/{id}")
     suspend fun renameSession(@Path("id") id: String, @Body body: RenameRequest): RenameResponse
 
+    @PATCH("api/sessions/{id}/model")
+    suspend fun updateSessionModel(
+        @Path("id") id: String,
+        @Body body: UpdateSessionModelRequest,
+    ): SessionResponse
+
     @DELETE("api/sessions/{id}")
     suspend fun deleteSession(@Path("id") id: String): OkResponse
 
     @GET("api/agents")
     suspend fun agents(): AgentsResponse
+
+    @GET("api/agents/{id}/models")
+    suspend fun agentModels(@Path("id") id: String): AgentModelsResponse
 
     @GET("api/claude-sessions")
     suspend fun claudeSessions(@Query("workspaceId") workspaceId: String? = null): ClaudeSessionsResponse

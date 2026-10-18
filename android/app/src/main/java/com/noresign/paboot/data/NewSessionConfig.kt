@@ -21,7 +21,12 @@ object PendingNewSession {
         workspaceId: String? = null,
         permissionMode: String? = null,
     ) {
-        config = NewSessionConfig(claudeSessionId, runtime, workspaceId, permissionMode)
+        config = NewSessionConfig(
+            claudeSessionId = claudeSessionId,
+            runtime = runtime,
+            workspaceId = workspaceId,
+            permissionMode = permissionMode,
+        )
     }
 
     fun take(): NewSessionConfig? {

@@ -22,3 +22,31 @@ data class AgentDto(
 data class AgentsResponse(
     val agents: List<AgentDto> = emptyList(),
 )
+
+@Serializable
+data class ModelParameterValueDto(
+    val id: String,
+    val label: String = "",
+)
+
+/** 模型自带的可调参数（如 reasoningEffort）；客户端按描述符动态渲染。 */
+@Serializable
+data class ModelParameterDto(
+    val id: String,
+    val label: String = "",
+    val values: List<ModelParameterValueDto> = emptyList(),
+    val defaultId: String? = null,
+)
+
+/** `GET /api/agents/:id/models` 的一项。 */
+@Serializable
+data class ModelOptionDto(
+    val id: String,
+    val label: String = "",
+    val parameters: List<ModelParameterDto> = emptyList(),
+)
+
+@Serializable
+data class AgentModelsResponse(
+    val models: List<ModelOptionDto> = emptyList(),
+)

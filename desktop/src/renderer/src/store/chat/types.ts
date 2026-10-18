@@ -74,6 +74,10 @@ export interface ChatSessionState {
   cwd: string | null;
   runtime: string | null;
   permissionMode: string | null;
+  /** Explicit model for subsequent runs; null = the machine's CLI default. */
+  model: string | null;
+  /** Generic model knobs (e.g. reasoningEffort); empty = defaults. */
+  modelParameters: Record<string, string>;
   messages: ChatMessage[];
   /** The session's runs, newest last — each carries its checkpoint (or null). */
   runs: RunDto[];
@@ -109,6 +113,8 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     cwd: null,
     runtime: null,
     permissionMode: null,
+    model: null,
+    modelParameters: {},
     messages: [],
     runs: [],
     runId: null,

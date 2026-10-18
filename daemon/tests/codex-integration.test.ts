@@ -146,6 +146,19 @@ describe('Codex HTTP integration', () => {
     }
   });
 
+  it('passes the model reasoning effort to turn/start', async () => {
+    const { post } = await api();
+    const chat = await post('/api/chat', {
+      prompt: 'first',
+      runtime: 'codex',
+      modelParameters: { reasoningEffort: 'high' },
+    });
+    const peer = await startedPeer();
+    expect(peer.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({ effort: 'high' }));
+    complete(peer);
+    await chat.text();
+  });
+
   it('persists the complete run usage across model calls and excludes earlier turns on resume', async () => {
     const { db, post } = await api();
     const first = await post('/api/chat', { prompt: 'first', runtime: 'codex' });
