@@ -1,0 +1,6 @@
+platform :ios, '17.0'
+
+target 'paboot' do
+  # M1 不引入第三方 pod：PabootCore 走 Xcode 的 local Swift Package 引用。
+  # 需要 pod 时加在这里，然后 `pod install`（生成 paboot.xcworkspace、Podfile.lock 入库）。
+end

@@ -1,0 +1,439 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AAAA00000000000000000030 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000020 /* AppDelegate.swift */; };
+		AAAA00000000000000000031 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000021 /* SceneDelegate.swift */; };
+		AAAA00000000000000000032 /* MainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000022 /* MainTabBarController.swift */; };
+		AAAA00000000000000000033 /* SessionsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000023 /* SessionsViewController.swift */; };
+		AAAA00000000000000000034 /* FilesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000024 /* FilesViewController.swift */; };
+		AAAA00000000000000000035 /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000025 /* SettingsViewController.swift */; };
+		AAAA00000000000000000036 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000026 /* Theme.swift */; };
+		AAAA00000000000000000037 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000027 /* Typography.swift */; };
+		AAAA00000000000000000038 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000028 /* Spacing.swift */; };
+		AAAA00000000000000000039 /* RuntimeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000029 /* RuntimeIdentity.swift */; };
+		AAAA0000000000000000003A /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000002A /* EmptyStateView.swift */; };
+		AAAA0000000000000000003B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000002B /* Assets.xcassets */; };
+		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AAAA00000000000000000013 /* paboot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = paboot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AAAA00000000000000000020 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000021 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000022 /* MainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabBarController.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000023 /* SessionsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsViewController.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000024 /* FilesViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesViewController.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000025 /* SettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewController.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000026 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000027 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000028 /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spacing.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000029 /* RuntimeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeIdentity.swift; sourceTree = "<group>"; };
+		AAAA0000000000000000002A /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAAA00000000000000000011 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAAA0000000000000000001C /* PabootCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AAAA00000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000004 /* App */,
+				AAAA00000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000013 /* paboot.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000004 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000005 /* Application */,
+				AAAA00000000000000000006 /* Navigation */,
+				AAAA00000000000000000007 /* UI */,
+				AAAA00000000000000000040 /* Data */,
+				AAAA00000000000000000042 /* Model */,
+				AAAA00000000000000000043 /* ViewModels */,
+				AAAA00000000000000000044 /* Notifications */,
+				AAAA00000000000000000045 /* Util */,
+				AAAA0000000000000000000E /* Resources */,
+				AAAA0000000000000000002C /* Info.plist */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000005 /* Application */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000020 /* AppDelegate.swift */,
+				AAAA00000000000000000021 /* SceneDelegate.swift */,
+			);
+			path = Application;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000006 /* Navigation */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000022 /* MainTabBarController.swift */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000007 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA0000000000000000000C /* DesignSystem */,
+				AAAA0000000000000000000D /* Components */,
+				AAAA00000000000000000008 /* Screens */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000008 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000009 /* Sessions */,
+				AAAA0000000000000000000A /* Files */,
+				AAAA0000000000000000000B /* Settings */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000009 /* Sessions */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000023 /* SessionsViewController.swift */,
+			);
+			path = Sessions;
+			sourceTree = "<group>";
+		};
+		AAAA0000000000000000000A /* Files */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000024 /* FilesViewController.swift */,
+			);
+			path = Files;
+			sourceTree = "<group>";
+		};
+		AAAA0000000000000000000B /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000025 /* SettingsViewController.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		AAAA0000000000000000000C /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000026 /* Theme.swift */,
+				AAAA00000000000000000027 /* Typography.swift */,
+				AAAA00000000000000000028 /* Spacing.swift */,
+				AAAA00000000000000000029 /* RuntimeIdentity.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		AAAA0000000000000000000D /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA0000000000000000002A /* EmptyStateView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		AAAA0000000000000000000E /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA0000000000000000002B /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000040 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000041 /* Repositories */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000041 /* Repositories */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Repositories;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000042 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000043 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000044 /* Notifications */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Notifications;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000045 /* Util */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Util;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAAA0000000000000000000F /* paboot */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAAA00000000000000000015 /* Build configuration list for PBXNativeTarget "paboot" */;
+			buildPhases = (
+				AAAA00000000000000000010 /* Sources */,
+				AAAA00000000000000000011 /* Frameworks */,
+				AAAA00000000000000000012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = paboot;
+			packageProductDependencies = (
+				AAAA0000000000000000001B /* PabootCore */,
+			);
+			productName = paboot;
+			productReference = AAAA00000000000000000013 /* paboot.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAAA00000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					AAAA0000000000000000000F = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = AAAA00000000000000000014 /* Build configuration list for PBXProject "paboot" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AAAA00000000000000000002;
+			packageReferences = (
+				AAAA0000000000000000001A /* XCLocalSwiftPackageReference "PabootCore" */,
+			);
+			productRefGroup = AAAA00000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAAA0000000000000000000F /* paboot */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AAAA00000000000000000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAAA0000000000000000003B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AAAA00000000000000000010 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAAA00000000000000000030 /* AppDelegate.swift in Sources */,
+				AAAA00000000000000000031 /* SceneDelegate.swift in Sources */,
+				AAAA00000000000000000032 /* MainTabBarController.swift in Sources */,
+				AAAA00000000000000000033 /* SessionsViewController.swift in Sources */,
+				AAAA00000000000000000034 /* FilesViewController.swift in Sources */,
+				AAAA00000000000000000035 /* SettingsViewController.swift in Sources */,
+				AAAA00000000000000000036 /* Theme.swift in Sources */,
+				AAAA00000000000000000037 /* Typography.swift in Sources */,
+				AAAA00000000000000000038 /* Spacing.swift in Sources */,
+				AAAA00000000000000000039 /* RuntimeIdentity.swift in Sources */,
+				AAAA0000000000000000003A /* EmptyStateView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AAAA00000000000000000016 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AAAA00000000000000000017 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = s;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AAAA00000000000000000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noresign.paboot;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AAAA00000000000000000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.noresign.paboot;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AAAA00000000000000000014 /* Build configuration list for PBXProject "paboot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAAA00000000000000000016 /* Debug */,
+				AAAA00000000000000000017 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAAA00000000000000000015 /* Build configuration list for PBXNativeTarget "paboot" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAAA00000000000000000018 /* Debug */,
+				AAAA00000000000000000019 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AAAA0000000000000000001A /* XCLocalSwiftPackageReference "PabootCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = PabootCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AAAA0000000000000000001B /* PabootCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AAAA0000000000000000001A /* XCLocalSwiftPackageReference "PabootCore" */;
+			productName = PabootCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AAAA00000000000000000001 /* Project object */;
+}

@@ -144,7 +144,7 @@ daemon 提供的边界：
 - **daemon**：可用（会话 / 审批 / 工作区 / 文件 均已落地）
 - **Android**：已实现（连接、会话列表、聊天、审批、会话权限管理、系统通知、新建会话、设置、文件、工作区管理）
 - **Desktop**：已实现（Electron 客户端，见 [desktop/README.md](desktop/README.md)）
-- **iOS**：预留，待实现
+- **iOS**：骨架已搭好（Xcode 工程 + `PabootCore` 协议层 + 三个 Tab 壳），业务未实现
 
 ## License
 

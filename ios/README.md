@@ -1,6 +1,36 @@
 # paboot-ios
 
-iOS 客户端**尚未实现**，本目录是预留位。整体定位见[根 README](../README.md)。
+iOS 客户端**骨架已搭好，业务未实现**（2026-10-19）。整体定位见[根 README](../README.md)。
+
+## 当前状态（P0）
+
+- `paboot.xcodeproj`：App target + 共享 scheme `paboot`，最低 iOS 17，纯代码 UIKit。
+- `PabootCore/`：本地 SwiftPM 包，两个模块——`PabootProtocol`（纯 Foundation：DTO / SSE 类型 /
+  URL 归一化，可在无 UIKit 环境编译）与 `PabootClient`（传输层入口）。
+- `App/`：应用入口、三个 Tab（会话 / 文件 / 设置）与空态、设计 token（颜色进 Asset Catalog，
+  字号走 Dynamic Type）。
+- 业务页面、网络请求、连接流程都还没填。
+
+## 快速开始
+
+需要 **Xcode 15+**（iOS 17 SDK）。
+
+```bash
+cd ios
+pod install              # 有 pod 依赖后必须；当前空 Podfile 可跳过
+open paboot.xcodeproj    # 或打开 pod install 生成的 paboot.xcworkspace
+```
+
+命令行验证（不需要签名）：
+
+```bash
+cd ios/PabootCore && swift test
+
+cd ios
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'generic/platform=iOS Simulator' \
+  build CODE_SIGNING_ALLOWED=NO
+```
 
 ## 目标形态
 

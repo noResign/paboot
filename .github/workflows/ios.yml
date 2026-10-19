@@ -1,0 +1,36 @@
+name: ios
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+
+jobs:
+  app:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app (simulator, unsigned)
+        run: |
+          xcodebuild \
+            -project paboot.xcodeproj \
+            -scheme paboot \
+            -destination 'generic/platform=iOS Simulator' \
+            build CODE_SIGNING_ALLOWED=NO
+
+  core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ios/PabootCore
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test PabootCore
+        run: swift build && swift test
