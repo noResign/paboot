@@ -32,7 +32,7 @@ Android 与 iOS **共用同一套**页面规格与交互；平台差异只体现
 | [mobile/pages/settings.md](mobile/pages/settings.md) | ⑦ 设置 + ⑧ 工作区管理 + ⑨ 目录选择器 + ⑩ 会话权限（§6.6） |
 | [mobile/pages/permission-approval.md](mobile/pages/permission-approval.md) | Ⓟ 权限审批浮层（§6.7，安全边界） |
 | [mobile/platforms/android.md](mobile/platforms/android.md) | Android 落地：Design Token → Jetpack Compose 的对应关系 |
-| [mobile/platforms/ios.md](mobile/platforms/ios.md) | iOS 落地：UIKit（**骨架，未开工**） |
+| [mobile/platforms/ios.md](mobile/platforms/ios.md) | iOS 落地：UIKit（P0–P4 已实现，文件 / 设置待做） |
 | [mobile/preview.html](mobile/preview.html) | 可交互原型，浏览器直接打开 |
 
 ## 桌面端 · [`desktop/`](desktop/)

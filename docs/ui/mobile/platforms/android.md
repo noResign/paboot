@@ -7,7 +7,7 @@
 > token 落到哪个 Compose 位置」。两处各存一份数值必然会漂移。
 >
 > - 代码位置：`app/src/main/java/com/noresign/paboot/ui/`
-> - iOS 侧（未开工）的骨架：`docs/ui/mobile/platforms/ios.md`
+> - iOS 侧（P0–P4 已实现，文件 / 设置待做）：`docs/ui/mobile/platforms/ios.md`
 
 ## 1. 载体文件
 

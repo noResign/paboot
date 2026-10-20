@@ -1,23 +1,42 @@
 # paboot-ios
 
-iOS 客户端**连接、会话列表与聊天已实现，文件/设置待做**（2026-10-20）。整体定位见[根 README](../README.md)。
+iOS 客户端**连接、会话列表与聊天已实现；文件 / 设置待做**（2026-10-20）。整体定位见[根 README](../README.md)。
 
 ## 当前状态（P0–P4）
 
 - `paboot.xcodeproj`：App target + 共享 scheme `paboot`，最低 iOS 17，纯代码 UIKit。
-- `PabootCore/`：本地 SwiftPM 包，两个模块——`PabootProtocol`（纯 Foundation：DTO / 事件判别 /
-  SSE 解析 / 重连策略 / URL 归一化）与 `PabootClient`（`URLSession` + 手写 SSE 的传输层）。
+- `PabootCore/`：本地 SwiftPM 包，三个模块——
+  `PabootProtocol`（纯 Foundation：DTO / 事件判别 / SSE 解析 / 重连策略 / URL 归一化）、
+  `PabootClient`（`URLSession` + 手写 SSE 的传输层）、
+  `PabootMarkdownUI`（`swift-markdown` AST + 原生 UIKit block 渲染 + 轻量语法高亮）。
 - `App/`：应用入口、设计 token、连接页（地址 + token → health + sessions 校验，Keychain 保存
   token，支持最近 5 个连接），连接成功后进入三个 Tab（会话 / 文件 / 设置）。
 - 会话列表：只显示当前选中的工作区（顶部可切换）；根目录会话平铺、3 天前折叠为「更早」，
-  子目录按 cwd 分组折叠；运行中脉冲标识、Agent 徽章、下拉刷新、重命名 / 删除、断连后引导重新连接。
-- 聊天：历史重建（按 run 回放事件）、SSE 流式、工具卡 / 思考 / 问答卡 / Todo / 上下文占用、
-  权限审批、模型与权限模式切换、停止、断线续接；新建会话 sheet（工作区 / Agent / 权限）。
-- 文件与设置仍是占位。
+  子目录按 cwd 分组折叠；运行中脉冲标识、Agent 徽章、下拉刷新（松手停留在拉出位置）、
+  重命名 / 删除、断连后引导重新连接。
+- 聊天：历史重建（按 run 回放事件）、SSE 流式、断线续接、停止；文本 / 思考 / 工具组 / 工具卡 /
+  问答卡 / Todo / 上下文占用；思考与工具卡可折叠；权限审批；模型、模型参数与权限模式切换；
+  新建会话 sheet（工作区 / Agent / 权限）。
+- Markdown：标题、段落、列表、引用、围栏代码块、GFM 表格；代码块限高滚动并带语法高亮
+  （Swift / Kotlin / JS / TS / Python / Shell / JSON）。
+- 应用显示名、图标、启动屏、ATS 与本地网络权限已配置。
+
+## 未实现
+
+- 文件 Tab：目录 / 文件内容、Diff、媒体预览、工作区外书签。
+- 设置 Tab：连接管理、工作区管理、运行期配置、会话权限 / 授权撤销、关于。
+- Codex `UserInput` 的 `questions` / `form` / `url` / `unsupported` 专用表单；当前以通用权限
+  弹窗展示 JSON，只能允许 / 拒绝。
+- 后台系统通知（iOS 后台限制；当前只有前台状态）。
+- 启动自动连接：目前每次进连接页，已保存的连接会预填。
+- Markdown 链接点击跳转、语义级代码高亮（当前是轻量 token 高亮，不做语法分析）。
+- 语音输入（占位）。
+- 回滚入口：与 Android 一致，移动端不提供。
+- iOS UI 自动化测试、无障碍完整验收、TestFlight / 发布流程。
 
 ## 快速开始
 
-需要 **Xcode 15+**（iOS 17 SDK）。
+需要 **Xcode 15+**（iOS 17 SDK）。首次打开 / 构建会解析 `swift-markdown` 依赖（GitHub），需要网络。
 
 ```bash
 cd ios

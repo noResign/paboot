@@ -2,13 +2,14 @@
 
 > 本文档是 iOS 客户端把 `docs/ui/`（浅色优先 + 青绿/翡翠）落到 **UIKit** 的实现适配方案。
 >
-> **当前是骨架**：章节结构与待填项已列出，能先确定的部分（载体选型、控件对应）已写实，
-> 标注「待填 / 待定」的部分在开工时补齐。它的作用是让开工时不用重新想一遍。
+> **状态（2026-10-20）**：P0–P4 已落地（工程 / 网络 / 导航 / 连接与会话列表 / 聊天）；
+> P5（文件、设置、工作区、会话权限）未开工。已做 / 未做清单见 §7.1，代码位置与运行方式见
+> [ios/README.md](../../../../ios/README.md)。
 >
 > - 设计源：`docs/ui/shared/design-principles.md`（**唯一设计源**，token 值从它抄，不臆造、不复制到本文档）
 > - 平台映射表：`docs/ui/shared/design-principles.md` §4.5
 > - 参考实现（另一平台）：`docs/ui/mobile/platforms/android.md`
-> - 状态：未开工（见 §8 待决策项）
+> - §8 的待决策项已在实现中拍板，结论见该节
 
 ---
 
@@ -44,68 +45,91 @@
 ### 4.1 色彩
 
 载体已定：**Asset Catalog 颜色集 + `UIColor(named:)`**（自动支持浅色 / 深色），语义色再包一层
-Swift 常量。（待填）逐项映射表：设计源 §4.1 的每个语义角色 → 颜色集名 → Swift 属性名。
+Swift 常量。**已实现**：`App/Resources/Assets.xcassets` 下的语义色集
+（Background / Surface / Border / TextPrimary / Primary / …）+ `Theme.Colors`；具体值以设计源 §4.1 为准。
 
 ### 4.2 字体
 
 载体已定：`UIFont.preferredFont(forTextStyle:)` + **`UIFontMetrics` 承载动态字号**，设计源 §4.2 的
-pt 值作为默认档位。（待填）语义角色 → text style → 缩放基准的映射表。
+pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift`
+（pageTitle / cardTitle / body / caption / code）。
 
 ### 4.3 间距与圆角
 
 载体已定：Swift 常量（照 Android `Dimens.kt` 的形式）→ Auto Layout / `layer.cornerRadius`。
-（待填）逐个 token 的常量命名。
+**已实现**：`App/UI/DesignSystem/Spacing.swift`（`Spacing` / `Radius` / `Layout`）。
 
 ### 4.4 质感与层次
 
 载体已定：阴影走 `CALayer`（`shadowColor` / `shadowOpacity` / `shadowRadius` / `shadowOffset`），
-品牌渐变走 `CAGradientLayer`。（待填）三层阴影的取值映射。
+品牌渐变走 `CAGradientLayer`。**部分实现**：FAB 等处已使用 `CALayer` 阴影；
+三层阴影与品牌渐变尚未系统化。
 
 ## 5. 图标体系 + Runtime 身份
 
 ### 5.1 图标
 
-载体已定：**SF Symbols**，`UIImage(systemName:)`。（待填）设计源 §4.4 的语义名 → SF Symbol 名
-对照表（Android 侧对应 Material Symbols，见它的 `android.md` 的「图标」一节）。
+载体已定：**SF Symbols**，`UIImage(systemName:)`。**部分实现**：当前使用 SF Symbols；
+设计源 §4.4 的语义名 → SF Symbol 完整对照尚未固定（Android 侧见 `android.md` 的「图标」一节）。
 
 ### 5.2 Runtime 身份
 
-（待填）映射表：`runtime id`（如 `claude`）→ SF Symbol + 主题色 + 展示名；未知 id 的中性兜底。
-结构照 Android 的 `ui/identity/RuntimeIdentity.kt`，iOS 侧建议同名的 Swift 类型。
+**已实现**：`App/UI/DesignSystem/RuntimeIdentity.swift` —— `claude` → `sparkles` + Claude 暖橙；
+`codex` → `terminal` + OpenAI 绿；未知 id 用中性色 + 后端展示名兜底。
+结构照 Android 的 `ui/identity/RuntimeIdentity.kt`。
 
 ## 6. 导航结构
 
 载体已定：`UITabBarController`（底部会话 / 文件 / 设置三个 Tab）+ `UINavigationController`
 （聊天详情等 push）；需要浮层时用 `UISheetPresentationController`（对应 Android 的
-`ModalBottomSheet`）。（待填）Tab 尺寸与图标、push 层级图。
+`ModalBottomSheet`）。**已实现**：Tab 图标 / 尺寸、会话列表 → 聊天 push、新建会话 sheet；
+文件 / 设置页的 push 层级随 P5 落地。
 
 ## 7. 分阶段实现方案
 
-（骨架，验收标准待细化）
-
-| 阶段 | 内容 | 验收 |
+| 阶段 | 内容 | 状态 |
 |---|---|---|
-| P0 | Xcode 工程 + CocoaPods + 主题层（§4 的 token）+ 目录分层 | 空工程能跑起来，主题色/字号与设计源一致 |
-| P1 | 网络层：DTO 对齐 `types/api.ts`、`URLSession` + `async/await`、SSE 解析（纯逻辑 + 单测） | 对本地 daemon 发一条 prompt 能收到事件流 |
-| P2 | 导航骨架：三个空页面 + Tab 图标 | 三个 Tab 可切换 |
-| P3 | 连接页 + 会话列表 | 能连上 daemon、列出会话（含分组） |
-| P4 | 聊天详情：流式渲染、工具卡片、审批浮层 | 端到端可用；断线重连不丢进度 |
-| P5 | 文件 / Diff、设置、工作区、会话权限 | 与 Android 功能对齐 |
+| P0 | Xcode 工程 + 本地 SwiftPM 包 + 主题层（§4 的 token）+ 目录分层 | ✅ 已实现 |
+| P1 | 网络层：DTO 对齐 `types/api.ts`、`URLSession` + `async/await`、SSE 解析、重连策略 | ✅ 已实现 |
+| P2 | 导航骨架：三个 Tab + 图标 + 设计系统 | ✅ 已实现 |
+| P3 | 连接页（health / sessions 校验、Keychain、最近连接）+ 单工作区会话列表 | ✅ 已实现 |
+| P4 | 聊天：历史重建、流式、工具 / 思考 / 问答 / Todo、审批、模型切换、新建会话、Markdown | ✅ 已实现 |
+| P5 | 文件 / Diff、设置、工作区、会话权限 | 🚧 未开工 |
+| P6 | 后台通知、无障碍、性能、TestFlight / 发布 | 🚧 未开工 |
 
-P4 是最重的一段（对应 Android 侧最复杂的页面），建议 P1 先把网络层与 SSE 打磨好再动。
+### 7.1 已实现 / 未实现（2026-10-20）
 
-## 8. 待决策项（开工前拍板）
+**已实现**
 
-1. **最低 iOS 版本** —— 决定可用 API：`UISheetPresentationController` 要 iOS 15+；也决定能对齐的
-   Xcode 版本
-2. **工程分层** —— 单 target 还是 App + 内部 Swift Package（对应 Android 的两模块）
-3. **状态管理** —— 自建 observable / Combine / 第三方；Android 侧是 `ViewModel` + `StateFlow`，
-   iOS 没有官方等价物，选型会影响整个 UI 层的写法
-4. **长列表实现** —— 聊天页用 `UITableView` 还是 `UICollectionView`（影响预取、自适应高度、
-   插入动画），这是性能最关键的一处
-5. **Markdown 渲染** —— Android 侧有专门方案（见 `android/docs/local/markdown.md`，
-   本机私有）；iOS 用哪个方案或自研
-6. **语音输入** —— 是否进 M1，还是先留占位按钮（Android 侧目前是占位）
+- 连接页：地址 + token → `/api/health` + `/api/sessions` 校验；Keychain 保存 token；最近 5 个连接。
+- 会话列表：单工作区 + 顶部切换器；根目录平铺、3 天前折叠「更早」、子目录按 cwd 分组；
+  运行中标识、Agent 徽章、下拉刷新（松手停留）、重命名 / 删除、断连重连引导。
+- 聊天：按 run 回放历史；SSE 实时流；`after` 续接与同一 `commandId` 重发；停止；
+  工具组 / 工具卡 / 思考 / 问答卡 / Todo / 上下文占用；思考与工具卡折叠；
+  权限审批；模型 / 模型参数 / 权限模式切换；新建会话 sheet。
+- Markdown：`swift-markdown` AST + 原生 UIKit 渲染（标题、段落、列表、引用、代码块、GFM 表格）；
+  代码块限高滚动 + 轻量语法高亮（Swift / Kotlin / JS / TS / Python / Shell / JSON）。
+
+**未实现**
+
+- 文件 / Diff、媒体预览、工作区外书签。
+- 设置、工作区管理、运行期配置、会话权限与授权撤销。
+- Codex `UserInput` 的 questions / form / url 专用表单（当前为通用权限 JSON）。
+- 后台系统通知、启动自动连接、Markdown 链接跳转、语义级高亮、语音输入。
+- 回滚入口（与 Android 一致，移动端不提供）、iOS UI 测试与发布流程。
+
+## 8. 已拍板的技术决策
+
+1. **最低 iOS 版本**：iOS 17.0（`UISheetPresentationController`、`URLSession.bytes`、Dynamic Type；
+   CI 使用 iPhone 16 模拟器）。
+2. **工程分层**：App target + 本地 SwiftPM 包。包内三个 target：`PabootProtocol`（纯逻辑）、
+   `PabootClient`（URLSession + SSE）、`PabootMarkdownUI`（swift-markdown + UIKit 渲染）。
+3. **状态管理**：MVVM + Combine，ViewModel 标 `@MainActor`；UIKit 视图订阅 `@Published`。
+4. **长列表**：`UITableView` + diffable data source；聊天流式更新只 reconfigure 最后一项
+   （`snapshot.reconfigureItems`）；折叠块展开时让 table 重新计算行高。
+5. **Markdown**：`swift-markdown` 0.7.x（0.8+ 要求 Swift 6.2）+ 自绘 UIKit block view；
+   代码块 / 表格是原生视图；语法高亮是轻量 token lexer，不做语义分析；链接仅样式、不可点击。
+6. **语音输入**：不进 M1，保留占位。
 
 ## 9. 实现顺序与提交规范
 

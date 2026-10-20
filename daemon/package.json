@@ -1,6 +1,6 @@
 {
   "name": "@noresign/paboot",
-  "version": "1.8.0",
+  "version": "1.8.5",
   "type": "module",
   "packageManager": "pnpm@10.33.2",
   "description": "One client for all your agents — run the agents on your machine headless and stream normalized events over HTTP/SSE: session resume, tool-call approval, multi-agent runs.",
