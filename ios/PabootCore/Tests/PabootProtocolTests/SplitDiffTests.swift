@@ -98,7 +98,8 @@ final class SplitDiffTests: XCTestCase {
         )
 
         XCTAssertEqual(added.count, 5)
-        XCTAssertEqual(added[3].oldLineNumber, 0)
+        // A pure addition has no old side at all (the hunk's `-0,0` is not a real line).
+        XCTAssertNil(added[3].oldLineNumber)
         XCTAssertNil(added[3].oldText)
         XCTAssertEqual(added[3].newLineNumber, 1)
         XCTAssertEqual(added[3].newText, "one")

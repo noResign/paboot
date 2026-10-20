@@ -31,7 +31,7 @@ final class DirectoryPickerViewController: UIViewController {
     private let selectButton = UIButton(type: .system)
 
     private var entries: [DirectoryEntryDto] = []
-    private var parent: String?
+    private var parentPath: String?
     private var currentPath: String?
     private var isWorkspace = false
     private var isLoading = true
@@ -187,7 +187,7 @@ final class DirectoryPickerViewController: UIViewController {
 
     private func render(_ state: DirectoryPickerViewModel.State) {
         entries = state.entries
-        parent = state.parent
+        parentPath = state.parent
         currentPath = state.path
         isWorkspace = state.isWorkspace
         isLoading = state.isLoading
@@ -303,7 +303,7 @@ final class DirectoryPickerViewController: UIViewController {
 
 extension DirectoryPickerViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        entries.count + (parent == nil ? 0 : 1)
+        entries.count + (parentPath == nil ? 0 : 1)
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -315,13 +315,13 @@ extension DirectoryPickerViewController: UITableViewDataSource {
         cell.backgroundColor = Theme.Colors.background
         cell.accessoryType = .disclosureIndicator
 
-        if parent != nil && indexPath.row == 0 {
+        if parentPath != nil && indexPath.row == 0 {
             cell.textLabel?.text = "上一级"
             cell.imageView?.image = UIImage(systemName: "arrow.up")
             cell.imageView?.tintColor = Theme.Colors.textSecondary
             cell.accessibilityLabel = "上一级"
         } else {
-            let entry = entries[indexPath.row - (parent == nil ? 0 : 1)]
+            let entry = entries[indexPath.row - (parentPath == nil ? 0 : 1)]
             cell.textLabel?.text = entry.isWorkspace ? "\(entry.name)（已是工作区）" : entry.name
             cell.imageView?.image = UIImage(systemName: "folder")
             cell.imageView?.tintColor = Theme.Colors.primary
@@ -339,12 +339,12 @@ extension DirectoryPickerViewController: UITableViewDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         guard !isLoading else { return }
 
-        if parent != nil && indexPath.row == 0 {
+        if parentPath != nil && indexPath.row == 0 {
             Task { await viewModel.goUp() }
             return
         }
 
-        let entry = entries[indexPath.row - (parent == nil ? 0 : 1)]
+        let entry = entries[indexPath.row - (parentPath == nil ? 0 : 1)]
         Task { await viewModel.open(entry) }
     }
 }
