@@ -81,7 +81,7 @@ final class ConnectRepository {
         case .http(let status, _) where status == 401 || status == 403:
             return .unauthorized
         case .http(let status, _) where status == 404:
-            return .failed("这个地址不是 paboot daemon（HTTP 404）")
+            return .failed("这个地址不是 Paboot daemon（HTTP 404）")
         case .http(let status, let apiError):
             return .failed(apiError?.message ?? apiError?.error ?? "HTTP \(status)")
         case .transport, .invalidResponse:

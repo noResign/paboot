@@ -71,7 +71,7 @@ final class ConnectViewController: UIViewController {
         brandImage.image = UIImage(named: "BrandMark")
         brandImage.contentMode = .scaleAspectFit
 
-        titleLabel.text = "paboot"
+        titleLabel.text = "Paboot"
         titleLabel.font = Typography.pageTitle
         titleLabel.textColor = Theme.Colors.textPrimary
         titleLabel.textAlignment = .center
