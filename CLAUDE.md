@@ -204,5 +204,7 @@ daemon，把当前 agent 进程一起杀掉。
   `fix`/`refactor`。
 - **scope**：可选，标注受影响子项目：`daemon` / `android` / `desktop` / `ios` / `docs`；跨端或
   全局改动省略 scope。
-- **subject**：中文，简洁说明「做了什么」，如果改动设计多个角度修改，仅描述主要1～2个修改，以&连接；不加句号、不以大写开头；冒号后空一格；
-  （`feat: xxx`，不是 `feat:xxx & xxx`）。
+- **subject**：**英文**（不要用中文），祈使句、首字母小写，简洁说明「做了什么」；如果改动涉及
+  多个角度，只描述主要 1～2 个改动，用 ` & ` 连接；不加句号；冒号后空一格。
+  （`feat(android): add pull-to-refresh & fold old sessions`；
+  不是 `feat:xxx & xxx`，也不是 `feat: 加下拉刷新`）。

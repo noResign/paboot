@@ -22,7 +22,7 @@ export interface Bucket {
 export const BUCKET_LABELS: Record<BucketId, string> = {
   needsInput: '⚠ 等待我处理',
   failed: '✗ 失败',
-  rest: '其余会话',
+  rest: '会话',
 };
 
 const ORDER: BucketId[] = ['needsInput', 'failed', 'rest'];

@@ -7,21 +7,37 @@
 <h4>一个客户端，操纵你所有的 agent</h4>
 
 
-[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](android/README.md) • [🖥️ **桌面端**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **安全模型**](#安全模型-)
+[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](android/README.md) • [🖥️ **桌面端**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md)
 
 [![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
-**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code 与 Codex，后续还有更多）** 
-客户端只是入口，**任务始终在电脑上执行**——断连不影响任务，重连自动续上；同一份会话，手机和桌面可以接着来。
+**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code 与 Codex）** 
+**数据始终在电脑上**，手机和桌面可操纵同一份会话，断连不影响任务，重连自动续上。
 
+- **一个客户端，操纵所有 agent** —— 已接入 Claude Code 与 Codex。
+  接新的 agent 不用改客户端。
+- **三端同源，原生实现** —— Android / iOS / 桌面共用一份协议和一套设计规范，操作的是同一份会话，且各自原生实现。
+- **数据在你自己电脑上** —— agent 用你本机的环境、工具、配置和技能；数据始终在你电脑上，paboot 自己不要账号，也不收集任何数据。
+- **断线不中断** —— run 与连接解耦：锁屏、切后台、断网都不影响电脑上的任务，回来按接着看。
+- **审批权在你手上** —— 每个会话独立 `ask` / `acceptEdits` / `bypass`；默认拒绝，
+  Bash、写文件、MCP 调用会转成手机上的审批卡，超时自动拒绝，只读命令自动放行。
+- **并发多任务，完成自动通知** —— 多个会话、多个 run 并行互不阻塞；人不在会话页时需要审批或跑完会推系统通知。
+- **改动可见可回滚** —— 不离开会话就能看 Git 改动、单文件 diff、目录树和文本 / 图片 / 视频；
+  每轮 run 都留 checkpoint 快照，桌面端可回滚到任意一轮。
 
 ## 快速开始
 
-### 1. 装 daemon
+### 0. 前置
 
-前置：**Node `~24`**，以及本机已装并登录的 agent CLI——Claude Code（`claude auth login`）或 Codex，装哪个就能用哪个。
+目前paboot支持codex/claude code，请提前安装并登陆至少一种agent
+
+> [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+>
+> [Claude Code](https://code.claude.com/docs) and run `claude auth login`
+
+### 1. Server
 
 ```bash
 npm install -g @noresign/paboot      # 全局命令名是 paboot
@@ -32,11 +48,11 @@ paboot  # 工作目录默认取命令启动的目录
 - token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 自己指定
 - 完整参数、配置项与 HTTP/SSE 接口见 [daemon/README.md](daemon/README.md)
 
-### 2. Android 客户端
+### 2. 客户端
 
-**(1) [release](https://github.com/noResign/paboot/releases) 页面直接下载apk包**
+**[release](https://github.com/noResign/paboot/releases) 页面直接下载安装包**
 
-**(2) 自行编译运行**
+**(1) android**
 
 用 Android Studio 打开 `android/` 选 flavor 后直接 Run。命令行等价于：
 
@@ -49,16 +65,40 @@ cd android
 `android/keystore.properties`。模块划分与签名说明见
 [android/README.md](android/README.md)。
 
+**(2) ios**
 
-### 3. 操作步骤
+需要 macOS + Xcode 15+（iOS 17 SDK）。用 Xcode 打开 `ios/paboot.xcodeproj` 直接 Run；命令行等价于：
 
-1. 打开 App，填 daemon 地址（就是启动时打印的那个 LAN 地址）和 token，连接
-2. 新建会话 → 选工作区目录 → 发一句话
-3. agent 在电脑上干活，手机上看流式输出；需要你确认的工具调用会弹审批卡
-4. 在「设置 → 通知」开启「后台任务提醒」并授予系统通知权限；离开会话页后，需要审批或任务完成、失败、取消时会收到通知，点击直达对应会话
-5. 想走就走——任务在电脑上继续跑，回来重连自动续上
+```bash
+cd ios
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
+```
 
-### 4. 手机电脑不在同一个局域网（可选）
+模块划分与纯逻辑测试（`ios/PabootCore`）见 [ios/README.md](ios/README.md)。
+
+**(3) desktop**
+
+desktop 构建会用 daemon 的 tsc 生成协议类型，所以先把两边依赖都装上：
+
+```bash
+cd daemon && pnpm install && cd ..
+cd desktop && pnpm install    # 会下载 Electron 二进制（约 100MB）
+```
+
+日常开发与打包：
+
+```bash
+cd desktop
+pnpm dev             # 起主进程 + 渲染层（HMR）
+pnpm dist            # 打包当前平台的安装包到 release/
+pnpm dist:linux      # 或 dist:mac / dist:windows
+```
+
+命令与构建细节见 [desktop/README.md](desktop/README.md)。
+
+
+### 3. 手机电脑不在同一个局域网（可选）
 
 daemon 默认监听局域网，公网连接有以下两种方法：
 
@@ -91,24 +131,6 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 > agent——任何人连上即可指挥它操作你的电脑。因此注意不要泄露 ip 及 token，确保 token 复杂度足够高。
 
 
-## 功能
-
-手机与桌面客户端是同一套能力，下表按手机端描述；**系统通知为 Android 独有**。
-
-| 能力 | 说明 |
-|---|---|
-| 手机上看流式输出 | 文字与思考过程实时刷出来，工具调用渲染成可展开的卡片 |
-| 工具审批 | 按会话模式将 Bash / 写文件 / MCP 调用转发到手机，支持允许、拒绝、允许全部；**超时未处理默认拒绝** |
-| 会话权限管理 | 每个会话独立选择 `ask` / `acceptEdits` / `bypass`；「允许全部」授权可持久保存和撤销，普通工具按工具名、MCP 按 Server 授权 |
-| Android 系统通知 | 不在对应会话页时，提醒需要审批、任务完成、失败或取消；点击通知直达会话，正在查看时不重复打扰 |
-| 只读白名单 | `ls` / `cat` / `git status` 这类只读命令自动放行，不打扰你 |
-| 断线续传 | run 与连接解耦：手机断网、切后台、锁屏都不影响电脑上的任务，回来接着看 |
-| 多会话并发 | 多个会话、多个任务并行跑，互不阻塞 |
-| 双向续接 | 电脑上 TUI 开的 Claude 会话能导入手机继续；手机开的会话也能用 `claude --resume` 在电脑接续 |
-| 工作区与附加目录 | 手机可新增 / 切换工作区、手动管理附加目录；每个会话绑定工作区，同一工作区的会话共用附加目录 |
-| 文件快捷目录 | 为常用目录添加浏览书签，方便切换；书签与 agent 的附加目录分开管理 |
-| 文件与 Diff | 手机上直接看工作区的 Git 未提交改动、单文件 diff、目录树与文本文件；图片 / MP4 可就地预览 |
-
 ## 移动端界面
 
 | 会话列表 | 聊天（支持markdown渲染） | 审批浮层 | 新建会话 |
@@ -119,32 +141,6 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 |---|---|---|---|
 | <img src="docs/media/file_git.jpg" width="170" alt="文件 Diff"> | <img src="docs/media/file_full.jpg" width="170" alt="全部文件"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="工作区管理"> | <img src="docs/media/setting.jpg" width="170" alt="设置"> |
 
-
-## 安全模型 ⚠️
-
-**`workspace` 不是沙箱。** 它只决定 agent 从哪个目录启动（spawn cwd），不限制它能碰哪些路径。
-`Read` / `Grep` 默认显式允许，不走客户端审批，也不会自动添加附加目录；用户或管理员的
-显式限制仍然有效。写入按会话模式、工具审批及 Claude Code 自身规则处理，`acceptEdits`
-不等于允许写入任意路径。文件级隔离需要 OS 层沙箱（bwrap / firejail / 容器）。
-
-daemon 提供的边界：
-
-- **认证**：所有非 health 的 `/api/*` 都要 Bearer token（常量时间比较）
-- **权限模式**：默认 `ask`，`bypass` 必须用户在客户端明确切换
-- **默认拒绝**：审批超时未处理 → 拒绝；客户端断线不会立即结束任务或拒绝审批
-- **Bash 自动允许**：无 shell 元字符且命中命令白名单时自动允许；当前按命令前缀匹配，不保证所有参数组合都只读
-- **审计**：写操作（chat / cancel / permission_decision / session 重命名与删除 / 配置与工作区变更…）记入 `audit_log`
-
-公开网络上使用，请先用ssh中转或者组网工具（Tailscale / ZeroTier / WireGuard）把设备放进一个加密的虚拟内网
-（见上文「手机电脑不在同一个局域网」），并保管好 token。只想本机使用就 `--host 127.0.0.1`。
-
-## 状态
-
-- **agent**：已接入 Claude Code 与 Codex（实验性）
-- **daemon**：可用（会话 / 审批 / 工作区 / 文件 均已落地）
-- **Android**：已实现（连接、会话列表、聊天、审批、会话权限管理、系统通知、新建会话、设置、文件、工作区管理）
-- **Desktop**：已实现（Electron 客户端，见 [desktop/README.md](desktop/README.md)）
-- **iOS**：骨架已搭好（Xcode 工程 + `PabootCore` 协议层 + 三个 Tab 壳），业务未实现
 
 ## License
 

@@ -55,45 +55,6 @@ pnpm dist:windows  # Windows：nsis（在 Linux 上打需要 wine）
 > （`pnpm build` 会触发），绕过去就会把一个**过时或不存在**的 daemon 装进包里。
 > 一律走上面这几个 `pnpm dist*`。
 
-几个刻意的设定：
-
-- **不做应用内自更新**，所以没有 `publish` provider、也没有 `latest-*.yml` 清单；
-  自更新在 macOS 上需要签名（Squirrel.Mac 的硬约束），而 macOS 决定不签名。
-- **`dependencies` 是空的**。renderer 由 Vite 打包、main/preload 由 electron-vite 打包，
-  运行时不需要任何 `node_modules`，所以 asar 里只有 `out/` + `package.json`（约 1.3MB）。
-  `@noresign/paboot` 是 `link:` 的本地包且只提供类型，必须是 `devDependencies`——
-  留在 `dependencies` 里 electron-builder 会把 daemon 整个目录连同它的 `node_modules` 打进包里。
-- **随 app 走的 daemon 要先「打包」**（`scripts/bundle-daemon.mjs`，由 `prebuild` 调用）：
-  daemon 的 `dist/` 是 tsc 裸产物，`import express from 'express'` 这种裸导入在仓库里能往上
-  找到 `daemon/node_modules`，**装进 app 之后就什么都没有**——打包版会以
-  `Cannot find package 'express'` 直接崩（dev 永远看不到，因为仓库里依赖就在旁边）。
-  esbuild 把它内联成自包含的单文件，输出到 `desktop/build/daemon/`，`extraResources` 从那里拷进
-  `<resources>/daemon/`。产物**保持 daemon 的包结构**（`package.json` + `dist/`），因为 daemon 在
-  运行时按入口相对路径解析两样东西：旁边的 `permission-hook.js`，和 `../package.json` 里的版本。
-- **不要求「app 版本 == daemon 版本」**。随包只是为了保证「装完就能启动一个本机 daemon」；
-  daemon 有自己的发布链（OSS 上的 npm 包），而且**附着别人机器上/手动起的 daemon 时版本相等根本
-  不成立**——那恰恰是主要用法。版本差异交给协议向后兼容兜（`serverId`、`health` 里那些字段都是可选的）。
-  将来若想提示「你起的这台不是我内置的版本」，比较的对象应该是**运行中的 daemon 版本 vs 随包版本**，
-  而不是两个包的版本号（见 `desktop/docs/local/electron_desktop_plan.md` 的「版本漂移怎么处理」）。
-- **图标**：主图 `build/icon.png`（1024×1024）是 mac / win / 窗口 / AppImage 的唯一来源；
-  Linux 另用 `build/icons/<边长>x<边长>.png`（16…512，由主图缩出）——freedesktop 图标查找只认
-  `hicolor/index.theme` 里列出的尺寸，**给 electron-builder 单个 1024 PNG 会被原样装进
-  `hicolor/1024x1024/`，一个尺寸都匹配不上，启动器就退回通用的齿轮图**。
-  托盘图标是吉祥物头像内联在 `src/main/tray-icon.ts`（22px + 44px 两个尺寸），**不是**主图缩放
-  ——整只狗带平板约 1.8:1，压到菜单栏大小会糊成一团。换图标这三处都要改。
-- 版本源是 `package.json` 的 `version`，electron-builder 自动读走，无需另建 `src/version.ts`
-  （`about` 页的 `appVersion` 走 Electron 的 `app.getVersion()`）。
-
-验证打包产物（打包后 app 用 `paboot://` 从 asar 里读 SPA，这条链路只有真跑才算数）：
-
-```bash
-DISPLAY=:1 ./release/linux-unpacked/paboot-desktop --no-sandbox --user-data-dir=/tmp/paboot-test
-```
-
-`--no-sandbox` 是 `release/linux-unpacked/` 这个**未打包目录**才需要的：里面 `chrome-sandbox`
-没有 setuid 位。AppImage/deb 的安装形态不受影响。另注意 `--user-data-dir`：同一 data dir 上
-已有实例在跑（比如 `pnpm dev`）时，单实例锁会让新进程直接退出。
-
 ## 结构
 
 ```

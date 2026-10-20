@@ -1,5 +1,5 @@
+import { join } from 'node:path';
 import { Menu, Tray, nativeImage } from 'electron';
-import { TRAY_ICON_1X_PNG_BASE64, TRAY_ICON_2X_PNG_BASE64 } from './tray-icon';
 import type { TrayState } from '../shared/ipc';
 
 export interface TrayDeps {
@@ -10,11 +10,22 @@ export interface TrayDeps {
 
 const MAX_MENU_SESSIONS = 5;
 
-/** Both resolutions in one image, so the menu bar stays sharp on Retina. */
+/**
+ * `build/` ships next to `out/` in both dev and the packaged asar — same path
+ * trick as the window icon (`window.ts`). `tray-icon.png` is 22px and
+ * `tray-icon@2x.png` 44px; Electron picks the 2x file up from the name.
+ */
+const TRAY_DIR = join(__dirname, '../../build/tray');
+
+/**
+ * The tray icon is the app icon at tray size: the brand gradient tile with the
+ * mascot's head in white. Deliberately **not** a template image — template
+ * images are monochrome by definition (`setTemplateImage` only keeps alpha) and
+ * would throw the tile away, leaving the transparent glyph look that reads as a
+ * black square on a dark panel.
+ */
 function trayImage(): Electron.NativeImage {
-  const image = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_1X_PNG_BASE64}`);
-  image.addRepresentation({ scaleFactor: 2, dataURL: `data:image/png;base64,${TRAY_ICON_2X_PNG_BASE64}` });
-  return image;
+  return nativeImage.createFromPath(join(TRAY_DIR, 'tray-icon.png'));
 }
 
 /**

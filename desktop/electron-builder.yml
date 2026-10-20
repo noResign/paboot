@@ -20,6 +20,9 @@ files:
   # 窗口图标：BrowserWindow 在运行时读它（见 src/main/window.ts）。打包图标本身是
   # electron-builder 从同一张 PNG 生成的，但窗口的 _NET_WM_ICON 需要文件实际存在。
   - build/icon.png
+  # 托盘图标：main 在运行时按路径读（见 src/main/tray.ts），同样必须真的在包里。
+  # 每组是 22px 的 *.png + 44px 的 *@2x.png，靠命名约定给 Electron 配 HiDPI 版本。
+  - build/tray/*.png
 
 # The daemon ships inside the app so「启动一个本机 daemon」works out of the box,
 # with no separate install — see `src/main/daemon/bundled-entry.ts`.

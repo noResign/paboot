@@ -7,19 +7,44 @@
 <h4>One client for all your agents</h4>
 
 
-[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](android/README.md) • [🖥️ **Desktop**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **Security model**](#security-model-)
+[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](android/README.md) • [🖥️ **Desktop**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md)
 
 [![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
-**Built as one system across clients — switch between them whenever you like, and drive every agent on your computer (Claude Code and Codex today; more to come).** The client is just the entry point; **the work always runs on your computer** — losing the connection does not stop a run, and reconnecting picks up where you left off. The same session carries over between phone and desktop.
+**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code and Codex today).**
+**Your data always stays on your computer**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
+
+- **One client for all your agents** — Claude Code and Codex today. Adding a new agent does not
+  touch the clients.
+- **Three clients, one system, each native** — Android, iOS and desktop share one protocol and one
+  design system, operate on the same sessions, and are each implemented natively.
+- **Your data stays on your machine** — agents use your environment, tools, configs and skills;
+  everything stays on your computer, and paboot itself needs no account and collects no data.
+- **Disconnects do not stop runs** — a run is decoupled from its connection: locking the phone,
+  switching apps or losing the network does not stop the work, and you pick it up where you left off.
+- **Approval stays in your hands** — per-session `ask` / `acceptEdits` / `bypass`; deny by default,
+  with Bash, file writes and MCP calls arriving on your phone as approval cards, auto-denied on
+  timeout, and read-only commands auto-allowed.
+- **Many runs at once, notified when done** — several sessions and runs in parallel without
+  blocking each other; when you are not in that conversation, approvals and finished runs trigger
+  a system notification.
+- **See and roll back every change** — Git changes, per-file diffs, the directory tree and
+  text / image / video previews without leaving the conversation; every run keeps a checkpoint
+  snapshot, and desktop can roll back to any of them.
 
 ## Quick start
 
-### 1. Install the daemon
+### 0. Prerequisites
 
-Requirements: **Node `~24`**, plus an agent CLI installed and logged in on this machine — Claude Code (`claude auth login`) or Codex; whichever you have is the one you can use.
+paboot drives Codex and Claude Code today — install and log in to at least one of them:
+
+> [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+>
+> [Claude Code](https://code.claude.com/docs) and run `claude auth login`
+
+### 1. Server
 
 ```bash
 npm install -g @noresign/paboot      # the global command is `paboot`
@@ -32,14 +57,13 @@ paboot  # the working directory defaults to where you launch it
 - Full flags, configuration, and the HTTP/SSE API live in
   [daemon/README.md](daemon/README.md)
 
-### 2. Android client
+### 2. Clients
 
-**(1) Download the APK from the [releases](https://github.com/noResign/paboot/releases) page**
+**Installers are available on the [releases](https://github.com/noResign/paboot/releases) page**
 
-**(2) Build it yourself**
+**(1) android**
 
-Open `android/` in Android Studio, pick a flavor
-and Run. The command-line equivalent:
+Open `android/` in Android Studio, pick a flavor and Run. The command-line equivalent:
 
 ```bash
 cd android
@@ -50,19 +74,42 @@ Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
 `android/keystore.properties`. Module layout and signing notes live in
 [android/README.md](android/README.md).
 
-### 3. Steps
+**(2) ios**
 
-1. Open the app, enter the daemon address (the LAN address printed on start) and the token, connect
-2. Create a session → pick a workspace directory → send a prompt
-3. The agent works on your computer: watch the stream on your phone and answer approval
-   cards when a tool call needs your confirmation
-4. Enable background task alerts under Settings → Notifications and grant notification
-   permission. Approvals and completed, failed or cancelled tasks trigger alerts when you
-   are not viewing that conversation; tap an alert to open it
-5. Walk away whenever you like — the run keeps going on your computer, and reconnecting
-   picks it back up
+Requires macOS + Xcode 15+ (iOS 17 SDK). Open `ios/paboot.xcodeproj` in Xcode and Run; the
+command-line equivalent:
 
-### 4. Connecting from outside your LAN (optional)
+```bash
+cd ios
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
+```
+
+Module layout and the pure-logic tests (`ios/PabootCore`) live in [ios/README.md](ios/README.md).
+
+**(3) desktop**
+
+The desktop build runs the daemon's tsc to generate the protocol types, so install both sides'
+dependencies first:
+
+```bash
+cd daemon && pnpm install && cd ..
+cd desktop && pnpm install    # downloads the Electron binary (~100MB)
+```
+
+Day-to-day development and packaging:
+
+```bash
+cd desktop
+pnpm dev             # main process + renderer (HMR)
+pnpm dist            # package the current platform into release/
+pnpm dist:linux      # or dist:mac / dist:windows
+```
+
+Commands and build details live in [desktop/README.md](desktop/README.md).
+
+
+### 3. Connecting from outside your LAN (optional)
 
 By default the daemon only listens on your LAN. To reach it from the internet, two
 common approaches:
@@ -100,25 +147,6 @@ worry about.
 > and it drives an agent with shell access — anyone who connects can drive it to operate
 > your computer. Do not leak your IP or token, and make sure the token is strongly random.
 
-## Features
-
-Phone and desktop share one set of capabilities — the table below is written from the
-phone's point of view; **system notifications are Android-only**.
-
-| Capability | Notes |
-|---|---|
-| Streaming output on the phone | Text and thinking stream in live; tool calls render as expandable cards |
-| Tool approval | Forward Bash / file writes / MCP calls according to the session mode; allow once, deny, or allow all. **Unanswered requests are denied on timeout** |
-| Session permissions | Choose `ask` / `acceptEdits` / `bypass` per session; save and revoke persistent grants by tool name, or by server for MCP tools |
-| Android notifications | Get alerts for approvals and completed, failed or cancelled tasks when you are not viewing that conversation; tap to open it, with no duplicate alerts while watching |
-| Read-only allowlist | Read-only commands like `ls`, `cat`, `git status` are auto-approved, so they do not bother you |
-| Reconnect-safe runs | Runs are decoupled from connections: losing signal, backgrounding the app or locking the phone does not stop the work on your computer |
-| Concurrent sessions | Many sessions and runs in parallel, with no global lock |
-| Two-way resume | Import a desktop Claude Code session into the phone, or resume a paboot session on the desktop with `claude --resume` |
-| Workspaces & additional directories | Add / switch workspaces and manage additional directories from the phone; sessions in the same workspace share those directories |
-| Directory shortcuts | Bookmark frequently browsed directories separately from the agent’s additional directories |
-| Files & diffs | Browse uncommitted Git changes, per-file diffs, directory trees and text files from the phone; images / MP4s preview in place |
-
 ## Mobile UI
 
 | Sessions | Chat (Markdown rendering) | Approval | New session |
@@ -128,35 +156,6 @@ phone's point of view; **system notifications are Android-only**.
 | Files / diff (multiple Git dirs) | All files | Workspaces | Settings |
 |---|---|---|---|
 | <img src="docs/media/file_git.jpg" width="170" alt="Files / diff"> | <img src="docs/media/file_full.jpg" width="170" alt="All files"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="Workspaces"> | <img src="docs/media/setting.jpg" width="170" alt="Settings"> |
-
-## Security model ⚠️
-
-**`workspace` is not a sandbox.** It only decides which directory the agent is spawned
-from — it does not restrict which paths the agent can touch. `Read` / `Grep` are explicitly
-allowed by default, with no client approval or automatic directory grants; explicit user
-or administrator restrictions still apply. Writes follow the session mode, tool approvals
-and Claude Code’s own rules. `acceptEdits` does not grant writes to every path. File-level
-isolation requires an OS sandbox (bwrap / firejail / container).
-
-What the daemon does enforce:
-
-- **Auth**: every non-health `/api/*` route requires a bearer token (constant-time compare)
-- **Permission modes**: `ask` by default; `bypass` must be explicitly enabled on the client
-- **Deny by default**: unanswered approvals time out to deny; disconnecting the client does not immediately deny requests or end the run
-- **Bash auto-approval**: commands without shell metacharacters that match the allowlist pass through; matching currently uses command prefixes and does not guarantee that every argument combination is read-only
-- **Audit log**: writes (chat / cancel / permission_decision / session rename and delete / config and workspace changes …) are recorded in `audit_log`
-
-On an untrusted network, put the devices on an encrypted virtual network first (Tailscale /
-ZeroTier / WireGuard — see "Connecting from outside your LAN"), and keep the token secret.
-For local-only use, `--host 127.0.0.1`.
-
-## Status
-
-- **Agents**: Claude Code and Codex (experimental)
-- **daemon**: usable (sessions / approvals / workspaces / files)
-- **Android**: implemented (connect, session list, chat, approvals, session permissions, system notifications, new session, settings, files, workspace management)
-- **Desktop**: implemented (Electron client, see [desktop/README.md](desktop/README.md))
-- **iOS**: reserved, not implemented
 
 ## License
 
