@@ -1,4 +1,5 @@
 import Foundation
+import PabootMarkdownUI
 import PabootProtocol
 import UIKit
 
@@ -53,6 +54,11 @@ final class UserMessageCell: UITableViewCell {
 
 // MARK: - Assistant
 
+enum AssistantRenderItem {
+    case block(ContentBlock)
+    case tools([ToolUseBlock])
+}
+
 final class AssistantMessageCell: UITableViewCell {
     static let reuseIdentifier = "AssistantMessageCell"
 
@@ -61,8 +67,8 @@ final class AssistantMessageCell: UITableViewCell {
     private let loadingLabel = UILabel()
     private let footerLabel = UILabel()
 
-    private var blockViews: [ChatBlockView] = []
-    private var blockKinds: [String] = []
+    private var itemViews: [ChatBlockView] = []
+    private var itemKinds: [String] = []
     private var onAnswer: ((String, String) -> Void)?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -105,6 +111,15 @@ final class AssistantMessageCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        blockStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        itemViews = []
+        itemKinds = []
+        loadingLabel.isHidden = true
+        footerLabel.isHidden = true
+    }
+
     func configure(
         message: ChatUiMessage,
         streaming: Bool,
@@ -112,13 +127,14 @@ final class AssistantMessageCell: UITableViewCell {
     ) {
         self.onAnswer = onAnswer
 
-        let kinds = message.blocks.map(Self.kind)
-        if kinds != blockKinds {
-            rebuild(blocks: message.blocks)
+        let items = Self.renderItems(message.blocks)
+        let kinds = items.map(Self.kind)
+        if kinds != itemKinds {
+            rebuild(items: items)
         }
 
-        for (view, block) in zip(blockViews, message.blocks) {
-            view.update(block: block, streaming: streaming)
+        for (view, item) in zip(itemViews, items) {
+            view.updateItem(item, streaming: streaming)
         }
 
         loadingLabel.isHidden = !(message.blocks.isEmpty && !message.done)
@@ -136,42 +152,68 @@ final class AssistantMessageCell: UITableViewCell {
         }
     }
 
-    private func rebuild(blocks: [ContentBlock]) {
+    private func rebuild(items: [AssistantRenderItem]) {
         blockStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-        blockViews = blocks.map { block in
-            switch block {
-            case .text:
+        itemViews = items.map { item in
+            switch item {
+            case .tools:
+                return ChatToolGroupView(frame: .zero)
+            case .block(.text):
                 return ChatTextBlockView(frame: .zero)
-            case .thinking:
+            case .block(.thinking):
                 return ChatThinkingBlockView(frame: .zero)
-            case .tool:
-                return ChatToolCardView(frame: .zero)
-            case .question:
+            case .block(.question):
                 let view = ChatQuestionCardView(frame: .zero)
                 view.onSubmit = { [weak self] toolUseId, text in
                     self?.onAnswer?(toolUseId, text)
                 }
                 return view
+            case .block(.tool):
+                return ChatBlockView(frame: .zero)
             }
         }
 
-        for view in blockViews {
+        for view in itemViews {
             blockStack.addArrangedSubview(view)
         }
-        blockKinds = blocks.map(Self.kind)
+        itemKinds = items.map(Self.kind)
     }
 
-    private static func kind(_ block: ContentBlock) -> String {
-        switch block {
-        case .text:
+    private static func renderItems(_ blocks: [ContentBlock]) -> [AssistantRenderItem] {
+        var items: [AssistantRenderItem] = []
+        var tools: [ToolUseBlock] = []
+
+        func flushTools() {
+            guard !tools.isEmpty else { return }
+            items.append(.tools(tools))
+            tools.removeAll()
+        }
+
+        for block in blocks {
+            if case .tool(let tool) = block {
+                tools.append(tool)
+            } else {
+                flushTools()
+                items.append(.block(block))
+            }
+        }
+        flushTools()
+        return items
+    }
+
+    private static func kind(_ item: AssistantRenderItem) -> String {
+        switch item {
+        case .tools:
+            return "tools"
+        case .block(.text):
             return "text"
-        case .thinking:
+        case .block(.thinking):
             return "thinking"
-        case .tool(let tool):
-            return "tool:\(tool.id)"
-        case .question(let question):
+        case .block(.question(let question)):
             return "question:\(question.toolUseId)"
+        case .block(.tool):
+            return "tool"
         }
     }
 
@@ -203,56 +245,23 @@ class ChatBlockView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func updateItem(_ item: AssistantRenderItem, streaming: Bool) {
+        guard case .block(let block) = item else { return }
+        update(block: block, streaming: streaming)
+    }
+
     func update(block: ContentBlock, streaming: Bool) {}
 }
 
 final class ChatTextBlockView: ChatBlockView {
-    private let label = UILabel()
+    private let stack = UIStackView()
+    private var lastText: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
 
-        label.numberOfLines = 0
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-
-        NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: topAnchor),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor),
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func update(block: ContentBlock, streaming: Bool) {
-        guard case .text(let text) = block else { return }
-        label.attributedText = MarkdownRenderer.render(text)
-    }
-}
-
-final class ChatThinkingBlockView: ChatBlockView {
-    private let headerLabel = UILabel()
-    private let bodyLabel = UILabel()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-
-        headerLabel.text = "思考"
-        headerLabel.font = Typography.caption
-        headerLabel.textColor = Theme.Colors.thinking
-
-        bodyLabel.font = Typography.caption
-        bodyLabel.textColor = Theme.Colors.thinking
-        bodyLabel.numberOfLines = 0
-
-        let stack = UIStackView(arrangedSubviews: [headerLabel, bodyLabel])
         stack.axis = .vertical
-        stack.spacing = Spacing.xxs
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -270,15 +279,118 @@ final class ChatThinkingBlockView: ChatBlockView {
     }
 
     override func update(block: ContentBlock, streaming: Bool) {
-        guard case .thinking(let text) = block else { return }
-        bodyLabel.text = text
+        guard case .text(let text) = block else { return }
+        guard text != lastText else { return }
+        lastText = text
+
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        let style = MarkdownUIStyle(
+            bodyFont: Typography.body,
+            headingFonts: [
+                UIFontMetrics(forTextStyle: .title1)
+                    .scaledFont(for: .systemFont(ofSize: 20, weight: .bold)),
+                UIFontMetrics(forTextStyle: .title2)
+                    .scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .title3)
+                    .scaledFont(for: .systemFont(ofSize: 15, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .headline)
+                    .scaledFont(for: .systemFont(ofSize: 14, weight: .semibold)),
+            ],
+            codeFont: Typography.code,
+            textColor: Theme.Colors.textPrimary,
+            secondaryTextColor: Theme.Colors.textSecondary,
+            codeBackgroundColor: Theme.Colors.codeBackground,
+            surfaceColor: Theme.Colors.surface2,
+            borderColor: Theme.Colors.border,
+            accentColor: Theme.Colors.primary,
+            codeKeywordColor: Theme.Colors.primary,
+            codeStringColor: Theme.Colors.success,
+            codeNumberColor: Theme.Colors.warning,
+            codeCommentColor: Theme.Colors.textMuted
+        )
+
+        let rendered = MarkdownUIRenderer.makeView(markdown: text, style: style)
+        rendered.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(rendered)
+        notifyEnclosingTableHeightChanged()
     }
 }
 
-final class ChatToolCardView: ChatBlockView {
+/// Collapsed by default; tap the header to show the thinking text.
+final class ChatThinkingBlockView: ChatBlockView {
+    private let headerLabel = UILabel()
+    private let bodyLabel = UILabel()
+    private var expanded = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        backgroundColor = Theme.Colors.surface
+        layer.cornerRadius = 8
+
+        headerLabel.font = Typography.caption
+        headerLabel.textColor = Theme.Colors.thinking
+
+        bodyLabel.font = Typography.code
+        bodyLabel.textColor = Theme.Colors.thinking
+        bodyLabel.numberOfLines = 0
+        bodyLabel.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [headerLabel, bodyLabel])
+        stack.axis = .vertical
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+        ])
+
+        isUserInteractionEnabled = true
+        addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(toggle))
+        )
+        updateHeader()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func update(block: ContentBlock, streaming: Bool) {
+        guard case .thinking(let text) = block else { return }
+        bodyLabel.text = text
+    }
+
+    @objc private func toggle() {
+        expanded.toggle()
+        bodyLabel.isHidden = !expanded
+        updateHeader()
+        notifyEnclosingTableHeightChanged()
+    }
+
+    private func updateHeader() {
+        headerLabel.text = expanded ? "▾ 思考中（点击收起）" : "▸ 思考中（点击展开）"
+    }
+}
+
+/// Consecutive tool calls fold into one collapsible group.
+final class ChatToolGroupView: ChatBlockView {
+    private let chevronLabel = UILabel()
     private let titleLabel = UILabel()
     private let statusLabel = UILabel()
-    private let detailLabel = UILabel()
+    private let actionLabel = UILabel()
+    private let cardsStack = UIStackView()
+
+    private var tools: [ToolUseBlock] = []
+    private var lastTools: [ToolUseBlock]?
+    private var cards: [String: ChatToolCardView] = [:]
+    private var expanded = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -286,30 +398,192 @@ final class ChatToolCardView: ChatBlockView {
         backgroundColor = Theme.Colors.surface2
         layer.cornerRadius = Radius.card
 
+        chevronLabel.font = Typography.caption
+        chevronLabel.textColor = Theme.Colors.textSecondary
+
         titleLabel.font = Typography.cardTitle
         titleLabel.textColor = Theme.Colors.textPrimary
+        titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         statusLabel.font = Typography.caption
+        statusLabel.textColor = Theme.Colors.textMuted
         statusLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        detailLabel.font = Typography.code
-        detailLabel.textColor = Theme.Colors.textSecondary
-        detailLabel.numberOfLines = 8
+        actionLabel.font = Typography.caption
+        actionLabel.textColor = Theme.Colors.primary
+        actionLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        let header = UIStackView(arrangedSubviews: [titleLabel, statusLabel])
+        let header = UIStackView(
+            arrangedSubviews: [chevronLabel, titleLabel, statusLabel, actionLabel]
+        )
         header.axis = .horizontal
         header.alignment = .center
-        header.spacing = Spacing.xs
+        header.spacing = 8
+        header.isUserInteractionEnabled = true
+        header.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(toggle))
+        )
 
-        let stack = UIStackView(arrangedSubviews: [header, detailLabel])
+        cardsStack.axis = .vertical
+        cardsStack.spacing = 8
+        cardsStack.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [header, cardsStack])
         stack.axis = .vertical
-        stack.spacing = Spacing.xs
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.sm),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.sm),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
+        ])
+
+        updateHeader()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateItem(_ item: AssistantRenderItem, streaming: Bool) {
+        guard case .tools(let tools) = item else { return }
+        guard lastTools != tools else { return }
+        lastTools = tools
+        self.tools = tools
+        updateHeader()
+        updateCards()
+    }
+
+    private func updateHeader() {
+        chevronLabel.text = expanded ? "▾" : "▸"
+        titleLabel.text = Self.describe(tools).title
+
+        let status = Self.describe(tools).status
+        statusLabel.text = status
+        statusLabel.isHidden = status.isEmpty
+        actionLabel.text = expanded ? "收起" : "展开"
+    }
+
+    private func updateCards() {
+        let incoming = Set(tools.map(\.id))
+        for id in Set(cards.keys).subtracting(incoming) {
+            cards[id]?.removeFromSuperview()
+            cards.removeValue(forKey: id)
+        }
+
+        cardsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        for tool in tools {
+            let card: ChatToolCardView
+            if let existing = cards[tool.id] {
+                card = existing
+            } else {
+                card = ChatToolCardView(frame: .zero)
+                cards[tool.id] = card
+            }
+            card.update(tool: tool)
+            cardsStack.addArrangedSubview(card)
+        }
+
+        cardsStack.isHidden = !expanded
+    }
+
+    @objc private func toggle() {
+        expanded.toggle()
+        cardsStack.isHidden = !expanded
+        updateHeader()
+        notifyEnclosingTableHeightChanged()
+    }
+
+    private static func describe(_ tools: [ToolUseBlock]) -> (title: String, status: String) {
+        var names: [String] = []
+        for tool in tools where !names.contains(tool.name) {
+            names.append(tool.name)
+        }
+        let shown = names.prefix(3).joined(separator: ", ")
+        let suffix = names.count > 3 ? "…" : ""
+        let title = "\(tools.count) 个工具调用 · \(shown)\(suffix)"
+
+        var parts: [String] = []
+        let running = tools.filter(\.running).count
+        let failed = tools.filter(\.isError).count
+        let interrupted = tools.filter(\.interrupted).count
+        if running > 0 { parts.append("\(running) 个运行中") }
+        if failed > 0 { parts.append("\(failed) 个失败") }
+        if interrupted > 0 { parts.append("\(interrupted) 个中断") }
+
+        return (title, parts.joined(separator: " · "))
+    }
+}
+
+/// One tool inside a group; collapsed by default.
+final class ChatToolCardView: ChatBlockView {
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private let statusIcon = UIImageView()
+    private let nameLabel = UILabel()
+    private let actionLabel = UILabel()
+    private let bodyStack = UIStackView()
+
+    private var tool: ToolUseBlock?
+    private var lastTool: ToolUseBlock?
+    private var expanded = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+
+        backgroundColor = Theme.Colors.surface
+        layer.cornerRadius = 8
+
+        spinner.color = Theme.Colors.textSecondary
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        statusIcon.contentMode = .scaleAspectFit
+        statusIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        nameLabel.font = Typography.cardTitle
+        nameLabel.textColor = Theme.Colors.textPrimary
+        nameLabel.numberOfLines = 1
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        actionLabel.font = Typography.caption
+        actionLabel.textColor = Theme.Colors.textSecondary
+        actionLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let header = UIStackView(
+            arrangedSubviews: [spinner, statusIcon, nameLabel, spacer, actionLabel]
+        )
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = 6
+        header.isUserInteractionEnabled = true
+        header.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(toggle))
+        )
+
+        bodyStack.axis = .vertical
+        bodyStack.spacing = 8
+        bodyStack.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [header, bodyStack])
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
         ])
@@ -320,32 +594,78 @@ final class ChatToolCardView: ChatBlockView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func update(block: ContentBlock, streaming: Bool) {
-        guard case .tool(let tool) = block else { return }
+    func update(tool: ToolUseBlock) {
+        guard lastTool != tool else { return }
+        lastTool = tool
+        self.tool = tool
 
-        titleLabel.text = tool.name
+        nameLabel.text = tool.name
 
         if tool.running {
-            statusLabel.text = "运行中"
-            statusLabel.textColor = Theme.Colors.primary
-        } else if tool.interrupted {
-            statusLabel.text = "中断"
-            statusLabel.textColor = Theme.Colors.warning
-        } else if tool.isError {
-            statusLabel.text = "失败"
-            statusLabel.textColor = Theme.Colors.error
+            spinner.isHidden = false
+            spinner.startAnimating()
+            statusIcon.isHidden = true
         } else {
-            statusLabel.text = "完成"
-            statusLabel.textColor = Theme.Colors.success
+            spinner.stopAnimating()
+            spinner.isHidden = true
+            statusIcon.isHidden = false
+            if tool.interrupted {
+                statusIcon.image = UIImage(systemName: "minus.circle")
+                statusIcon.tintColor = Theme.Colors.warning
+            } else if tool.isError {
+                statusIcon.image = UIImage(systemName: "xmark.circle")
+                statusIcon.tintColor = Theme.Colors.error
+            } else {
+                statusIcon.image = UIImage(systemName: "checkmark.circle")
+                statusIcon.tintColor = Theme.Colors.success
+            }
         }
 
-        let output = tool.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let input = tool.input.map(Self.jsonText) ?? ""
-        let detail = output.isEmpty ? input : output
+        actionLabel.text = expanded ? "收起" : "展开"
+        rebuildBody()
+    }
 
-        detailLabel.text = detail.isEmpty
-            ? (tool.running ? "等待结果…" : "无输出")
-            : String(detail.prefix(2_000))
+    @objc private func toggle() {
+        expanded.toggle()
+        rebuildBody()
+        notifyEnclosingTableHeightChanged()
+    }
+
+    private func rebuildBody() {
+        bodyStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        bodyStack.isHidden = !expanded
+        guard expanded, let tool else {
+            actionLabel.text = expanded ? "收起" : "展开"
+            return
+        }
+
+        if let input = tool.input {
+            bodyStack.addArrangedSubview(
+                CodeBlockView(text: Self.jsonText(input), language: "json")
+            )
+        }
+
+        let result = tool.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !result.isEmpty {
+            bodyStack.addArrangedSubview(
+                CodeBlockView(text: result, language: Self.language(for: result))
+            )
+        } else if tool.interrupted {
+            bodyStack.addArrangedSubview(hint("已中断，未返回结果"))
+        } else if tool.running {
+            bodyStack.addArrangedSubview(hint("等待结果…"))
+        }
+
+        actionLabel.text = expanded ? "收起" : "展开"
+    }
+
+    private func hint(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.caption
+        label.textColor = Theme.Colors.textSecondary
+        label.numberOfLines = 0
+        return label
     }
 
     private static func jsonText(_ value: JSONValue) -> String {
@@ -354,6 +674,16 @@ final class ChatToolCardView: ChatBlockView {
             return ""
         }
         return text
+    }
+
+    private static func language(for text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("[") else { return nil }
+        guard let data = trimmed.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: data)) != nil else {
+            return nil
+        }
+        return "json"
     }
 }
 
@@ -583,48 +913,92 @@ private final class QuestionOptionRow: UIControl {
     }
 }
 
-// MARK: - Markdown
+// MARK: - Code
 
-enum MarkdownRenderer {
-    static func render(_ text: String) -> NSAttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full,
-            failurePolicy: .returnPartiallyParsedIfPossible
+final class CodeBlockView: UIView {
+    private let scrollView = UIScrollView()
+    private let label = UILabel()
+    private var heightConstraint: NSLayoutConstraint!
+
+    init(text: String, language: String? = nil) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+
+        backgroundColor = Theme.Colors.codeBackground
+        layer.cornerRadius = 6
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.showsVerticalScrollIndicator = true
+        scrollView.alwaysBounceVertical = false
+        addSubview(scrollView)
+
+        label.attributedText = CodeHighlighter.highlight(
+            text,
+            language: language,
+            font: Typography.code,
+            textColor: Theme.Colors.textSecondary,
+            keywordColor: Theme.Colors.primary,
+            stringColor: Theme.Colors.success,
+            numberColor: Theme.Colors.warning,
+            commentColor: Theme.Colors.textMuted
         )
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(label)
 
-        guard let markdown = try? AttributedString(markdown: text, options: options) else {
-            return plain(text)
-        }
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
 
-        let mutable = NSMutableAttributedString(attributedString: NSAttributedString(markdown))
-        if mutable.length > 0 {
-            let fullRange = NSRange(location: 0, length: mutable.length)
-            mutable.addAttribute(
-                .foregroundColor,
-                value: Theme.Colors.textPrimary,
-                range: fullRange
-            )
+            label.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            label.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            label.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+        ])
 
-            var missingFont: [NSRange] = []
-            mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
-                if value == nil {
-                    missingFont.append(range)
-                }
-            }
-            for range in missingFont {
-                mutable.addAttribute(.font, value: Typography.body, range: range)
-            }
-        }
-        return mutable
+        heightConstraint = heightAnchor.constraint(equalToConstant: 40)
+        heightConstraint.isActive = true
     }
 
-    private static func plain(_ text: String) -> NSAttributedString {
-        NSAttributedString(
-            string: text,
-            attributes: [
-                .font: Typography.body,
-                .foregroundColor: Theme.Colors.textPrimary,
-            ]
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        let width = max(scrollView.bounds.width, 1)
+        let fit = label.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
         )
+        let target = min(max(fit.height + 16, 28), 200)
+        if abs(heightConstraint.constant - target) > 0.5 {
+            heightConstraint.constant = target
+        }
+    }
+}
+
+private extension UIView {
+    /// A collapsible block changes its intrinsic height without a snapshot update.
+    /// Ask the enclosing table to re-query the row height on the next run loop, after
+    /// the newly shown content has laid out.
+    func notifyEnclosingTableHeightChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            var current: UIView? = self
+            while let view = current {
+                if let table = view as? UITableView {
+                    table.beginUpdates()
+                    table.endUpdates()
+                    return
+                }
+                current = view.superview
+            }
+        }
     }
 }
