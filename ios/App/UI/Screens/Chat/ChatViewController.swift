@@ -340,6 +340,7 @@ final class ChatViewController: UIViewController {
         let signature = [
             state.permissionMode,
             state.model ?? "",
+            state.sessionId ?? "",
             state.models.map(\.id).joined(separator: ","),
             state.modelParameters.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","),
         ].joined(separator: "|")
@@ -415,9 +416,21 @@ final class ChatViewController: UIViewController {
             title: "模型：\(viewModel.modelLabel)",
             children: modelChildren
         )
+        var permissionSettingsAttributes: UIAction.Attributes = []
+        if state.sessionId == nil {
+            permissionSettingsAttributes = .disabled
+        }
+        let permissionSettings = UIAction(
+            title: "权限设置…",
+            attributes: permissionSettingsAttributes
+        ) { [weak self] _ in
+            self?.presentPermissionSettings()
+        }
+
         let menu = UIMenu(children: [
             UIMenu(title: "权限模式", options: .displayInline, children: permissionActions),
             modelMenu,
+            UIMenu(options: .displayInline, children: [permissionSettings]),
         ])
 
         let item = UIBarButtonItem(
@@ -428,6 +441,26 @@ final class ChatViewController: UIViewController {
         )
         item.accessibilityLabel = "会话设置"
         navigationItem.rightBarButtonItem = item
+    }
+
+    private func presentPermissionSettings() {
+        guard let sessionId = viewModel.state.sessionId else { return }
+
+        let permissions = SessionPermissionsViewController(
+            sessionId: sessionId,
+            runtime: viewModel.state.runtime
+        )
+        permissions.onModeChanged = { [weak self] mode in
+            self?.viewModel.applyPermissionMode(mode)
+        }
+
+        let navigation = UINavigationController(rootViewController: permissions)
+        navigation.modalPresentationStyle = .pageSheet
+        if let presentation = navigation.sheetPresentationController {
+            presentation.detents = [.medium(), .large()]
+            presentation.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
     }
 
     // MARK: - Permissions

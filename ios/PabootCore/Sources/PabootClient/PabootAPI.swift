@@ -36,6 +36,193 @@ public final class PabootAPI {
         try await get("api/workspaces", authenticated: true, as: WorkspacesResponse.self)
     }
 
+    public func createWorkspace(_ body: CreateWorkspaceRequest) async throws -> WorkspaceResponse {
+        try await request(
+            "POST",
+            path: "api/workspaces",
+            body: try encode(body),
+            authenticated: true,
+            as: WorkspaceResponse.self
+        )
+    }
+
+    public func updateWorkspace(id: String, body: UpdateWorkspaceRequest) async throws -> WorkspaceResponse {
+        try await request(
+            "PATCH",
+            path: "api/workspaces/\(id)",
+            body: try encode(body),
+            authenticated: true,
+            as: WorkspaceResponse.self
+        )
+    }
+
+    public func deleteWorkspace(id: String, cascade: Bool = false) async throws -> OkResponse {
+        var query: [URLQueryItem] = []
+        if cascade {
+            query.append(URLQueryItem(name: "cascade", value: "1"))
+        }
+        return try await request(
+            "DELETE",
+            path: "api/workspaces/\(id)",
+            query: query,
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
+    public func addWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
+        try await request(
+            "POST",
+            path: "api/workspaces/\(id)/dirs",
+            body: try encode(WorkspaceDirsRequest(path: path)),
+            authenticated: true,
+            as: WorkspaceDirsResponse.self
+        )
+    }
+
+    public func removeWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
+        try await request(
+            "DELETE",
+            path: "api/workspaces/\(id)/dirs",
+            body: try encode(WorkspaceDirsRequest(path: path)),
+            authenticated: true,
+            as: WorkspaceDirsResponse.self
+        )
+    }
+
+    public func addWorkspaceShortcut(id: String, path: String) async throws -> WorkspaceShortcutsResponse {
+        try await request(
+            "POST",
+            path: "api/workspaces/\(id)/shortcuts",
+            body: try encode(WorkspaceDirsRequest(path: path)),
+            authenticated: true,
+            as: WorkspaceShortcutsResponse.self
+        )
+    }
+
+    public func removeWorkspaceShortcut(id: String, path: String) async throws -> WorkspaceShortcutsResponse {
+        try await request(
+            "DELETE",
+            path: "api/workspaces/\(id)/shortcuts",
+            body: try encode(WorkspaceDirsRequest(path: path)),
+            authenticated: true,
+            as: WorkspaceShortcutsResponse.self
+        )
+    }
+
+    /// One level of the daemon host's directory tree, folders only. `path == nil` means `~`.
+    public func directories(path: String? = nil, showHidden: Bool = false) async throws -> DirectoriesResponse {
+        var query: [URLQueryItem] = []
+        if let path, !path.isEmpty {
+            query.append(URLQueryItem(name: "path", value: path))
+        }
+        if showHidden {
+            query.append(URLQueryItem(name: "showHidden", value: "true"))
+        }
+        return try await get("api/fs/directories", query: query, authenticated: true, as: DirectoriesResponse.self)
+    }
+
+    // MARK: - Files / changes
+
+    public func changes(workspaceId: String? = nil, root: String? = nil) async throws -> ChangesResponse {
+        var query: [URLQueryItem] = []
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        return try await get("api/changes", query: query, authenticated: true, as: ChangesResponse.self)
+    }
+
+    public func changeDiff(
+        workspaceId: String? = nil,
+        root: String? = nil,
+        path: String
+    ) async throws -> DiffResponse {
+        var query: [URLQueryItem] = [URLQueryItem(name: "path", value: path)]
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        return try await get("api/changes/diff", query: query, authenticated: true, as: DiffResponse.self)
+    }
+
+    public func files(
+        workspaceId: String? = nil,
+        root: String? = nil,
+        path: String? = nil,
+        cursor: String? = nil,
+        limit: Int? = nil,
+        showHidden: Bool = false,
+        showIgnored: Bool = false
+    ) async throws -> FilesResponse {
+        var query: [URLQueryItem] = []
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        if let path, !path.isEmpty {
+            query.append(URLQueryItem(name: "path", value: path))
+        }
+        if let cursor, !cursor.isEmpty {
+            query.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        if let limit {
+            query.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        if showHidden {
+            query.append(URLQueryItem(name: "showHidden", value: "true"))
+        }
+        if showIgnored {
+            query.append(URLQueryItem(name: "showIgnored", value: "true"))
+        }
+        return try await get("api/files", query: query, authenticated: true, as: FilesResponse.self)
+    }
+
+    public func fileContent(
+        workspaceId: String? = nil,
+        root: String? = nil,
+        path: String
+    ) async throws -> FileContentDto {
+        var query: [URLQueryItem] = [URLQueryItem(name: "path", value: path)]
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        return try await get("api/files/content", query: query, authenticated: true, as: FileContentDto.self)
+    }
+
+    /// Raw bytes for media preview. Auth stays in the header; the token never enters a URL.
+    public func fileRaw(
+        workspaceId: String? = nil,
+        root: String? = nil,
+        path: String
+    ) async throws -> Data {
+        var query: [URLQueryItem] = [URLQueryItem(name: "path", value: path)]
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        let request = try makeRequest(
+            method: "GET",
+            path: "api/files/raw",
+            query: query,
+            body: nil,
+            authenticated: true
+        )
+        let (data, _) = try await http.send(request)
+        return data
+    }
+
     public func agents() async throws -> AgentsResponse {
         try await get("api/agents", authenticated: true, as: AgentsResponse.self)
     }
@@ -100,6 +287,27 @@ public final class PabootAPI {
             body: try encode(UpdateSessionPermissionsRequest(mode: mode)),
             authenticated: true,
             as: UpdateSessionPermissionsResponse.self
+        )
+    }
+
+    public func deletePermissionGrant(sessionId: String, toolName: String) async throws -> OkResponse {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
+        let encoded = toolName.addingPercentEncoding(withAllowedCharacters: allowed) ?? toolName
+        return try await request(
+            "DELETE",
+            path: "api/sessions/\(sessionId)/permissions/grants/\(encoded)",
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
+    public func deletePermissionGrants(sessionId: String) async throws -> OkResponse {
+        try await request(
+            "DELETE",
+            path: "api/sessions/\(sessionId)/permissions/grants",
+            authenticated: true,
+            as: OkResponse.self
         )
     }
 

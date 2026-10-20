@@ -44,6 +44,29 @@
 		AAAA000000000000000000B5 /* ChatMessageCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A5 /* ChatMessageCells.swift */; };
 		AAAA000000000000000000B6 /* ChatComposerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A6 /* ChatComposerViews.swift */; };
 		AAAA000000000000000000B7 /* NewSessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A7 /* NewSessionViewController.swift */; };
+		C00000000000000000000011 /* WorkspaceRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000001 /* WorkspaceRepository.swift */; };
+		C00000000000000000000012 /* SessionPermissionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000002 /* SessionPermissionRepository.swift */; };
+		C00000000000000000000013 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000003 /* SettingsViewModel.swift */; };
+		C00000000000000000000014 /* WorkspaceManagementViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000004 /* WorkspaceManagementViewModel.swift */; };
+		C00000000000000000000015 /* DirectoryPickerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000005 /* DirectoryPickerViewModel.swift */; };
+		C00000000000000000000016 /* SessionPermissionsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000006 /* SessionPermissionsViewModel.swift */; };
+		C00000000000000000000017 /* WorkspaceManagementViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000007 /* WorkspaceManagementViewController.swift */; };
+		C00000000000000000000018 /* DirectoryPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000008 /* DirectoryPickerViewController.swift */; };
+		C00000000000000000000019 /* SessionPermissionsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000009 /* SessionPermissionsViewController.swift */; };
+		C0000000000000000000001A /* PermissionModeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000000A /* PermissionModeRow.swift */; };
+		C0000000000000000000001B /* PermissionModeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000000B /* PermissionModeOptions.swift */; };
+		D00000000000000000000011 /* FilesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* FilesRepository.swift */; };
+		D00000000000000000000012 /* MediaKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* MediaKind.swift */; };
+		D00000000000000000000013 /* FilePathDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* FilePathDisplay.swift */; };
+		D00000000000000000000014 /* FilesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000004 /* FilesViewModel.swift */; };
+		D00000000000000000000015 /* DiffViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000005 /* DiffViewModel.swift */; };
+		D00000000000000000000016 /* FileContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000006 /* FileContentViewModel.swift */; };
+		D00000000000000000000017 /* ChangedFileCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000007 /* ChangedFileCell.swift */; };
+		D00000000000000000000018 /* FileEntryCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000008 /* FileEntryCell.swift */; };
+		D00000000000000000000019 /* FileRootBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000009 /* FileRootBarView.swift */; };
+		D0000000000000000000001A /* DiffViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0000000000000000000000A /* DiffViewController.swift */; };
+		D0000000000000000000001B /* FileContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0000000000000000000000B /* FileContentViewController.swift */; };
+		E00000000000000000000011 /* SplitDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000001 /* SplitDiffView.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
 /* End PBXBuildFile section */
 
@@ -85,6 +108,29 @@
 		AAAA000000000000000000A5 /* ChatMessageCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageCells.swift; sourceTree = "<group>"; };
 		AAAA000000000000000000A6 /* ChatComposerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerViews.swift; sourceTree = "<group>"; };
 		AAAA000000000000000000A7 /* NewSessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionViewController.swift; sourceTree = "<group>"; };
+		C00000000000000000000001 /* WorkspaceRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRepository.swift; sourceTree = "<group>"; };
+		C00000000000000000000002 /* SessionPermissionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPermissionRepository.swift; sourceTree = "<group>"; };
+		C00000000000000000000003 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
+		C00000000000000000000004 /* WorkspaceManagementViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagementViewModel.swift; sourceTree = "<group>"; };
+		C00000000000000000000005 /* DirectoryPickerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryPickerViewModel.swift; sourceTree = "<group>"; };
+		C00000000000000000000006 /* SessionPermissionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPermissionsViewModel.swift; sourceTree = "<group>"; };
+		C00000000000000000000007 /* WorkspaceManagementViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManagementViewController.swift; sourceTree = "<group>"; };
+		C00000000000000000000008 /* DirectoryPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryPickerViewController.swift; sourceTree = "<group>"; };
+		C00000000000000000000009 /* SessionPermissionsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPermissionsViewController.swift; sourceTree = "<group>"; };
+		C0000000000000000000000A /* PermissionModeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionModeRow.swift; sourceTree = "<group>"; };
+		C0000000000000000000000B /* PermissionModeOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionModeOptions.swift; sourceTree = "<group>"; };
+		D00000000000000000000001 /* FilesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesRepository.swift; sourceTree = "<group>"; };
+		D00000000000000000000002 /* MediaKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKind.swift; sourceTree = "<group>"; };
+		D00000000000000000000003 /* FilePathDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePathDisplay.swift; sourceTree = "<group>"; };
+		D00000000000000000000004 /* FilesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesViewModel.swift; sourceTree = "<group>"; };
+		D00000000000000000000005 /* DiffViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffViewModel.swift; sourceTree = "<group>"; };
+		D00000000000000000000006 /* FileContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileContentViewModel.swift; sourceTree = "<group>"; };
+		D00000000000000000000007 /* ChangedFileCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangedFileCell.swift; sourceTree = "<group>"; };
+		D00000000000000000000008 /* FileEntryCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileEntryCell.swift; sourceTree = "<group>"; };
+		D00000000000000000000009 /* FileRootBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileRootBarView.swift; sourceTree = "<group>"; };
+		D0000000000000000000000A /* DiffViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffViewController.swift; sourceTree = "<group>"; };
+		D0000000000000000000000B /* FileContentViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileContentViewController.swift; sourceTree = "<group>"; };
+		E00000000000000000000001 /* SplitDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffView.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -170,6 +216,7 @@
 				AAAA00000000000000000009 /* Sessions */,
 				AAAA00000000000000000053 /* Chat */,
 				AAAA00000000000000000054 /* NewSession */,
+				C00000000000000000000020 /* SessionPermissions */,
 				AAAA0000000000000000000A /* Files */,
 				AAAA0000000000000000000B /* Settings */,
 			);
@@ -188,6 +235,12 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000024 /* FilesViewController.swift */,
+				D00000000000000000000007 /* ChangedFileCell.swift */,
+				D00000000000000000000008 /* FileEntryCell.swift */,
+				D00000000000000000000009 /* FileRootBarView.swift */,
+				D0000000000000000000000A /* DiffViewController.swift */,
+				D0000000000000000000000B /* FileContentViewController.swift */,
+				E00000000000000000000001 /* SplitDiffView.swift */,
 			);
 			path = Files;
 			sourceTree = "<group>";
@@ -196,8 +249,18 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000025 /* SettingsViewController.swift */,
+				C00000000000000000000007 /* WorkspaceManagementViewController.swift */,
+				C00000000000000000000008 /* DirectoryPickerViewController.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000020 /* SessionPermissions */ = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000009 /* SessionPermissionsViewController.swift */,
+			);
+			path = SessionPermissions;
 			sourceTree = "<group>";
 		};
 		AAAA0000000000000000000C /* DesignSystem */ = {
@@ -220,6 +283,7 @@
 				AAAA00000000000000000086 /* RunningDotView.swift */,
 				AAAA00000000000000000087 /* SessionCell.swift */,
 				AAAA000000000000000000A6 /* ChatComposerViews.swift */,
+				C0000000000000000000000A /* PermissionModeRow.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -246,6 +310,9 @@
 				AAAA00000000000000000063 /* ConnectRepository.swift */,
 				AAAA00000000000000000082 /* SessionRepository.swift */,
 				AAAA000000000000000000A2 /* ChatRepository.swift */,
+				C00000000000000000000001 /* WorkspaceRepository.swift */,
+				C00000000000000000000002 /* SessionPermissionRepository.swift */,
+				D00000000000000000000001 /* FilesRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -254,6 +321,9 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000083 /* SessionGroup.swift */,
+				C0000000000000000000000B /* PermissionModeOptions.swift */,
+				D00000000000000000000002 /* MediaKind.swift */,
+				D00000000000000000000003 /* FilePathDisplay.swift */,
 				AAAA00000000000000000052 /* Chat */,
 			);
 			path = Model;
@@ -265,6 +335,13 @@
 				AAAA00000000000000000064 /* ConnectViewModel.swift */,
 				AAAA00000000000000000084 /* SessionListViewModel.swift */,
 				AAAA000000000000000000A3 /* ChatViewModel.swift */,
+				C00000000000000000000003 /* SettingsViewModel.swift */,
+				C00000000000000000000004 /* WorkspaceManagementViewModel.swift */,
+				C00000000000000000000005 /* DirectoryPickerViewModel.swift */,
+				C00000000000000000000006 /* SessionPermissionsViewModel.swift */,
+				D00000000000000000000004 /* FilesViewModel.swift */,
+				D00000000000000000000005 /* DiffViewModel.swift */,
+				D00000000000000000000006 /* FileContentViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -441,6 +518,29 @@
 				AAAA000000000000000000B5 /* ChatMessageCells.swift in Sources */,
 				AAAA000000000000000000B6 /* ChatComposerViews.swift in Sources */,
 				AAAA000000000000000000B7 /* NewSessionViewController.swift in Sources */,
+				C00000000000000000000011 /* WorkspaceRepository.swift in Sources */,
+				C00000000000000000000012 /* SessionPermissionRepository.swift in Sources */,
+				C00000000000000000000013 /* SettingsViewModel.swift in Sources */,
+				C00000000000000000000014 /* WorkspaceManagementViewModel.swift in Sources */,
+				C00000000000000000000015 /* DirectoryPickerViewModel.swift in Sources */,
+				C00000000000000000000016 /* SessionPermissionsViewModel.swift in Sources */,
+				C00000000000000000000017 /* WorkspaceManagementViewController.swift in Sources */,
+				C00000000000000000000018 /* DirectoryPickerViewController.swift in Sources */,
+				C00000000000000000000019 /* SessionPermissionsViewController.swift in Sources */,
+				C0000000000000000000001A /* PermissionModeRow.swift in Sources */,
+				C0000000000000000000001B /* PermissionModeOptions.swift in Sources */,
+				D00000000000000000000011 /* FilesRepository.swift in Sources */,
+				D00000000000000000000012 /* MediaKind.swift in Sources */,
+				D00000000000000000000013 /* FilePathDisplay.swift in Sources */,
+				D00000000000000000000014 /* FilesViewModel.swift in Sources */,
+				D00000000000000000000015 /* DiffViewModel.swift in Sources */,
+				D00000000000000000000016 /* FileContentViewModel.swift in Sources */,
+				D00000000000000000000017 /* ChangedFileCell.swift in Sources */,
+				D00000000000000000000018 /* FileEntryCell.swift in Sources */,
+				D00000000000000000000019 /* FileRootBarView.swift in Sources */,
+				D0000000000000000000001A /* DiffViewController.swift in Sources */,
+				D0000000000000000000001B /* FileContentViewController.swift in Sources */,
+				E00000000000000000000011 /* SplitDiffView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

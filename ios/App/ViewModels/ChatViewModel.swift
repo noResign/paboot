@@ -586,6 +586,12 @@ final class ChatViewModel {
         }
     }
 
+    /// Applied after the permission sheet PATCHes the mode, so the header menu stays in sync
+    /// without sending a second request.
+    func applyPermissionMode(_ mode: String) {
+        state.permissionMode = mode
+    }
+
     func setModel(_ model: String?) {
         state.model = model
 
