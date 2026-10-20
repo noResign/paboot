@@ -295,7 +295,9 @@ final class ChatViewController: UIViewController {
             dataSource.apply(snapshot, animatingDifferences: hasRenderedOnce)
             hasRenderedOnce = true
         } else if let last = ids.last {
-            dataSource.reconfigureItems([last])
+            var snapshot = dataSource.snapshot()
+            snapshot.reconfigureItems([last])
+            dataSource.apply(snapshot, animatingDifferences: false)
         }
 
         if isFollowingBottom {
