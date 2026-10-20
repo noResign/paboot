@@ -13,7 +13,7 @@ final class SessionCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
-        selectionStyle = .none
+        selectionStyle = .default
         backgroundColor = Theme.Colors.surface
 
         titleLabel.font = Typography.cardTitle

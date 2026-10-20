@@ -36,6 +36,14 @@
 		AAAA00000000000000000097 /* SessionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000087 /* SessionCell.swift */; };
 		AAAA00000000000000000098 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000088 /* Formatters.swift */; };
 		AAAA00000000000000000099 /* WorkspaceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000089 /* WorkspaceSelection.swift */; };
+		AAAA000000000000000000B0 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A0 /* ChatModels.swift */; };
+		AAAA000000000000000000B1 /* ChatEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A1 /* ChatEventReducer.swift */; };
+		AAAA000000000000000000B2 /* ChatRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A2 /* ChatRepository.swift */; };
+		AAAA000000000000000000B3 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A3 /* ChatViewModel.swift */; };
+		AAAA000000000000000000B4 /* ChatViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A4 /* ChatViewController.swift */; };
+		AAAA000000000000000000B5 /* ChatMessageCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A5 /* ChatMessageCells.swift */; };
+		AAAA000000000000000000B6 /* ChatComposerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A6 /* ChatComposerViews.swift */; };
+		AAAA000000000000000000B7 /* NewSessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA000000000000000000A7 /* NewSessionViewController.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
 /* End PBXBuildFile section */
 
@@ -69,6 +77,14 @@
 		AAAA00000000000000000087 /* SessionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCell.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000088 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000089 /* WorkspaceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSelection.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A0 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A1 /* ChatEventReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatEventReducer.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A2 /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A3 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A4 /* ChatViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewController.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A5 /* ChatMessageCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageCells.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A6 /* ChatComposerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerViews.swift; sourceTree = "<group>"; };
+		AAAA000000000000000000A7 /* NewSessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionViewController.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -152,6 +168,8 @@
 			children = (
 				AAAA00000000000000000051 /* Connect */,
 				AAAA00000000000000000009 /* Sessions */,
+				AAAA00000000000000000053 /* Chat */,
+				AAAA00000000000000000054 /* NewSession */,
 				AAAA0000000000000000000A /* Files */,
 				AAAA0000000000000000000B /* Settings */,
 			);
@@ -201,6 +219,7 @@
 				AAAA00000000000000000085 /* AgentBadgeView.swift */,
 				AAAA00000000000000000086 /* RunningDotView.swift */,
 				AAAA00000000000000000087 /* SessionCell.swift */,
+				AAAA000000000000000000A6 /* ChatComposerViews.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -226,6 +245,7 @@
 			children = (
 				AAAA00000000000000000063 /* ConnectRepository.swift */,
 				AAAA00000000000000000082 /* SessionRepository.swift */,
+				AAAA000000000000000000A2 /* ChatRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -234,6 +254,7 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000083 /* SessionGroup.swift */,
+				AAAA00000000000000000052 /* Chat */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -243,6 +264,7 @@
 			children = (
 				AAAA00000000000000000064 /* ConnectViewModel.swift */,
 				AAAA00000000000000000084 /* SessionListViewModel.swift */,
+				AAAA000000000000000000A3 /* ChatViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -280,6 +302,32 @@
 				AAAA00000000000000000065 /* ConnectViewController.swift */,
 			);
 			path = Connect;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000052 /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA000000000000000000A0 /* ChatModels.swift */,
+				AAAA000000000000000000A1 /* ChatEventReducer.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000053 /* Chat */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA000000000000000000A4 /* ChatViewController.swift */,
+				AAAA000000000000000000A5 /* ChatMessageCells.swift */,
+			);
+			path = Chat;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000054 /* NewSession */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA000000000000000000A7 /* NewSessionViewController.swift */,
+			);
+			path = NewSession;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -385,6 +433,14 @@
 				AAAA00000000000000000097 /* SessionCell.swift in Sources */,
 				AAAA00000000000000000098 /* Formatters.swift in Sources */,
 				AAAA00000000000000000099 /* WorkspaceSelection.swift in Sources */,
+				AAAA000000000000000000B0 /* ChatModels.swift in Sources */,
+				AAAA000000000000000000B1 /* ChatEventReducer.swift in Sources */,
+				AAAA000000000000000000B2 /* ChatRepository.swift in Sources */,
+				AAAA000000000000000000B3 /* ChatViewModel.swift in Sources */,
+				AAAA000000000000000000B4 /* ChatViewController.swift in Sources */,
+				AAAA000000000000000000B5 /* ChatMessageCells.swift in Sources */,
+				AAAA000000000000000000B6 /* ChatComposerViews.swift in Sources */,
+				AAAA000000000000000000B7 /* NewSessionViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

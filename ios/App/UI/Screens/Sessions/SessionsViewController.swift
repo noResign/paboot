@@ -22,6 +22,7 @@ final class SessionsViewController: UIViewController {
 
     private let titleLabel = UILabel()
     private let pathLabel = UILabel()
+    private let newSessionButton = UIButton(type: .system)
 
     private var dataSource: UITableViewDiffableDataSource<String, String>!
     private var sections: [SessionSectionModel] = []
@@ -42,6 +43,7 @@ final class SessionsViewController: UIViewController {
         configureTable()
         configureRefreshIndicator()
         configureStateContainer()
+        configureNewSessionButton()
         configureDataSource()
         bind()
     }
@@ -147,6 +149,63 @@ final class SessionsViewController: UIViewController {
             loadingStack.centerXAnchor.constraint(equalTo: stateContainer.centerXAnchor),
             loadingStack.centerYAnchor.constraint(equalTo: stateContainer.centerYAnchor),
         ])
+    }
+
+    private func configureNewSessionButton() {
+        var configuration = UIButton.Configuration.filled()
+        configuration.image = UIImage(
+            systemName: "plus",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        )
+        configuration.baseBackgroundColor = Theme.Colors.primary
+        configuration.baseForegroundColor = Theme.Colors.onPrimary
+        configuration.cornerStyle = .capsule
+
+        newSessionButton.configuration = configuration
+        newSessionButton.translatesAutoresizingMaskIntoConstraints = false
+        newSessionButton.layer.shadowColor = UIColor.black.cgColor
+        newSessionButton.layer.shadowOpacity = 0.18
+        newSessionButton.layer.shadowRadius = 8
+        newSessionButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        newSessionButton.accessibilityLabel = "新建会话"
+        newSessionButton.addAction(
+            UIAction { [weak self] _ in self?.presentNewSession() },
+            for: .touchUpInside
+        )
+
+        view.addSubview(newSessionButton)
+        NSLayoutConstraint.activate([
+            newSessionButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Spacing.lg),
+            newSessionButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -Spacing.lg),
+            newSessionButton.widthAnchor.constraint(equalToConstant: 56),
+            newSessionButton.heightAnchor.constraint(equalToConstant: 56),
+        ])
+    }
+
+    private func presentNewSession() {
+        let sheet = NewSessionViewController()
+        sheet.onStart = { [weak self] workspace, agent, mode in
+            guard let self else { return }
+            self.dismiss(animated: true) {
+                WorkspaceSelection.shared.select(id: workspace.id, path: workspace.path)
+                let viewModel = ChatViewModel(
+                    sessionId: nil,
+                    workspaceId: workspace.id,
+                    runtime: agent.id,
+                    permissionMode: mode
+                )
+                let chat = ChatViewController(viewModel: viewModel)
+                self.navigationController?.pushViewController(chat, animated: true)
+            }
+        }
+
+        let navigation = UINavigationController(rootViewController: sheet)
+        navigation.modalPresentationStyle = .pageSheet
+        if let presentation = navigation.sheetPresentationController {
+            presentation.detents = [.medium(), .large()]
+            presentation.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
     }
 
     private func configureDataSource() {
@@ -457,6 +516,23 @@ final class SessionsViewController: UIViewController {
 }
 
 extension SessionsViewController: UITableViewDelegate {
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+
+        guard let id = dataSource.itemIdentifier(for: indexPath),
+              let session = sessionsByID[id] else {
+            return
+        }
+
+        let viewModel = ChatViewModel(
+            sessionId: session.id,
+            runtime: session.runtime,
+            title: session.title
+        )
+        let chat = ChatViewController(viewModel: viewModel)
+        navigationController?.pushViewController(chat, animated: true)
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard scrollView === tableView, !isRefreshing, scrollView.isDragging else { return }
 
