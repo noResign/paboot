@@ -42,6 +42,8 @@ public enum SplitDiff {
     private static let hunkRegex = try? NSRegularExpression(pattern: hunkPattern)
 
     public static func parse(_ patch: String) -> [Row] {
+        guard !patch.isEmpty else { return [] }
+
         var rows: [Row] = []
         var oldLine = 0
         var newLine = 0
