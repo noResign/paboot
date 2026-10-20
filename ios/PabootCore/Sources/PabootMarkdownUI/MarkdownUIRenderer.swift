@@ -129,7 +129,7 @@ private final class MarkdownDocumentView: UIView {
             )
         }
 
-        if !markup.children.isEmpty {
+        if markup.childCount > 0 {
             let content = MarkdownDocumentView(style: style)
             content.render(Array(markup.children))
             return wrapped(content, indent: indent)
