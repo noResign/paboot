@@ -35,6 +35,7 @@
 		AAAA00000000000000000096 /* RunningDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000086 /* RunningDotView.swift */; };
 		AAAA00000000000000000097 /* SessionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000087 /* SessionCell.swift */; };
 		AAAA00000000000000000098 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000088 /* Formatters.swift */; };
+		AAAA00000000000000000099 /* WorkspaceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000089 /* WorkspaceSelection.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
 /* End PBXBuildFile section */
 
@@ -67,6 +68,7 @@
 		AAAA00000000000000000086 /* RunningDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningDotView.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000087 /* SessionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCell.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000088 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000089 /* WorkspaceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSelection.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -267,6 +269,7 @@
 				AAAA00000000000000000061 /* SavedConnection.swift */,
 				AAAA00000000000000000062 /* ConnectionStore.swift */,
 				AAAA00000000000000000081 /* DaemonSession.swift */,
+				AAAA00000000000000000089 /* WorkspaceSelection.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -381,6 +384,7 @@
 				AAAA00000000000000000096 /* RunningDotView.swift in Sources */,
 				AAAA00000000000000000097 /* SessionCell.swift in Sources */,
 				AAAA00000000000000000098 /* Formatters.swift in Sources */,
+				AAAA00000000000000000099 /* WorkspaceSelection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

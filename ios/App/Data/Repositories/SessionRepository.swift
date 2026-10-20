@@ -2,9 +2,9 @@ import Foundation
 import PabootClient
 import PabootProtocol
 
-struct SessionListSnapshot {
+struct WorkspaceSnapshot {
     let workspaces: [WorkspaceDto]
-    let sessions: [SessionDto]
+    let defaultWorkspaceId: String?
 }
 
 enum SessionRepositoryError: Error, Equatable {
@@ -34,18 +34,29 @@ final class SessionRepository {
         self.session = session
     }
 
-    func load() async throws -> SessionListSnapshot {
+    func loadWorkspaces() async throws -> WorkspaceSnapshot {
         let client = try clientOrThrow()
 
         do {
             async let workspacesRequest = client.api.workspaces()
-            async let sessionsRequest = client.api.sessions()
+            async let configRequest = client.api.config()
             let workspaces = try await workspacesRequest
-            let sessions = try await sessionsRequest
-            return SessionListSnapshot(
+            let config = try await configRequest
+            return WorkspaceSnapshot(
                 workspaces: workspaces.workspaces,
-                sessions: sessions.sessions
+                defaultWorkspaceId: config.defaultWorkspaceId
             )
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func loadSessions(workspaceId: String?) async throws -> [SessionDto] {
+        let client = try clientOrThrow()
+
+        do {
+            let response = try await client.api.sessions(workspaceId: workspaceId)
+            return response.sessions
         } catch {
             throw map(error)
         }

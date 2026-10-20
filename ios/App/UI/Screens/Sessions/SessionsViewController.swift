@@ -2,32 +2,45 @@ import Combine
 import PabootProtocol
 import UIKit
 
-/// Session list grouped by workspace. Root screen of the 会话 tab.
+/// Session list for the selected workspace: root cwd flat, subdirectory cwds grouped.
 final class SessionsViewController: UIViewController {
     private lazy var viewModel = SessionListViewModel()
     private var cancellables = Set<AnyCancellable>()
 
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let refreshControl = UIRefreshControl()
+    private let tableView = UITableView(frame: .zero, style: .plain)
+    private let refreshIndicatorContainer = UIView()
+    private let refreshSpinner = UIActivityIndicatorView(style: .medium)
+    private let refreshThreshold: CGFloat = 60
+    private let refreshMaxHold: CGFloat = 96
+    private let minimumRefreshDuration: TimeInterval = 0.35
+    private var isRefreshing = false
     private let stateContainer = UIView()
     private let loadingSpinner = UIActivityIndicatorView(style: .medium)
     private let loadingLabel = UILabel()
     private lazy var loadingStack = UIStackView(arrangedSubviews: [loadingSpinner, loadingLabel])
     private var emptyStateView: EmptyStateView?
 
+    private let titleLabel = UILabel()
+    private let pathLabel = UILabel()
+
     private var dataSource: UITableViewDiffableDataSource<String, String>!
-    private var groupsByID: [String: SessionGroup] = [:]
+    private var sections: [SessionSectionModel] = []
+    private var currentModel = SessionListModel()
     private var sessionsByID: [String: SessionDto] = [:]
+    private var expandedSections: Set<String> = []
+    private var lastWorkspaceID: String?
+    private var workspaceMenuSignature: String?
 
     private var hasLoaded = false
     private var hasRenderedOnce = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "会话"
         view.backgroundColor = Theme.Colors.background
 
+        configureNavigationTitle()
         configureTable()
+        configureRefreshIndicator()
         configureStateContainer()
         configureDataSource()
         bind()
@@ -44,6 +57,27 @@ final class SessionsViewController: UIViewController {
         }
     }
 
+    private func configureNavigationTitle() {
+        titleLabel.text = "会话"
+        titleLabel.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.textColor = Theme.Colors.textPrimary
+        titleLabel.textAlignment = .center
+
+        pathLabel.font = Typography.caption
+        pathLabel.textColor = Theme.Colors.textSecondary
+        pathLabel.textAlignment = .center
+        pathLabel.lineBreakMode = .byTruncatingMiddle
+        pathLabel.numberOfLines = 1
+        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        pathLabel.isHidden = true
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, pathLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 0
+        navigationItem.titleView = stack
+    }
+
     private func configureTable() {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = Theme.Colors.background
@@ -55,10 +89,9 @@ final class SessionsViewController: UIViewController {
         tableView.delegate = self
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 72
-
-        refreshControl.tintColor = Theme.Colors.textSecondary
-        refreshControl.addTarget(self, action: #selector(refreshPulled), for: .valueChanged)
-        tableView.refreshControl = refreshControl
+        tableView.separatorInset = UIEdgeInsets(top: 0, left: Spacing.md, bottom: 0, right: 0)
+        tableView.tableFooterView = UIView()
+        tableView.alwaysBounceVertical = true
 
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
@@ -66,6 +99,27 @@ final class SessionsViewController: UIViewController {
             tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
+    private func configureRefreshIndicator() {
+        refreshIndicatorContainer.translatesAutoresizingMaskIntoConstraints = false
+        refreshIndicatorContainer.isHidden = true
+        refreshIndicatorContainer.isUserInteractionEnabled = false
+
+        refreshSpinner.translatesAutoresizingMaskIntoConstraints = false
+        refreshSpinner.color = Theme.Colors.textSecondary
+        refreshIndicatorContainer.addSubview(refreshSpinner)
+        view.addSubview(refreshIndicatorContainer)
+
+        NSLayoutConstraint.activate([
+            refreshIndicatorContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            refreshIndicatorContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            refreshIndicatorContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            refreshIndicatorContainer.heightAnchor.constraint(equalToConstant: 48),
+
+            refreshSpinner.centerXAnchor.constraint(equalTo: refreshIndicatorContainer.centerXAnchor),
+            refreshSpinner.centerYAnchor.constraint(equalTo: refreshIndicatorContainer.centerYAnchor),
         ])
     }
 
@@ -120,7 +174,20 @@ final class SessionsViewController: UIViewController {
     }
 
     private func render(_ state: SessionListViewModel.State) {
-        if state.groups.isEmpty {
+        if lastWorkspaceID != state.selectedWorkspaceID {
+            lastWorkspaceID = state.selectedWorkspaceID
+            expandedSections.removeAll()
+            tableView.setContentOffset(
+                CGPoint(x: 0, y: -tableView.adjustedContentInset.top),
+                animated: false
+            )
+        }
+
+        pathLabel.text = state.selectedWorkspacePath
+        pathLabel.isHidden = state.selectedWorkspacePath == nil
+        updateWorkspaceMenu(state)
+
+        if state.model.isEmpty {
             tableView.isHidden = true
             stateContainer.isHidden = false
 
@@ -154,7 +221,7 @@ final class SessionsViewController: UIViewController {
             loadingSpinner.stopAnimating()
             stateContainer.isHidden = true
             tableView.isHidden = false
-            apply(state.groups)
+            apply(model: state.model)
         }
 
         if let actionError = state.actionError {
@@ -163,20 +230,117 @@ final class SessionsViewController: UIViewController {
         }
     }
 
-    private func apply(_ groups: [SessionGroup]) {
-        groupsByID = Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    private func buildSections(_ model: SessionListModel) -> [SessionSectionModel] {
+        var result: [SessionSectionModel] = []
+
+        if !model.rootSessions.isEmpty {
+            result.append(
+                SessionSectionModel(
+                    id: "root",
+                    title: nil,
+                    count: model.rootSessions.count,
+                    sessions: model.rootSessions,
+                    collapsible: false,
+                    iconName: nil,
+                    isExpanded: true
+                )
+            )
+        }
+
+        if !model.olderRootSessions.isEmpty {
+            let id = "older"
+            result.append(
+                SessionSectionModel(
+                    id: id,
+                    title: "更早",
+                    count: model.olderRootSessions.count,
+                    sessions: model.olderRootSessions,
+                    collapsible: true,
+                    iconName: "clock.arrow.circlepath",
+                    isExpanded: expandedSections.contains(id)
+                )
+            )
+        }
+
+        for group in model.subGroups {
+            let id = "cwd:\(group.cwd)"
+            result.append(
+                SessionSectionModel(
+                    id: id,
+                    title: group.title,
+                    count: group.sessions.count,
+                    sessions: group.sessions,
+                    collapsible: true,
+                    iconName: "folder",
+                    isExpanded: expandedSections.contains(id)
+                )
+            )
+        }
+
+        return result
+    }
+
+    private func apply(model: SessionListModel, animated: Bool = true) {
+        currentModel = model
+        sections = buildSections(model)
         sessionsByID = Dictionary(
-            groups.flatMap { $0.sessions }.map { ($0.id, $0) },
+            sections.flatMap { $0.sessions }.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
         var snapshot = NSDiffableDataSourceSnapshot<String, String>()
-        for group in groups {
-            snapshot.appendSections([group.id])
-            snapshot.appendItems(group.sessions.map(\.id), toSection: group.id)
+        for section in sections {
+            snapshot.appendSections([section.id])
+            if section.isExpanded {
+                snapshot.appendItems(section.sessions.map(\.id), toSection: section.id)
+            }
         }
-        dataSource.apply(snapshot, animatingDifferences: hasRenderedOnce)
+        dataSource.apply(snapshot, animatingDifferences: animated && hasRenderedOnce)
         hasRenderedOnce = true
+    }
+
+    private func toggleSection(_ id: String) {
+        if expandedSections.contains(id) {
+            expandedSections.remove(id)
+        } else {
+            expandedSections.insert(id)
+        }
+        apply(model: currentModel, animated: false)
+        // The diffable data source does not reload header views for a pure expand/collapse;
+        // reload so the chevron and sticky header reflect the new state.
+        tableView.reloadData()
+    }
+
+    private func updateWorkspaceMenu(_ state: SessionListViewModel.State) {
+        let signature = state.workspaces.map(\.id).joined(separator: ",")
+            + "|" + (state.selectedWorkspaceID ?? "")
+        guard signature != workspaceMenuSignature else { return }
+        workspaceMenuSignature = signature
+
+        let actions = state.workspaces.map { workspace in
+            let name = workspace.name.isEmpty ? workspace.path : workspace.name
+            return UIAction(
+                title: "\(name) — \(workspace.path)",
+                state: workspace.id == state.selectedWorkspaceID ? .on : .off
+            ) { [weak self] _ in
+                Task { await self?.viewModel.selectWorkspace(workspace) }
+            }
+        }
+
+        let menu = UIMenu(
+            title: "切换工作区",
+            children: actions.isEmpty
+                ? [UIAction(title: "暂无工作区", attributes: .disabled) { _ in }]
+                : actions
+        )
+        let item = UIBarButtonItem(
+            title: nil,
+            image: UIImage(systemName: "folder"),
+            primaryAction: nil,
+            menu: menu
+        )
+        item.accessibilityLabel = "切换工作区"
+        navigationItem.rightBarButtonItem = item
     }
 
     private func showLoading() {
@@ -215,11 +379,44 @@ final class SessionsViewController: UIViewController {
         emptyStateView = empty
     }
 
-    @objc private func refreshPulled() {
+    /// Keeps the page pulled down for the whole request, instead of letting the system
+    /// refresh control snap back on release.
+    private func beginRefresh(hold: CGFloat) {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+
+        refreshIndicatorContainer.isHidden = false
+        refreshSpinner.alpha = 1
+        refreshSpinner.startAnimating()
+
+        tableView.contentInset.top = hold
+        tableView.setContentOffset(CGPoint(x: 0, y: -hold), animated: true)
+
         Task {
+            let started = Date()
             await viewModel.load(showLoading: false)
-            refreshControl.endRefreshing()
+
+            let elapsed = Date().timeIntervalSince(started)
+            if elapsed < minimumRefreshDuration {
+                let remaining = UInt64((minimumRefreshDuration - elapsed) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: remaining)
+            }
+
+            endRefresh()
         }
+    }
+
+    private func endRefresh() {
+        guard isRefreshing else { return }
+        isRefreshing = false
+
+        refreshSpinner.stopAnimating()
+        tableView.contentInset.top = 0
+        tableView.setContentOffset(
+            CGPoint(x: 0, y: -tableView.adjustedContentInset.top),
+            animated: true
+        )
+        refreshIndicatorContainer.isHidden = true
     }
 
     private func presentRename(for session: SessionDto) {
@@ -238,10 +435,10 @@ final class SessionsViewController: UIViewController {
     }
 
     private func confirmDelete(_ session: SessionDto) {
-        let title = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? "未命名会话"
+        let name = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? "未命名会话"
         let alert = UIAlertController(
             title: "删除会话？",
-            message: "「\(title)」及其运行记录会被删除。",
+            message: "「\(name)」及其运行记录会被删除。",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -260,19 +457,64 @@ final class SessionsViewController: UIViewController {
 }
 
 extension SessionsViewController: UITableViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === tableView, !isRefreshing, scrollView.isDragging else { return }
+
+        let pull = -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+        guard pull > 0 else {
+            refreshIndicatorContainer.isHidden = true
+            refreshSpinner.stopAnimating()
+            return
+        }
+
+        refreshIndicatorContainer.isHidden = false
+        let progress = min(max(pull / refreshThreshold, 0), 1)
+        refreshSpinner.alpha = progress
+        if progress >= 1 {
+            refreshSpinner.startAnimating()
+        } else {
+            refreshSpinner.stopAnimating()
+        }
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === tableView, !isRefreshing else { return }
+
+        let pull = -(scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+        guard pull >= refreshThreshold else {
+            refreshIndicatorContainer.isHidden = true
+            refreshSpinner.stopAnimating()
+            return
+        }
+
+        beginRefresh(hold: min(pull, refreshMaxHold))
+    }
+
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard section < sections.count, let title = sections[section].title else {
+            return nil
+        }
+        let model = sections[section]
+
         let header = tableView.dequeueReusableHeaderFooterView(
             withIdentifier: SessionSectionHeader.reuseIdentifier
         ) as! SessionSectionHeader
-
-        if let id = dataSource.sectionIdentifier(for: section), let group = groupsByID[id] {
-            header.configure(group: group)
+        header.configure(
+            title: title,
+            count: model.count,
+            expanded: model.isExpanded,
+            collapsible: model.collapsible,
+            iconName: model.iconName
+        )
+        header.onTap = { [weak self] in
+            self?.toggleSection(model.id)
         }
         return header
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        32
+        guard section < sections.count, sections[section].title != nil else { return 0 }
+        return 40
     }
 
     func tableView(
@@ -299,26 +541,70 @@ extension SessionsViewController: UITableViewDelegate {
     }
 }
 
+private struct SessionSectionModel {
+    let id: String
+    let title: String?
+    let count: Int
+    let sessions: [SessionDto]
+    let collapsible: Bool
+    let iconName: String?
+    let isExpanded: Bool
+}
+
 private final class SessionSectionHeader: UITableViewHeaderFooterView {
     static let reuseIdentifier = "SessionSectionHeader"
 
-    private let label = UILabel()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let countLabel = UILabel()
+    private let chevron = UIImageView()
+    var onTap: (() -> Void)?
 
     override init(reuseIdentifier: String?) {
         super.init(reuseIdentifier: reuseIdentifier)
 
-        label.font = Typography.caption
-        label.textColor = Theme.Colors.textSecondary
-        label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingMiddle
-        label.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(label)
+        backgroundColor = Theme.Colors.background
+        contentView.backgroundColor = Theme.Colors.background
+
+        iconView.tintColor = Theme.Colors.textSecondary
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = Typography.caption
+        titleLabel.textColor = Theme.Colors.textSecondary
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+
+        countLabel.font = Typography.caption
+        countLabel.textColor = Theme.Colors.textMuted
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        chevron.tintColor = Theme.Colors.textMuted
+        chevron.contentMode = .scaleAspectFit
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, countLabel, spacer, chevron])
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Spacing.lg),
-            label.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.lg),
-            label.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 14),
+            iconView.heightAnchor.constraint(equalToConstant: 14),
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+            chevron.heightAnchor.constraint(equalToConstant: 12),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Spacing.lg),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.lg),
+            stack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
         ])
+
+        contentView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        )
     }
 
     @available(*, unavailable)
@@ -326,9 +612,23 @@ private final class SessionSectionHeader: UITableViewHeaderFooterView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(group: SessionGroup) {
-        label.text = group.subtitle.isEmpty
-            ? group.title
-            : "\(group.title) · \(group.subtitle)"
+    func configure(
+        title: String,
+        count: Int,
+        expanded: Bool,
+        collapsible: Bool,
+        iconName: String?
+    ) {
+        iconView.image = iconName.flatMap { UIImage(systemName: $0) }
+        iconView.isHidden = iconName == nil
+        titleLabel.text = title
+        countLabel.text = "\(count)"
+        chevron.image = UIImage(systemName: expanded ? "chevron.down" : "chevron.right")
+        chevron.isHidden = !collapsible
+        isUserInteractionEnabled = collapsible
+    }
+
+    @objc private func handleTap() {
+        onTap?()
     }
 }
