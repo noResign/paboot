@@ -1,8 +1,14 @@
 import UIKit
 
-/// Shared empty/placeholder state: icon, title, optional explanation.
+/// Shared empty/placeholder state: icon, title, optional explanation and action.
 final class EmptyStateView: UIView {
-    init(symbolName: String, title: String, message: String? = nil) {
+    init(
+        symbolName: String,
+        title: String,
+        message: String? = nil,
+        actionTitle: String? = nil,
+        onAction: (() -> Void)? = nil
+    ) {
         super.init(frame: .zero)
 
         let iconView = UIImageView(
@@ -36,6 +42,18 @@ final class EmptyStateView: UIView {
             messageLabel.textAlignment = .center
             messageLabel.numberOfLines = 0
             stack.addArrangedSubview(messageLabel)
+        }
+
+        if let actionTitle, let onAction {
+            var configuration = UIButton.Configuration.tinted()
+            configuration.title = actionTitle
+            configuration.baseForegroundColor = Theme.Colors.primary
+            configuration.baseBackgroundColor = Theme.Colors.primary
+            configuration.cornerStyle = .medium
+
+            let button = UIButton(configuration: configuration)
+            button.addAction(UIAction { _ in onAction() }, for: .touchUpInside)
+            stack.addArrangedSubview(button)
         }
 
         NSLayoutConstraint.activate([

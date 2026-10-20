@@ -87,6 +87,11 @@ final class ConnectViewModel {
                     return
                 }
 
+                guard DaemonSession.shared.activate(connection) != nil else {
+                    state.error = "连接已保存，但无法读取 token，请重试"
+                    return
+                }
+
                 state.saved = store.savedConnections
                 onConnected?(connection)
             } catch {

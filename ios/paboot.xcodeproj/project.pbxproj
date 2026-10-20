@@ -26,6 +26,15 @@
 		AAAA00000000000000000074 /* ConnectViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000064 /* ConnectViewModel.swift */; };
 		AAAA00000000000000000075 /* ConnectViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000065 /* ConnectViewController.swift */; };
 		AAAA00000000000000000076 /* FormField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000066 /* FormField.swift */; };
+		AAAA00000000000000000090 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000080 /* AppRouter.swift */; };
+		AAAA00000000000000000091 /* DaemonSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000081 /* DaemonSession.swift */; };
+		AAAA00000000000000000092 /* SessionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000082 /* SessionRepository.swift */; };
+		AAAA00000000000000000093 /* SessionGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000083 /* SessionGroup.swift */; };
+		AAAA00000000000000000094 /* SessionListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000084 /* SessionListViewModel.swift */; };
+		AAAA00000000000000000095 /* AgentBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000085 /* AgentBadgeView.swift */; };
+		AAAA00000000000000000096 /* RunningDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000086 /* RunningDotView.swift */; };
+		AAAA00000000000000000097 /* SessionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000087 /* SessionCell.swift */; };
+		AAAA00000000000000000098 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000088 /* Formatters.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
 /* End PBXBuildFile section */
 
@@ -49,6 +58,15 @@
 		AAAA00000000000000000064 /* ConnectViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectViewModel.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000065 /* ConnectViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectViewController.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000066 /* FormField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormField.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000080 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000081 /* DaemonSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonSession.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000082 /* SessionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRepository.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000083 /* SessionGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionGroup.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000084 /* SessionListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListViewModel.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000085 /* AgentBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBadgeView.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000086 /* RunningDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningDotView.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000087 /* SessionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCell.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000088 /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -104,6 +122,7 @@
 			children = (
 				AAAA00000000000000000020 /* AppDelegate.swift */,
 				AAAA00000000000000000021 /* SceneDelegate.swift */,
+				AAAA00000000000000000080 /* AppRouter.swift */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -177,6 +196,9 @@
 			children = (
 				AAAA0000000000000000002A /* EmptyStateView.swift */,
 				AAAA00000000000000000066 /* FormField.swift */,
+				AAAA00000000000000000085 /* AgentBadgeView.swift */,
+				AAAA00000000000000000086 /* RunningDotView.swift */,
+				AAAA00000000000000000087 /* SessionCell.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -201,6 +223,7 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000063 /* ConnectRepository.swift */,
+				AAAA00000000000000000082 /* SessionRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -208,6 +231,7 @@
 		AAAA00000000000000000042 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				AAAA00000000000000000083 /* SessionGroup.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -216,6 +240,7 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000064 /* ConnectViewModel.swift */,
+				AAAA00000000000000000084 /* SessionListViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -230,6 +255,7 @@
 		AAAA00000000000000000045 /* Util */ = {
 			isa = PBXGroup;
 			children = (
+				AAAA00000000000000000088 /* Formatters.swift */,
 			);
 			path = Util;
 			sourceTree = "<group>";
@@ -240,6 +266,7 @@
 				AAAA00000000000000000060 /* KeychainStore.swift */,
 				AAAA00000000000000000061 /* SavedConnection.swift */,
 				AAAA00000000000000000062 /* ConnectionStore.swift */,
+				AAAA00000000000000000081 /* DaemonSession.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -345,6 +372,15 @@
 				AAAA00000000000000000074 /* ConnectViewModel.swift in Sources */,
 				AAAA00000000000000000075 /* ConnectViewController.swift in Sources */,
 				AAAA00000000000000000076 /* FormField.swift in Sources */,
+				AAAA00000000000000000090 /* AppRouter.swift in Sources */,
+				AAAA00000000000000000091 /* DaemonSession.swift in Sources */,
+				AAAA00000000000000000092 /* SessionRepository.swift in Sources */,
+				AAAA00000000000000000093 /* SessionGroup.swift in Sources */,
+				AAAA00000000000000000094 /* SessionListViewModel.swift in Sources */,
+				AAAA00000000000000000095 /* AgentBadgeView.swift in Sources */,
+				AAAA00000000000000000096 /* RunningDotView.swift in Sources */,
+				AAAA00000000000000000097 /* SessionCell.swift in Sources */,
+				AAAA00000000000000000098 /* Formatters.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
