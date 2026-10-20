@@ -23,7 +23,19 @@ jobs:
             -project paboot.xcodeproj \
             -scheme paboot \
             -destination 'generic/platform=iOS Simulator' \
-            build CODE_SIGNING_ALLOWED=NO
+            build CODE_SIGNING_ALLOWED=NO 2>&1 | tee /tmp/xcodebuild.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Job logs are not downloadable without admin on this public repo, so
+            # surface compiler errors as check-run annotations.
+            errors=$(grep -E "error:" /tmp/xcodebuild.log | head -30 || true)
+            if [ -n "$errors" ]; then
+              while IFS= read -r line; do
+                echo "::error title=Xcode build error::$line"
+              done <<< "$errors"
+            fi
+          fi
+          exit "$status"
 
   core:
     runs-on: ubuntu-latest
