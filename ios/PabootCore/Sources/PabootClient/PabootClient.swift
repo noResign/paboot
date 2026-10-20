@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Foundation
 import PabootProtocol
 
@@ -19,12 +20,17 @@ public struct DaemonLocation: Sendable, Equatable {
 
 /// Entry point for the daemon protocol.
 ///
-/// Transport and endpoints are filled in during P1. Keeping this type in the shell proves
-/// the app → package boundary and gives ViewModels a single dependency to take.
+/// The app takes one `PabootClient` and reaches everything through it:
+/// `api` for REST, `stream` for SSE. The transport never logs the token.
 public final class PabootClient {
     public let location: DaemonLocation
+    public let api: PabootAPI
+    public let stream: PabootStream
 
     public init(location: DaemonLocation) {
         self.location = location
+        self.api = PabootAPI(location: location)
+        self.stream = PabootStream(location: location)
     }
 }
+#endif

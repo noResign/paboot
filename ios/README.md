@@ -2,14 +2,14 @@
 
 iOS 客户端**骨架已搭好，业务未实现**（2026-10-19）。整体定位见[根 README](../README.md)。
 
-## 当前状态（P0）
+## 当前状态（P0–P1）
 
 - `paboot.xcodeproj`：App target + 共享 scheme `paboot`，最低 iOS 17，纯代码 UIKit。
-- `PabootCore/`：本地 SwiftPM 包，两个模块——`PabootProtocol`（纯 Foundation：DTO / SSE 类型 /
-  URL 归一化，可在无 UIKit 环境编译）与 `PabootClient`（传输层入口）。
-- `App/`：应用入口、三个 Tab（会话 / 文件 / 设置）与空态、设计 token（颜色进 Asset Catalog，
-  字号走 Dynamic Type）。
-- 业务页面、网络请求、连接流程都还没填。
+- `PabootCore/`：本地 SwiftPM 包，两个模块——`PabootProtocol`（纯 Foundation：DTO / 事件判别 /
+  SSE 解析 / 重连策略 / URL 归一化）与 `PabootClient`（`URLSession` + 手写 SSE 的传输层）。
+- `App/`：应用入口、设计 token、连接页（地址 + token → health + sessions 校验，Keychain 保存
+  token，支持最近 5 个连接），连接成功后进入三个 Tab（会话 / 文件 / 设置）。
+- 会话列表、聊天、文件等业务页面仍是占位；传输层已备好 `PabootClient.api` / `.stream`。
 
 ## 快速开始
 

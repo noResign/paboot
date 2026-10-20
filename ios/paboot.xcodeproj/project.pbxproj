@@ -19,6 +19,13 @@
 		AAAA00000000000000000039 /* RuntimeIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000029 /* RuntimeIdentity.swift */; };
 		AAAA0000000000000000003A /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000002A /* EmptyStateView.swift */; };
 		AAAA0000000000000000003B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AAAA0000000000000000002B /* Assets.xcassets */; };
+		AAAA00000000000000000070 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000060 /* KeychainStore.swift */; };
+		AAAA00000000000000000071 /* SavedConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000061 /* SavedConnection.swift */; };
+		AAAA00000000000000000072 /* ConnectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000062 /* ConnectionStore.swift */; };
+		AAAA00000000000000000073 /* ConnectRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000063 /* ConnectRepository.swift */; };
+		AAAA00000000000000000074 /* ConnectViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000064 /* ConnectViewModel.swift */; };
+		AAAA00000000000000000075 /* ConnectViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000065 /* ConnectViewController.swift */; };
+		AAAA00000000000000000076 /* FormField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000066 /* FormField.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
 /* End PBXBuildFile section */
 
@@ -35,6 +42,13 @@
 		AAAA00000000000000000028 /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spacing.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000029 /* RuntimeIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeIdentity.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002A /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000060 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000061 /* SavedConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedConnection.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000062 /* ConnectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStore.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000063 /* ConnectRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectRepository.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000064 /* ConnectViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectViewModel.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000065 /* ConnectViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectViewController.swift; sourceTree = "<group>"; };
+		AAAA00000000000000000066 /* FormField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormField.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -72,6 +86,7 @@
 			children = (
 				AAAA00000000000000000005 /* Application */,
 				AAAA00000000000000000006 /* Navigation */,
+				AAAA00000000000000000050 /* Storage */,
 				AAAA00000000000000000007 /* UI */,
 				AAAA00000000000000000040 /* Data */,
 				AAAA00000000000000000042 /* Model */,
@@ -114,6 +129,7 @@
 		AAAA00000000000000000008 /* Screens */ = {
 			isa = PBXGroup;
 			children = (
+				AAAA00000000000000000051 /* Connect */,
 				AAAA00000000000000000009 /* Sessions */,
 				AAAA0000000000000000000A /* Files */,
 				AAAA0000000000000000000B /* Settings */,
@@ -160,6 +176,7 @@
 			isa = PBXGroup;
 			children = (
 				AAAA0000000000000000002A /* EmptyStateView.swift */,
+				AAAA00000000000000000066 /* FormField.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -183,6 +200,7 @@
 		AAAA00000000000000000041 /* Repositories */ = {
 			isa = PBXGroup;
 			children = (
+				AAAA00000000000000000063 /* ConnectRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -197,6 +215,7 @@
 		AAAA00000000000000000043 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				AAAA00000000000000000064 /* ConnectViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -213,6 +232,24 @@
 			children = (
 			);
 			path = Util;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000050 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000060 /* KeychainStore.swift */,
+				AAAA00000000000000000061 /* SavedConnection.swift */,
+				AAAA00000000000000000062 /* ConnectionStore.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		AAAA00000000000000000051 /* Connect */ = {
+			isa = PBXGroup;
+			children = (
+				AAAA00000000000000000065 /* ConnectViewController.swift */,
+			);
+			path = Connect;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -301,6 +338,13 @@
 				AAAA00000000000000000038 /* Spacing.swift in Sources */,
 				AAAA00000000000000000039 /* RuntimeIdentity.swift in Sources */,
 				AAAA0000000000000000003A /* EmptyStateView.swift in Sources */,
+				AAAA00000000000000000070 /* KeychainStore.swift in Sources */,
+				AAAA00000000000000000071 /* SavedConnection.swift in Sources */,
+				AAAA00000000000000000072 /* ConnectionStore.swift in Sources */,
+				AAAA00000000000000000073 /* ConnectRepository.swift in Sources */,
+				AAAA00000000000000000074 /* ConnectViewModel.swift in Sources */,
+				AAAA00000000000000000075 /* ConnectViewController.swift in Sources */,
+				AAAA00000000000000000076 /* FormField.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

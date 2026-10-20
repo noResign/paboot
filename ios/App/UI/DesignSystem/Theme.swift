@@ -16,6 +16,8 @@ enum Theme {
         static let primary = named("Primary", fallback: .systemTeal)
         static let primaryDeep = named("PrimaryDeep", fallback: .systemTeal)
         static let primarySubtle = named("PrimarySubtle", fallback: .systemTeal.withAlphaComponent(0.12))
+        /// Text/glyph colour on the primary fill (both light and dark themes).
+        static let onPrimary = UIColor(hex: 0x06231A)
         static let success = named("Success", fallback: .systemGreen)
         static let warning = named("Warning", fallback: .systemOrange)
         static let error = named("Error", fallback: .systemRed)
