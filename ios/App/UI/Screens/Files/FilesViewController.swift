@@ -31,7 +31,7 @@ final class FilesViewController: UIViewController {
         action: #selector(toggleHidden)
     )
 
-    private enum Row {
+    private enum Row: Equatable {
         case change(ChangedFileDto)
         case repo(String)
         case entry(FileEntryDto)
@@ -202,7 +202,14 @@ final class FilesViewController: UIViewController {
         hiddenToggleItem.image = UIImage(systemName: state.showHidden ? "eye.slash" : "eye")
         hiddenToggleItem.accessibilityLabel = state.showHidden ? "隐藏隐藏文件" : "显示隐藏文件"
 
-        rows = makeRows(state)
+        // The table's data source must never change without a matching reload. In
+        // particular, transitioning to an empty list has to reload too; otherwise the
+        // table keeps its old row count and can ask for an out-of-range index later.
+        let newRows = makeRows(state)
+        if newRows != rows {
+            rows = newRows
+            tableView.reloadData()
+        }
 
         if rows.isEmpty {
             tableView.isHidden = true
@@ -236,7 +243,6 @@ final class FilesViewController: UIViewController {
             emptyStateView = nil
             stateContainer.isHidden = true
             tableView.isHidden = false
-            tableView.reloadData()
         }
 
         if let error = state.loadError, !rows.isEmpty, !state.isLoading, !hasPresentedLoadError {
@@ -428,6 +434,11 @@ extension FilesViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        // UIKit can still ask for a cell while a reload settles; never index off the end.
+        guard indexPath.row < rows.count else {
+            return UITableViewCell()
+        }
+
         switch rows[indexPath.row] {
         case .change(let change):
             let cell = tableView.dequeueReusableCell(
@@ -465,6 +476,8 @@ extension FilesViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
+        guard indexPath.row < rows.count else { return }
+
         switch rows[indexPath.row] {
         case .change(let change):
             if change.isDirectory {
@@ -495,6 +508,7 @@ extension FilesViewController: UITableViewDelegate {
     ) {
         guard viewModel.state.mode == .all,
               viewModel.state.nextCursor != nil,
+              !rows.isEmpty,
               indexPath.row == rows.count - 1 else {
             return
         }

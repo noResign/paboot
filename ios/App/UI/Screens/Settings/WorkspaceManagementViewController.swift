@@ -104,6 +104,8 @@ final class WorkspaceManagementViewController: UIViewController {
     private func render(_ state: WorkspaceManagementViewModel.State) {
         workspaces = state.workspaces
         selectedWorkspaceId = state.selectedWorkspaceId
+        // Keep the table's row count in sync even when switching to the empty state.
+        tableView.reloadData()
 
         if workspaces.isEmpty {
             tableView.isHidden = true
@@ -137,7 +139,6 @@ final class WorkspaceManagementViewController: UIViewController {
             loadingStack.isHidden = true
             stateContainer.isHidden = true
             tableView.isHidden = false
-            tableView.reloadData()
         }
 
         if let error = state.actionError, !hasPresentedActionError {
@@ -289,6 +290,10 @@ extension WorkspaceManagementViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        guard indexPath.row < workspaces.count else {
+            return UITableViewCell()
+        }
+
         let cell = tableView.dequeueReusableCell(
             withIdentifier: WorkspaceCell.reuseIdentifier,
             for: indexPath

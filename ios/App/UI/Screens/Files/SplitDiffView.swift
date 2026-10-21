@@ -100,6 +100,9 @@ final class SplitDiffView: UIView {
     }
 
     private func rowHeight(at index: Int) -> CGFloat {
+        guard index < rows.count else {
+            return ceil(Typography.code.lineHeight) + rowVerticalPadding
+        }
         if let cached = heightCache[index] {
             return cached
         }
@@ -138,6 +141,8 @@ final class SplitDiffView: UIView {
     }
 
     private func toggleRow(at index: Int) {
+        guard index < rows.count else { return }
+
         expandedRow = expandedRow == index ? nil : index
         heightCache.removeAll()
 
@@ -170,6 +175,10 @@ extension SplitDiffView: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        guard indexPath.row < rows.count else {
+            return UITableViewCell()
+        }
+
         let row = rows[indexPath.row]
 
         switch row.kind {

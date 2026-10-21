@@ -321,7 +321,9 @@ extension DirectoryPickerViewController: UITableViewDataSource {
             cell.imageView?.tintColor = Theme.Colors.textSecondary
             cell.accessibilityLabel = "上一级"
         } else {
-            let entry = entries[indexPath.row - (parentPath == nil ? 0 : 1)]
+            let index = indexPath.row - (parentPath == nil ? 0 : 1)
+            guard index >= 0, index < entries.count else { return cell }
+            let entry = entries[index]
             cell.textLabel?.text = entry.isWorkspace ? "\(entry.name)（已是工作区）" : entry.name
             cell.imageView?.image = UIImage(systemName: "folder")
             cell.imageView?.tintColor = Theme.Colors.primary
@@ -344,7 +346,9 @@ extension DirectoryPickerViewController: UITableViewDelegate {
             return
         }
 
-        let entry = entries[indexPath.row - (parentPath == nil ? 0 : 1)]
+        let index = indexPath.row - (parentPath == nil ? 0 : 1)
+        guard index >= 0, index < entries.count else { return }
+        let entry = entries[index]
         Task { await viewModel.open(entry) }
     }
 }
