@@ -24,7 +24,8 @@ final class ChatViewController: UIViewController {
     private var hasRenderedOnce = false
     private var isFollowingBottom = true
     private var presentedPermissionID: String?
-    private var permissionAlert: UIAlertController?
+    private var permissionAlert: UIViewController?
+    private var dismissingPermission = false
     private var menuSignature: String?
     private var lastPresentedError: String?
     private var presentedError = false
@@ -48,6 +49,7 @@ final class ChatViewController: UIViewController {
         configureNavigationTitle()
         configureTable()
         configureBottomStack()
+        configureKeyboardDismissal()
         configureLoadingOverlay()
         configureJumpButton()
         configureDataSource()
@@ -151,6 +153,18 @@ final class ChatViewController: UIViewController {
             bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             tableView.bottomAnchor.constraint(equalTo: bottomStack.topAnchor),
         ])
+    }
+
+    private func configureKeyboardDismissal() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = self
+        view.addGestureRecognizer(tap)
+    }
+
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
     }
 
     private func configureLoadingOverlay() {
@@ -466,28 +480,61 @@ final class ChatViewController: UIViewController {
     // MARK: - Permissions
 
     private func updatePermissionAlert(_ permission: PendingPermission?) {
+        guard !dismissingPermission else { return }
+        if permission?.permissionId != presentedPermissionID, let existing = permissionAlert {
+            permissionAlert = nil
+            presentedPermissionID = nil
+            // UIAlertController may already have dismissed itself after an action.
+            // Only wait for a dismissal completion while it still has a presenter.
+            if existing.presentingViewController != nil {
+                dismissingPermission = true
+                existing.dismiss(animated: true) { [weak self] in
+                    guard let self else { return }
+                    self.dismissingPermission = false
+                    self.updatePermissionAlert(self.viewModel.state.permission)
+                }
+                return
+            }
+        }
         guard let permission else {
             presentedPermissionID = nil
-            permissionAlert?.dismiss(animated: true)
-            permissionAlert = nil
             return
         }
-
-        guard permission.permissionId != presentedPermissionID else { return }
-
-        if let existing = permissionAlert {
-            permissionAlert = nil
-            existing.dismiss(animated: true) { [weak self] in
-                self?.presentPermission(permission)
+        if permission.permissionId == presentedPermissionID {
+            if let navigation = permissionAlert as? UINavigationController,
+               let input = navigation.viewControllers.first as? UserInputViewController {
+                input.update(
+                    submitting: viewModel.state.submittingPermissionId == permission.permissionId,
+                    error: viewModel.state.permissionError
+                )
             }
-        } else {
-            presentPermission(permission)
+            return
         }
+        presentPermission(permission)
     }
 
     private func presentPermission(_ permission: PendingPermission) {
         guard view.window != nil, presentedViewController == nil else { return }
         presentedPermissionID = permission.permissionId
+
+        if permission.toolName == "UserInput" {
+            let input = UserInputViewController(input: permission.toolInput)
+            input.onDecision = { [weak self] decision, response in
+                self?.viewModel.decidePermission(
+                    decision, permissionId: permission.permissionId, response: response
+                )
+            }
+            let navigation = UINavigationController(rootViewController: input)
+            navigation.isModalInPresentation = true
+            navigation.sheetPresentationController?.detents = [.large()]
+            permissionAlert = navigation
+            input.update(
+                submitting: viewModel.state.submittingPermissionId == permission.permissionId,
+                error: viewModel.state.permissionError
+            )
+            present(navigation, animated: true)
+            return
+        }
 
         let alert = UIAlertController(
             title: "\(permission.toolName) 请求权限",
@@ -495,13 +542,13 @@ final class ChatViewController: UIViewController {
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "允许", style: .default) { [weak self] _ in
-            self?.viewModel.decidePermission("allow")
+            self?.viewModel.decidePermission("allow", permissionId: permission.permissionId)
         })
         alert.addAction(UIAlertAction(title: "全部允许", style: .default) { [weak self] _ in
-            self?.viewModel.decidePermission("allow_all")
+            self?.viewModel.decidePermission("allow_all", permissionId: permission.permissionId)
         })
         alert.addAction(UIAlertAction(title: "拒绝", style: .destructive) { [weak self] _ in
-            self?.viewModel.decidePermission("deny")
+            self?.viewModel.decidePermission("deny", permissionId: permission.permissionId)
         })
 
         permissionAlert = alert
@@ -559,5 +606,30 @@ extension ChatViewController: UITableViewDelegate {
             - tableView.bounds.height
         isFollowingBottom = distance < 80
         jumpButton.isHidden = isFollowingBottom || lastMessageIDs.isEmpty
+    }
+}
+
+extension ChatViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // Keep typing and composer actions focused; taps elsewhere dismiss the keyboard.
+        var touchedView = touch.view
+        while let current = touchedView {
+            if current === inputBar || current is UITextField {
+                return false
+            }
+            if let textView = current as? UITextView, textView.isEditable {
+                return false
+            }
+            touchedView = current.superview
+        }
+        return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        // Card expansion and text selection should still receive the same interaction.
+        true
     }
 }

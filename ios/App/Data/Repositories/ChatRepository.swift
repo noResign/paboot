@@ -22,7 +22,20 @@ extension ChatRepositoryError: LocalizedError {
 }
 
 /// Everything the chat screen needs from the daemon.
-final class ChatRepository {
+protocol ChatRepositoryProtocol {
+    func sessionDetail(id: String) async throws -> SessionDetailResponse
+    func runEvents(runId: String, after: Int64?) async throws -> [SSEFrame]
+    func isRunActive(runId: String) async -> Bool?
+    func chat(_ request: ChatRequest) -> AsyncThrowingStream<SSEFrame, Error>
+    func runStream(runId: String, after: Int64?) -> AsyncThrowingStream<SSEFrame, Error>
+    func cancelRun(id: String) async throws
+    func decidePermission(id: String, decision: String, response: JSONValue?) async throws
+    func updateModel(sessionId: String, model: String?, parameters: [String: String]?) async throws -> SessionDto?
+    func updatePermissionMode(sessionId: String, mode: String) async throws
+    func models(agentId: String) async throws -> [ModelOptionDto]
+}
+
+final class ChatRepository: ChatRepositoryProtocol {
     private let session: DaemonSession
 
     init(session: DaemonSession = .shared) {
@@ -81,10 +94,10 @@ final class ChatRepository {
         }
     }
 
-    func decidePermission(id: String, decision: String) async throws {
+    func decidePermission(id: String, decision: String, response: JSONValue? = nil) async throws {
         let client = try clientOrThrow()
         do {
-            _ = try await client.api.decidePermission(id: id, decision: decision)
+            _ = try await client.api.decidePermission(id: id, decision: decision, response: response)
         } catch {
             throw map(error)
         }

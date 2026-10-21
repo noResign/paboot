@@ -41,5 +41,6 @@ let package = Package(
             ]
         ),
         .testTarget(name: "PabootProtocolTests", dependencies: ["PabootProtocol"]),
+        .testTarget(name: "PabootClientTests", dependencies: ["PabootClient", "PabootProtocol"]),
     ]
 )

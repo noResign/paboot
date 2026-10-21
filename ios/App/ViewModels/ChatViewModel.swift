@@ -15,6 +15,8 @@ final class ChatViewModel {
         var reconnecting = false
         var loadingHistory = false
         var permission: PendingPermission?
+        var submittingPermissionId: String?
+        var permissionError: String?
         var todos: [TodoItem] = []
         var contextUsage: ContextUsage?
         var error: String?
@@ -29,13 +31,14 @@ final class ChatViewModel {
 
     @Published private(set) var state = State()
 
-    private let repository: ChatRepository
+    private let repository: any ChatRepositoryProtocol
     private var sessionId: String?
     private let workspaceId: String?
     private var runtime: String?
     private let claudeSessionId: String?
 
     private var streamTask: Task<Void, Never>?
+    private var historyTask: Task<Void, Never>?
     private var streamGeneration = 0
     private var lastSeq: Int64 = -1
     private var giveUp = false
@@ -50,7 +53,7 @@ final class ChatViewModel {
         claudeSessionId: String? = nil,
         permissionMode: String? = nil,
         title: String? = nil,
-        repository: ChatRepository = ChatRepository()
+        repository: any ChatRepositoryProtocol = ChatRepository()
     ) {
         self.repository = repository
         self.sessionId = sessionId
@@ -74,7 +77,7 @@ final class ChatViewModel {
         didStart = true
 
         if let sessionId {
-            Task { await loadHistory(sessionId: sessionId) }
+            historyTask = Task { await loadHistory(sessionId: sessionId) }
         } else {
             loadModels()
         }
@@ -88,6 +91,7 @@ final class ChatViewModel {
 
         do {
             let detail = try await repository.sessionDetail(id: sessionId)
+            guard !Task.isCancelled else { return }
             let session = detail.session
 
             self.sessionId = session.id
@@ -117,7 +121,8 @@ final class ChatViewModel {
                     continue
                 }
 
-                let frames = (try? await repository.runEvents(runId: run.id)) ?? []
+                let frames = (try? await repository.runEvents(runId: run.id, after: nil)) ?? []
+                guard !Task.isCancelled else { return }
                 var assistant = ChatUiMessage(id: "a-\(run.id)", role: .assistant, done: true)
 
                 for frame in frames {
@@ -169,6 +174,7 @@ final class ChatViewModel {
                 )
             }
         } catch {
+            guard !Task.isCancelled else { return }
             handleLoadError(error)
         }
     }
@@ -248,6 +254,8 @@ final class ChatViewModel {
 
     /// Close the local stream but leave the run alone (the daemon keeps it running).
     func detach() {
+        historyTask?.cancel()
+        historyTask = nil
         streamGeneration += 1
         streamTask?.cancel()
         streamTask = nil
@@ -312,6 +320,7 @@ final class ChatViewModel {
                 } else {
                     probed = await repository.isRunActive(runId: resumable!)
                 }
+                guard !Task.isCancelled, generation == streamGeneration else { return }
 
                 let now = Date()
                 if probed == nil {
@@ -365,12 +374,14 @@ final class ChatViewModel {
                             runId: resumable,
                             after: lastSeq >= 0 ? lastSeq : nil
                         ) {
+                            guard !Task.isCancelled, generation == streamGeneration else { return }
                             for frame in frames where frame.seq > lastSeq {
                                 lastSeq = frame.seq
                                 handleFrame(frame)
                             }
                         }
                     }
+                    guard !Task.isCancelled, generation == streamGeneration else { return }
                     finish()
                     return
 
@@ -486,15 +497,17 @@ final class ChatViewModel {
                 permissionQueue.append(pending)
             }
         } else {
-            if state.permission?.permissionId == request.permissionId {
-                advancePermission()
-            } else {
-                permissionQueue.removeAll { $0.permissionId == request.permissionId }
-            }
+            dismissPermission(id: request.permissionId)
         }
     }
 
-    private func advancePermission() {
+    private func dismissPermission(id: String) {
+        // Both the decision response and SSE resolution may arrive, in either order.
+        // Remember resolved IDs so a stale pending replay cannot resurrect them.
+        seenPermissionIds.insert(id)
+        permissionQueue.removeAll { $0.permissionId == id }
+        guard state.permission?.permissionId == id else { return }
+        state.permissionError = nil
         state.permission = permissionQueue.isEmpty ? nil : permissionQueue.removeFirst()
     }
 
@@ -505,6 +518,7 @@ final class ChatViewModel {
 
         if clearPermissions {
             state.permission = nil
+            state.permissionError = nil
             permissionQueue.removeAll()
             seenPermissionIds.removeAll()
         }
@@ -531,19 +545,35 @@ final class ChatViewModel {
 
     // MARK: - Permissions / questions
 
-    func decidePermission(_ decision: String) {
-        guard let permission = state.permission else { return }
+    func decidePermission(_ decision: String, permissionId: String, response: JSONValue? = nil) {
+        guard let permission = state.permission,
+              permission.permissionId == permissionId,
+              state.submittingPermissionId != permissionId else { return }
+        state.submittingPermissionId = permissionId
+        state.permissionError = nil
 
         Task {
+            defer {
+                if state.submittingPermissionId == permissionId {
+                    state.submittingPermissionId = nil
+                }
+            }
             do {
                 try await repository.decidePermission(
                     id: permission.permissionId,
-                    decision: decision
+                    decision: decision,
+                    response: response
                 )
-                advancePermission()
+                dismissPermission(id: permissionId)
             } catch {
-                state.error = (error as? LocalizedError)?.errorDescription
+                guard state.permission?.permissionId == permissionId else { return }
+                let message = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
+                if permission.toolName == "UserInput" {
+                    state.permissionError = message
+                } else {
+                    state.error = message
+                }
             }
         }
     }

@@ -16,7 +16,8 @@ iOS 客户端**连接、会话列表、聊天、文件与设置已实现**（202
   重命名 / 删除、断连后引导重新连接。
 - 聊天：历史重建（按 run 回放事件）、SSE 流式、断线续接、停止；文本 / 思考 / 工具组 / 工具卡 /
   问答卡 / Todo / 上下文占用；思考与工具卡可折叠；权限审批；模型、模型参数与权限模式切换；
-  新建会话 sheet（工作区 / Agent / 权限）。
+  新建会话 sheet（工作区 / Agent / 权限）。Codex `UserInput` 支持问题、类型化表单、链接确认，
+  不支持的验证可拒绝；提交失败保留输入并显示错误。
 - Markdown：标题、段落、列表、引用、围栏代码块、GFM 表格；代码块限高滚动并带语法高亮
   （Swift / Kotlin / JS / TS / Python / Shell / JSON）。
 - 设置：连接信息（token 掩码）与重新连接、当前工作区与进入工作区管理、新会话默认权限模式
@@ -34,8 +35,6 @@ iOS 客户端**连接、会话列表、聊天、文件与设置已实现**（202
 ## 未实现
 
 - 文件：视频预览、目录内搜索、图片缩放。
-- Codex `UserInput` 的 `questions` / `form` / `url` / `unsupported` 专用表单；当前以通用权限
-  弹窗展示 JSON，只能允许 / 拒绝。
 - 后台系统通知（iOS 后台限制；当前只有前台状态；设置页暂未放通知开关）。
 - 启动自动连接：目前每次进连接页，已保存的连接会预填。
 - Markdown 链接点击跳转、语义级代码高亮（当前是轻量 token 高亮，不做语法分析）。
@@ -62,6 +61,11 @@ cd ios
 xcodebuild -project paboot.xcodeproj -scheme paboot \
   -destination 'generic/platform=iOS Simulator' \
   build CODE_SIGNING_ALLOWED=NO
+
+# App 状态回归测试（选择本机可用的 iPhone 模拟器）
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  test CODE_SIGNING_ALLOWED=NO
 ```
 
 ## 目标形态

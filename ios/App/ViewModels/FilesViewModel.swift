@@ -39,7 +39,7 @@ final class FilesViewModel {
 
     @Published private(set) var state = State()
 
-    private let repository: FilesRepository
+    private let repository: any FileListingRepository
     private let workspaceRepository: WorkspaceRepository
     /// The client-side selected workspace, used to detect a switch.
     private var selectedWorkspaceId: String?
@@ -54,7 +54,7 @@ final class FilesViewModel {
     private var generation = 0
 
     init(
-        repository: FilesRepository = FilesRepository(),
+        repository: any FileListingRepository = FilesRepository(),
         workspaceRepository: WorkspaceRepository = WorkspaceRepository()
     ) {
         self.repository = repository
@@ -70,6 +70,7 @@ final class FilesViewModel {
 
         generation += 1
         let current = generation
+        state.isLoadingMore = false
         if showLoading {
             state.isLoading = true
         }
@@ -168,21 +169,33 @@ final class FilesViewModel {
         }
 
         let path = state.path
+        let current = generation
+        let workspaceId = currentWorkspaceId
+        let root = state.root
+        let showHidden = state.showHidden
         state.isLoadingMore = true
-        defer { state.isLoadingMore = false }
+        defer {
+            if current == generation { state.isLoadingMore = false }
+        }
 
         do {
             let response = try await repository.files(
-                workspaceId: currentWorkspaceId,
-                root: state.root,
+                workspaceId: workspaceId,
+                root: root,
                 path: path,
                 cursor: cursor,
-                showHidden: state.showHidden
+                showHidden: showHidden
             )
-            guard response.path == path else { return }
+            guard current == generation,
+                  WorkspaceSelection.shared.selectedId == selectedWorkspaceId,
+                  response.path == state.path,
+                  state.root == root,
+                  state.mode == .all else { return }
             state.entries.append(contentsOf: response.entries)
             state.nextCursor = response.nextCursor
         } catch {
+            guard current == generation,
+                  WorkspaceSelection.shared.selectedId == selectedWorkspaceId else { return }
             state.actionError = message(error)
         }
     }

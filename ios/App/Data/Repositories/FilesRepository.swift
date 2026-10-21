@@ -22,7 +22,12 @@ extension FilesRepositoryError: LocalizedError {
 }
 
 /// Changes, diffs, directory listing and file bytes for the file tab.
-final class FilesRepository {
+protocol FileListingRepository {
+    func changes(workspaceId: String?, root: String?) async throws -> ChangesResponse
+    func files(workspaceId: String?, root: String?, path: String?, cursor: String?, showHidden: Bool) async throws -> FilesResponse
+}
+
+final class FilesRepository: FileListingRepository {
     private let session: DaemonSession
 
     init(session: DaemonSession = .shared) {

@@ -357,6 +357,10 @@ final class SessionsViewController: UIViewController {
                 snapshot.appendItems(section.sessions.map(\.id), toSection: section.id)
             }
         }
+        // Stable IDs describe identity, not content. A refresh can change running,
+        // title, runtime or timestamps without inserting/removing any sessions.
+        let existingIDs = Set(dataSource.snapshot().itemIdentifiers)
+        snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { existingIDs.contains($0) })
         dataSource.apply(snapshot, animatingDifferences: animated && hasRenderedOnce)
         hasRenderedOnce = true
     }

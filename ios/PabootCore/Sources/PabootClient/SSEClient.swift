@@ -2,7 +2,7 @@
 import Foundation
 import PabootProtocol
 
-/// Streams SSE lines from `URLSession` and feeds them to the pure `SSEParser`.
+/// Streams raw SSE bytes from `URLSession`, preserving blank event delimiters.
 ///
 /// Cancelling the returned stream cancels the underlying task/connection. That only closes
 /// the stream — it does **not** cancel the run on the daemon; use `POST /api/runs/:id/cancel`.
@@ -36,10 +36,10 @@ public final class SSEClient {
                         throw PabootError.http(status: http.statusCode, error: apiError)
                     }
 
-                    let parser = SSEParser()
-                    for try await line in bytes.lines {
+                    let parser = SSEByteParser()
+                    for try await byte in bytes {
                         try Task.checkCancellation()
-                        if let event = parser.feed(line) {
+                        if let event = parser.feed(byte) {
                             continuation.yield(event)
                         }
                     }
