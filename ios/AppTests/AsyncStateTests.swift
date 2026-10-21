@@ -7,46 +7,61 @@ import UIKit
 
 @MainActor
 final class AsyncStateTests: XCTestCase {
-    func testComposerCollapseRestoresHeightAndPreservesDraft() throws {
+    func testChatBottomBarSwitchPreservesGeometryDraftAndRoutesNavigation() throws {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
-        let composer = ChatInputBar()
-        let stack = ChatBottomStackView(contents: [composer])
-        host.addSubview(stack)
+        let bar = ChatBottomBar()
+        host.addSubview(bar)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: host.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: host.bottomAnchor),
         ])
-        func textField(in view: UIView) -> UITextField? {
-            if let field = view as? UITextField { return field }
-            return view.subviews.lazy.compactMap { textField(in: $0) }.first
+        func descendants(of view: UIView) -> [UIView] {
+            [view] + view.subviews.flatMap { descendants(of: $0) }
         }
-        let field = try XCTUnwrap(textField(in: composer))
-        field.text = "未发送的草稿"
-        host.layoutIfNeeded()
-        let expandedHeight = stack.bounds.height
-        XCTAssertGreaterThan(expandedHeight, 36)
+        let views = descendants(of: bar)
+        let field = try XCTUnwrap(views.compactMap { $0 as? UITextField }.first)
+        let toggle = try XCTUnwrap(views.first { $0.accessibilityIdentifier == "chat.bottom.toggle" } as? UIButton)
+        field.text = "切换后保留的草稿"
+        var destinations: [ChatBottomBar.Destination] = []
+        bar.onNavigate = { destinations.append($0) }
 
-        composer.isHidden = true
-        stack.updateCollapsedHeight()
-        host.layoutIfNeeded()
-        XCTAssertEqual(stack.bounds.height, 0, accuracy: 1)
-        composer.isHidden = false
-        stack.updateCollapsedHeight()
-        host.layoutIfNeeded()
-        XCTAssertEqual(stack.bounds.height, expandedHeight, accuracy: 1)
-        XCTAssertEqual(field.text, "未发送的草稿")
-
-        // Repeat the transition to catch stale stack sizing after restoration.
-        composer.isHidden = true
-        stack.updateCollapsedHeight()
-        host.layoutIfNeeded()
-        XCTAssertEqual(stack.bounds.height, 0, accuracy: 1)
-        composer.isHidden = false
-        stack.updateCollapsedHeight()
-        host.layoutIfNeeded()
-        XCTAssertEqual(stack.bounds.height, expandedHeight, accuracy: 1)
-        XCTAssertEqual(field.text, "未发送的草稿")
+        // Compact phones and wider layouts must keep the same footprint in both modes.
+        for width in [CGFloat(320), 390, 600] {
+            host.frame.size.width = width
+            host.setNeedsLayout()
+            host.layoutIfNeeded()
+            let inputFrame = bar.frame
+            XCTAssertGreaterThanOrEqual(inputFrame.height, 64)
+            UIView.performWithoutAnimation {
+                toggle.sendActions(for: .touchUpInside)
+                host.layoutIfNeeded()
+            }
+            XCTAssertEqual(bar.mode, .navigation)
+            XCTAssertTrue(bar.inputBar.isHidden)
+            XCTAssertEqual(bar.frame, inputFrame)
+            for destination in [ChatBottomBar.Destination.sessions, .files, .settings] {
+                let button = try XCTUnwrap(views.first {
+                    $0.accessibilityIdentifier == "chat.bottom.\(destination)"
+                } as? UIButton)
+                button.sendActions(for: .touchUpInside)
+                XCTAssertEqual(destinations.last, destination)
+            }
+            UIView.performWithoutAnimation {
+                toggle.sendActions(for: .touchUpInside)
+                host.layoutIfNeeded()
+            }
+            XCTAssertEqual(bar.mode, .input)
+            XCTAssertFalse(bar.inputBar.isHidden)
+            XCTAssertEqual(bar.frame, inputFrame)
+            XCTAssertEqual(field.text, "切换后保留的草稿")
+            XCTAssertFalse(field.isFirstResponder)
+        }
+        var sentText: String?
+        bar.inputBar.onSend = { sentText = $0 }
+        XCTAssertTrue(bar.inputBar.textFieldShouldReturn(field))
+        XCTAssertEqual(sentText, "切换后保留的草稿")
+        XCTAssertEqual(field.text, "")
     }
 
     func testFileNoWrapCreatesScrollableWidthAndWrappingRestoresViewport() throws {

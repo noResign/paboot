@@ -52,6 +52,15 @@ final class MainTabBarController: UITabBarController {
         return navigation
     }
 
+    func navigateFromChat(to destination: ChatBottomBar.Destination) {
+        selectedIndex = destination.rawValue
+        if destination == .sessions {
+            // This tab is already selected in a conversation; make its entry useful
+            // by returning to the session list, just like tapping the back button.
+            (selectedViewController as? UINavigationController)?.popToRootViewController(animated: true)
+        }
+    }
+
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         .all
     }

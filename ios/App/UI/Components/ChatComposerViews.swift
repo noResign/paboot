@@ -4,8 +4,6 @@ import UIKit
 final class ChatInputBar: UIView {
     var onSend: ((String) -> Void)?
     var onStop: (() -> Void)?
-    var onBeginEditing: (() -> Void)?
-    var isEditingText: Bool { textField.isFirstResponder }
 
     private let textField = UITextField()
     private let actionButton = UIButton(type: .system)
@@ -13,14 +11,10 @@ final class ChatInputBar: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
-        backgroundColor = Theme.Colors.surface
-
-        let topBorder = UIView()
-        topBorder.backgroundColor = Theme.Colors.border
-        topBorder.translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
 
         let fieldContainer = UIView()
-        fieldContainer.backgroundColor = Theme.Colors.codeBackground
+        fieldContainer.backgroundColor = .clear
         fieldContainer.layer.cornerRadius = 18
         fieldContainer.translatesAutoresizingMaskIntoConstraints = false
 
@@ -34,7 +28,7 @@ final class ChatInputBar: UIView {
         textField.translatesAutoresizingMaskIntoConstraints = false
         fieldContainer.addSubview(textField)
 
-        actionButton.layer.cornerRadius = 18
+        actionButton.layer.cornerRadius = 22
         actionButton.tintColor = Theme.Colors.onPrimary
         actionButton.translatesAutoresizingMaskIntoConstraints = false
         actionButton.addAction(
@@ -48,32 +42,22 @@ final class ChatInputBar: UIView {
         row.spacing = Spacing.xs
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(topBorder)
         addSubview(row)
 
-        // Allow the arranged view to collapse without conflicting with its row height.
-        let rowBottom = row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xs)
-        rowBottom.priority = .defaultHigh
-
         NSLayoutConstraint.activate([
-            topBorder.topAnchor.constraint(equalTo: topAnchor),
-            topBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
-            topBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
-            topBorder.heightAnchor.constraint(equalToConstant: 1),
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            row.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.xs),
-            rowBottom,
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
-
-            fieldContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+            fieldContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             textField.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: Spacing.sm),
             textField.trailingAnchor.constraint(equalTo: fieldContainer.trailingAnchor, constant: -Spacing.sm),
             textField.topAnchor.constraint(equalTo: fieldContainer.topAnchor),
             textField.bottomAnchor.constraint(equalTo: fieldContainer.bottomAnchor),
 
-            actionButton.widthAnchor.constraint(equalToConstant: 36),
-            actionButton.heightAnchor.constraint(equalToConstant: 36),
+            actionButton.widthAnchor.constraint(equalToConstant: 44),
+            actionButton.heightAnchor.constraint(equalToConstant: 44),
         ])
 
         updateAction()
@@ -135,10 +119,6 @@ final class ChatInputBar: UIView {
 }
 
 extension ChatInputBar: UITextFieldDelegate {
-    func textFieldDidBeginEditing(_ textField: UITextField) {
-        onBeginEditing?()
-    }
-
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard !isStreaming else { return false }
         send()
@@ -146,27 +126,135 @@ extension ChatInputBar: UITextFieldDelegate {
     }
 }
 
-/// Explicitly collapses when the composer and all status panels are hidden.
-final class ChatBottomStackView: UIStackView {
-    private lazy var collapsedHeight = heightAnchor.constraint(equalToConstant: 0)
+/// Two modes share one footprint; swapping content never changes transcript height.
+final class ChatBottomBar: UIView {
+    enum Mode { case input, navigation }
+    enum Destination: Int { case sessions, files, settings }
 
-    init(contents: [UIView]) {
-        super.init(frame: .zero)
-        axis = .vertical
-        spacing = 0
+    let inputBar = ChatInputBar()
+    private(set) var mode: Mode = .input
+    var onNavigate: ((Destination) -> Void)?
+    private let toggleButton = UIButton(type: .system)
+    private let navigationRow = UIStackView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
-        contents.forEach { addArrangedSubview($0) }
-        updateCollapsedHeight()
+        let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+        material.translatesAutoresizingMaskIntoConstraints = false
+        material.layer.cornerRadius = 28
+        material.layer.cornerCurve = .continuous
+        material.clipsToBounds = true
+        addSubview(material)
+
+        toggleButton.translatesAutoresizingMaskIntoConstraints = false
+        toggleButton.accessibilityIdentifier = "chat.bottom.toggle"
+        toggleButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.setMode(self.mode == .input ? .navigation : .input, animated: true)
+        }, for: .touchUpInside)
+        material.contentView.addSubview(toggleButton)
+
+        let divider = UIView()
+        divider.backgroundColor = Theme.Colors.border
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        material.contentView.addSubview(divider)
+
+        navigationRow.axis = .horizontal
+        navigationRow.distribution = .fillEqually
+        navigationRow.translatesAutoresizingMaskIntoConstraints = false
+        for (destination, title, symbol) in [
+            (Destination.sessions, "会话", "bubble.left.and.bubble.right"),
+            (.files, "文件", "folder"),
+            (.settings, "设置", "gearshape"),
+        ] {
+            let button = UIButton(type: .system)
+            button.configuration = Self.buttonConfiguration(title: title, symbol: symbol)
+            button.accessibilityIdentifier = "chat.bottom.\(destination)"
+            button.addAction(UIAction { [weak self] _ in
+                self?.onNavigate?(destination)
+            }, for: .touchUpInside)
+            navigationRow.addArrangedSubview(button)
+        }
+        material.contentView.addSubview(navigationRow)
+        material.contentView.addSubview(inputBar)
+
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            material.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.xxs),
+            material.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xxs),
+            material.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
+            material.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
+            toggleButton.leadingAnchor.constraint(equalTo: material.contentView.leadingAnchor, constant: Spacing.xxs),
+            toggleButton.topAnchor.constraint(equalTo: material.contentView.topAnchor, constant: Spacing.xxs),
+            toggleButton.bottomAnchor.constraint(equalTo: material.contentView.bottomAnchor, constant: -Spacing.xxs),
+            toggleButton.widthAnchor.constraint(equalToConstant: Layout.minTouchTarget),
+            divider.leadingAnchor.constraint(equalTo: toggleButton.trailingAnchor, constant: Spacing.xxs),
+            divider.centerYAnchor.constraint(equalTo: material.contentView.centerYAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            divider.heightAnchor.constraint(equalToConstant: 24),
+        ])
+        // Both views stay constrained even while hidden. UIKit does not collapse
+        // ordinary subviews as it would arrangedSubviews in a UIStackView.
+        for content in [inputBar as UIView, navigationRow] {
+            NSLayoutConstraint.activate([
+                content.leadingAnchor.constraint(equalTo: divider.trailingAnchor, constant: Spacing.xxs),
+                content.trailingAnchor.constraint(equalTo: material.contentView.trailingAnchor, constant: -Spacing.xxs),
+                content.topAnchor.constraint(equalTo: material.contentView.topAnchor, constant: Spacing.xxs),
+                content.bottomAnchor.constraint(equalTo: material.contentView.bottomAnchor, constant: -Spacing.xxs),
+            ])
+        }
+        applyMode()
     }
 
     @available(*, unavailable)
-    required init(coder: NSCoder) {
+    required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func updateCollapsedHeight() {
-        collapsedHeight.isActive = arrangedSubviews.allSatisfy { $0.isHidden }
-        setNeedsLayout()
+    func setMode(_ mode: Mode, animated: Bool) {
+        guard self.mode != mode else { return }
+        if mode == .navigation { inputBar.endEditing(true) }
+        self.mode = mode
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(with: self, duration: 0.18,
+                              options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction]) {
+                self.applyMode()
+            }
+        } else {
+            applyMode()
+        }
+        // Deliberately do not becomeFirstResponder: returning from Files or toggling
+        // the controls should not open the keyboard until the text field is tapped.
+    }
+
+    private func applyMode() {
+        inputBar.isHidden = mode != .input
+        navigationRow.isHidden = mode != .navigation
+        let symbol = mode == .input ? "square.grid.2x2" : "square.and.pencil"
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: symbol)
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20)
+        configuration.baseForegroundColor = Theme.Colors.textPrimary
+        toggleButton.configuration = configuration
+        toggleButton.accessibilityLabel = mode == .input ? "切换到导航" : "切换到输入框"
+    }
+
+    private static func buttonConfiguration(title: String, symbol: String) -> UIButton.Configuration {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.image = UIImage(systemName: symbol)
+        configuration.imagePlacement = .top
+        configuration.imagePadding = 2
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 18)
+        configuration.baseForegroundColor = Theme.Colors.textPrimary
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 2, leading: 2, bottom: 2, trailing: 2)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = UIFont.systemFont(ofSize: 11, weight: .medium)
+            return result
+        }
+        return configuration
     }
 }
 

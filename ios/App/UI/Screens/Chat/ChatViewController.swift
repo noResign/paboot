@@ -9,7 +9,8 @@ final class ChatViewController: UIViewController {
     private var cancellables = Set<AnyCancellable>()
 
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private let inputBar = ChatInputBar()
+    private let bottomBar = ChatBottomBar()
+    private var inputBar: ChatInputBar { bottomBar.inputBar }
     private let todoPanel = TodoPanelView()
     private let reconnectBanner = UILabel()
     private let loadingOverlay = UIView()
@@ -17,14 +18,13 @@ final class ChatViewController: UIViewController {
     private let jumpButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private var bottomStack: ChatBottomStackView!
+    private var bottomStack: UIStackView!
 
     private var dataSource: UITableViewDiffableDataSource<String, String>!
     private var messagesByID: [String: ChatUiMessage] = [:]
     private var lastMessageIDs: [String] = []
     private var hasRenderedOnce = false
     private var isFollowingBottom = true
-    private var isUpdatingComposerLayout = false
     private var presentedPermissionID: String?
     private var permissionAlert: UIViewController?
     private var dismissingPermission = false
@@ -35,6 +35,8 @@ final class ChatViewController: UIViewController {
     init(viewModel: ChatViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
+        // The conversation owns one replacement row for both input and navigation.
+        hidesBottomBarWhenPushed = true
     }
 
     @available(*, unavailable)
@@ -144,14 +146,20 @@ final class ChatViewController: UIViewController {
             self.jumpButton.isHidden = true
             self.viewModel.send(text)
         }
-        inputBar.onBeginEditing = { [weak self] in
-            self?.setComposerHidden(false)
-        }
         inputBar.onStop = { [weak self] in
             self?.viewModel.stop()
         }
 
-        bottomStack = ChatBottomStackView(contents: [reconnectBanner, todoPanel, inputBar])
+        bottomBar.onNavigate = { [weak self] destination in
+            guard let self else { return }
+            self.view.endEditing(true)
+            (self.tabBarController as? MainTabBarController)?.navigateFromChat(to: destination)
+        }
+
+        bottomStack = UIStackView(arrangedSubviews: [reconnectBanner, todoPanel, bottomBar])
+        bottomStack.axis = .vertical
+        bottomStack.spacing = 0
+        bottomStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomStack)
 
         NSLayoutConstraint.activate([
@@ -218,7 +226,6 @@ final class ChatViewController: UIViewController {
                 guard let self else { return }
                 self.isFollowingBottom = true
                 self.jumpButton.isHidden = true
-                self.setComposerHidden(false)
                 self.scrollToBottom(animated: true)
             },
             for: .touchUpInside
@@ -289,7 +296,6 @@ final class ChatViewController: UIViewController {
         inputBar.alpha = state.loadingHistory ? 0.6 : 1
         reconnectBanner.isHidden = !state.reconnecting
         todoPanel.configure(state.todos)
-        bottomStack.updateCollapsedHeight()
         updateMenu(state)
         updateLoading(state)
         updatePermissionAlert(state.permission)
@@ -323,9 +329,6 @@ final class ChatViewController: UIViewController {
             dataSource.apply(snapshot, animatingDifferences: false)
         }
 
-        if isFollowingBottom || ids.isEmpty {
-            setComposerHidden(false)
-        }
         if isFollowingBottom {
             scrollToBottom(animated: false)
         }
@@ -358,19 +361,6 @@ final class ChatViewController: UIViewController {
         let row = lastMessageIDs.count - 1
         guard tableView.numberOfRows(inSection: 0) > row else { return }
         tableView.scrollToRow(at: IndexPath(row: row, section: 0), at: .bottom, animated: animated)
-    }
-
-    private func setComposerHidden(_ hidden: Bool) {
-        guard inputBar.isHidden != hidden else { return }
-        // Layout changes also emit scroll callbacks; do not interpret those as gestures.
-        isUpdatingComposerLayout = true
-        view.layoutIfNeeded()
-        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            self.inputBar.isHidden = hidden
-            self.bottomStack.updateCollapsedHeight()
-            self.view.layoutIfNeeded()
-        }
-        isUpdatingComposerLayout = false
     }
 
     // MARK: - Header menu
@@ -623,7 +613,7 @@ final class ChatViewController: UIViewController {
 
 extension ChatViewController: UITableViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView, !isUpdatingComposerLayout else { return }
+        guard scrollView === tableView else { return }
 
         let distance = tableView.contentSize.height
             + tableView.adjustedContentInset.bottom
@@ -631,23 +621,6 @@ extension ChatViewController: UITableViewDelegate {
             - tableView.bounds.height
         isFollowingBottom = distance < 80
         jumpButton.isHidden = isFollowingBottom || lastMessageIDs.isEmpty
-
-        // Only manual browsing may hide the composer. Streaming, cell resizing and
-        // keyboard layout must not hide it or interrupt a draft being edited.
-        guard tableView.isDragging || tableView.isDecelerating else { return }
-        let keyboardVisible = view.keyboardLayoutGuide.layoutFrame.minY
-            < view.safeAreaLayoutGuide.layoutFrame.maxY - 1
-        guard !inputBar.isEditingText, !keyboardVisible else { return }
-        if inputBar.isHidden {
-            if distance < 40 {
-                setComposerHidden(false)
-                isFollowingBottom = true
-                jumpButton.isHidden = true
-                scrollToBottom(animated: false)
-            }
-        } else if !lastMessageIDs.isEmpty, distance > 120 + inputBar.bounds.height {
-            setComposerHidden(true)
-        }
     }
 }
 
@@ -656,7 +629,7 @@ extension ChatViewController: UIGestureRecognizerDelegate {
         // Keep typing and composer actions focused; taps elsewhere dismiss the keyboard.
         var touchedView = touch.view
         while let current = touchedView {
-            if current === inputBar || current is UITextField {
+            if current === bottomBar || current is UITextField {
                 return false
             }
             if let textView = current as? UITextView, textView.isEditable {
