@@ -7,6 +7,57 @@ import UIKit
 
 @MainActor
 final class AsyncStateTests: XCTestCase {
+    func testSharedNavigationKeepsChatDraftAndFileStackAcrossTabs() throws {
+        let stacks = (0..<3).map { _ in UINavigationController(rootViewController: UIViewController()) }
+        let tabs = MainTabBarController(navigationControllers: stacks)
+        tabs.loadViewIfNeeded()
+        tabs.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        tabs.view.setNeedsLayout()
+        tabs.view.layoutIfNeeded()
+        let navigationBar = try XCTUnwrap(tabs.view.subviews.compactMap { $0 as? ChatBottomBar }.first)
+        XCTAssertEqual(navigationBar.mode, .navigation)
+        XCTAssertFalse(navigationBar.isHidden)
+        XCTAssertEqual(stacks[0].additionalSafeAreaInsets.bottom, navigationBar.bounds.height, accuracy: 1)
+        func descendants(of view: UIView) -> [UIView] {
+            [view] + view.subviews.flatMap { descendants(of: $0) }
+        }
+        let globalToggle = try XCTUnwrap(descendants(of: navigationBar).first {
+            $0.accessibilityIdentifier == "chat.bottom.toggle"
+        })
+        XCTAssertTrue(globalToggle.isHidden)
+
+        let chat = ChatViewController(viewModel: ChatViewModel(sessionId: nil, repository: FakeChatRepository()))
+        stacks[0].pushViewController(chat, animated: false)
+        tabs.view.setNeedsLayout()
+        tabs.view.layoutIfNeeded()
+        let chatBar = try XCTUnwrap(descendants(of: chat.view).compactMap { $0 as? ChatBottomBar }.first)
+        let field = try XCTUnwrap(descendants(of: chatBar).compactMap { $0 as? UITextField }.first)
+        field.text = "文件查看回来继续写"
+        chatBar.setMode(.navigation, animated: false)
+        XCTAssertTrue(navigationBar.isHidden)
+        XCTAssertEqual(stacks[0].additionalSafeAreaInsets.bottom, 0)
+
+        tabs.navigateFromChat(to: .files)
+        let fileDetail = UIViewController()
+        stacks[1].pushViewController(fileDetail, animated: false)
+        XCTAssertFalse(navigationBar.isHidden)
+        XCTAssertTrue(tabs.selectedViewController === stacks[1])
+        XCTAssertTrue(stacks[0].parent === tabs)
+        XCTAssertTrue(stacks[0].topViewController === chat)
+
+        tabs.selectedIndex = 0
+        XCTAssertTrue(navigationBar.isHidden)
+        XCTAssertEqual(chatBar.mode, .navigation)
+        XCTAssertEqual(field.text, "文件查看回来继续写")
+        XCTAssertFalse(field.isFirstResponder)
+        tabs.selectedIndex = 1
+        XCTAssertTrue(stacks[1].topViewController === fileDetail)
+        tabs.selectedIndex = 0
+        tabs.navigateFromChat(to: .sessions)
+        XCTAssertEqual(stacks[0].viewControllers.count, 1)
+        XCTAssertFalse(navigationBar.isHidden)
+    }
+
     func testChatBottomBarSwitchPreservesGeometryDraftAndRoutesNavigation() throws {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         let bar = ChatBottomBar()

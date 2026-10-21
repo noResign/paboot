@@ -25,6 +25,7 @@ final class ChatViewController: UIViewController {
     private var lastMessageIDs: [String] = []
     private var hasRenderedOnce = false
     private var isFollowingBottom = true
+    private var isUpdatingBottomInset = false
     private var presentedPermissionID: String?
     private var permissionAlert: UIViewController?
     private var dismissingPermission = false
@@ -35,8 +36,6 @@ final class ChatViewController: UIViewController {
     init(viewModel: ChatViewModel) {
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
-        // The conversation owns one replacement row for both input and navigation.
-        hidesBottomBarWhenPushed = true
     }
 
     @available(*, unavailable)
@@ -72,6 +71,24 @@ final class ChatViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         if let id = sessionIdentifier { RunNotifications.shared.clearSession(id) }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard bottomStack != nil, !isUpdatingBottomInset else { return }
+        let overlap = max(0, tableView.frame.maxY - bottomStack.frame.minY)
+        let inset = overlap + Spacing.md
+        guard abs(tableView.contentInset.bottom - inset) > 0.5 else { return }
+        isUpdatingBottomInset = true
+        let offset = tableView.contentOffset
+        tableView.contentInset.bottom = inset
+        tableView.verticalScrollIndicatorInsets.bottom = overlap
+        if isFollowingBottom {
+            scrollToBottom(animated: false)
+        } else {
+            tableView.setContentOffset(offset, animated: false)
+        }
+        isUpdatingBottomInset = false
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -153,7 +170,7 @@ final class ChatViewController: UIViewController {
         bottomBar.onNavigate = { [weak self] destination in
             guard let self else { return }
             self.view.endEditing(true)
-            (self.tabBarController as? MainTabBarController)?.navigateFromChat(to: destination)
+            (self.navigationController?.parent as? MainTabBarController)?.navigateFromChat(to: destination)
         }
 
         bottomStack = UIStackView(arrangedSubviews: [reconnectBanner, todoPanel, bottomBar])
@@ -162,11 +179,21 @@ final class ChatViewController: UIViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomStack)
 
+        // With the keyboard dismissed, rest 8 pt below the safe area. With it
+        // visible, the required upper bound keeps the composer above the keyboard.
+        view.keyboardLayoutGuide.usesBottomSafeArea = false
+        let keyboardBottom = bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+        keyboardBottom.priority = .defaultHigh
         NSLayoutConstraint.activate([
             bottomStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
-            tableView.bottomAnchor.constraint(equalTo: bottomStack.topAnchor),
+            keyboardBottom,
+            bottomStack.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor),
+            bottomStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: ChatBottomBar.bottomOffset
+            ),
+            tableView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
         ])
     }
 
@@ -202,7 +229,7 @@ final class ChatViewController: UIViewController {
         view.addSubview(loadingOverlay)
         NSLayoutConstraint.activate([
             loadingOverlay.topAnchor.constraint(equalTo: tableView.topAnchor),
-            loadingOverlay.bottomAnchor.constraint(equalTo: tableView.bottomAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: bottomStack.topAnchor),
             loadingOverlay.leadingAnchor.constraint(equalTo: tableView.leadingAnchor),
             loadingOverlay.trailingAnchor.constraint(equalTo: tableView.trailingAnchor),
             stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
@@ -613,7 +640,7 @@ final class ChatViewController: UIViewController {
 
 extension ChatViewController: UITableViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView else { return }
+        guard scrollView === tableView, !isUpdatingBottomInset else { return }
 
         let distance = tableView.contentSize.height
             + tableView.adjustedContentInset.bottom

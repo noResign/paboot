@@ -136,11 +136,19 @@ final class ChatBottomBar: UIView {
     var onNavigate: ((Destination) -> Void)?
     private let toggleButton = UIButton(type: .system)
     private let navigationRow = UIStackView()
+    private let navigationOnly: Bool
+    private var navigationButtons: [Destination: UIButton] = [:]
+    private var selectedDestination: Destination?
+    static let minimumHeight: CGFloat = 64
+    static let bottomOffset: CGFloat = 8
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    init(navigationOnly: Bool = false) {
+        self.navigationOnly = navigationOnly
+        super.init(frame: .zero)
+        mode = navigationOnly ? .navigation : .input
         translatesAutoresizingMaskIntoConstraints = false
-        let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+        backgroundColor = .clear
+        let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         material.translatesAutoresizingMaskIntoConstraints = false
         material.layer.cornerRadius = 28
         material.layer.cornerCurve = .continuous
@@ -159,6 +167,8 @@ final class ChatBottomBar: UIView {
         divider.backgroundColor = Theme.Colors.border
         divider.translatesAutoresizingMaskIntoConstraints = false
         material.contentView.addSubview(divider)
+        toggleButton.isHidden = navigationOnly
+        divider.isHidden = navigationOnly
 
         navigationRow.axis = .horizontal
         navigationRow.distribution = .fillEqually
@@ -175,12 +185,13 @@ final class ChatBottomBar: UIView {
                 self?.onNavigate?(destination)
             }, for: .touchUpInside)
             navigationRow.addArrangedSubview(button)
+            navigationButtons[destination] = button
         }
         material.contentView.addSubview(navigationRow)
         material.contentView.addSubview(inputBar)
 
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumHeight),
             material.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.xxs),
             material.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xxs),
             material.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
@@ -198,13 +209,17 @@ final class ChatBottomBar: UIView {
         // ordinary subviews as it would arrangedSubviews in a UIStackView.
         for content in [inputBar as UIView, navigationRow] {
             NSLayoutConstraint.activate([
-                content.leadingAnchor.constraint(equalTo: divider.trailingAnchor, constant: Spacing.xxs),
+                content.leadingAnchor.constraint(
+                    equalTo: navigationOnly ? material.contentView.leadingAnchor : divider.trailingAnchor,
+                    constant: Spacing.xxs
+                ),
                 content.trailingAnchor.constraint(equalTo: material.contentView.trailingAnchor, constant: -Spacing.xxs),
                 content.topAnchor.constraint(equalTo: material.contentView.topAnchor, constant: Spacing.xxs),
                 content.bottomAnchor.constraint(equalTo: material.contentView.bottomAnchor, constant: -Spacing.xxs),
             ])
         }
         applyMode()
+        setSelectedDestination(.sessions)
     }
 
     @available(*, unavailable)
@@ -213,7 +228,7 @@ final class ChatBottomBar: UIView {
     }
 
     func setMode(_ mode: Mode, animated: Bool) {
-        guard self.mode != mode else { return }
+        guard !navigationOnly, self.mode != mode else { return }
         if mode == .navigation { inputBar.endEditing(true) }
         self.mode = mode
         if animated && !UIAccessibility.isReduceMotionEnabled {
@@ -226,6 +241,17 @@ final class ChatBottomBar: UIView {
         }
         // Deliberately do not becomeFirstResponder: returning from Files or toggling
         // the controls should not open the keyboard until the text field is tapped.
+    }
+
+    func setSelectedDestination(_ destination: Destination) {
+        guard selectedDestination != destination else { return }
+        selectedDestination = destination
+        for (item, button) in navigationButtons {
+            var configuration = button.configuration
+            configuration?.baseForegroundColor = item == destination ? Theme.Colors.primary : Theme.Colors.textSecondary
+            button.configuration = configuration
+            button.accessibilityTraits = item == destination ? [.button, .selected] : [.button]
+        }
     }
 
     private func applyMode() {
