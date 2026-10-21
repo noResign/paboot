@@ -25,7 +25,10 @@ final class FilesViewController: UIViewController {
     private var emptyStateView: EmptyStateView?
 
     private lazy var hiddenToggleItem = UIBarButtonItem(
-        image: UIImage(systemName: "eye"),
+        image: UIImage(
+            systemName: "eye",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        ),
         style: .plain,
         target: self,
         action: #selector(toggleHidden)
@@ -201,7 +204,10 @@ final class FilesViewController: UIViewController {
         }
 
         navigationItem.rightBarButtonItem = state.mode == .all ? hiddenToggleItem : nil
-        hiddenToggleItem.image = UIImage(systemName: state.showHidden ? "eye.slash" : "eye")
+        hiddenToggleItem.image = UIImage(
+            systemName: state.showHidden ? "eye.slash" : "eye",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        )
         hiddenToggleItem.accessibilityLabel = state.showHidden ? "隐藏隐藏文件" : "显示隐藏文件"
 
         // The table's data source must never change without a matching reload. In

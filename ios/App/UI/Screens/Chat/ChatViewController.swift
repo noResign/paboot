@@ -239,10 +239,13 @@ final class ChatViewController: UIViewController {
 
     private func configureJumpButton() {
         var configuration = UIButton.Configuration.filled()
-        configuration.image = UIImage(systemName: "arrow.down")
-        configuration.baseBackgroundColor = Theme.Colors.primary
-        configuration.baseForegroundColor = Theme.Colors.onPrimary
+        configuration.image = UIImage(systemName: "arrow.down.to.line")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        configuration.baseBackgroundColor = Theme.Colors.surface2.withAlphaComponent(0.85)
+        configuration.baseForegroundColor = Theme.Colors.textSecondary
         configuration.cornerStyle = .capsule
+        // A smaller visual button while retaining the full 44 pt touch target.
+        configuration.background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
 
         jumpButton.configuration = configuration
         jumpButton.translatesAutoresizingMaskIntoConstraints = false
@@ -491,7 +494,10 @@ final class ChatViewController: UIViewController {
 
         let item = UIBarButtonItem(
             title: nil,
-            image: UIImage(systemName: "slider.horizontal.3"),
+            image: UIImage(
+                systemName: "slider.horizontal.3",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+            ),
             primaryAction: nil,
             menu: menu
         )

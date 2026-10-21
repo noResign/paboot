@@ -251,6 +251,18 @@ class ChatBlockView: UIView {
     }
 
     func update(block: ContentBlock, streaming: Bool) {}
+
+    func applyCardBorder() {
+        layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if layer.borderWidth > 0,
+           traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            applyCardBorder()
+        }
+    }
 }
 
 final class ChatTextBlockView: ChatBlockView {
@@ -395,8 +407,10 @@ final class ChatToolGroupView: ChatBlockView {
     override init(frame: CGRect) {
         super.init(frame: frame)
 
-        backgroundColor = Theme.Colors.surface2
+        backgroundColor = Theme.Colors.surface
         layer.cornerRadius = Radius.card
+        layer.borderWidth = 1
+        applyCardBorder()
 
         chevronLabel.font = Typography.caption
         chevronLabel.textColor = Theme.Colors.textSecondary
@@ -542,7 +556,9 @@ final class ChatToolCardView: ChatBlockView {
         super.init(frame: frame)
 
         backgroundColor = Theme.Colors.surface
-        layer.cornerRadius = 8
+        layer.cornerRadius = Radius.card
+        layer.borderWidth = 1
+        applyCardBorder()
 
         spinner.color = Theme.Colors.textSecondary
         spinner.hidesWhenStopped = true
