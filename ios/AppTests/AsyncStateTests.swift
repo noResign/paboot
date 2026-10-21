@@ -115,6 +115,37 @@ final class AsyncStateTests: XCTestCase {
         XCTAssertEqual(field.text, "")
     }
 
+    func testStreamingAppendKeepsExpandedToolGroupAndCard() throws {
+        let cell = AssistantMessageCell(style: .default, reuseIdentifier: AssistantMessageCell.reuseIdentifier)
+        let first = ToolUseBlock(id: "tool-1", name: "Bash", input: nil, result: nil)
+        var message = ChatUiMessage(id: "assistant-1", role: .assistant, blocks: [.tool(first)])
+        cell.configure(message: message, streaming: true, onAnswer: { _, _ in })
+
+        func descendants(of view: UIView) -> [UIView] {
+            [view] + view.subviews.flatMap { descendants(of: $0) }
+        }
+        let group = try XCTUnwrap(descendants(of: cell).compactMap { $0 as? ChatToolGroupView }.first)
+        let card = try XCTUnwrap(descendants(of: group).compactMap { $0 as? ChatToolCardView }.first)
+        group.setExpanded(true)
+        card.setExpanded(true)
+
+        message.blocks.append(.text("新的流式输出"))
+        cell.configure(message: message, streaming: true, onAnswer: { _, _ in })
+        let groupAfterText = try XCTUnwrap(descendants(of: cell).compactMap { $0 as? ChatToolGroupView }.first)
+        XCTAssertTrue(groupAfterText === group)
+        XCTAssertTrue(groupAfterText.isExpanded)
+        XCTAssertTrue(card.isExpanded)
+
+        let second = ToolUseBlock(id: "tool-2", name: "Read", input: nil, result: nil)
+        message.blocks = [.tool(first), .tool(second), .text("新的流式输出")]
+        cell.configure(message: message, streaming: true, onAnswer: { _, _ in })
+        let cards = descendants(of: group).compactMap { $0 as? ChatToolCardView }
+        XCTAssertEqual(cards.count, 2)
+        XCTAssertTrue(cards.contains { $0 === card })
+        XCTAssertTrue(group.isExpanded)
+        XCTAssertTrue(card.isExpanded)
+    }
+
     func testFileNoWrapCreatesScrollableWidthAndWrappingRestoresViewport() throws {
         let editor = FileTextView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
         editor.setText(String(repeating: "a", count: 400) + "\nshort line")

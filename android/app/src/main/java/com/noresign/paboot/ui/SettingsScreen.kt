@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -64,6 +65,7 @@ import com.noresign.paboot.viewmodel.UpdateViewModel
 fun SettingsScreen(
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    bottomOverlayPadding: Dp = 0.dp,
     viewModel: SettingsViewModel = viewModel(),
     updateViewModel: UpdateViewModel = viewModel(),
 ) {
@@ -117,7 +119,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 20.dp + bottomOverlayPadding),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             SectionTitle("连接")

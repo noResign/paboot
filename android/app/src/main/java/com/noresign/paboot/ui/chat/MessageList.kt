@@ -32,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noresign.paboot.model.chat.AssistantSegment
 import com.noresign.paboot.model.chat.ChatUiMessage
@@ -45,6 +46,7 @@ internal fun MessageList(
     streaming: Boolean,
     loading: Boolean,
     onAnswer: (String, String) -> Unit,
+    bottomOverlayPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -114,7 +116,12 @@ internal fun MessageList(
                 state = listState,
                 reverseLayout = false,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + bottomOverlayPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(
@@ -140,7 +147,7 @@ internal fun MessageList(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(end = 16.dp, bottom = 16.dp + bottomOverlayPadding),
             ) {
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "回到底部")
             }

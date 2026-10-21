@@ -128,6 +128,7 @@ data class ChatRequest(
     val workspaceId: String? = null,
     val claudeSessionId: String? = null,
     val model: String? = null,
+    val modelParameters: Map<String, String>? = null,
     val runtime: String? = null,
     val permissionMode: String? = null,
     /**

@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.model.diff.SplitDiffKind
@@ -79,7 +81,10 @@ import com.noresign.paboot.viewmodel.FilesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
+fun FilesScreen(
+    bottomOverlayPadding: Dp = 0.dp,
+    viewModel: FilesViewModel = viewModel(),
+) {
     val uiState by viewModel.uiState.collectAsState()
     val mode by viewModel.mode.collectAsState()
     val diffState by viewModel.diffState.collectAsState()
@@ -93,7 +98,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val rootPicker by viewModel.rootPicker.collectAsState()
     val rootError by viewModel.rootError.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
-    var fileBrowserQuery by remember { mutableStateOf("") }
+    var fileBrowserQuery by rememberSaveable { mutableStateOf("") }
     val currentRoot = root ?: selectedWorkspacePath.orEmpty()
 
     // 每次进入文件 Tab 自动拉一次：agent 在后台改了文件、或别处动了 tab 行，
@@ -119,12 +124,18 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
             state = media!!,
             client = viewModel.mediaClient(),
             onBack = viewModel::closeMedia,
+            bottomOverlayPadding = bottomOverlayPadding,
         )
-        fileContent != null -> FileContentScreen(state = fileContent!!, onBack = viewModel::closeFile)
+        fileContent != null -> FileContentScreen(
+            state = fileContent!!,
+            onBack = viewModel::closeFile,
+            bottomOverlayPadding = bottomOverlayPadding,
+        )
         diffState != null -> DiffScreen(
             state = diffState!!,
             onBack = viewModel::closeDiff,
             onOpenFullFile = viewModel::openDiffFileContent,
+            bottomOverlayPadding = bottomOverlayPadding,
         )
         else -> Scaffold(
             topBar = {
@@ -172,12 +183,14 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     when (mode) {
                         FilesMode.Changes -> ChangesContent(
                             state = uiState,
+                            bottomOverlayPadding = bottomOverlayPadding,
                             onRetry = viewModel::refresh,
                             onOpen = viewModel::openDiff,
                             onOpenRepo = viewModel::openChildDir,
                         )
                         FilesMode.All -> FileBrowserContent(
                             state = fileBrowser,
+                            bottomOverlayPadding = bottomOverlayPadding,
                             query = fileBrowserQuery,
                             onQueryChange = { fileBrowserQuery = it },
                             onBrowse = { fileBrowserQuery = ""; viewModel.browse(it) },
@@ -356,6 +369,7 @@ private fun SegmentedTabs(mode: FilesMode, onSelect: (FilesMode) -> Unit) {
 @Composable
 private fun ChangesContent(
     state: FilesUiState,
+    bottomOverlayPadding: Dp,
     onRetry: () -> Unit,
     onOpen: (ChangedFileDto) -> Unit,
     onOpenRepo: (String) -> Unit,
@@ -366,7 +380,11 @@ private fun ChangesContent(
         }
         is FilesUiState.Error -> ScrollableHint { ErrorContent(state.message, onRetry) }
         is FilesUiState.Content -> when {
-            !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onOpenRepo)
+            !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(
+                state.repos,
+                onOpenRepo,
+                bottomOverlayPadding,
+            )
             !state.isGitRepo -> ScrollableHint {
                 EmptyHint(
                     title = "此目录不是 Git 仓库",
@@ -381,7 +399,12 @@ private fun ChangesContent(
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 12.dp,
+                    top = 12.dp,
+                    end = 12.dp,
+                    bottom = 12.dp + bottomOverlayPadding,
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {
@@ -419,10 +442,15 @@ private fun ScrollableHint(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun RepoList(repos: List<String>, onOpenRepo: (String) -> Unit) {
+private fun RepoList(repos: List<String>, onOpenRepo: (String) -> Unit, bottomOverlayPadding: Dp) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = 12.dp,
+            top = 12.dp,
+            end = 12.dp,
+            bottom = 12.dp + bottomOverlayPadding,
+        ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         item {
@@ -458,6 +486,7 @@ private fun RepoList(repos: List<String>, onOpenRepo: (String) -> Unit) {
 @Composable
 private fun FileBrowserContent(
     state: FileBrowserUiState,
+    bottomOverlayPadding: Dp,
     query: String,
     onQueryChange: (String) -> Unit,
     onBrowse: (String?) -> Unit,
@@ -547,7 +576,12 @@ private fun FileBrowserContent(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 12.dp,
+                top = 12.dp,
+                end = 12.dp,
+                bottom = 12.dp + bottomOverlayPadding,
+            ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
                 if (state.loading && state.entries.isEmpty()) {
@@ -675,7 +709,11 @@ private fun FileEntryRow(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
+private fun FileContentScreen(
+    state: FileContentUiState,
+    onBack: () -> Unit,
+    bottomOverlayPadding: Dp,
+) {
     val pathKey = when (state) {
         is FileContentUiState.Loading -> state.path
         is FileContentUiState.Ready -> state.content.path
@@ -734,7 +772,10 @@ private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
                                 )
                             }
                             if (wrap) {
-                                LazyColumn(modifier = Modifier.weight(1f).background(IdeBackground)) {
+                                LazyColumn(
+                                    modifier = Modifier.weight(1f).background(IdeBackground),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+                                ) {
                                     items(lines) { line ->
                                         Text(
                                             line,
@@ -748,7 +789,10 @@ private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
                                 val maxChars = remember(lines) { lines.maxOfOrNull { it.length } ?: 0 }
                                 val lineWidth = remember(maxChars) { minOf(maxOf(360.dp, (maxChars * 7).dp), 3200.dp) }
                                 val horizontalState = rememberScrollState()
-                                LazyColumn(modifier = Modifier.weight(1f).background(IdeBackground)) {
+                                LazyColumn(
+                                    modifier = Modifier.weight(1f).background(IdeBackground),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+                                ) {
                                     items(lines) { line ->
                                         Row(modifier = Modifier.horizontalScroll(horizontalState)) {
                                             Text(
@@ -881,7 +925,12 @@ private fun statusLabel(status: String): String = when (status) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiffScreen(state: DiffUiState, onBack: () -> Unit, onOpenFullFile: () -> Unit) {
+private fun DiffScreen(
+    state: DiffUiState,
+    onBack: () -> Unit,
+    onOpenFullFile: () -> Unit,
+    bottomOverlayPadding: Dp,
+) {
     var split by remember { mutableStateOf(true) }
     Scaffold(
         topBar = {
@@ -927,14 +976,18 @@ private fun DiffScreen(state: DiffUiState, onBack: () -> Unit, onOpenFullFile: (
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(20.dp),
                 )
-                is DiffUiState.Ready -> DiffContent(state = state, split = split)
+                is DiffUiState.Ready -> DiffContent(
+                    state = state,
+                    split = split,
+                    bottomOverlayPadding = bottomOverlayPadding,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DiffContent(state: DiffUiState.Ready, split: Boolean) {
+private fun DiffContent(state: DiffUiState.Ready, split: Boolean, bottomOverlayPadding: Dp) {
     val diff = state.diff
     if (diff.binary) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -951,17 +1004,20 @@ private fun DiffContent(state: DiffUiState.Ready, split: Boolean) {
                 )
             }
             if (split) {
-                SplitDiffContent(diff.patch)
+                SplitDiffContent(diff.patch, bottomOverlayPadding)
             } else {
-                UnifiedDiffContent(diff.patch)
+                UnifiedDiffContent(diff.patch, bottomOverlayPadding)
             }
         }
     }
 }
 
 @Composable
-private fun UnifiedDiffContent(patch: String) {
-    LazyColumn(modifier = Modifier.fillMaxSize().background(IdeBackground)) {
+private fun UnifiedDiffContent(patch: String, bottomOverlayPadding: Dp) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(IdeBackground),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+    ) {
         items(patch.split('\n')) { line ->
             val isHunk = line.startsWith("@@")
             Text(
@@ -978,13 +1034,16 @@ private fun UnifiedDiffContent(patch: String) {
 }
 
 @Composable
-private fun SplitDiffContent(patch: String) {
+private fun SplitDiffContent(patch: String, bottomOverlayPadding: Dp) {
     val rows = remember(patch) { parseSplitDiff(patch) }
     var expandedRow by remember(patch) { mutableStateOf<Int?>(null) }
     val horizontalState = rememberScrollState()
     val maxChars = remember(patch) { patch.split('\n').maxOfOrNull { it.length } ?: 0 }
     val columnWidth = remember(maxChars) { minOf(maxOf(DiffColumnWidth, (maxChars * 7).dp), 3200.dp) }
-    LazyColumn(modifier = Modifier.fillMaxSize().background(IdeBackground)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(IdeBackground),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+    ) {
         itemsIndexed(rows) { index, row ->
             when (row.kind) {
                 SplitDiffKind.HUNK -> Text(

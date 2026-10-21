@@ -26,6 +26,7 @@ final class ChatViewController: UIViewController {
     private var hasRenderedOnce = false
     private var isFollowingBottom = true
     private var isUpdatingBottomInset = false
+    private var isScrollingToBottom = false
     private var presentedPermissionID: String?
     private var permissionAlert: UIViewController?
     private var dismissingPermission = false
@@ -84,6 +85,8 @@ final class ChatViewController: UIViewController {
         tableView.contentInset.bottom = inset
         tableView.verticalScrollIndicatorInsets.bottom = overlap
         if isFollowingBottom {
+            // Updating the inset can cancel a running UIKit scroll animation.
+            isScrollingToBottom = false
             scrollToBottom(animated: false)
         } else {
             tableView.setContentOffset(offset, animated: false)
@@ -251,6 +254,7 @@ final class ChatViewController: UIViewController {
         jumpButton.translatesAutoresizingMaskIntoConstraints = false
         jumpButton.isHidden = true
         jumpButton.accessibilityLabel = "回到底部"
+        jumpButton.accessibilityIdentifier = "chat.jumpToBottom"
         jumpButton.addAction(
             UIAction { [weak self] _ in
                 guard let self else { return }
@@ -351,15 +355,21 @@ final class ChatViewController: UIViewController {
             var snapshot = NSDiffableDataSourceSnapshot<String, String>()
             snapshot.appendSections(["messages"])
             snapshot.appendItems(ids, toSection: "messages")
-            dataSource.apply(snapshot, animatingDifferences: hasRenderedOnce)
+            dataSource.apply(snapshot, animatingDifferences: hasRenderedOnce) { [weak self] in
+                guard let self, self.isFollowingBottom, !self.isScrollingToBottom else { return }
+                self.scrollToBottom(animated: false)
+            }
             hasRenderedOnce = true
         } else if let last = ids.last {
             var snapshot = dataSource.snapshot()
             snapshot.reconfigureItems([last])
-            dataSource.apply(snapshot, animatingDifferences: false)
+            dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+                guard let self, self.isFollowingBottom, !self.isScrollingToBottom else { return }
+                self.scrollToBottom(animated: false)
+            }
         }
 
-        if isFollowingBottom {
+        if isFollowingBottom && !isScrollingToBottom {
             scrollToBottom(animated: false)
         }
         jumpButton.isHidden = isFollowingBottom || ids.isEmpty
@@ -388,9 +398,16 @@ final class ChatViewController: UIViewController {
     private func scrollToBottom(animated: Bool) {
         guard !lastMessageIDs.isEmpty else { return }
         tableView.layoutIfNeeded()
-        let row = lastMessageIDs.count - 1
-        guard tableView.numberOfRows(inSection: 0) > row else { return }
-        tableView.scrollToRow(at: IndexPath(row: row, section: 0), at: .bottom, animated: animated)
+        let bottom = max(
+            -tableView.adjustedContentInset.top,
+            tableView.contentSize.height + tableView.adjustedContentInset.bottom - tableView.bounds.height
+        )
+        guard abs(tableView.contentOffset.y - bottom) > 0.5 else {
+            isScrollingToBottom = false
+            return
+        }
+        isScrollingToBottom = animated
+        tableView.setContentOffset(CGPoint(x: tableView.contentOffset.x, y: bottom), animated: animated)
     }
 
     // MARK: - Header menu
@@ -646,7 +663,7 @@ final class ChatViewController: UIViewController {
 
 extension ChatViewController: UITableViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView, !isUpdatingBottomInset else { return }
+        guard scrollView === tableView, !isUpdatingBottomInset, !isScrollingToBottom else { return }
 
         let distance = tableView.contentSize.height
             + tableView.adjustedContentInset.bottom
@@ -654,6 +671,17 @@ extension ChatViewController: UITableViewDelegate {
             - tableView.bounds.height
         isFollowingBottom = distance < 80
         jumpButton.isHidden = isFollowingBottom || lastMessageIDs.isEmpty
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        if scrollView === tableView { isScrollingToBottom = false }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        guard scrollView === tableView, isScrollingToBottom else { return }
+        isScrollingToBottom = false
+        // A cell may have grown while the animation ran; finish at the real content end.
+        scrollToBottom(animated: false)
     }
 }
 

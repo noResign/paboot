@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.data.PendingNewSession
@@ -92,6 +93,7 @@ fun SessionListScreen(
     onOpenSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onReconnect: () -> Unit,
+    bottomOverlayPadding: Dp = 0.dp,
     viewModel: SessionListViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -139,7 +141,10 @@ fun SessionListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewSession = true }) {
+            FloatingActionButton(
+                onClick = { showNewSession = true },
+                modifier = Modifier.padding(bottom = bottomOverlayPadding),
+            ) {
                 Icon(Icons.Rounded.Add, contentDescription = "新建会话")
             }
         },
@@ -180,6 +185,7 @@ fun SessionListScreen(
                     } else {
                         SessionGroupedList(
                             model = state.model,
+                            bottomOverlayPadding = bottomOverlayPadding,
                             onOpenSession = onOpenSession,
                             onRename = { session ->
                                 viewModel.clearRenameError()
@@ -267,6 +273,7 @@ fun SessionListScreen(
 @Composable
 private fun SessionGroupedList(
     model: SessionListModel,
+    bottomOverlayPadding: Dp,
     onOpenSession: (String) -> Unit,
     onRename: (SessionDto) -> Unit,
     onDelete: (SessionDto) -> Unit,
@@ -284,7 +291,12 @@ private fun SessionGroupedList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 16.dp,
+            end = 16.dp,
+            bottom = 16.dp + bottomOverlayPadding,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         sessionCards(model.rootSessions, revealedId, reveal, onOpenSession, onRename, onDelete)

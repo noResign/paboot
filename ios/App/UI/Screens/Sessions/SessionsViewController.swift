@@ -22,6 +22,8 @@ final class SessionsViewController: UIViewController {
 
     private let titleLabel = UILabel()
     private let pathLabel = UILabel()
+    private let titleContainer = UIView()
+    private var titleWidthConstraint: NSLayoutConstraint!
     private let newSessionButton = UIButton(type: .system)
 
     private var dataSource: UITableViewDiffableDataSource<String, String>!
@@ -59,6 +61,16 @@ final class SessionsViewController: UIViewController {
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // A long workspace path must not widen the title into the right menu's
+        // space. Recalculate for rotation and split-screen resizing.
+        let width = min(360, max(100, view.bounds.width - 140))
+        if titleWidthConstraint.constant != width {
+            titleWidthConstraint.constant = width
+        }
+    }
+
     private func configureNavigationTitle() {
         titleLabel.text = "会话"
         titleLabel.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
@@ -75,9 +87,25 @@ final class SessionsViewController: UIViewController {
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, pathLabel])
         stack.axis = .vertical
-        stack.alignment = .center
+        stack.alignment = .fill
         stack.spacing = 0
-        navigationItem.titleView = stack
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        titleContainer.addSubview(stack)
+        titleWidthConstraint = titleContainer.widthAnchor.constraint(equalToConstant: 240)
+        NSLayoutConstraint.activate([
+            titleWidthConstraint,
+            stack.topAnchor.constraint(equalTo: titleContainer.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor),
+        ])
+        navigationItem.titleView = titleContainer
+
+        // Match the right workspace-menu button's reserved width so UIKit centers
+        // the title between equal side areas, even when the path is truncated.
+        let leadingSpace = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 1))
+        leadingSpace.isAccessibilityElement = false
+        navigationItem.leftBarButtonItem = UIBarButtonItem(customView: leadingSpace)
     }
 
     private func configureTable() {
@@ -165,8 +193,8 @@ final class SessionsViewController: UIViewController {
             systemName: "plus",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         )
-        configuration.baseBackgroundColor = Theme.Colors.primary
-        configuration.baseForegroundColor = Theme.Colors.onPrimary
+        configuration.baseBackgroundColor = Theme.Colors.primarySubtle
+        configuration.baseForegroundColor = Theme.Colors.primaryDeep
         configuration.cornerStyle = .capsule
 
         newSessionButton.configuration = configuration

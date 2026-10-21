@@ -106,8 +106,8 @@ final class ChatInputBar: UIView {
             ),
             for: .normal
         )
-        actionButton.backgroundColor = isStreaming ? Theme.Colors.surface2 : Theme.Colors.primary
-        actionButton.tintColor = isStreaming ? Theme.Colors.textPrimary : Theme.Colors.onPrimary
+        actionButton.backgroundColor = isStreaming ? Theme.Colors.surface2 : Theme.Colors.primarySubtle
+        actionButton.tintColor = isStreaming ? Theme.Colors.textPrimary : Theme.Colors.primaryDeep
         actionButton.accessibilityLabel = isStreaming ? "停止" : "发送"
     }
 

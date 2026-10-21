@@ -153,31 +153,39 @@ final class AssistantMessageCell: UITableViewCell {
     }
 
     private func rebuild(items: [AssistantRenderItem]) {
-        blockStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let kinds = items.map(Self.kind)
+        var unchangedCount = 0
+        for (oldKind, newKind) in zip(itemKinds, kinds) {
+            guard oldKind == newKind else { break }
+            unchangedCount += 1
+        }
+        for view in itemViews.dropFirst(unchangedCount) {
+            view.removeFromSuperview()
+        }
+        itemViews = Array(itemViews.prefix(unchangedCount))
 
-        itemViews = items.map { item in
+        for item in items.dropFirst(unchangedCount) {
+            let view: ChatBlockView
             switch item {
             case .tools:
-                return ChatToolGroupView(frame: .zero)
+                view = ChatToolGroupView(frame: .zero)
             case .block(.text):
-                return ChatTextBlockView(frame: .zero)
+                view = ChatTextBlockView(frame: .zero)
             case .block(.thinking):
-                return ChatThinkingBlockView(frame: .zero)
+                view = ChatThinkingBlockView(frame: .zero)
             case .block(.question):
-                let view = ChatQuestionCardView(frame: .zero)
-                view.onSubmit = { [weak self] toolUseId, text in
+                let questionView = ChatQuestionCardView(frame: .zero)
+                questionView.onSubmit = { [weak self] toolUseId, text in
                     self?.onAnswer?(toolUseId, text)
                 }
-                return view
+                view = questionView
             case .block(.tool):
-                return ChatBlockView(frame: .zero)
+                view = ChatBlockView(frame: .zero)
             }
-        }
-
-        for view in itemViews {
+            itemViews.append(view)
             blockStack.addArrangedSubview(view)
         }
-        itemKinds = items.map(Self.kind)
+        itemKinds = kinds
     }
 
     private static func renderItems(_ blocks: [ContentBlock]) -> [AssistantRenderItem] {
@@ -204,8 +212,8 @@ final class AssistantMessageCell: UITableViewCell {
 
     private static func kind(_ item: AssistantRenderItem) -> String {
         switch item {
-        case .tools:
-            return "tools"
+        case .tools(let tools):
+            return "tools:\(tools.first?.id ?? "")"
         case .block(.text):
             return "text"
         case .block(.thinking):
@@ -403,6 +411,7 @@ final class ChatToolGroupView: ChatBlockView {
     private var lastTools: [ToolUseBlock]?
     private var cards: [String: ChatToolCardView] = [:]
     private var expanded = false
+    var isExpanded: Bool { expanded }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -513,7 +522,12 @@ final class ChatToolGroupView: ChatBlockView {
     }
 
     @objc private func toggle() {
-        expanded.toggle()
+        setExpanded(!expanded)
+    }
+
+    func setExpanded(_ value: Bool) {
+        guard expanded != value else { return }
+        expanded = value
         cardsStack.isHidden = !expanded
         updateHeader()
         notifyEnclosingTableHeightChanged()
@@ -551,6 +565,7 @@ final class ChatToolCardView: ChatBlockView {
     private var tool: ToolUseBlock?
     private var lastTool: ToolUseBlock?
     private var expanded = false
+    var isExpanded: Bool { expanded }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -652,7 +667,12 @@ final class ChatToolCardView: ChatBlockView {
     }
 
     @objc private func toggle() {
-        expanded.toggle()
+        setExpanded(!expanded)
+    }
+
+    func setExpanded(_ value: Bool) {
+        guard expanded != value else { return }
+        expanded = value
         rebuildBody()
         notifyEnclosingTableHeightChanged()
     }

@@ -37,6 +37,8 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
         ChatScreen(
             sessionId = sessionId,
             onBack = { navController.popBackStack() },
+            onReconnect = { navController.navigateToConnect() },
+            onManageWorkspaces = { navController.navigateToWorkspaces() },
         )
     }
 }

@@ -28,6 +28,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -54,12 +56,14 @@ fun MediaViewerScreen(
     state: MediaUiState,
     client: OkHttpClient?,
     onBack: () -> Unit,
+    bottomOverlayPadding: Dp = 0.dp,
 ) {
     val path = when (state) {
         is MediaUiState.Ready -> state.path
         is MediaUiState.Error -> state.path
     }
     Scaffold(
+        containerColor = MediaBackground,
         topBar = {
             TopAppBar(
                 title = {
@@ -78,7 +82,7 @@ fun MediaViewerScreen(
             )
         },
     ) { innerPadding ->
-        val body = Modifier.fillMaxSize().padding(innerPadding)
+        val body = Modifier.fillMaxSize().padding(innerPadding).padding(bottom = bottomOverlayPadding)
         when (state) {
             is MediaUiState.Error -> CenteredHint(state.message, isError = true, modifier = body)
             is MediaUiState.Ready -> when {

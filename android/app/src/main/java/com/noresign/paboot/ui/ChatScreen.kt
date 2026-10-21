@@ -1,6 +1,7 @@
 package com.noresign.paboot.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,11 +21,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -43,7 +46,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +66,7 @@ import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.notify.NotificationPermission
 import com.noresign.paboot.notify.RunNotifications
+import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.viewmodel.SessionPermissionsUiState
 import com.noresign.paboot.ui.chat.InputBar
 import com.noresign.paboot.ui.chat.MessageList
@@ -72,13 +77,14 @@ import com.noresign.paboot.model.chat.ContextUsage
 import com.noresign.paboot.ui.component.ContextRing
 import com.noresign.paboot.util.formatTokens
 import com.noresign.paboot.viewmodel.ChatViewModel
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     sessionId: String?,
     onBack: () -> Unit,
+    onReconnect: () -> Unit,
+    onManageWorkspaces: () -> Unit,
     viewModel: ChatViewModel = viewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -94,6 +100,7 @@ fun ChatScreen(
     val permissionInputError by viewModel.permissionInputError.collectAsState()
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
+    val sessionPermissionMode by viewModel.sessionPermissionMode.collectAsState()
     val reconnecting by viewModel.reconnecting.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
     val sessionModel by viewModel.sessionModel.collectAsState()
@@ -103,15 +110,18 @@ fun ChatScreen(
     val modelsError by viewModel.modelsError.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf("") }
+    var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
+    var composerVisible by rememberSaveable { mutableStateOf(true) }
+    val tabStateHolder = rememberSaveableStateHolder()
     var todoExpanded by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
+    var showSessionMenu by remember { mutableStateOf(false) }
 
-    // 输入框下方的模型标签：模型名 + 第一个显式参数的展示名（通常是推理强度）。
+    // The model label is shown in the session menu, beside the permission settings.
     val selectedModelOption = models.find { it.id == sessionModel }
     val explicitParameterLabel = selectedModelOption?.parameters?.firstNotNullOfOrNull { parameter ->
         sessionModelParameters[parameter.id]?.let { valueId ->
@@ -132,6 +142,12 @@ fun ChatScreen(
         sessionId?.let { RunNotifications.clear(context, it) }
         viewModel.load(sessionId)
     }
+    // The view model remains alive while browsing files or settings, but the conversation
+    // is no longer visible and must not suppress run notifications.
+    LaunchedEffect(selectedTab, activeSessionId) {
+        if (selectedTab == MainTab.Sessions) ChatVisibility.enter(activeSessionId)
+        else ChatVisibility.exit(activeSessionId)
+    }
     // 任务真的跑起来了才要通知权限：此刻用途最明确，也最不像「一进来就要权限」
     LaunchedEffect(streaming) {
         if (!streaming || SettingsStore.notificationPromptShown) return@LaunchedEffect
@@ -147,7 +163,11 @@ fun ChatScreen(
         }
     }
 
-    Scaffold(
+    BackHandler(enabled = selectedTab != MainTab.Sessions) {
+        selectedTab = MainTab.Sessions
+    }
+
+    if (selectedTab == MainTab.Sessions) Scaffold(
         topBar = {
             TopAppBar(
                 title = {
@@ -171,15 +191,66 @@ fun ChatScreen(
                 },
                 actions = {
                     contextUsage?.let { ContextIndicator(it) }
-                    TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
+                    Box {
+                        IconButton(onClick = { showSessionMenu = true }) {
+                            Icon(Icons.Rounded.Tune, contentDescription = "会话设置")
+                        }
+                        DropdownMenu(
+                            expanded = showSessionMenu,
+                            onDismissRequest = { showSessionMenu = false },
+                        ) {
+                            Text(
+                                "权限模式",
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            permissionModeOptions(runtime).forEach { (mode, _) ->
+                                val label = when (mode) {
+                                    "ask" -> "询问"
+                                    "acceptEdits" -> "自动接受编辑"
+                                    "bypass" -> "绕过审批"
+                                    else -> mode
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    trailingIcon = {
+                                        if (sessionPermissionMode == mode) {
+                                            Icon(Icons.Rounded.Check, contentDescription = "当前权限模式")
+                                        }
+                                    },
+                                    onClick = {
+                                        showSessionMenu = false
+                                        viewModel.updateSessionPermissionMode(mode)
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("模型：$modelDisplayLabel") },
+                                onClick = {
+                                    showSessionMenu = false
+                                    viewModel.loadModels()
+                                    showModels = true
+                                },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("权限设置…") },
+                                enabled = activeSessionId != null,
+                                onClick = {
+                                    showSessionMenu = false
+                                    viewModel.openSessionPermissions()
+                                },
+                            )
+                        }
+                    }
                 },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            // AppNavHost owns IME padding; only add any unconsumed navigation
-            // inset here. The top bar stays fixed as the message area shrinks.
-            Column(modifier = Modifier.navigationBarsPadding()) {
+            Column {
                 if (todos.isNotEmpty()) {
                     TodoListPanel(
                         todos = todos,
@@ -191,22 +262,32 @@ fun ChatScreen(
                 if (reconnecting) {
                     ReconnectBanner()
                 }
-                InputBar(
-                    input = input,
-                    streaming = streaming,
-                    showModel = activeSessionId != null,
-                    modelLabel = modelDisplayLabel,
-                    modelIsExplicit = sessionModel != null || sessionModelParameters.isNotEmpty(),
-                    onInputChange = { input = it },
-                    onSend = {
-                        viewModel.send(input)
-                        input = ""
+                FloatingBottomBar(
+                    selected = MainTab.Sessions,
+                    onSelect = { tab ->
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        if (tab == MainTab.Sessions) onBack() else selectedTab = tab
                     },
-                    onStop = viewModel::stop,
-                    onMic = { scope.launch { snackbarHostState.showSnackbar("语音输入即将上线") } },
-                    onModelClick = {
-                        viewModel.loadModels()
-                        showModels = true
+                    composerVisible = composerVisible,
+                    onToggle = {
+                        if (composerVisible) {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        }
+                        composerVisible = !composerVisible
+                    },
+                    composer = {
+                        InputBar(
+                            input = input,
+                            streaming = streaming,
+                            onInputChange = { input = it },
+                            onSend = {
+                                viewModel.send(input)
+                                input = ""
+                            },
+                            onStop = viewModel::stop,
+                        )
                     },
                 )
             }
@@ -217,9 +298,10 @@ fun ChatScreen(
             streaming = streaming,
             loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
+            bottomOverlayPadding = innerPadding.calculateBottomPadding(),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .consumeWindowInsets(innerPadding)
                 .clipToBounds()
                 .pointerInput(Unit) {
@@ -229,6 +311,32 @@ fun ChatScreen(
                     })
                 },
         )
+    } else Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            FloatingBottomBar(
+                selected = selectedTab,
+                onSelect = { selectedTab = it },
+            )
+        },
+    ) { innerPadding ->
+        Box(
+            Modifier.fillMaxSize()
+                .padding(top = innerPadding.calculateTopPadding())
+                .consumeWindowInsets(innerPadding)
+        ) {
+            tabStateHolder.SaveableStateProvider(selectedTab.name) {
+                when (selectedTab) {
+                    MainTab.Files -> FilesScreen(bottomOverlayPadding = innerPadding.calculateBottomPadding())
+                    MainTab.Settings -> SettingsScreen(
+                        onReconnect,
+                        onManageWorkspaces,
+                        bottomOverlayPadding = innerPadding.calculateBottomPadding(),
+                    )
+                    MainTab.Sessions -> Unit
+                }
+            }
+        }
     }
 
     permission?.let { req ->
@@ -316,7 +424,7 @@ fun ChatScreen(
         }
     }
 
-    if (showModels && activeSessionId != null) {
+    if (showModels) {
         ModalBottomSheet(onDismissRequest = { showModels = false }) {
             Column(
                 modifier = Modifier

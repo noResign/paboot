@@ -117,6 +117,9 @@ class ChatViewModel(
     private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
     val sessionPermissions = _sessionPermissions.asStateFlow()
 
+    private val _sessionPermissionMode = MutableStateFlow("ask")
+    val sessionPermissionMode = _sessionPermissionMode.asStateFlow()
+
     /** 会话当前使用的模型；`null` = 沿用电脑端 CLI 默认。 */
     private val _sessionModel = MutableStateFlow<String?>(null)
     val sessionModel = _sessionModel.asStateFlow()
@@ -171,6 +174,7 @@ class ChatViewModel(
         // 模型与目录同理：打开会话后从详情填回。
         _sessionModel.value = null
         _sessionModelParameters.value = emptyMap()
+        _sessionPermissionMode.value = "ask"
         _models.value = emptyList()
         _modelsError.value = null
         modelsRuntime = null
@@ -185,6 +189,7 @@ class ChatViewModel(
                 _sessionRuntime.value = it.runtime ?: "claude"
                 initialWorkspaceId = it.workspaceId
                 initialPermissionMode = it.permissionMode
+                _sessionPermissionMode.value = it.permissionMode ?: "ask"
             }
             return
         }
@@ -197,6 +202,7 @@ class ChatViewModel(
                         _sessionTitle.value = session.title
                         _sessionCwd.value = session.cwd
                         _sessionRuntime.value = session.runtime
+                        _sessionPermissionMode.value = session.permissionMode
                         _sessionModel.value = session.model
                         _sessionModelParameters.value = session.modelParameters ?: emptyMap()
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
@@ -278,6 +284,8 @@ class ChatViewModel(
         val runtime = initialRuntime
         val workspaceId = initialWorkspaceId
         val permissionMode = initialPermissionMode
+        val model = if (sessionIdAtSend == null) _sessionModel.value else null
+        val modelParameters = if (sessionIdAtSend == null) _sessionModelParameters.value.ifEmpty { null } else null
         // 同一次发送（含重发）共用一个 commandId，让「请求刚发出就断、run id 都没拿到」
         // 能按同一 id 重发，daemon 重连到已起的 run，而不是起第二个。
         val commandId = UUID.randomUUID().toString()
@@ -289,6 +297,8 @@ class ChatViewModel(
                 runtime = runtime,
                 workspaceId = workspaceId,
                 permissionMode = permissionMode,
+                model = model,
+                modelParameters = modelParameters,
                 commandId = commandId,
             )
         }
@@ -517,10 +527,13 @@ class ChatViewModel(
         _sessionPermissions.value = SessionPermissionsUiState.Loading
         viewModelScope.launch {
             when (val r = sessionRepository.permissions(id)) {
-                is NetworkResult.Success -> _sessionPermissions.value = SessionPermissionsUiState.Ready(
-                    mode = r.data.mode,
-                    grants = r.data.grants,
-                )
+                is NetworkResult.Success -> {
+                    _sessionPermissionMode.value = r.data.mode
+                    _sessionPermissions.value = SessionPermissionsUiState.Ready(
+                        mode = r.data.mode,
+                        grants = r.data.grants,
+                    )
+                }
                 is NetworkResult.Error -> _sessionPermissions.value = SessionPermissionsUiState.Error(friendlyError(r))
             }
         }
@@ -570,7 +583,12 @@ class ChatViewModel(
 
     /** 切换后续 run 的模型与参数；正在运行的那一轮不受影响。 */
     private fun updateSessionSelection(model: String?, parameters: Map<String, String>) {
-        val id = sessionId ?: return
+        val id = sessionId
+        if (id == null) {
+            _sessionModel.value = model
+            _sessionModelParameters.value = parameters
+            return
+        }
         viewModelScope.launch {
             when (val r = sessionRepository.updateSessionModel(id, model, parameters.ifEmpty { null })) {
                 is NetworkResult.Success -> {
@@ -583,10 +601,18 @@ class ChatViewModel(
     }
 
     fun updateSessionPermissionMode(mode: String) {
-        val id = sessionId ?: return
+        val id = sessionId
+        if (id == null) {
+            initialPermissionMode = mode
+            _sessionPermissionMode.value = mode
+            return
+        }
         viewModelScope.launch {
             when (val r = sessionRepository.updatePermissionMode(id, mode)) {
-                is NetworkResult.Success -> openSessionPermissions()
+                is NetworkResult.Success -> {
+                    _sessionPermissionMode.value = mode
+                    if (_sessionPermissions.value != null) openSessionPermissions()
+                }
                 is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }
