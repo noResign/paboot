@@ -28,12 +28,11 @@ export function ConnectPage() {
 
   const [address, setAddress] = useState('');
   // Starting a daemon is a deliberate, multi-step act: a directory that becomes
-  // the agent's writable root, and whether to open it to the phone.
+  // the agent's writable root (LAN access is on by default).
   const [spawnOpen, setSpawnOpen] = useState(false);
   /** A systemd unit is installed — worth saying, since we deliberately do not use it. */
   const [hasSystemdUnit, setHasSystemdUnit] = useState(false);
   const [spawnDir, setSpawnDir] = useState('');
-  const [spawnPhone, setSpawnPhone] = useState(false);
   const [spawnBusy, setSpawnBusy] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const [spawnLogPath, setSpawnLogPath] = useState<string | null>(null);
@@ -104,7 +103,6 @@ export function ConnectPage() {
     const res = await window.paboot.daemonStart({
       workspace,
       port: 0,
-      host: spawnPhone ? '0.0.0.0' : '127.0.0.1',
     });
     setSpawnBusy(false);
     if (!res.ok) {
@@ -260,6 +258,8 @@ export function ConnectPage() {
               数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
               ——手机连任意一个，看到的会话与工作区都一样。
               端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
+              启动后绑 <span className="mono">0.0.0.0</span>，同一局域网的手机/电脑可直接连接
+              （仍需 token；明文 HTTP，请勿把端口暴露到公网）。
               {hasSystemdUnit && (
                 <>
                   {' '}
@@ -268,14 +268,6 @@ export function ConnectPage() {
                 </>
               )}
             </div>
-            <label className="switch" style={{ marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={spawnPhone}
-                onChange={(event) => setSpawnPhone(event.target.checked)}
-              />
-              <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
-            </label>
             {spawnError && (
               <div className="error-text">
                 {spawnError}

@@ -197,7 +197,7 @@ export interface ManagedDaemonStartInput {
   /** The agent's writable root. Must come from a directory picker, never guessed (§2). */
   workspace: string;
   port: number;
-  /** Loopback unless the user explicitly opens it to the phone. */
+  /** Defaults to `0.0.0.0` (the LAN can reach it); pass loopback explicitly to close it. */
   host?: string;
 }
 

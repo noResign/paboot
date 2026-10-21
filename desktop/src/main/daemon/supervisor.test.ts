@@ -21,14 +21,14 @@ afterEach(() => {
 });
 
 describe('buildDaemonArgs', () => {
-  it('spells out --host, because the daemon defaults to 0.0.0.0', () => {
+  it('spells out --host and defaults to every interface', () => {
     expect(buildDaemonArgs({ workspace: '/w', port: 4780 })).toEqual([
       '--workspace',
       '/w',
       '--port',
       '4780',
       '--host',
-      '127.0.0.1',
+      '0.0.0.0',
     ]);
   });
 
@@ -36,8 +36,8 @@ describe('buildDaemonArgs', () => {
     expect(buildDaemonArgs({ workspace: '/w', port: 4780 })).not.toContain('--data-dir');
   });
 
-  it('honours an explicit host (opening it to the phone is opt-in)', () => {
-    expect(buildDaemonArgs({ workspace: '/w', port: 1, host: '0.0.0.0' })).toContain('0.0.0.0');
+  it('honours an explicit loopback host', () => {
+    expect(buildDaemonArgs({ workspace: '/w', port: 1, host: '127.0.0.1' })).toContain('127.0.0.1');
   });
 });
 
@@ -372,7 +372,7 @@ describe('DaemonSupervisor restarting a daemon an earlier run started', () => {
     expect(sup.hasLaunchSpec()).toBe(true);
     await sup.startLast();
 
-    expect(spawned[0]).toEqual(['/entry.js', '--workspace', '/w', '--port', '4780', '--host', '127.0.0.1']);
+    expect(spawned[0]).toEqual(['/entry.js', '--workspace', '/w', '--port', '4780', '--host', '0.0.0.0']);
   });
 
   it('says so instead of spawning when there is no launch spec at all', async () => {

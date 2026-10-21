@@ -350,7 +350,7 @@ export function SettingsPage({
                     <div className="hint">
                       这个目录会成为<b>默认工作区</b>（之后不可删除），agent 的写入被限制在它里面；支持
                       <span className="mono"> ~</span>，目录不存在会自动创建。端口在 4780–4789 里自动挑空闲的，
-                      绑 <span className="mono">127.0.0.1</span>；要开放给手机请到<b>连接页</b>启动。
+                      绑 <span className="mono">0.0.0.0</span>，同一局域网可连（仍需 token；明文 HTTP，请勿暴露到公网）。
                       {daemon?.systemd &&
                         ' 这台机器装了 systemd 单元 paboot.service——从这里启动的归本应用管（可重启/改 token），不会去动那个单元。'}
                     </div>

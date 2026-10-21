@@ -26,14 +26,16 @@ export interface DaemonArgsInput {
   /** The agent's writable root — must come from the user, never guessed (§2). */
   workspace: string;
   port: number;
-  /** Loopback unless the user explicitly opens it to the phone. */
+  /** Every interface by default — the phone is meant to connect without extra steps. */
   host?: string;
 }
 
 /**
- * `--host` is spelled out: the daemon defaults to `0.0.0.0`. The data root is
- * deliberately not passed — it is fixed at `~/.paboot` inside the daemon, so the
- * two can never disagree about where the DB (and the `serverId` in it) lives.
+ * `--host` is spelled out so a daemon started here never silently inherits
+ * another machine's bind choice; the default is `0.0.0.0`, matching the daemon.
+ * The data root is deliberately not passed — it is fixed at `~/.paboot` inside
+ * the daemon, so the two can never disagree about where the DB (and the
+ * `serverId` in it) lives.
  */
 export function buildDaemonArgs(input: DaemonArgsInput): string[] {
   return [
@@ -42,7 +44,7 @@ export function buildDaemonArgs(input: DaemonArgsInput): string[] {
     '--port',
     String(input.port),
     '--host',
-    input.host ?? '127.0.0.1',
+    input.host ?? '0.0.0.0',
   ];
 }
 
