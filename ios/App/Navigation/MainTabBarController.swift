@@ -149,7 +149,11 @@ final class MainTabBarController: UIViewController, UINavigationControllerDelega
     func navigateFromChat(to destination: ChatBottomBar.Destination) {
         selectedIndex = destination.rawValue
         if destination == .sessions {
-            navigationControllers[activeIndex].popToRootViewController(animated: true)
+            let navigation = navigationControllers[activeIndex]
+            navigation.popToRootViewController(animated: false)
+            // Update immediately as well as in delegate callbacks: a stack that is
+            // not in a window may defer didShow, leaving the chat bar hidden.
+            updateBottomBar(for: navigation.topViewController)
         }
     }
 
