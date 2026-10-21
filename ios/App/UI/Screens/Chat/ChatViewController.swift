@@ -157,6 +157,12 @@ final class ChatViewController: UIViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomStack)
 
+        // An all-hidden stack can retain its previous height. Prefer zero when
+        // empty; visible content's stronger constraints still determine its height.
+        let emptyHeight = bottomStack.heightAnchor.constraint(equalToConstant: 0)
+        emptyHeight.priority = .fittingSizeLevel
+        emptyHeight.isActive = true
+
         NSLayoutConstraint.activate([
             bottomStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),

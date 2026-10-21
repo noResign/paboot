@@ -14,6 +14,9 @@ final class AsyncStateTests: XCTestCase {
         stack.axis = .vertical
         stack.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(stack)
+        let emptyHeight = stack.heightAnchor.constraint(equalToConstant: 0)
+        emptyHeight.priority = .fittingSizeLevel
+        emptyHeight.isActive = true
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: host.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: host.trailingAnchor),
@@ -29,6 +32,15 @@ final class AsyncStateTests: XCTestCase {
         let expandedHeight = stack.bounds.height
         XCTAssertGreaterThan(expandedHeight, 36)
 
+        composer.isHidden = true
+        host.layoutIfNeeded()
+        XCTAssertEqual(stack.bounds.height, 0, accuracy: 1)
+        composer.isHidden = false
+        host.layoutIfNeeded()
+        XCTAssertEqual(stack.bounds.height, expandedHeight, accuracy: 1)
+        XCTAssertEqual(field.text, "未发送的草稿")
+
+        // Repeat the transition to catch stale stack sizing after restoration.
         composer.isHidden = true
         host.layoutIfNeeded()
         XCTAssertEqual(stack.bounds.height, 0, accuracy: 1)
