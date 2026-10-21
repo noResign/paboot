@@ -32,7 +32,8 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
   const send = useChat((state) => state.send);
   const stop = useChat((state) => state.stop);
   const decide = useChat((state) => state.decide);
-  const patchTitle = useSessions((state) => state.patchTitle);
+  const patchSessionTitle = useSessions((state) => state.patchTitle);
+  const patchChatTitle = useChat((state) => state.patchTitle);
   const setPermissionMode = useChat((state) => state.setPermissionMode);
   const setSessionSelection = useChat((state) => state.setSessionSelection);
 
@@ -90,7 +91,10 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
     setRenaming(false);
     if (!chat || !chat.sessionId || !title || title === chat.title) return;
     const res = await api.renameSession(chat.sessionId, title);
-    if (res.ok) patchTitle(chat.connectionId, chat.sessionId, title);
+    if (res.ok) {
+      patchSessionTitle(chat.connectionId, chat.sessionId, title);
+      patchChatTitle(chat.connectionId, chat.sessionId, title);
+    }
   }
 
   async function doRollback(): Promise<void> {

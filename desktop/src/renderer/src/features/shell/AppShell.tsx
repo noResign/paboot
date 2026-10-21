@@ -292,7 +292,10 @@ export function AppShell() {
       setToast('重命名失败');
       return;
     }
-    if (connectionId) patchTitle(connectionId, id, title);
+    if (connectionId) {
+      patchTitle(connectionId, id, title);
+      useChat.getState().patchTitle(connectionId, id, title);
+    }
   }
 
   async function deleteSession(id: string): Promise<void> {

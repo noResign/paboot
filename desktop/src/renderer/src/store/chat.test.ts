@@ -18,6 +18,13 @@ beforeEach(() => {
   });
 });
 
+describe('title sync', () => {
+  it('renames the open chat in place', () => {
+    useChat.getState().patchTitle('host', 's', '新名字');
+    expect(useChat.getState().byKey[key]!.title).toBe('新名字');
+  });
+});
+
 describe('finished run metadata', () => {
   it('refreshes checkpoints without reopening or replacing the transcript', async () => {
     vi.mocked(api.session).mockResolvedValue({ ok: true, status: 200, data: { runs: [run] } } as never);

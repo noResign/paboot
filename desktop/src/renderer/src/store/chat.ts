@@ -66,6 +66,8 @@ interface ChatStore {
   activeKey: string | null;
 
   openSession(connectionId: string, sessionId: string): Promise<void>;
+  /** Rename in place: the rail and the open header read different stores. */
+  patchTitle(connectionId: string, sessionId: string, title: string): void;
   startNew(connectionId: string, options: NewSessionOptions): void;
   send(text: string): Promise<void>;
   /** Send a picked answer for an `AskUserQuestion` card as a continuation turn. */
@@ -146,6 +148,11 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (session.running && session.runningRunId) {
       await attachRun(set, key, connectionId, session.runningRunId);
     }
+  },
+
+  patchTitle(connectionId, sessionId, title) {
+    const key = chatKey(connectionId, sessionId);
+    set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, title })) }));
   },
 
   startNew(connectionId, options) {
