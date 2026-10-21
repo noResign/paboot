@@ -17,7 +17,7 @@ final class ChatViewController: UIViewController {
     private let jumpButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private var bottomStack: UIStackView!
+    private var bottomStack: ChatBottomStackView!
 
     private var dataSource: UITableViewDiffableDataSource<String, String>!
     private var messagesByID: [String: ChatUiMessage] = [:]
@@ -151,17 +151,8 @@ final class ChatViewController: UIViewController {
             self?.viewModel.stop()
         }
 
-        bottomStack = UIStackView(arrangedSubviews: [reconnectBanner, todoPanel, inputBar])
-        bottomStack.axis = .vertical
-        bottomStack.spacing = 0
-        bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        bottomStack = ChatBottomStackView(contents: [reconnectBanner, todoPanel, inputBar])
         view.addSubview(bottomStack)
-
-        // An all-hidden stack can retain its previous height. Prefer zero when
-        // empty; visible content's stronger constraints still determine its height.
-        let emptyHeight = bottomStack.heightAnchor.constraint(equalToConstant: 0)
-        emptyHeight.priority = .fittingSizeLevel
-        emptyHeight.isActive = true
 
         NSLayoutConstraint.activate([
             bottomStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -298,6 +289,7 @@ final class ChatViewController: UIViewController {
         inputBar.alpha = state.loadingHistory ? 0.6 : 1
         reconnectBanner.isHidden = !state.reconnecting
         todoPanel.configure(state.todos)
+        bottomStack.updateCollapsedHeight()
         updateMenu(state)
         updateLoading(state)
         updatePermissionAlert(state.permission)
@@ -375,6 +367,7 @@ final class ChatViewController: UIViewController {
         view.layoutIfNeeded()
         UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
             self.inputBar.isHidden = hidden
+            self.bottomStack.updateCollapsedHeight()
             self.view.layoutIfNeeded()
         }
         isUpdatingComposerLayout = false

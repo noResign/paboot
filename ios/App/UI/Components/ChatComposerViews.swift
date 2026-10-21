@@ -146,6 +146,30 @@ extension ChatInputBar: UITextFieldDelegate {
     }
 }
 
+/// Explicitly collapses when the composer and all status panels are hidden.
+final class ChatBottomStackView: UIStackView {
+    private lazy var collapsedHeight = heightAnchor.constraint(equalToConstant: 0)
+
+    init(contents: [UIView]) {
+        super.init(frame: .zero)
+        axis = .vertical
+        spacing = 0
+        translatesAutoresizingMaskIntoConstraints = false
+        contents.forEach { addArrangedSubview($0) }
+        updateCollapsedHeight()
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func updateCollapsedHeight() {
+        collapsedHeight.isActive = arrangedSubviews.allSatisfy { $0.isHidden }
+        setNeedsLayout()
+    }
+}
+
 /// Compact TODO panel shown above the composer.
 final class TodoPanelView: UIView {
     private let headerButton = UIButton(type: .system)
