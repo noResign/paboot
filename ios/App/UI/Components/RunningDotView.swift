@@ -13,14 +13,18 @@ final class RunningDotView: UIView {
         dot.layer.cornerRadius = 4
         addSubview(dot)
 
+        // A hidden arranged subview is collapsed to zero width by UIStackView.
+        let width = widthAnchor.constraint(equalToConstant: 8)
+        width.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 8),
+            width,
             heightAnchor.constraint(equalToConstant: 8),
             dot.centerXAnchor.constraint(equalTo: centerXAnchor),
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
             dot.widthAnchor.constraint(equalToConstant: 8),
             dot.heightAnchor.constraint(equalToConstant: 8),
         ])
+        setRunning(false)
     }
 
     @available(*, unavailable)
@@ -28,9 +32,20 @@ final class RunningDotView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func setAnimating(_ animating: Bool) {
-        dot.layer.removeAnimation(forKey: "pulse")
-        guard animating else { return }
+    func setRunning(_ running: Bool) {
+        // UIStackView manages the outer view's hidden transition during reconfiguration.
+        // Hide the actual colored dot too, so stopping cannot leave a static indicator.
+        UIView.performWithoutAnimation {
+            self.isHidden = !running
+            self.dot.isHidden = !running
+            self.dot.alpha = running ? 1 : 0
+        }
+        guard running else {
+            dot.layer.removeAnimation(forKey: "pulse")
+            return
+        }
+        // Refreshing an already-running card should not restart the pulse.
+        guard dot.layer.animation(forKey: "pulse") == nil else { return }
 
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = 1.0

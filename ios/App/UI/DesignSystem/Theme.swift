@@ -31,8 +31,7 @@ enum Theme {
 
     static func tabBarAppearance() -> UITabBarAppearance {
         let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = Colors.surface
+        appearance.configureWithDefaultBackground()
 
         let item = UITabBarItemAppearance()
         item.normal.iconColor = Colors.textMuted

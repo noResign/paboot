@@ -2,10 +2,46 @@ import Combine
 import Foundation
 import PabootProtocol
 import XCTest
+import UIKit
 @testable import paboot
 
 @MainActor
 final class AsyncStateTests: XCTestCase {
+    func testSessionRunningIndicatorDisappearsOnCompletionAndReuse() throws {
+        let cell = SessionCell(style: .default, reuseIdentifier: SessionCell.reuseIdentifier)
+        let running: SessionDto = try decode(#"{"id":"s1","running":true}"#)
+        let stopped: SessionDto = try decode(#"{"id":"s1","running":false}"#)
+        cell.configure(with: running)
+
+        func findIndicator(in view: UIView) -> RunningDotView? {
+            if let indicator = view as? RunningDotView { return indicator }
+            return view.subviews.lazy.compactMap { findIndicator(in: $0) }.first
+        }
+        let indicator = try XCTUnwrap(findIndicator(in: cell))
+        let dot = try XCTUnwrap(indicator.subviews.first)
+        XCTAssertFalse(indicator.isHidden)
+        XCTAssertFalse(dot.isHidden)
+        XCTAssertNotNil(dot.layer.animation(forKey: "pulse"))
+
+        // Diffable reconfiguration keeps the same cell and does not call prepareForReuse.
+        cell.configure(with: stopped)
+        cell.configure(with: stopped)
+        XCTAssertTrue(indicator.isHidden)
+        XCTAssertTrue(dot.isHidden)
+        XCTAssertEqual(dot.alpha, 0)
+        XCTAssertNil(dot.layer.animation(forKey: "pulse"))
+
+        cell.configure(with: running)
+        XCTAssertFalse(indicator.isHidden)
+        XCTAssertFalse(dot.isHidden)
+        XCTAssertEqual(dot.alpha, 1)
+        XCTAssertNotNil(dot.layer.animation(forKey: "pulse"))
+        cell.prepareForReuse()
+        XCTAssertTrue(indicator.isHidden)
+        XCTAssertTrue(dot.isHidden)
+        XCTAssertNil(dot.layer.animation(forKey: "pulse"))
+    }
+
     private func waitForState(
         _ model: ChatViewModel,
         matching predicate: @escaping (ChatViewModel.State) -> Bool

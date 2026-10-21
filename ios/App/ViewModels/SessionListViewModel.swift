@@ -52,6 +52,12 @@ final class SessionListViewModel {
             let sessions = try await repository.loadSessions(workspaceId: workspace?.id)
             guard generation == loadGeneration else { return }
 
+            for session in sessions {
+                if let runId = session.runningRunId {
+                    RunNotifications.shared.watch(runId: runId, sessionId: session.id,
+                                                  title: session.title ?? "会话")
+                }
+            }
             state.model = SessionGrouping.model(sessions: sessions, workspace: workspace)
             state.loadError = nil
             state.requiresReconnect = false
@@ -83,6 +89,12 @@ final class SessionListViewModel {
             let sessions = try await repository.loadSessions(workspaceId: workspace.id)
             guard generation == loadGeneration else { return }
 
+            for session in sessions {
+                if let runId = session.runningRunId {
+                    RunNotifications.shared.watch(runId: runId, sessionId: session.id,
+                                                  title: session.title ?? "会话")
+                }
+            }
             state.model = SessionGrouping.model(sessions: sessions, workspace: workspace)
             state.loadError = nil
             state.requiresReconnect = false

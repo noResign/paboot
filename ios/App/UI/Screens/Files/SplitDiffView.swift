@@ -12,6 +12,7 @@ final class SplitDiffView: UIView {
     private var horizontalOffset: CGFloat = 0
     private var isSyncingHorizontalOffset = false
     private var heightCache: [Int: CGFloat] = [:]
+    private var maxLineLength = 0
 
     private let gutterWidth: CGFloat = 40
     private let dividerWidth: CGFloat = 1
@@ -55,6 +56,9 @@ final class SplitDiffView: UIView {
 
     func configure(rows: [SplitDiff.Row]) {
         self.rows = rows
+        maxLineLength = rows.reduce(0) { length, row in
+            max(length, row.oldText?.count ?? 0, row.newText?.count ?? 0)
+        }
         expandedRow = nil
         horizontalOffset = 0
         heightCache.removeAll()
@@ -79,16 +83,11 @@ final class SplitDiffView: UIView {
 
         let minColumn = max(120, (viewport - dividerWidth - gutterWidth * 2) / 2)
 
-        var maxChars = 0
-        for row in rows {
-            maxChars = max(maxChars, row.oldText?.count ?? 0, row.newText?.count ?? 0)
-        }
-
-        let sampleCount = min(max(maxChars, 1), 400)
+        let sampleCount = min(max(maxLineLength, 1), 400)
         let sample = String(repeating: "0", count: sampleCount)
         let sampleWidth = (sample as NSString).size(withAttributes: [.font: Typography.code]).width
         let charWidth = sampleWidth / CGFloat(sampleCount)
-        let desired = CGFloat(maxChars) * charWidth + 8
+        let desired = CGFloat(maxLineLength) * charWidth + 8
         let target = min(max(desired, minColumn), 2400)
 
         guard abs(target - columnWidth) > 0.5 else { return }
@@ -154,7 +153,7 @@ final class SplitDiffView: UIView {
         }
     }
 
-    private func synchronize(offset: CGFloat) {
+    private func synchronize(offset: CGFloat, source: SplitDiffLineCell) {
         guard !isSyncingHorizontalOffset else { return }
 
         let maxOffset = max(0, rowContentWidth - tableView.bounds.width)
@@ -162,7 +161,9 @@ final class SplitDiffView: UIView {
         horizontalOffset = clamped
 
         isSyncingHorizontalOffset = true
-        for case let cell as SplitDiffLineCell in tableView.visibleCells {
+        for case let cell as SplitDiffLineCell in tableView.visibleCells where cell !== source {
+            // Writing contentOffset back to the driving scroll view can interrupt its
+            // drag/deceleration. Only the other rows need a programmatic update.
             cell.setHorizontalOffset(clamped)
         }
         isSyncingHorizontalOffset = false
@@ -200,7 +201,9 @@ extension SplitDiffView: UITableViewDataSource {
                 columnWidth: columnWidth
             )
             cell.onToggle = { [weak self] in self?.toggleRow(at: indexPath.row) }
-            cell.onHorizontalScroll = { [weak self] offset in self?.synchronize(offset: offset) }
+            cell.onHorizontalScroll = { [weak self] source, offset in
+                self?.synchronize(offset: offset, source: source)
+            }
             cell.setHorizontalOffset(horizontalOffset)
             return cell
         }
@@ -227,7 +230,7 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
     static let reuseIdentifier = "SplitDiffLineCell"
 
     var onToggle: (() -> Void)?
-    var onHorizontalScroll: ((CGFloat) -> Void)?
+    var onHorizontalScroll: ((SplitDiffLineCell, CGFloat) -> Void)?
 
     private let rowScrollView = UIScrollView()
     private let rowView = UIView()
@@ -240,6 +243,7 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
     private var newTextWidthConstraint: NSLayoutConstraint!
     private var rowWidthConstraint: NSLayoutConstraint!
     private var isApplyingOffset = false
+    private var desiredHorizontalOffset: CGFloat = 0
 
     private let gutterWidth: CGFloat = 40
     private let dividerWidth: CGFloat = 1
@@ -355,20 +359,34 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
     }
 
     func setHorizontalOffset(_ offset: CGFloat) {
-        layoutIfNeeded()
+        desiredHorizontalOffset = offset
+        applyHorizontalOffset()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Reused/new cells may receive the shared offset before their final width.
+        // Apply it after normal layout rather than forcing layout on every scroll frame.
+        guard !rowScrollView.isDragging, !rowScrollView.isDecelerating else { return }
+        applyHorizontalOffset()
+    }
+
+    private func applyHorizontalOffset() {
+        guard rowScrollView.bounds.width > 0 else { return }
+        let maxOffset = max(0, rowWidthConstraint.constant - rowScrollView.bounds.width)
+        let target = min(max(desiredHorizontalOffset, 0), maxOffset)
+        guard abs(rowScrollView.contentOffset.x - target) > 0.01 else { return }
 
         isApplyingOffset = true
-        let maxOffset = max(0, rowScrollView.contentSize.width - rowScrollView.bounds.width)
-        rowScrollView.setContentOffset(
-            CGPoint(x: min(max(offset, 0), maxOffset), y: 0),
-            animated: false
-        )
+        rowScrollView.setContentOffset(CGPoint(x: target, y: 0), animated: false)
         isApplyingOffset = false
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === rowScrollView, !isApplyingOffset else { return }
-        onHorizontalScroll?(scrollView.contentOffset.x)
+        guard scrollView === rowScrollView, !isApplyingOffset,
+              scrollView.isDragging || scrollView.isDecelerating else { return }
+        desiredHorizontalOffset = scrollView.contentOffset.x
+        onHorizontalScroll?(self, scrollView.contentOffset.x)
     }
 
     @objc private func handleTap() {

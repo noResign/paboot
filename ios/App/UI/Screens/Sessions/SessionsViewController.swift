@@ -92,9 +92,12 @@ final class SessionsViewController: UIViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 96
         tableView.separatorStyle = .none
-        // Cards carry their own 16pt side margins and 6pt vertical insets; the header and
-        // footer add the missing outer padding (16pt total at the top / bottom).
-        tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 10))
+        tableView.sectionHeaderTopPadding = 0
+        tableView.sectionFooterHeight = .leastNonzeroMagnitude
+        tableView.estimatedSectionFooterHeight = 0
+        // Cards have 6pt vertical insets: add 2pt above for an 8pt top gap,
+        // and 10pt below for 16pt of bottom padding.
+        tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 2))
         tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 10))
         tableView.alwaysBounceVertical = true
 
@@ -596,7 +599,7 @@ extension SessionsViewController: UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
-        guard section < sections.count, sections[section].title != nil else { return 0 }
+        guard section < sections.count, sections[section].title != nil else { return .leastNonzeroMagnitude }
         return 40
     }
 
@@ -641,6 +644,7 @@ private final class SessionSectionHeader: UITableViewHeaderFooterView {
     private let titleLabel = UILabel()
     private let countLabel = UILabel()
     private let chevron = UIImageView()
+    private let toggleButton = UIButton(type: .custom)
     var onTap: (() -> Void)?
 
     override init(reuseIdentifier: String?) {
@@ -685,9 +689,17 @@ private final class SessionSectionHeader: UITableViewHeaderFooterView {
             stack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
         ])
 
-        contentView.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(handleTap))
-        )
+        // Use one full-header control so text, whitespace and the chevron all toggle.
+        toggleButton.translatesAutoresizingMaskIntoConstraints = false
+        toggleButton.addTarget(self, action: #selector(handleTap), for: .touchUpInside)
+        addSubview(toggleButton)
+        NSLayoutConstraint.activate([
+            toggleButton.topAnchor.constraint(equalTo: topAnchor),
+            toggleButton.bottomAnchor.constraint(equalTo: bottomAnchor),
+            toggleButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            toggleButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+        contentView.accessibilityElementsHidden = true
     }
 
     @available(*, unavailable)
@@ -709,6 +721,9 @@ private final class SessionSectionHeader: UITableViewHeaderFooterView {
         chevron.image = UIImage(systemName: expanded ? "chevron.down" : "chevron.right")
         chevron.isHidden = !collapsible
         isUserInteractionEnabled = collapsible
+        toggleButton.isEnabled = collapsible
+        toggleButton.accessibilityLabel = "\(title)，\(count) 个会话"
+        toggleButton.accessibilityValue = expanded ? "已展开" : "已收起"
     }
 
     @objc private func handleTap() {

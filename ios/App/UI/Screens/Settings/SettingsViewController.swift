@@ -1,6 +1,7 @@
 import Combine
 import PabootProtocol
 import UIKit
+import UserNotifications
 
 /// Settings tab: connection, current workspace, new-session defaults, about.
 final class SettingsViewController: UIViewController {
@@ -28,6 +29,10 @@ final class SettingsViewController: UIViewController {
     private let appVersionRow = SettingsInfoRow(title: "App 版本")
     private let daemonVersionRow = SettingsInfoRow(title: "daemon 版本")
 
+    private let notificationSwitch = UISwitch()
+    private let notificationDetail = UILabel()
+    private let notificationSettingsButton = UIButton(type: .system)
+
     private var hasLoaded = false
 
     override func viewDidLoad() {
@@ -43,6 +48,7 @@ final class SettingsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
+        Task { await RunNotifications.shared.refreshAuthorization() }
         Task { await viewModel.load(showLoading: !hasLoaded) }
         hasLoaded = true
     }
@@ -92,8 +98,55 @@ final class SettingsViewController: UIViewController {
         configureStatusSection()
         configureWorkspaceSection()
         configurePermissionSection()
+        configureNotificationSection()
         configureAboutSection()
         bind()
+    }
+
+    private func configureNotificationSection() {
+        contentStack.addArrangedSubview(SettingsSectionTitle("通知"))
+        let title = UILabel()
+        title.text = "使用期间任务提醒"
+        title.font = Typography.body
+        title.textColor = Theme.Colors.textPrimary
+        title.numberOfLines = 0
+        notificationSwitch.onTintColor = Theme.Colors.primary
+        notificationSwitch.accessibilityLabel = "使用期间任务提醒"
+        notificationSwitch.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            let enabled = self.notificationSwitch.isOn
+            Task { await RunNotifications.shared.setEnabled(enabled) }
+        }, for: .valueChanged)
+        let row = UIStackView(arrangedSubviews: [title, notificationSwitch])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = Spacing.md
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: Layout.minTouchTarget).isActive = true
+        contentStack.addArrangedSubview(row)
+        notificationDetail.font = Typography.caption
+        notificationDetail.textColor = Theme.Colors.textSecondary
+        notificationDetail.numberOfLines = 0
+        contentStack.addArrangedSubview(notificationDetail)
+        configureActionButton(notificationSettingsButton, title: "打开系统通知设置")
+        notificationSettingsButton.addAction(UIAction { _ in
+            if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        }, for: .touchUpInside)
+        contentStack.addArrangedSubview(notificationSettingsButton)
+        RunNotifications.shared.$state.sink { [weak self] state in
+            guard let self else { return }
+            self.notificationSwitch.isOn = state.enabled
+            self.notificationSwitch.isEnabled = !state.requesting
+            self.notificationSettingsButton.isHidden = state.authorization != .denied
+            if let error = state.error {
+                self.notificationDetail.text = error
+            } else if state.authorization == .denied {
+                self.notificationDetail.text = "通知权限已关闭，请在系统设置中允许通知。"
+            } else {
+                self.notificationDetail.text = "离开当前会话后，提醒任务完成或需要审批。仅在 App 使用期间生效，不支持锁屏或后台推送。"
+            }
+        }.store(in: &cancellables)
     }
 
     private func configureConnectionSection() {

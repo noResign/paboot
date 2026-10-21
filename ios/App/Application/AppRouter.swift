@@ -18,6 +18,7 @@ final class AppRouter {
     }
 
     func showConnect(animated: Bool = true) {
+        RunNotifications.shared.resetConnection()
         DaemonSession.shared.deactivate()
 
         let viewModel = ConnectViewModel()
@@ -35,6 +36,32 @@ final class AppRouter {
 
     func showMain() {
         setRoot(MainTabBarController(), animated: true)
+        RunNotifications.shared.connectionActivated()
+    }
+
+    func isViewingSession(_ id: String) -> Bool {
+        guard let tabs = window?.rootViewController as? MainTabBarController,
+              let navigation = tabs.selectedViewController as? UINavigationController,
+              let chat = navigation.topViewController as? ChatViewController else { return false }
+        return chat.sessionIdentifier == id
+    }
+
+    func openSession(id: String, connectionId: String) {
+        guard DaemonSession.shared.connection?.id == connectionId,
+              let tabs = window?.rootViewController as? MainTabBarController else { return }
+        let open = { [weak tabs] in
+            guard let tabs, DaemonSession.shared.connection?.id == connectionId,
+                  let navigation = tabs.viewControllers?.first as? UINavigationController else { return }
+            tabs.selectedIndex = 0
+            RunNotifications.shared.clearSession(id)
+            if let chat = navigation.topViewController as? ChatViewController,
+               chat.sessionIdentifier == id { return }
+            navigation.popToRootViewController(animated: false)
+            navigation.pushViewController(ChatViewController(viewModel: ChatViewModel(sessionId: id)), animated: true)
+        }
+        if tabs.presentedViewController != nil || tabs.selectedViewController?.presentedViewController != nil {
+            tabs.dismiss(animated: true, completion: open)
+        } else { open() }
     }
 
     private func setRoot(_ viewController: UIViewController, animated: Bool) {

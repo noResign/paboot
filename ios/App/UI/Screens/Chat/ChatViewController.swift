@@ -5,6 +5,7 @@ import UIKit
 /// One conversation: transcript, composer, approvals, session settings.
 final class ChatViewController: UIViewController {
     private let viewModel: ChatViewModel
+    var sessionIdentifier: String? { viewModel.state.sessionId }
     private var cancellables = Set<AnyCancellable>()
 
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -63,6 +64,11 @@ final class ChatViewController: UIViewController {
         // Re-render on return so approvals/errors that arrived while another tab was
         // visible are presented now.
         render(viewModel.state)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if let id = sessionIdentifier { RunNotifications.shared.clearSession(id) }
     }
 
     override func viewWillDisappear(_ animated: Bool) {

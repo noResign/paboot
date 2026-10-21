@@ -35,7 +35,7 @@ protocol ChatRepositoryProtocol {
     func models(agentId: String) async throws -> [ModelOptionDto]
 }
 
-final class ChatRepository: ChatRepositoryProtocol {
+final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
     private let session: DaemonSession
 
     init(session: DaemonSession = .shared) {

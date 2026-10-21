@@ -278,6 +278,9 @@ final class ChatViewModel {
         state.streaming = true
         state.reconnecting = false
         state.runId = runId
+        if let runId, let sessionId = state.sessionId {
+            RunNotifications.shared.watch(runId: runId, sessionId: sessionId, title: state.title)
+        }
         giveUp = false
         lastSeq = -1
 
@@ -445,6 +448,10 @@ final class ChatViewModel {
             if let value = status.runtime, !value.isEmpty {
                 runtime = value
                 state.runtime = value
+            }
+            if status.terminal != true, let id = state.sessionId {
+                RunNotifications.shared.watch(runId: frame.runId, sessionId: id, title: state.title)
+                if AppRouter.shared.isViewingSession(id) { RunNotifications.shared.clearSession(id) }
             }
         }
 

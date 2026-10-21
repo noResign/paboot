@@ -45,7 +45,6 @@ final class SessionCell: UITableViewCell {
         timeLabel.setContentHuggingPriority(.required, for: .horizontal)
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
-        runningDot.isHidden = true
         runningDot.setContentHuggingPriority(.required, for: .horizontal)
         runningDot.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -98,15 +97,13 @@ final class SessionCell: UITableViewCell {
         timeLabel.text = Formatters.relativeTime(fromMilliseconds: session.lastActiveAt)
 
         isRunning = session.running
-        runningDot.isHidden = !session.running
-        runningDot.setAnimating(session.running)
+        runningDot.setRunning(session.running)
         applyCardAppearance()
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        runningDot.setAnimating(false)
-        runningDot.isHidden = true
+        runningDot.setRunning(false)
         isRunning = false
         applyCardAppearance()
     }
