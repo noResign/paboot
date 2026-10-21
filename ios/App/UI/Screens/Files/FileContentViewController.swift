@@ -8,7 +8,7 @@ final class FileContentViewController: UIViewController {
 
     private let bannerLabel = UILabel()
     private let contentContainer = UIView()
-    private let textView = UITextView()
+    private let fileTextView = FileTextView()
     private let imageView = UIImageView()
     private let stateContainer = UIView()
     private let loadingStack = UIStackView()
@@ -16,8 +16,6 @@ final class FileContentViewController: UIViewController {
     private let loadingLabel = UILabel()
     private var emptyStateView: EmptyStateView?
     private var wrapsText = true
-    private var unwrappedTextWidth: CGFloat = 0
-    private var lastTextViewportWidth: CGFloat = 0
     private lazy var wrapItem = UIBarButtonItem(
         title: "不换行", style: .plain, target: self, action: #selector(toggleWrapping)
     )
@@ -36,7 +34,7 @@ final class FileContentViewController: UIViewController {
         super.viewDidLoad()
 
         title = FilePathDisplay.fileName(viewModel.path)
-        view.backgroundColor = Theme.Colors.background
+        view.backgroundColor = Theme.Editor.background
         configureContent()
         bind()
 
@@ -49,32 +47,20 @@ final class FileContentViewController: UIViewController {
         bannerLabel.numberOfLines = 0
         bannerLabel.isHidden = true
 
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.alwaysBounceVertical = true
-        textView.backgroundColor = Theme.Editor.background
-        textView.textColor = Theme.Editor.text
-        textView.contentInsetAdjustmentBehavior = .never
-        textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 24, right: 12)
-        textView.textContainer.lineFragmentPadding = 0
-        textView.font = Typography.code
-        textView.layer.cornerRadius = Radius.card
-        textView.clipsToBounds = true
-        textView.adjustsFontForContentSizeCategory = true
-        textView.translatesAutoresizingMaskIntoConstraints = false
-        textView.isHidden = true
+        fileTextView.translatesAutoresizingMaskIntoConstraints = false
+        fileTextView.isHidden = true
 
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
 
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
-        contentContainer.addSubview(textView)
+        contentContainer.addSubview(fileTextView)
         contentContainer.addSubview(imageView)
 
         let stack = UIStackView(arrangedSubviews: [bannerLabel, contentContainer])
         stack.axis = .vertical
-        stack.spacing = Spacing.xs
+        stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
 
@@ -97,18 +83,15 @@ final class FileContentViewController: UIViewController {
         view.addSubview(stateContainer)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Spacing.xs),
-            stack.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -Spacing.xs
-            ),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Spacing.md),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Spacing.md),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            textView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            textView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
-            textView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            fileTextView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            fileTextView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+            fileTextView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            fileTextView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
 
             imageView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
@@ -125,36 +108,10 @@ final class FileContentViewController: UIViewController {
         ])
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        let width = textView.bounds.width
-        guard abs(width - lastTextViewportWidth) > 0.5 else { return }
-        lastTextViewportWidth = width
-        applyTextWrapping()
-    }
-
     @objc private func toggleWrapping() {
         wrapsText.toggle()
         wrapItem.title = wrapsText ? "不换行" : "自动换行"
-        applyTextWrapping()
-    }
-
-    private func applyTextWrapping() {
-        let viewport = textView.bounds.width - textView.textContainerInset.left - textView.textContainerInset.right
-        guard viewport > 0 else { return }
-        let verticalOffset = textView.contentOffset.y
-        textView.textContainer.widthTracksTextView = wrapsText
-        textView.textContainer.lineBreakMode = wrapsText ? .byWordWrapping : .byClipping
-        textView.textContainer.size = CGSize(
-            width: wrapsText ? viewport : max(viewport, unwrappedTextWidth),
-            height: .greatestFiniteMagnitude
-        )
-        textView.alwaysBounceHorizontal = !wrapsText && unwrappedTextWidth > viewport
-        textView.showsHorizontalScrollIndicator = !wrapsText
-        textView.setNeedsLayout()
-        textView.layoutIfNeeded()
-        let maxY = max(0, textView.contentSize.height - textView.bounds.height)
-        textView.setContentOffset(CGPoint(x: 0, y: min(max(verticalOffset, 0), maxY)), animated: false)
+        fileTextView.setWrapping(wrapsText)
     }
 
     private func bind() {
@@ -169,7 +126,7 @@ final class FileContentViewController: UIViewController {
         navigationItem.rightBarButtonItem = nil
         wrapItem.isEnabled = false
         if state.isLoading {
-            textView.isHidden = true
+            fileTextView.isHidden = true
             imageView.isHidden = true
             stateContainer.isHidden = false
             showLoading()
@@ -177,7 +134,7 @@ final class FileContentViewController: UIViewController {
         }
 
         if let error = state.error {
-            textView.isHidden = true
+            fileTextView.isHidden = true
             imageView.isHidden = true
             stateContainer.isHidden = false
             showEmpty(title: "加载失败", message: error, retry: true)
@@ -185,7 +142,7 @@ final class FileContentViewController: UIViewController {
         }
 
         guard let content = state.content else {
-            textView.isHidden = true
+            fileTextView.isHidden = true
             imageView.isHidden = true
             stateContainer.isHidden = false
             showEmpty(title: "没有可显示的内容", message: nil, retry: false)
@@ -201,16 +158,10 @@ final class FileContentViewController: UIViewController {
             loadingStack.isHidden = true
 
             imageView.isHidden = true
-            textView.isHidden = false
-            textView.text = file.content
-            let attributes: [NSAttributedString.Key: Any] = [.font: textView.font ?? Typography.code]
-            unwrappedTextWidth = file.content.components(separatedBy: "\n").reduce(CGFloat(0)) {
-                max($0, ceil(($1 as NSString).size(withAttributes: attributes).width) + 2)
-            }
+            fileTextView.isHidden = false
+            fileTextView.setText(file.content)
             navigationItem.rightBarButtonItem = wrapItem
             wrapItem.isEnabled = true
-            applyTextWrapping()
-            textView.setContentOffset(.zero, animated: false)
 
             if file.truncated {
                 bannerLabel.text = "内容过大，已截断（仅显示前 1 MB）"
@@ -225,12 +176,12 @@ final class FileContentViewController: UIViewController {
             loadingSpinner.stopAnimating()
             loadingStack.isHidden = true
 
-            textView.isHidden = true
+            fileTextView.isHidden = true
             imageView.isHidden = false
             imageView.image = image
             bannerLabel.isHidden = true
         case .unsupported(let message):
-            textView.isHidden = true
+            fileTextView.isHidden = true
             imageView.isHidden = true
             stateContainer.isHidden = false
             showEmpty(title: message, message: nil, retry: false)
@@ -270,5 +221,118 @@ final class FileContentViewController: UIViewController {
             empty.trailingAnchor.constraint(equalTo: stateContainer.trailingAnchor),
         ])
         emptyStateView = empty
+    }
+}
+
+/// Orthogonal native scroll views: the outer view owns horizontal motion and the
+/// text view owns vertical motion/selection. Width is explicit, not a text-container side effect.
+final class FileTextView: UIView {
+    private let horizontalScrollView = FileHorizontalScrollView()
+    private let textView = FileVerticalTextView()
+    private var preferredWidth: NSLayoutConstraint!
+    private var wrapsText = true
+    private var naturalWidth: CGFloat = 0
+    private var measuredFont: UIFont?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = Theme.Editor.background
+        horizontalScrollView.backgroundColor = Theme.Editor.background
+        horizontalScrollView.translatesAutoresizingMaskIntoConstraints = false
+        horizontalScrollView.contentInsetAdjustmentBehavior = .never
+        horizontalScrollView.isDirectionalLockEnabled = true
+        horizontalScrollView.showsVerticalScrollIndicator = false
+        horizontalScrollView.showsHorizontalScrollIndicator = false
+        addSubview(horizontalScrollView)
+
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.alwaysBounceVertical = true
+        textView.showsHorizontalScrollIndicator = false
+        textView.contentInsetAdjustmentBehavior = .never
+        textView.backgroundColor = Theme.Editor.background
+        textView.textColor = Theme.Editor.text
+        textView.font = Typography.code
+        textView.adjustsFontForContentSizeCategory = true
+        textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 24, right: 12)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textContainer.widthTracksTextView = true
+        horizontalScrollView.addSubview(textView)
+
+        // The required minimum fills the viewport. This lower-priority width expands
+        // to the longest line in no-wrap mode, producing real horizontal content width.
+        preferredWidth = textView.widthAnchor.constraint(equalToConstant: 0)
+        preferredWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            horizontalScrollView.topAnchor.constraint(equalTo: topAnchor),
+            horizontalScrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            horizontalScrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            horizontalScrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            textView.topAnchor.constraint(equalTo: horizontalScrollView.contentLayoutGuide.topAnchor),
+            textView.bottomAnchor.constraint(equalTo: horizontalScrollView.contentLayoutGuide.bottomAnchor),
+            textView.leadingAnchor.constraint(equalTo: horizontalScrollView.contentLayoutGuide.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: horizontalScrollView.contentLayoutGuide.trailingAnchor),
+            textView.heightAnchor.constraint(equalTo: horizontalScrollView.frameLayoutGuide.heightAnchor),
+            textView.widthAnchor.constraint(greaterThanOrEqualTo: horizontalScrollView.frameLayoutGuide.widthAnchor),
+            preferredWidth,
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setText(_ text: String) {
+        textView.text = text
+        measureText()
+        textView.setContentOffset(.zero, animated: false)
+        horizontalScrollView.setContentOffset(.zero, animated: false)
+    }
+
+    func setWrapping(_ wraps: Bool) {
+        wrapsText = wraps
+        textView.textContainer.lineBreakMode = wraps ? .byWordWrapping : .byClipping
+        horizontalScrollView.showsHorizontalScrollIndicator = !wraps
+        preferredWidth.constant = wraps ? 0 : naturalWidth
+        horizontalScrollView.setContentOffset(.zero, animated: false)
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        // Re-measure only when Dynamic Type changes the font, never on every scroll frame.
+        if textView.font != measuredFont { measureText() }
+        super.layoutSubviews()
+    }
+
+    private func measureText() {
+        let font = textView.font ?? Typography.code
+        measuredFont = font
+        naturalWidth = (textView.text ?? "").components(separatedBy: "\n").reduce(CGFloat(0)) {
+            max($0, ceil(($1 as NSString).size(withAttributes: [.font: font]).width) + 2)
+        } + textView.textContainerInset.left + textView.textContainerInset.right
+        preferredWidth.constant = wrapsText ? 0 : naturalWidth
+        setNeedsLayout()
+    }
+}
+
+/// Route a sideways drag to the horizontal container rather than the text selection scroller.
+private final class FileVerticalTextView: UITextView {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === panGestureRecognizer {
+            let velocity = panGestureRecognizer.velocity(in: self)
+            if abs(velocity.x) > abs(velocity.y) { return false }
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+}
+
+private final class FileHorizontalScrollView: UIScrollView {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === panGestureRecognizer {
+            let velocity = panGestureRecognizer.velocity(in: self)
+            guard contentSize.width > bounds.width,
+                  abs(velocity.x) > abs(velocity.y) else { return false }
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
 }

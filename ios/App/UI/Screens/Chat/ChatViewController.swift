@@ -24,6 +24,7 @@ final class ChatViewController: UIViewController {
     private var lastMessageIDs: [String] = []
     private var hasRenderedOnce = false
     private var isFollowingBottom = true
+    private var isUpdatingComposerLayout = false
     private var presentedPermissionID: String?
     private var permissionAlert: UIViewController?
     private var dismissingPermission = false
@@ -143,6 +144,9 @@ final class ChatViewController: UIViewController {
             self.jumpButton.isHidden = true
             self.viewModel.send(text)
         }
+        inputBar.onBeginEditing = { [weak self] in
+            self?.setComposerHidden(false)
+        }
         inputBar.onStop = { [weak self] in
             self?.viewModel.stop()
         }
@@ -217,6 +221,7 @@ final class ChatViewController: UIViewController {
                 guard let self else { return }
                 self.isFollowingBottom = true
                 self.jumpButton.isHidden = true
+                self.setComposerHidden(false)
                 self.scrollToBottom(animated: true)
             },
             for: .touchUpInside
@@ -320,6 +325,9 @@ final class ChatViewController: UIViewController {
             dataSource.apply(snapshot, animatingDifferences: false)
         }
 
+        if isFollowingBottom || ids.isEmpty {
+            setComposerHidden(false)
+        }
         if isFollowingBottom {
             scrollToBottom(animated: false)
         }
@@ -352,6 +360,18 @@ final class ChatViewController: UIViewController {
         let row = lastMessageIDs.count - 1
         guard tableView.numberOfRows(inSection: 0) > row else { return }
         tableView.scrollToRow(at: IndexPath(row: row, section: 0), at: .bottom, animated: animated)
+    }
+
+    private func setComposerHidden(_ hidden: Bool) {
+        guard inputBar.isHidden != hidden else { return }
+        // Layout changes also emit scroll callbacks; do not interpret those as gestures.
+        isUpdatingComposerLayout = true
+        view.layoutIfNeeded()
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            self.inputBar.isHidden = hidden
+            self.view.layoutIfNeeded()
+        }
+        isUpdatingComposerLayout = false
     }
 
     // MARK: - Header menu
@@ -604,7 +624,7 @@ final class ChatViewController: UIViewController {
 
 extension ChatViewController: UITableViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView else { return }
+        guard scrollView === tableView, !isUpdatingComposerLayout else { return }
 
         let distance = tableView.contentSize.height
             + tableView.adjustedContentInset.bottom
@@ -612,6 +632,23 @@ extension ChatViewController: UITableViewDelegate {
             - tableView.bounds.height
         isFollowingBottom = distance < 80
         jumpButton.isHidden = isFollowingBottom || lastMessageIDs.isEmpty
+
+        // Only manual browsing may hide the composer. Streaming, cell resizing and
+        // keyboard layout must not hide it or interrupt a draft being edited.
+        guard tableView.isDragging || tableView.isDecelerating else { return }
+        let keyboardVisible = view.keyboardLayoutGuide.layoutFrame.minY
+            < view.safeAreaLayoutGuide.layoutFrame.maxY - 1
+        guard !inputBar.isEditingText, !keyboardVisible else { return }
+        if inputBar.isHidden {
+            if distance < 40 {
+                setComposerHidden(false)
+                isFollowingBottom = true
+                jumpButton.isHidden = true
+                scrollToBottom(animated: false)
+            }
+        } else if !lastMessageIDs.isEmpty, distance > 120 + inputBar.bounds.height {
+            setComposerHidden(true)
+        }
     }
 }
 

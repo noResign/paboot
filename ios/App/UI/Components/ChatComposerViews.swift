@@ -4,6 +4,8 @@ import UIKit
 final class ChatInputBar: UIView {
     var onSend: ((String) -> Void)?
     var onStop: (() -> Void)?
+    var onBeginEditing: (() -> Void)?
+    var isEditingText: Bool { textField.isFirstResponder }
 
     private let textField = UITextField()
     private let actionButton = UIButton(type: .system)
@@ -49,6 +51,10 @@ final class ChatInputBar: UIView {
         addSubview(topBorder)
         addSubview(row)
 
+        // Allow the arranged view to collapse without conflicting with its row height.
+        let rowBottom = row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xs)
+        rowBottom.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
             topBorder.topAnchor.constraint(equalTo: topAnchor),
             topBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -56,7 +62,7 @@ final class ChatInputBar: UIView {
             topBorder.heightAnchor.constraint(equalToConstant: 1),
 
             row.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.xs),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xs),
+            rowBottom,
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
 
@@ -129,6 +135,10 @@ final class ChatInputBar: UIView {
 }
 
 extension ChatInputBar: UITextFieldDelegate {
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        onBeginEditing?()
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard !isStreaming else { return false }
         send()

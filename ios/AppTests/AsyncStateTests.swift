@@ -7,6 +7,66 @@ import UIKit
 
 @MainActor
 final class AsyncStateTests: XCTestCase {
+    func testComposerCollapseRestoresHeightAndPreservesDraft() throws {
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let composer = ChatInputBar()
+        let stack = UIStackView(arrangedSubviews: [composer])
+        stack.axis = .vertical
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        ])
+        func textField(in view: UIView) -> UITextField? {
+            if let field = view as? UITextField { return field }
+            return view.subviews.lazy.compactMap { textField(in: $0) }.first
+        }
+        let field = try XCTUnwrap(textField(in: composer))
+        field.text = "未发送的草稿"
+        host.layoutIfNeeded()
+        let expandedHeight = stack.bounds.height
+        XCTAssertGreaterThan(expandedHeight, 36)
+
+        composer.isHidden = true
+        host.layoutIfNeeded()
+        XCTAssertEqual(stack.bounds.height, 0, accuracy: 1)
+        composer.isHidden = false
+        host.layoutIfNeeded()
+        XCTAssertEqual(stack.bounds.height, expandedHeight, accuracy: 1)
+        XCTAssertEqual(field.text, "未发送的草稿")
+    }
+
+    func testFileNoWrapCreatesScrollableWidthAndWrappingRestoresViewport() throws {
+        let editor = FileTextView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        editor.setText(String(repeating: "a", count: 400) + "\nshort line")
+        editor.setWrapping(false)
+        editor.layoutIfNeeded()
+        let horizontal = try XCTUnwrap(editor.subviews.first as? UIScrollView)
+        horizontal.layoutIfNeeded()
+        let text = try XCTUnwrap(horizontal.subviews.first(where: { $0 is UITextView }) as? UITextView)
+        XCTAssertGreaterThan(horizontal.contentSize.width, horizontal.bounds.width + 100)
+        XCTAssertEqual(text.bounds.width, horizontal.contentSize.width, accuracy: 1)
+        horizontal.setContentOffset(CGPoint(x: 100, y: 0), animated: false)
+        XCTAssertEqual(horizontal.contentOffset.x, 100, accuracy: 1)
+
+        editor.setWrapping(true)
+        editor.layoutIfNeeded()
+        horizontal.layoutIfNeeded()
+        XCTAssertEqual(text.bounds.width, horizontal.bounds.width, accuracy: 1)
+        XCTAssertEqual(horizontal.contentSize.width, horizontal.bounds.width, accuracy: 1)
+        XCTAssertEqual(horizontal.contentOffset.x, 0, accuracy: 1)
+        XCTAssertEqual(editor.layer.cornerRadius, 0)
+
+        editor.frame.size.width = 600
+        editor.setWrapping(false)
+        editor.setNeedsLayout()
+        editor.layoutIfNeeded()
+        horizontal.layoutIfNeeded()
+        XCTAssertGreaterThan(horizontal.contentSize.width, horizontal.bounds.width)
+    }
+
     func testSessionRunningIndicatorDisappearsOnCompletionAndReuse() throws {
         let cell = SessionCell(style: .default, reuseIdentifier: SessionCell.reuseIdentifier)
         let running: SessionDto = try decode(#"{"id":"s1","running":true}"#)
