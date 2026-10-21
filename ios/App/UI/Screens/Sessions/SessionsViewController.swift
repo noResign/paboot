@@ -90,9 +90,12 @@ final class SessionsViewController: UIViewController {
         )
         tableView.delegate = self
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 72
-        tableView.separatorInset = UIEdgeInsets(top: 0, left: Spacing.md, bottom: 0, right: 0)
-        tableView.tableFooterView = UIView()
+        tableView.estimatedRowHeight = 96
+        tableView.separatorStyle = .none
+        // Cards carry their own 16pt side margins and 6pt vertical insets; the header and
+        // footer add the missing outer padding (16pt total at the top / bottom).
+        tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 10))
+        tableView.tableFooterView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 10))
         tableView.alwaysBounceVertical = true
 
         view.addSubview(tableView)

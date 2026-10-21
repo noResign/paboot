@@ -400,11 +400,15 @@ final class ChatToolGroupView: ChatBlockView {
 
         chevronLabel.font = Typography.caption
         chevronLabel.textColor = Theme.Colors.textSecondary
+        chevronLabel.setContentHuggingPriority(.required, for: .horizontal)
+        chevronLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         titleLabel.font = Typography.cardTitle
         titleLabel.textColor = Theme.Colors.textPrimary
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.textAlignment = .left
+        // Only the title absorbs slack; otherwise the chevron stretches and pushes it right.
         titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         statusLabel.font = Typography.caption
@@ -542,26 +546,32 @@ final class ChatToolCardView: ChatBlockView {
 
         spinner.color = Theme.Colors.textSecondary
         spinner.hidesWhenStopped = true
+        spinner.setContentHuggingPriority(.required, for: .horizontal)
+        spinner.setContentCompressionResistancePriority(.required, for: .horizontal)
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
         statusIcon.contentMode = .scaleAspectFit
+        statusIcon.setContentHuggingPriority(.required, for: .horizontal)
+        statusIcon.setContentCompressionResistancePriority(.required, for: .horizontal)
         statusIcon.translatesAutoresizingMaskIntoConstraints = false
+        statusIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        statusIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
 
         nameLabel.font = Typography.cardTitle
         nameLabel.textColor = Theme.Colors.textPrimary
         nameLabel.numberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.textAlignment = .left
+        // Android gives the name `weight(1f)`; make it the only view that grows so the
+        // icon never pushes the text toward the trailing edge.
         nameLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         actionLabel.font = Typography.caption
         actionLabel.textColor = Theme.Colors.textSecondary
         actionLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
         let header = UIStackView(
-            arrangedSubviews: [spinner, statusIcon, nameLabel, spacer, actionLabel]
+            arrangedSubviews: [spinner, statusIcon, nameLabel, actionLabel]
         )
         header.axis = .horizontal
         header.alignment = .center
@@ -988,11 +998,28 @@ private extension UIView {
     /// the newly shown content has laid out.
     func notifyEnclosingTableHeightChanged() {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            // The cell can outlive its controller (for example while a chat is being
+            // popped). A batch update then runs against a table whose data source is
+            // gone or has already changed, and UIKit throws "Invalid batch updates".
+            guard let self, self.window != nil else { return }
 
             var current: UIView? = self
+            var enclosingCell: UITableViewCell?
+
             while let view = current {
+                if let cell = view as? UITableViewCell {
+                    enclosingCell = cell
+                }
                 if let table = view as? UITableView {
+                    guard let cell = enclosingCell,
+                          table.dataSource != nil,
+                          table.window != nil,
+                          let indexPath = table.indexPath(for: cell),
+                          indexPath.section < table.numberOfSections,
+                          indexPath.row < table.numberOfRows(inSection: indexPath.section) else {
+                        return
+                    }
+
                     table.beginUpdates()
                     table.endUpdates()
                     return
