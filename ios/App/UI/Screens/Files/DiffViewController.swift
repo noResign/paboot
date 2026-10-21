@@ -75,7 +75,8 @@ final class DiffViewController: UIViewController {
         textView.isEditable = false
         textView.isSelectable = true
         textView.alwaysBounceVertical = true
-        textView.backgroundColor = Theme.Colors.codeBackground
+        textView.backgroundColor = Theme.Editor.background
+        textView.textColor = Theme.Editor.text
         textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 24, right: 12)
         textView.textContainer.lineFragmentPadding = 0
         textView.font = Typography.code
@@ -287,10 +288,8 @@ final class DiffViewController: UIViewController {
                 .font: Typography.code,
                 .foregroundColor: color(for: line),
             ]
-            if line.hasPrefix("+"), !line.hasPrefix("+++") {
-                attributes[.backgroundColor] = Theme.Colors.success.withAlphaComponent(0.12)
-            } else if line.hasPrefix("-"), !line.hasPrefix("---") {
-                attributes[.backgroundColor] = Theme.Colors.error.withAlphaComponent(0.12)
+            if line.hasPrefix("@@") {
+                attributes[.backgroundColor] = Theme.Editor.hunkBackground
             }
 
             let text = index == lines.count - 1 ? line : line + "\n"
@@ -302,7 +301,7 @@ final class DiffViewController: UIViewController {
 
     private func color(for line: String) -> UIColor {
         if line.hasPrefix("@@") {
-            return Theme.Colors.primary
+            return Theme.Editor.hunk
         }
         if line.hasPrefix("+++")
             || line.hasPrefix("---")
@@ -315,15 +314,15 @@ final class DiffViewController: UIViewController {
             || line.hasPrefix("similarity index")
             || line.hasPrefix("rename ")
             || line.hasPrefix("Binary files") {
-            return Theme.Colors.textMuted
+            return Theme.Editor.muted
         }
         if line.hasPrefix("+") {
-            return Theme.Colors.success
+            return Theme.Editor.added
         }
         if line.hasPrefix("-") {
-            return Theme.Colors.error
+            return Theme.Editor.deleted
         }
-        return Theme.Colors.textPrimary
+        return Theme.Editor.text
     }
 
     @objc private func toggleMode() {

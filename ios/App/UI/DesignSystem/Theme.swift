@@ -29,9 +29,24 @@ enum Theme {
         }
     }
 
+    /// Fixed editor palette shared with Android FilesScreen.kt (independent of app theme).
+    enum Editor {
+        static let background = UIColor(hex: 0x1E1E1E)
+        static let hunkBackground = UIColor(hex: 0x2D2D30)
+        static let text = UIColor(hex: 0xD4D4D4)
+        static let muted = UIColor(hex: 0x858585)
+        static let added = UIColor(hex: 0x89D185)
+        static let deleted = UIColor(hex: 0xF48771)
+        static let hunk = UIColor(hex: 0x569CD6)
+        static let divider = UIColor(hex: 0x3C3C3C)
+    }
+
     static func tabBarAppearance() -> UITabBarAppearance {
         let appearance = UITabBarAppearance()
-        appearance.configureWithDefaultBackground()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = nil
+        appearance.backgroundColor = .clear
+        appearance.shadowColor = .clear
 
         let item = UITabBarItemAppearance()
         item.normal.iconColor = Colors.textMuted

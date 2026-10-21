@@ -30,6 +30,7 @@ final class MainTabBarController: UITabBarController {
         ]
 
         tabBar.isTranslucent = true
+        tabBar.backgroundColor = .clear
         tabBar.standardAppearance = Theme.tabBarAppearance()
         tabBar.scrollEdgeAppearance = Theme.tabBarAppearance()
     }

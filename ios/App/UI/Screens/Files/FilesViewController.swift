@@ -116,7 +116,9 @@ final class FilesViewController: UIViewController {
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(equalTo: rootBar.bottomAnchor, constant: Spacing.xxs),
-            tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            // Extend beneath the transparent tab bar; automatic safe-area insets keep
+            // the last item reachable above its buttons when scrolling to the bottom.
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])

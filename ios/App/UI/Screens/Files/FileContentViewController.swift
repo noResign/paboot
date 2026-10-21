@@ -15,6 +15,12 @@ final class FileContentViewController: UIViewController {
     private let loadingSpinner = UIActivityIndicatorView(style: .medium)
     private let loadingLabel = UILabel()
     private var emptyStateView: EmptyStateView?
+    private var wrapsText = true
+    private var unwrappedTextWidth: CGFloat = 0
+    private var lastTextViewportWidth: CGFloat = 0
+    private lazy var wrapItem = UIBarButtonItem(
+        title: "不换行", style: .plain, target: self, action: #selector(toggleWrapping)
+    )
 
     init(workspaceId: String?, root: String?, path: String) {
         self.viewModel = FileContentViewModel(workspaceId: workspaceId, root: root, path: path)
@@ -31,7 +37,6 @@ final class FileContentViewController: UIViewController {
 
         title = FilePathDisplay.fileName(viewModel.path)
         view.backgroundColor = Theme.Colors.background
-
         configureContent()
         bind()
 
@@ -47,7 +52,9 @@ final class FileContentViewController: UIViewController {
         textView.isEditable = false
         textView.isSelectable = true
         textView.alwaysBounceVertical = true
-        textView.backgroundColor = Theme.Colors.codeBackground
+        textView.backgroundColor = Theme.Editor.background
+        textView.textColor = Theme.Editor.text
+        textView.contentInsetAdjustmentBehavior = .never
         textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 24, right: 12)
         textView.textContainer.lineFragmentPadding = 0
         textView.font = Typography.code
@@ -118,6 +125,38 @@ final class FileContentViewController: UIViewController {
         ])
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let width = textView.bounds.width
+        guard abs(width - lastTextViewportWidth) > 0.5 else { return }
+        lastTextViewportWidth = width
+        applyTextWrapping()
+    }
+
+    @objc private func toggleWrapping() {
+        wrapsText.toggle()
+        wrapItem.title = wrapsText ? "不换行" : "自动换行"
+        applyTextWrapping()
+    }
+
+    private func applyTextWrapping() {
+        let viewport = textView.bounds.width - textView.textContainerInset.left - textView.textContainerInset.right
+        guard viewport > 0 else { return }
+        let verticalOffset = textView.contentOffset.y
+        textView.textContainer.widthTracksTextView = wrapsText
+        textView.textContainer.lineBreakMode = wrapsText ? .byWordWrapping : .byClipping
+        textView.textContainer.size = CGSize(
+            width: wrapsText ? viewport : max(viewport, unwrappedTextWidth),
+            height: .greatestFiniteMagnitude
+        )
+        textView.alwaysBounceHorizontal = !wrapsText && unwrappedTextWidth > viewport
+        textView.showsHorizontalScrollIndicator = !wrapsText
+        textView.setNeedsLayout()
+        textView.layoutIfNeeded()
+        let maxY = max(0, textView.contentSize.height - textView.bounds.height)
+        textView.setContentOffset(CGPoint(x: 0, y: min(max(verticalOffset, 0), maxY)), animated: false)
+    }
+
     private func bind() {
         viewModel.$state
             .sink { [weak self] state in
@@ -127,6 +166,8 @@ final class FileContentViewController: UIViewController {
     }
 
     private func render(_ state: FileContentViewModel.State) {
+        navigationItem.rightBarButtonItem = nil
+        wrapItem.isEnabled = false
         if state.isLoading {
             textView.isHidden = true
             imageView.isHidden = true
@@ -162,6 +203,13 @@ final class FileContentViewController: UIViewController {
             imageView.isHidden = true
             textView.isHidden = false
             textView.text = file.content
+            let attributes: [NSAttributedString.Key: Any] = [.font: textView.font ?? Typography.code]
+            unwrappedTextWidth = file.content.components(separatedBy: "\n").reduce(CGFloat(0)) {
+                max($0, ceil(($1 as NSString).size(withAttributes: attributes).width) + 2)
+            }
+            navigationItem.rightBarButtonItem = wrapItem
+            wrapItem.isEnabled = true
+            applyTextWrapping()
             textView.setContentOffset(.zero, animated: false)
 
             if file.truncated {

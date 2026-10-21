@@ -21,10 +21,10 @@ final class SplitDiffView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
 
-        backgroundColor = Theme.Colors.codeBackground
+        backgroundColor = Theme.Editor.background
 
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = Theme.Colors.codeBackground
+        tableView.backgroundColor = Theme.Editor.background
         tableView.separatorStyle = .none
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 22
@@ -251,8 +251,8 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
-        backgroundColor = Theme.Colors.codeBackground
-        contentView.backgroundColor = Theme.Colors.codeBackground
+        backgroundColor = Theme.Editor.background
+        contentView.backgroundColor = Theme.Editor.background
         selectionStyle = .none
 
         rowScrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -269,10 +269,10 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
         configureLabel(oldTextLabel, alignment: .left)
         configureLabel(newNumberLabel, alignment: .right)
         configureLabel(newTextLabel, alignment: .left)
-        oldNumberLabel.textColor = Theme.Colors.textMuted
-        newNumberLabel.textColor = Theme.Colors.textMuted
+        oldNumberLabel.textColor = Theme.Editor.muted
+        newNumberLabel.textColor = Theme.Editor.muted
 
-        dividerView.backgroundColor = Theme.Colors.border
+        dividerView.backgroundColor = Theme.Editor.divider
         dividerView.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = UIStackView(arrangedSubviews: [
@@ -340,11 +340,11 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
         newTextLabel.text = row.newText ?? ""
 
         oldTextLabel.textColor = row.oldText != nil && row.newText == nil
-            ? Theme.Colors.error
-            : Theme.Colors.textPrimary
+            ? Theme.Editor.deleted
+            : Theme.Editor.text
         newTextLabel.textColor = row.newText != nil && row.oldText == nil
-            ? Theme.Colors.success
-            : Theme.Colors.textPrimary
+            ? Theme.Editor.added
+            : Theme.Editor.text
 
         oldTextLabel.numberOfLines = expanded ? 0 : 1
         newTextLabel.numberOfLines = expanded ? 0 : 1
@@ -395,7 +395,7 @@ private final class SplitDiffLineCell: UITableViewCell, UIScrollViewDelegate {
 
     private func configureLabel(_ label: UILabel, alignment: NSTextAlignment) {
         label.font = Typography.code
-        label.textColor = Theme.Colors.textPrimary
+        label.textColor = Theme.Editor.text
         label.textAlignment = alignment
         label.numberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
@@ -422,7 +422,7 @@ private final class SplitDiffMetaCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
 
-        backgroundColor = Theme.Colors.codeBackground
+        backgroundColor = Theme.Editor.background
         selectionStyle = .none
 
         label.font = Typography.code
@@ -447,10 +447,10 @@ private final class SplitDiffMetaCell: UITableViewCell {
     func configure(_ row: SplitDiff.Row) {
         label.text = row.fullText
         if row.kind == .hunk {
-            label.textColor = Theme.Colors.primary
-            contentView.backgroundColor = Theme.Colors.surface2
+            label.textColor = Theme.Editor.hunk
+            contentView.backgroundColor = Theme.Editor.hunkBackground
         } else {
-            label.textColor = Theme.Colors.textMuted
+            label.textColor = Theme.Editor.muted
             contentView.backgroundColor = .clear
         }
     }
