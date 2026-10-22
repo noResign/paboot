@@ -101,9 +101,13 @@ final class SessionsViewController: UIViewController {
         ])
         navigationItem.titleView = titleContainer
 
-        // The bounded title view leaves room for the menu on both sides.
-        // A custom-view spacer gets a visible glass background on newer iOS.
-        navigationItem.leftBarButtonItem = nil
+        // UINavigationBar centers its title between the leading and trailing bar
+        // button areas, so the lone trailing menu would pull it left. Reserve the
+        // same width on the left; a system fixed-space item draws nothing (a
+        // custom-view spacer picks up a visible glass background on newer iOS).
+        let leadingSpace = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
+        leadingSpace.width = 44
+        navigationItem.leftBarButtonItem = leadingSpace
     }
 
     private func configureTable() {
