@@ -438,7 +438,12 @@ final class ChatViewModel {
         }
 
         if case .status(let status) = event {
-            if let id = status.sessionId, !id.isEmpty {
+            // Only adopt a session id when we started without one. The daemon's
+            // "starting" frame carries the paboot session id, while runtime
+            // drivers report their native id (Claude session / Codex thread) in
+            // the same field; letting that overwrite ours makes the next send
+            // target a session the daemon does not know ("session not found").
+            if let id = status.sessionId, !id.isEmpty, sessionId == nil {
                 sessionId = id
                 state.sessionId = id
             }

@@ -7,6 +7,83 @@ import UIKit
 
 @MainActor
 final class AsyncStateTests: XCTestCase {
+    func testJumpToBottomReachesEndOfTallMessage() async throws {
+        let model = ChatViewModel(sessionId: nil, repository: FakeChatRepository())
+        let controller = ChatViewController(viewModel: model)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            model.detach()
+            window.isHidden = true
+        }
+        controller.view.layoutIfNeeded()
+        model.send(Array(repeating: "长消息的每一行都需要能滚动查看", count: 120).joined(separator: "\n"))
+        // Allow the throttled state publisher and diffable snapshot to render.
+        try await Task.sleep(nanoseconds: 250_000_000)
+        controller.view.layoutIfNeeded()
+        let table = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? UITableView }.first)
+        let jump = try XCTUnwrap(controller.view.subviews.first {
+            $0.accessibilityIdentifier == "chat.jumpToBottom"
+        } as? UIButton)
+        XCTAssertGreaterThan(table.contentSize.height, table.bounds.height * 2)
+        let bottom = max(-table.adjustedContentInset.top,
+                         table.contentSize.height + table.adjustedContentInset.bottom - table.bounds.height)
+        XCTAssertEqual(table.contentOffset.y, bottom, accuracy: 1,
+                       "a freshly rendered conversation should already be at the bottom")
+        table.setContentOffset(CGPoint(x: 0, y: -table.adjustedContentInset.top), animated: false)
+        // Programmatic offsets are ignored by scrollViewDidScroll; exercise the
+        // status-bar path that marks the user as having scrolled away.
+        XCTAssertTrue(controller.scrollViewShouldScrollToTop(table))
+        XCTAssertFalse(jump.isHidden)
+        jump.sendActions(for: .touchUpInside)
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        XCTAssertEqual(table.contentOffset.y, bottom, accuracy: 1)
+        XCTAssertTrue(jump.isHidden)
+    }
+
+    func testHistoryLoadStartsAtBottom() async throws {
+        let repository = FakeChatRepository()
+        let detailData = try JSONSerialization.data(withJSONObject: [
+            "session": ["id": "s1", "title": "会话"],
+            "runs": (0..<12).map { ["id": "run-\($0)"] },
+        ])
+        let detail = try JSONDecoder().decode(SessionDetailResponse.self, from: detailData)
+        repository.detail = { detail }
+
+        let longText = Array(repeating: "历史消息的每一行都需要能滚动查看", count: 40).joined(separator: "\n")
+        let eventData = try JSONSerialization.data(withJSONObject: [
+            "runId": "run",
+            "seq": 1,
+            "event": ["type": "text_delta", "delta": longText],
+        ])
+        let frame = try JSONDecoder().decode(SSEFrame.self, from: eventData)
+        repository.events = { [frame] }
+
+        let model = ChatViewModel(sessionId: "s1", repository: repository)
+        let controller = ChatViewController(viewModel: model)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            model.detach()
+            window.isHidden = true
+        }
+        // Accessing the view starts the view model, which loads history.
+        controller.view.layoutIfNeeded()
+        // Let history load, the throttled publisher render, and the settled
+        // layout pass re-align the transcript.
+        try await Task.sleep(nanoseconds: 400_000_000)
+        controller.view.layoutIfNeeded()
+
+        let table = try XCTUnwrap(controller.view.subviews.compactMap { $0 as? UITableView }.first)
+        XCTAssertGreaterThan(table.contentSize.height, table.bounds.height * 2)
+        let bottom = max(-table.adjustedContentInset.top,
+                         table.contentSize.height + table.adjustedContentInset.bottom - table.bounds.height)
+        XCTAssertEqual(table.contentOffset.y, bottom, accuracy: 1)
+    }
+
     func testSharedNavigationKeepsChatDraftAndFileStackAcrossTabs() throws {
         let stacks = (0..<3).map { _ in UINavigationController(rootViewController: UIViewController()) }
         let tabs = MainTabBarController(navigationControllers: stacks)
@@ -224,6 +301,18 @@ final class AsyncStateTests: XCTestCase {
         let marker = UUID().uuidString
         try repository.emit(["type": "status", "label": "running", "model": marker])
         await waitForState(model) { $0.model == marker }
+    }
+
+    func testNativeSessionIdInStatusDoesNotReplaceChatSessionId() async throws {
+        let repository = FakeChatRepository()
+        let model = ChatViewModel(sessionId: nil, repository: repository)
+        model.send("hello")
+        try repository.emit(["type": "status", "label": "starting", "sessionId": "session-1"])
+        // Runtime drivers also report their native Claude/Codex id in this field.
+        try repository.emit(["type": "status", "label": "initializing", "sessionId": "native-1"])
+        try await flush(repository, model: model)
+        XCTAssertEqual(model.state.sessionId, "session-1")
+        model.detach()
     }
 
     func testSSEThenHTTPDoesNotDismissNextPermission() async throws {

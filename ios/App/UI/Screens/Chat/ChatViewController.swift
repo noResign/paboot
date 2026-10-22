@@ -27,6 +27,7 @@ final class ChatViewController: UIViewController {
     private var isFollowingBottom = true
     private var isUpdatingBottomInset = false
     private var isScrollingToBottom = false
+    private var lastTableViewSize: CGSize = .zero
     private var presentedPermissionID: String?
     private var permissionAlert: UIViewController?
     private var dismissingPermission = false
@@ -79,15 +80,23 @@ final class ChatViewController: UIViewController {
         guard bottomStack != nil, !isUpdatingBottomInset else { return }
         let overlap = max(0, tableView.frame.maxY - bottomStack.frame.minY)
         let inset = overlap + Spacing.md
-        guard abs(tableView.contentInset.bottom - inset) > 0.5 else { return }
+        let viewportChanged = tableView.bounds.size != lastTableViewSize
+        lastTableViewSize = tableView.bounds.size
+        guard abs(tableView.contentInset.bottom - inset) > 0.5 else {
+            // Pin only when the viewport actually resized (keyboard, rotation,
+            // split view). Cell growth and unrelated layout passes must not move
+            // the list, and a layout change must never fight an active pan.
+            if viewportChanged, canAutoScroll {
+                scrollToBottom()
+            }
+            return
+        }
         isUpdatingBottomInset = true
         let offset = tableView.contentOffset
         tableView.contentInset.bottom = inset
         tableView.verticalScrollIndicatorInsets.bottom = overlap
-        if isFollowingBottom {
-            // Updating the inset can cancel a running UIKit scroll animation.
-            isScrollingToBottom = false
-            scrollToBottom(animated: false)
+        if isFollowingBottom, !tableView.isDragging, !tableView.isDecelerating {
+            scrollToBottom()
         } else {
             tableView.setContentOffset(offset, animated: false)
         }
@@ -260,7 +269,9 @@ final class ChatViewController: UIViewController {
                 guard let self else { return }
                 self.isFollowingBottom = true
                 self.jumpButton.isHidden = true
-                self.scrollToBottom(animated: true)
+                // Resolve estimated row heights at the destination before aligning
+                // the content end. A long animated offset can use stale estimates.
+                self.scrollToBottom()
             },
             for: .touchUpInside
         )
@@ -356,21 +367,23 @@ final class ChatViewController: UIViewController {
             snapshot.appendSections(["messages"])
             snapshot.appendItems(ids, toSection: "messages")
             dataSource.apply(snapshot, animatingDifferences: hasRenderedOnce) { [weak self] in
-                guard let self, self.isFollowingBottom, !self.isScrollingToBottom else { return }
-                self.scrollToBottom(animated: false)
+                guard let self, self.canAutoScroll else { return }
+                self.scrollToBottom()
+                self.alignToBottomAfterLayoutSettles()
             }
             hasRenderedOnce = true
         } else if let last = ids.last {
             var snapshot = dataSource.snapshot()
             snapshot.reconfigureItems([last])
             dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-                guard let self, self.isFollowingBottom, !self.isScrollingToBottom else { return }
-                self.scrollToBottom(animated: false)
+                guard let self, self.canAutoScroll else { return }
+                self.scrollToBottom()
+                self.alignToBottomAfterLayoutSettles()
             }
         }
 
-        if isFollowingBottom && !isScrollingToBottom {
-            scrollToBottom(animated: false)
+        if canAutoScroll {
+            scrollToBottom()
         }
         jumpButton.isHidden = isFollowingBottom || ids.isEmpty
     }
@@ -395,19 +408,46 @@ final class ChatViewController: UIViewController {
         }
     }
 
-    private func scrollToBottom(animated: Bool) {
-        guard !lastMessageIDs.isEmpty else { return }
-        tableView.layoutIfNeeded()
-        let bottom = max(
+    private var canAutoScroll: Bool {
+        isFollowingBottom && !isScrollingToBottom
+            && !tableView.isDragging && !tableView.isDecelerating
+    }
+
+    private func contentEnd() -> CGFloat {
+        max(
             -tableView.adjustedContentInset.top,
             tableView.contentSize.height + tableView.adjustedContentInset.bottom - tableView.bounds.height
         )
-        guard abs(tableView.contentOffset.y - bottom) > 0.5 else {
-            isScrollingToBottom = false
-            return
+    }
+
+    private func scrollToBottom() {
+        guard !lastMessageIDs.isEmpty, !isScrollingToBottom else { return }
+        isScrollingToBottom = true
+        defer { isScrollingToBottom = false }
+
+        tableView.layoutIfNeeded()
+        guard abs(tableView.contentOffset.y - contentEnd()) > 0.5 else { return }
+        // Resolve estimated row heights at the destination before aligning the end.
+        if let last = dataSource.indexPath(for: lastMessageIDs.last!) {
+            tableView.scrollToRow(at: last, at: .bottom, animated: false)
+            tableView.layoutIfNeeded()
         }
-        isScrollingToBottom = animated
-        tableView.setContentOffset(CGPoint(x: tableView.contentOffset.x, y: bottom), animated: animated)
+        let bottom = contentEnd()
+        guard abs(tableView.contentOffset.y - bottom) > 0.5 else { return }
+        tableView.setContentOffset(CGPoint(x: tableView.contentOffset.x, y: bottom), animated: false)
+    }
+
+    /// Self-sizing rows can resolve after the snapshot's layout cycle, which moves
+    /// the content end. Re-align once the next run loop has applied those heights
+    /// so entering a long conversation (or a batch of new messages) lands at the
+    /// bottom instead of a screen short.
+    private func alignToBottomAfterLayoutSettles() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.canAutoScroll else { return }
+            self.tableView.layoutIfNeeded()
+            guard abs(self.tableView.contentOffset.y - self.contentEnd()) > 0.5 else { return }
+            self.scrollToBottom()
+        }
     }
 
     // MARK: - Header menu
@@ -662,8 +702,20 @@ final class ChatViewController: UIViewController {
 }
 
 extension ChatViewController: UITableViewDelegate {
+    func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+        guard scrollView === tableView else { return true }
+        // A status-bar tap scrolls without dragging or decelerating; treat it as
+        // a user scroll so the next layout or render does not snap back.
+        isFollowingBottom = false
+        jumpButton.isHidden = lastMessageIDs.isEmpty
+        return true
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === tableView, !isUpdatingBottomInset, !isScrollingToBottom else { return }
+        guard scrollView === tableView, !isUpdatingBottomInset, !isScrollingToBottom,
+              scrollView.isDragging || scrollView.isDecelerating else { return }
+        // Self-sizing rows and snapshot updates also invoke this delegate. Only
+        // an actual user scroll may turn off the request to follow the bottom.
 
         let distance = tableView.contentSize.height
             + tableView.adjustedContentInset.bottom
@@ -671,17 +723,6 @@ extension ChatViewController: UITableViewDelegate {
             - tableView.bounds.height
         isFollowingBottom = distance < 80
         jumpButton.isHidden = isFollowingBottom || lastMessageIDs.isEmpty
-    }
-
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        if scrollView === tableView { isScrollingToBottom = false }
-    }
-
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        guard scrollView === tableView, isScrollingToBottom else { return }
-        isScrollingToBottom = false
-        // A cell may have grown while the animation ran; finish at the real content end.
-        scrollToBottom(animated: false)
     }
 }
 

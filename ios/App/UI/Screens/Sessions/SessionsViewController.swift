@@ -101,11 +101,9 @@ final class SessionsViewController: UIViewController {
         ])
         navigationItem.titleView = titleContainer
 
-        // Match the right workspace-menu button's reserved width so UIKit centers
-        // the title between equal side areas, even when the path is truncated.
-        let leadingSpace = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 1))
-        leadingSpace.isAccessibilityElement = false
-        navigationItem.leftBarButtonItem = UIBarButtonItem(customView: leadingSpace)
+        // The bounded title view leaves room for the menu on both sides.
+        // A custom-view spacer gets a visible glass background on newer iOS.
+        navigationItem.leftBarButtonItem = nil
     }
 
     private func configureTable() {
