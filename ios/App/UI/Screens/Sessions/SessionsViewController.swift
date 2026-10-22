@@ -61,6 +61,20 @@ final class SessionsViewController: UIViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Install after the transition so a pop does not draw both the pushed
+        // screen's title and ours in the same place.
+        installNavigationTitle()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // The navigation bar is shared with pushed chats; never leave our labels
+        // on top of another screen's title.
+        titleContainer.removeFromSuperview()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // A long workspace path must not widen the title into the right menu's
@@ -90,6 +104,9 @@ final class SessionsViewController: UIViewController {
         stack.alignment = .fill
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
+        titleContainer.translatesAutoresizingMaskIntoConstraints = false
+        // Purely decorative: taps must reach the navigation bar and its menu.
+        titleContainer.isUserInteractionEnabled = false
         titleContainer.addSubview(stack)
         titleWidthConstraint = titleContainer.widthAnchor.constraint(equalToConstant: 240)
         NSLayoutConstraint.activate([
@@ -99,15 +116,27 @@ final class SessionsViewController: UIViewController {
             stack.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor),
         ])
-        navigationItem.titleView = titleContainer
+    }
 
-        // UINavigationBar centers its title between the leading and trailing bar
-        // button areas, so the lone trailing menu would pull it left. Reserve the
-        // same width on the left with an invisible system space item. UIKit only
-        // accepts it in the array form; assigning it as a lone item asserts.
-        let leadingSpace = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
-        leadingSpace.width = 44
-        navigationItem.leftBarButtonItems = [leadingSpace]
+    /// `UINavigationBar` centers a `titleView` inside the space left by its bar
+    /// button items, so asymmetric items pull the title off-center. Pin the
+    /// title to the bar itself instead; the bounded width keeps it clear of the
+    /// trailing menu.
+    private func installNavigationTitle() {
+        guard let bar = navigationController?.navigationBar,
+              titleContainer.superview !== bar else { return }
+        bar.addSubview(titleContainer)
+        let widthCap = titleContainer.widthAnchor.constraint(
+            lessThanOrEqualTo: bar.widthAnchor,
+            constant: -140
+        )
+        // The exact width comes from `titleWidthConstraint`; this is a guard.
+        widthCap.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            titleContainer.centerXAnchor.constraint(equalTo: bar.safeAreaLayoutGuide.centerXAnchor),
+            titleContainer.centerYAnchor.constraint(equalTo: bar.safeAreaLayoutGuide.centerYAnchor),
+            widthCap,
+        ])
     }
 
     private func configureTable() {
