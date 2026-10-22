@@ -92,6 +92,34 @@ final class FilesRepository: FileListingRepository {
         }
     }
 
+    /// Raw media URL plus the token used by the streaming media loader. The token
+    /// travels in a request header, never in the URL.
+    func mediaSource(
+        workspaceId: String?,
+        root: String?,
+        path: String
+    ) throws -> (url: URL, token: String) {
+        let client = try clientOrThrow()
+        var query: [URLQueryItem] = [URLQueryItem(name: "path", value: path)]
+        if let workspaceId, !workspaceId.isEmpty {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let root, !root.isEmpty {
+            query.append(URLQueryItem(name: "root", value: root))
+        }
+        guard var components = URLComponents(
+            url: client.location.baseURL.appendingPathComponent("api/files/raw"),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw FilesRepositoryError.failed("无法构造文件地址")
+        }
+        components.queryItems = query
+        guard let url = components.url else {
+            throw FilesRepositoryError.failed("无法构造文件地址")
+        }
+        return (url, client.location.token)
+    }
+
     private func clientOrThrow() throws -> PabootClient {
         guard let client = session.client else {
             throw FilesRepositoryError.notConnected

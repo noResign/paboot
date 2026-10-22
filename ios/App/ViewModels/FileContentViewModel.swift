@@ -3,13 +3,19 @@ import Foundation
 import PabootProtocol
 import UIKit
 
-/// Loads a file as text or an image, depending on its extension.
+/// Loads a file as text, an image, or a streaming video source.
 @MainActor
 final class FileContentViewModel {
     enum Content {
         case text(FileContentDto)
         case image(UIImage)
+        case video(url: URL, token: String)
         case unsupported(String)
+
+        var isVideo: Bool {
+            if case .video = self { return true }
+            return false
+        }
     }
 
     struct State {
@@ -58,7 +64,12 @@ final class FileContentViewModel {
                 }
                 state.content = .image(image)
             case .video:
-                state.content = .unsupported("暂不支持视频预览")
+                let source = try repository.mediaSource(
+                    workspaceId: workspaceId,
+                    root: root,
+                    path: path
+                )
+                state.content = .video(url: source.url, token: source.token)
             case .text:
                 let content = try await repository.content(
                     workspaceId: workspaceId,

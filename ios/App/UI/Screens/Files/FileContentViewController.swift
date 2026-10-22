@@ -1,7 +1,10 @@
+import AVFoundation
+import AVKit
 import Combine
+import PabootClient
 import UIKit
 
-/// Read-only file viewer: text, image, or an explicit "not supported" message.
+/// Read-only file viewer: text, image, streaming video, or an explicit "not supported" message.
 final class FileContentViewController: UIViewController {
     private let viewModel: FileContentViewModel
     private var cancellables = Set<AnyCancellable>()
@@ -10,6 +13,10 @@ final class FileContentViewController: UIViewController {
     private let contentContainer = UIView()
     private let fileTextView = FileTextView()
     private let imageView = UIImageView()
+    private let playerController = AVPlayerViewController()
+    private var mediaLoader: AuthorizedMediaLoader?
+    private var playingURL: URL?
+    private var playerStatusCancellable: AnyCancellable?
     private let stateContainer = UIView()
     private let loadingStack = UIStackView()
     private let loadingSpinner = UIActivityIndicatorView(style: .medium)
@@ -37,8 +44,37 @@ final class FileContentViewController: UIViewController {
         view.backgroundColor = Theme.Editor.background
         configureContent()
         bind()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(pauseForBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
 
         Task { await viewModel.load() }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        playerController.player?.pause()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Tear down only once the pop actually completed; a cancelled interactive
+        // swipe calls viewWillDisappear but keeps the screen alive.
+        if isMovingFromParent || isBeingDismissed {
+            stopPlayback()
+        }
+    }
+
+    deinit {
+        // URLSession retains its delegate; invalidate so the loader is released.
+        mediaLoader?.invalidate()
+    }
+
+    @objc private func pauseForBackground() {
+        playerController.player?.pause()
     }
 
     private func configureContent() {
@@ -54,9 +90,17 @@ final class FileContentViewController: UIViewController {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
 
+        playerController.view.backgroundColor = .black
+        playerController.view.translatesAutoresizingMaskIntoConstraints = false
+        playerController.view.isHidden = true
+        playerController.showsPlaybackControls = true
+
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.addSubview(fileTextView)
         contentContainer.addSubview(imageView)
+        addChild(playerController)
+        contentContainer.addSubview(playerController.view)
+        playerController.didMove(toParent: self)
 
         let stack = UIStackView(arrangedSubviews: [bannerLabel, contentContainer])
         stack.axis = .vertical
@@ -98,6 +142,11 @@ final class FileContentViewController: UIViewController {
             imageView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
 
+            playerController.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            playerController.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+            playerController.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            playerController.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+
             stateContainer.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             stateContainer.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
             stateContainer.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
@@ -125,6 +174,10 @@ final class FileContentViewController: UIViewController {
     private func render(_ state: FileContentViewModel.State) {
         navigationItem.rightBarButtonItem = nil
         wrapItem.isEnabled = false
+        // A re-render that still shows the same video must not restart playback.
+        if state.content?.isVideo != true {
+            stopPlayback()
+        }
         if state.isLoading {
             fileTextView.isHidden = true
             imageView.isHidden = true
@@ -180,12 +233,78 @@ final class FileContentViewController: UIViewController {
             imageView.isHidden = false
             imageView.image = image
             bannerLabel.isHidden = true
+        case .video(let url, let token):
+            stateContainer.isHidden = true
+            emptyStateView?.removeFromSuperview()
+            emptyStateView = nil
+            loadingSpinner.stopAnimating()
+            loadingStack.isHidden = true
+
+            fileTextView.isHidden = true
+            imageView.isHidden = true
+            bannerLabel.isHidden = true
+            startPlayback(url: url, token: token)
         case .unsupported(let message):
             fileTextView.isHidden = true
             imageView.isHidden = true
             stateContainer.isHidden = false
             showEmpty(title: message, message: nil, retry: false)
         }
+    }
+
+    // MARK: - Video
+
+    private func startPlayback(url: URL, token: String) {
+        if playingURL == url, playerController.player != nil {
+            playerController.view.isHidden = false
+            return
+        }
+        stopPlayback()
+
+        let loader = AuthorizedMediaLoader(url: url, token: token)
+        let item = AVPlayerItem(asset: loader.makeAsset())
+        let player = AVPlayer(playerItem: item)
+        mediaLoader = loader
+        playingURL = url
+        playerController.player = player
+        playerController.view.isHidden = false
+        playerStatusCancellable = item.publisher(for: \.status)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard status == .failed else { return }
+                self?.showPlaybackFailure(item.error)
+            }
+        activatePlaybackAudio()
+        player.play()
+    }
+
+    private func showPlaybackFailure(_ error: Error?) {
+        stopPlayback()
+        stateContainer.isHidden = false
+        showEmpty(title: "无法播放该视频", message: error?.localizedDescription, retry: true)
+    }
+
+    private func stopPlayback() {
+        playerController.view.isHidden = true
+        guard playingURL != nil || playerController.player != nil else { return }
+        playerStatusCancellable?.cancel()
+        playerStatusCancellable = nil
+        playerController.player?.pause()
+        playerController.player = nil
+        mediaLoader?.invalidate()
+        mediaLoader = nil
+        playingURL = nil
+        deactivatePlaybackAudio()
+    }
+
+    private func activatePlaybackAudio() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        try? session.setActive(true)
+    }
+
+    private func deactivatePlaybackAudio() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func showLoading() {

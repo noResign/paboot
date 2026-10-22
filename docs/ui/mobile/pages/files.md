@@ -238,9 +238,11 @@ src/utils/rename.ts      R
 正文（媒体预览）：
 
 - 图片：Coil `SubcomposeAsyncImage`，`ContentScale.Fit`，加载中/失败有指示；
-- 视频：Media3 ExoPlayer（`PlayerView`），带系统播放控件，可拖动进度、切后台自动暂停；
-- 字节流来自 daemon 的 `GET /api/files/raw`（支持 `Range`），经**带鉴权的 OkHttp 客户端**
-  拉取——token 只在请求头，不进 URL；
+- 视频：带系统播放控件，可拖动进度、切后台自动暂停；Android 用 Media3 ExoPlayer（`PlayerView`），
+  iOS 用 `AVPlayerViewController`；
+- 字节流来自 daemon 的 `GET /api/files/raw`（支持 `Range`），经**带鉴权的客户端**拉取——token 只在
+  请求头，不进 URL：Android 复用带鉴权的 OkHttp 客户端，iOS 通过
+  `AVAssetResourceLoaderDelegate` 把播放器的 Range 请求代发并注入 Bearer 头；
 - 未配置连接时给错误态，不静默无反应。
 
 交互：
