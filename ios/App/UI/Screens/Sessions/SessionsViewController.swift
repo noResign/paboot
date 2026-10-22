@@ -103,11 +103,11 @@ final class SessionsViewController: UIViewController {
 
         // UINavigationBar centers its title between the leading and trailing bar
         // button areas, so the lone trailing menu would pull it left. Reserve the
-        // same width on the left; a system fixed-space item draws nothing (a
-        // custom-view spacer picks up a visible glass background on newer iOS).
+        // same width on the left with an invisible system space item. UIKit only
+        // accepts it in the array form; assigning it as a lone item asserts.
         let leadingSpace = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
         leadingSpace.width = 44
-        navigationItem.leftBarButtonItem = leadingSpace
+        navigationItem.leftBarButtonItems = [leadingSpace]
     }
 
     private func configureTable() {
