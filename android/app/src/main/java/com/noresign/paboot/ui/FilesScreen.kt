@@ -29,6 +29,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.FilterAltOff
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -100,6 +104,12 @@ fun FilesScreen(
     val refreshing by viewModel.refreshing.collectAsState()
     var fileBrowserQuery by rememberSaveable { mutableStateOf("") }
     val currentRoot = root ?: selectedWorkspacePath.orEmpty()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val dismissInput: () -> Unit = {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
 
     // 每次进入文件 Tab 自动拉一次：agent 在后台改了文件、或别处动了 tab 行，
     // 切回来就能看到，不用手点「刷新」。切走时本页会离开 composition，切回来再触发。
@@ -155,6 +165,30 @@ fun FilesScreen(
                         }
                     },
                     // 没有「刷新」按钮：每次进入本 tab 会自动拉一次（见上面的 LaunchedEffect）。
+                    actions = {
+                        if (mode == FilesMode.All) {
+                            IconButton(onClick = { dismissInput(); viewModel.toggleShowHidden() }) {
+                                Icon(
+                                    imageVector = if (fileBrowser.showHidden) {
+                                        Icons.Rounded.VisibilityOff
+                                    } else {
+                                        Icons.Rounded.Visibility
+                                    },
+                                    contentDescription = if (fileBrowser.showHidden) "隐藏隐藏项" else "显示隐藏项",
+                                )
+                            }
+                            IconButton(onClick = { dismissInput(); viewModel.toggleShowIgnored() }) {
+                                Icon(
+                                    imageVector = if (fileBrowser.showIgnored) {
+                                        Icons.Rounded.FilterAltOff
+                                    } else {
+                                        Icons.Rounded.FilterAlt
+                                    },
+                                    contentDescription = if (fileBrowser.showIgnored) "隐藏忽略项" else "显示忽略项",
+                                )
+                            }
+                        }
+                    },
                 )
             },
         ) { innerPadding ->
@@ -195,8 +229,6 @@ fun FilesScreen(
                             onQueryChange = { fileBrowserQuery = it },
                             onBrowse = { fileBrowserQuery = ""; viewModel.browse(it) },
                             onLoadMore = viewModel::loadMore,
-                            onToggleHidden = viewModel::toggleShowHidden,
-                            onToggleIgnored = viewModel::toggleShowIgnored,
                             onOpenFile = viewModel::openFile,
                             onRetry = viewModel::refresh,
                         )
@@ -491,8 +523,6 @@ private fun FileBrowserContent(
     onQueryChange: (String) -> Unit,
     onBrowse: (String?) -> Unit,
     onLoadMore: () -> Unit,
-    onToggleHidden: () -> Unit,
-    onToggleIgnored: () -> Unit,
     onOpenFile: (FileEntryDto) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -554,12 +584,6 @@ private fun FileBrowserContent(
         ) {
             if (state.parent != null) {
                 TextButton(onClick = { dismissAndBrowse(state.parent) }) { Text("上一级") }
-            }
-            TextButton(onClick = { dismissInput(); onToggleHidden() }) {
-                Text(if (state.showHidden) "隐藏隐藏项" else "显示隐藏项")
-            }
-            TextButton(onClick = { dismissInput(); onToggleIgnored() }) {
-                Text(if (state.showIgnored) "隐藏忽略项" else "显示忽略项")
             }
         }
         CompactSearchField(

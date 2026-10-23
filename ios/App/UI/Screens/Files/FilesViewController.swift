@@ -9,6 +9,8 @@ final class FilesViewController: UIViewController {
 
     private let segmentedControl = UISegmentedControl(items: ["改动", "全部文件"])
     private let rootBar = FileRootBarView()
+    private let breadcrumbBar = FileBreadcrumbBarView()
+    private var breadcrumbHeight: NSLayoutConstraint!
     private let tableView = UITableView(frame: .zero, style: .plain)
 
     private let refreshIndicatorContainer = UIView()
@@ -55,6 +57,7 @@ final class FilesViewController: UIViewController {
 
         configureModeControl()
         configureRootBar()
+        configureBreadcrumbBar()
         configureTable()
         configureRefreshIndicator()
         configureStateContainer()
@@ -103,6 +106,21 @@ final class FilesViewController: UIViewController {
         ])
     }
 
+    private func configureBreadcrumbBar() {
+        breadcrumbBar.translatesAutoresizingMaskIntoConstraints = false
+        breadcrumbBar.onSelect = { [weak self] path in
+            Task { await self?.viewModel.openDirectory(path: path) }
+        }
+        view.addSubview(breadcrumbBar)
+        breadcrumbHeight = breadcrumbBar.heightAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            breadcrumbBar.topAnchor.constraint(equalTo: rootBar.bottomAnchor),
+            breadcrumbBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            breadcrumbBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            breadcrumbHeight,
+        ])
+    }
+
     private func configureTable() {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = Theme.Colors.background
@@ -118,7 +136,7 @@ final class FilesViewController: UIViewController {
 
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: rootBar.bottomAnchor, constant: Spacing.xxs),
+            tableView.topAnchor.constraint(equalTo: breadcrumbBar.bottomAnchor, constant: Spacing.xxs),
             // Extend beneath the transparent tab bar; automatic safe-area insets keep
             // the last item reachable above its buttons when scrolling to the bottom.
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -169,7 +187,7 @@ final class FilesViewController: UIViewController {
         stateContainer.addSubview(loadingStack)
 
         NSLayoutConstraint.activate([
-            stateContainer.topAnchor.constraint(equalTo: rootBar.bottomAnchor),
+            stateContainer.topAnchor.constraint(equalTo: breadcrumbBar.bottomAnchor),
             stateContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             stateContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             stateContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -201,6 +219,15 @@ final class FilesViewController: UIViewController {
                 selectedRoot: state.root,
                 workspacePath: state.workspacePath
             )
+        }
+
+        // Directory trail only exists while browsing files; the changes list has
+        // no path of its own.
+        let showsBreadcrumbs = state.mode == .all
+        breadcrumbBar.isHidden = !showsBreadcrumbs
+        breadcrumbHeight.constant = showsBreadcrumbs ? 28 : 0
+        if showsBreadcrumbs {
+            breadcrumbBar.configure(path: state.path)
         }
 
         navigationItem.rightBarButtonItem = state.mode == .all ? hiddenToggleItem : nil

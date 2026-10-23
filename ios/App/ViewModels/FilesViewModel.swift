@@ -144,6 +144,8 @@ final class FilesViewModel {
     }
 
     func openDirectory(path: String) async {
+        // Tapping the current breadcrumb is a no-op, not a reload.
+        guard path != state.path || state.loadError != nil else { return }
         state.path = path
         state.parent = nil
         state.entries = []
