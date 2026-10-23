@@ -2,21 +2,16 @@
 import Markdown
 import UIKit
 
-/// Parses Markdown with swift-markdown (cmark-gfm) and renders native UIKit block views.
-public enum MarkdownUIRenderer {
-    public static func makeView(markdown: String, style: MarkdownUIStyle) -> UIView {
-        let document = Document(parsing: markdown)
-        let view = MarkdownDocumentView(style: style)
-        view.render(Array(document.children))
-        return view
-    }
-}
-
-private final class MarkdownDocumentView: UIView {
+/// Reusable Markdown view: parses with swift-markdown (cmark-gfm) and renders
+/// native UIKit block views. Each update rebuilds only the blocks that changed,
+/// so streamed text does not recreate the whole document.
+public final class MarkdownUIView: UIView {
     private let stack = UIStackView()
     private let style: MarkdownUIStyle
+    private var renderedSource = ""
+    private var renderedViews: [UIView?] = []
 
-    init(style: MarkdownUIStyle) {
+    public init(style: MarkdownUIStyle) {
         self.style = style
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
@@ -39,14 +34,41 @@ private final class MarkdownDocumentView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func render(_ blocks: [Markup]) {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        addBlocks(blocks, indent: 0)
+    /// Re-parse and rebuild only the blocks the new source changed. Streaming text
+    /// is append-only, so every top-level block before the last one can be reused.
+    public func update(markdown: String) {
+        guard markdown != renderedSource else { return }
+        let blocks = Array(Document(parsing: markdown).children)
+        let appending = !renderedSource.isEmpty && markdown.hasPrefix(renderedSource)
+        let canReuse = appending && blocks.count + 1 >= renderedViews.count
+        let reuse = canReuse ? max(renderedViews.count - 1, 0) : 0
+
+        if reuse < renderedViews.count {
+            for view in renderedViews[reuse...] {
+                view?.removeFromSuperview()
+            }
+            renderedViews.removeSubrange(reuse...)
+        }
+        addBlocks(Array(blocks.dropFirst(reuse)), indent: 0, record: true)
+        renderedSource = markdown
     }
 
-    private func addBlocks(_ blocks: [Markup], indent: CGFloat) {
+    private func render(_ blocks: [Markup]) {
+        for view in renderedViews {
+            view?.removeFromSuperview()
+        }
+        renderedViews.removeAll()
+        renderedSource = ""
+        addBlocks(blocks, indent: 0, record: true)
+    }
+
+    private func addBlocks(_ blocks: [Markup], indent: CGFloat, record: Bool = false) {
         for block in blocks {
-            if let view = blockView(block, indent: indent) {
+            let view = blockView(block, indent: indent)
+            if record {
+                renderedViews.append(view)
+            }
+            if let view {
                 stack.addArrangedSubview(view)
             }
         }
@@ -87,7 +109,7 @@ private final class MarkdownDocumentView: UIView {
         }
 
         if let quote = markup as? BlockQuote {
-            let content = MarkdownDocumentView(style: style)
+            let content = MarkdownUIView(style: style)
             content.render(Array(quote.children))
 
             let bar = UIView()
@@ -130,7 +152,7 @@ private final class MarkdownDocumentView: UIView {
         }
 
         if markup.childCount > 0 {
-            let content = MarkdownDocumentView(style: style)
+            let content = MarkdownUIView(style: style)
             content.render(Array(markup.children))
             return wrapped(content, indent: indent)
         }
@@ -184,7 +206,7 @@ private final class MarkdownDocumentView: UIView {
             marker.translatesAutoresizingMaskIntoConstraints = false
             marker.setContentHuggingPriority(.required, for: .horizontal)
 
-            let content = MarkdownDocumentView(style: style)
+            let content = MarkdownUIView(style: style)
             content.render(Array(item.children))
 
             let row = UIStackView(arrangedSubviews: [marker, content])

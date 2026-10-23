@@ -274,8 +274,21 @@ class ChatBlockView: UIView {
 }
 
 final class ChatTextBlockView: ChatBlockView {
+    /// Streaming deltas arrive roughly every 80ms. Re-parsing and re-laying out the
+    /// whole Markdown document at that rate reads as flicker, so sample the text:
+    /// Android does the same at ~200ms.
+    private static let streamingInterval: TimeInterval = 0.2
+
     private let stack = UIStackView()
-    private var lastText: String?
+    private var displayedText: String?
+    private var pendingText: String?
+    private var pendingRender: DispatchWorkItem?
+    private var lastRenderTime: TimeInterval = 0
+    private lazy var documentView: MarkdownUIView = {
+        let view = MarkdownUIView(style: Self.markdownStyle())
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -300,12 +313,54 @@ final class ChatTextBlockView: ChatBlockView {
 
     override func update(block: ContentBlock, streaming: Bool) {
         guard case .text(let text) = block else { return }
-        guard text != lastText else { return }
-        lastText = text
+        guard text != displayedText else {
+            // Already shown; a queued sample is stale.
+            pendingText = nil
+            pendingRender?.cancel()
+            pendingRender = nil
+            return
+        }
+        pendingText = text
 
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard streaming else {
+            pendingRender?.cancel()
+            pendingRender = nil
+            renderPendingText()
+            return
+        }
 
-        let style = MarkdownUIStyle(
+        let elapsed = Date.timeIntervalSinceReferenceDate - lastRenderTime
+        if elapsed >= Self.streamingInterval {
+            renderPendingText()
+            return
+        }
+        guard pendingRender == nil else { return }
+        let item = DispatchWorkItem { [weak self] in self?.renderPendingText() }
+        pendingRender = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + (Self.streamingInterval - elapsed),
+            execute: item
+        )
+    }
+
+    private func renderPendingText() {
+        pendingRender = nil
+        guard let text = pendingText, text != displayedText else { return }
+        pendingText = nil
+        displayedText = text
+        lastRenderTime = Date.timeIntervalSinceReferenceDate
+
+        if documentView.superview == nil {
+            stack.addArrangedSubview(documentView)
+        }
+        documentView.update(markdown: text)
+        // Re-query the row height, but never animate a streamed sample: that height
+        // animation on every tick is what makes the transcript shimmer.
+        notifyEnclosingTableHeightChanged(animated: false)
+    }
+
+    private static func markdownStyle() -> MarkdownUIStyle {
+        MarkdownUIStyle(
             bodyFont: Typography.body,
             headingFonts: [
                 UIFontMetrics(forTextStyle: .title1)
@@ -329,11 +384,10 @@ final class ChatTextBlockView: ChatBlockView {
             codeNumberColor: Theme.Colors.warning,
             codeCommentColor: Theme.Colors.textMuted
         )
+    }
 
-        let rendered = MarkdownUIRenderer.makeView(markdown: text, style: style)
-        rendered.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(rendered)
-        notifyEnclosingTableHeightChanged()
+    deinit {
+        pendingRender?.cancel()
     }
 }
 
@@ -1032,7 +1086,7 @@ private extension UIView {
     /// A collapsible block changes its intrinsic height without a snapshot update.
     /// Ask the enclosing table to re-query the row height on the next run loop, after
     /// the newly shown content has laid out.
-    func notifyEnclosingTableHeightChanged() {
+    func notifyEnclosingTableHeightChanged(animated: Bool = true) {
         DispatchQueue.main.async { [weak self] in
             // The cell can outlive its controller (for example while a chat is being
             // popped). A batch update then runs against a table whose data source is
@@ -1056,8 +1110,15 @@ private extension UIView {
                         return
                     }
 
-                    table.beginUpdates()
-                    table.endUpdates()
+                    if animated {
+                        table.beginUpdates()
+                        table.endUpdates()
+                    } else {
+                        UIView.performWithoutAnimation {
+                            table.beginUpdates()
+                            table.endUpdates()
+                        }
+                    }
                     return
                 }
                 current = view.superview
