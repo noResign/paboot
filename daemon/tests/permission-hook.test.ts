@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * The hook no longer decides anything locally: the only tools in the matcher
- * (Bash, the write/edit tools, MCP) are genuine asks, so every call is relayed
+ * (Bash, the write/edit tools, WebSearch/WebFetch, MCP) are genuine asks, so every call is relayed
  * to the daemon. These tests drive the real script (via tsx) with no daemon
  * configured — each tool must therefore come back denied with a
  * "not configured" reason, proving nothing is auto-allowed in-process.

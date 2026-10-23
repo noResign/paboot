@@ -73,9 +73,10 @@ export function startRun(req: RunRequest): ActiveRun {
             PreToolUse: [
               {
                 // `ask` gates Bash + Write/Edit; `acceptEdits` gates Bash.
-                // Both always gate MCP tools (mcp__*), whose side effects are
-                // arbitrary and match no edit-ish category. The matcher is
-                // chosen by the chat route per session.
+                // WebSearch/WebFetch are gated in both (they send context
+                // off-device), and MCP tools (mcp__*) always are, since their
+                // side effects are arbitrary and match no edit-ish category.
+                // The matcher is chosen by the chat route per session.
                 matcher: req.permissionHook.matcher || 'Bash',
                 hooks: [
                   {

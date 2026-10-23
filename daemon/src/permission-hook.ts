@@ -11,8 +11,9 @@
  * PABOOT_DAEMON_URL, PABOOT_TOKEN, PABOOT_RUN_ID.
  *
  * Only the tools the chat route put in the matcher reach this script — today
- * Bash, the write/edit tools, and MCP (reads are not gated). So every call here
- * is a genuine ask: it goes straight to the daemon, no local shortcuts.
+ * Bash, the write/edit tools, WebSearch/WebFetch, and MCP (reads are not gated).
+ * So every call here is a genuine ask: it goes straight to the daemon, no local
+ * shortcuts.
  */
 
 const POLL_INTERVAL_MS = 250;

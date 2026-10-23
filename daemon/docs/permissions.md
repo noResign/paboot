@@ -6,11 +6,11 @@
 
 每个 Session 有自己的权限模式：
 
-| 模式 | Write/Edit | Bash 只读 | Bash 有副作用 |
-|---|---|---|---|
-| `ask` | 询问 | 自动 | 询问 |
-| `acceptEdits` | 自动 | 自动 | 询问 |
-| `bypass` | 自动 | 自动 | 自动，不注入 hook |
+| 模式 | Write/Edit | Bash 只读 | Bash 有副作用 | WebSearch / WebFetch |
+|---|---|---|---|---|
+| `ask` | 询问 | 自动 | 询问 | 询问 |
+| `acceptEdits` | 自动 | 自动 | 询问 | 询问 |
+| `bypass` | 自动 | 自动 | 自动，不注入 hook | 自动 |
 
 模式到 Claude Code `--permission-mode` 的映射：
 
@@ -21,8 +21,9 @@ bypass       -> bypassPermissions
 ```
 
 `Read` / `Grep` **不纳入门禁**：读工作区外的文件不审批（见下文「读取不门控」）。`ask` 模式下 PreToolUse
-hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*`；`acceptEdits` 匹配
-`Bash|mcp__.*`；`bypass` 不注入 hook。
+hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*`；`acceptEdits`
+匹配 `Bash|WebSearch|WebFetch|mcp__.*`；`bypass` 不注入 hook。`WebSearch` / `WebFetch` 在 `ask` /
+`acceptEdits` 下都审批：它们会把查询、URL 和上下文发往外部服务，和「读本机文件」不是一类操作。
 
 `Glob` **不纳入**：它只返回文件名、不返回内容，却是探索阶段最频繁的调用，
 每加一个受门禁的工具就多一次 hook 进程 spawn。
@@ -40,9 +41,10 @@ hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*`；`acceptE
 > 的 agent 时，这是刻意的取舍——之前那套「越界读取→审批→目录授权」的机制已整体移除
 > （`permission-paths.ts`、hook 的离线放行、`PABOOT_ALLOWED_DIRS` 均已删除）。
 
-**MCP 工具**（`mcp__<server>__<tool>`）与 Bash/Write/Edit 是平级的顶层工具，不属于其中任何
-一类，但**在 `ask` 和 `acceptEdits` 下都纳入客户端审批**：MCP 工具能调用外部服务、产生任意副
-作用，不属于「编辑类」语义，静默放行会留下绕过审批的口子。只有 `bypass` 模式不审批。
+**MCP 工具**（`mcp__<server>__<tool>`）和 **WebSearch / WebFetch** 与 Bash/Write/Edit 是平级的顶层
+工具，不属于其中任何一类，但**在 `ask` 和 `acceptEdits` 下都纳入客户端审批**：MCP 工具能调用外部
+服务、产生任意副作用，WebSearch / WebFetch 会把查询、URL 和上下文发往外部；它们都不属于「编辑类」
+语义，静默放行会留下绕过审批的口子。只有 `bypass` 模式不审批。
 
 ```
 claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permissions/create
@@ -119,6 +121,7 @@ Claude 启动后，访问别的目录由「工具权限」决定，与 workspace
 | Write / Edit / MultiEdit | `ask` 下弹审批；`acceptEdits` / `bypass` 下**直接放行**，可写任意路径 |
 | Bash 只读（`cat`/`ls`/`grep`…） | 自动放行，**完全不看路径**——`cat <工作区外文件>` 一样放行 |
 | Bash 有副作用 | 弹审批（审批的是命令本身，不专门按目录拦截） |
+| WebSearch / WebFetch | `ask` / `acceptEdits` 下弹审批（对外发请求），`bypass` 下放行 |
 
 **因此读取从来不构成边界**：`Read` 与 `cat` 都放行，终点一致——paboot 对读取不做任何拦截。
 曾评估给只读 Bash 白名单补路径校验以堵住这条，**已决定不做**——读命令放行的影响可接受，

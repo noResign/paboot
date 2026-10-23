@@ -68,8 +68,8 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
                 timeoutMs: config.permissionTimeoutMs,
                 matcher:
                   req.permissionMode === 'ask'
-                    ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
-                    : 'Bash|mcp__.*',
+                    ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*'
+                    : 'Bash|WebSearch|WebFetch|mcp__.*',
               },
         idleTimeoutMs: config.runIdleTimeoutMs,
         onEvent: req.onEvent,

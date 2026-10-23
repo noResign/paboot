@@ -141,8 +141,9 @@ paboot/
 
 ## 关键设计决策（速览）
 
-- **权限审批**：每个 Session 独立模式 `ask` / `acceptEdits` / `bypass`；`ask` 下 Bash/Write/Edit
-  经 PreToolUse hook 转发到客户端审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
+- **权限审批**：每个 Session 独立模式 `ask` / `acceptEdits` / `bypass`；`ask` 下 Bash/Write/Edit，
+  以及 `ask`/`acceptEdits` 下的 WebSearch/WebFetch 与 MCP 工具，经 PreToolUse hook 转发到客户端审批，
+  Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
   持久化 grant，默认拒绝、超时自动拒绝。**读（`Read`/`Grep`）不门控**——读工作区外不审批、
   不加目录；工作区边界只约束写入。
 - **工作空间**：显式 `--workspace` 是**权威值**——每次启动都确保该目录存在并设为默认 Workspace

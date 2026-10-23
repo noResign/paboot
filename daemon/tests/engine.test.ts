@@ -42,8 +42,8 @@ const fakeAdapter: RuntimeAdapter = {
 
 describe('run event stream', () => {
   it.each([
-    ['default', 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'],
-    ['acceptEdits', 'Bash|mcp__.*'],
+    ['default', 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*'],
+    ['acceptEdits', 'Bash|WebSearch|WebFetch|mcp__.*'],
   ])('passes read grants and remote approval hooks to Claude in %s mode', async (permissionMode, matcher) => {
     let claudeArgs: string[] = [];
     const run = startRun({
