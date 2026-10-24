@@ -203,7 +203,7 @@ fun SettingsScreen(
                             Switch(
                                 checked = notificationsEnabled && notificationsGranted,
                                 onCheckedChange = null,
-                                modifier = Modifier.scale(0.8f),
+                                modifier = Modifier.scale(0.7f),
                             )
                         }
                         Text(
