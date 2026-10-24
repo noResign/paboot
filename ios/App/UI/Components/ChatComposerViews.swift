@@ -330,8 +330,11 @@ final class TodoPanelView: UIView {
 
     func configure(_ todos: [TodoItem]) {
         self.todos = todos
-        isHidden = todos.isEmpty
-        guard !todos.isEmpty else { return }
+        // A finished list is noise: once every item is completed the panel must
+        // disappear from above the composer (same rule as Android).
+        let allCompleted = !todos.isEmpty && todos.allSatisfy { $0.status == "completed" }
+        isHidden = todos.isEmpty || allCompleted
+        guard !isHidden else { return }
         update()
     }
 
