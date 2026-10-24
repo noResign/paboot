@@ -113,6 +113,11 @@ fun SessionListScreen(
         viewModel.refreshSilently()
         onPauseOrDispose { }
     }
+    // The ViewModel outlives this composable; refresh on tab re-entry so a
+    // session that just lost its last task moves back to the normal group.
+    LaunchedEffect(Unit) {
+        viewModel.refreshSilently()
+    }
 
     LaunchedEffect(message) {
         message?.let {
