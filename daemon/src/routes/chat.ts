@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import type { Express } from 'express';
+import type { Express, Response } from 'express';
 import type { AppContext } from '../context.js';
-import type { NormalizedEvent, SseFrame } from '../types/api.js';
+import type { SseFrame } from '../types/api.js';
 import { log } from '../log.js';
-import { captureCheckpoint, repoRootFor } from '../checkpoints.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
 import { activeRunIdForSession } from '../session-runs.js';
 import { streamRunToResponse } from './runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
-import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
+import { resolveWorkspaceForRequest, workspaceContains } from '../workspace-service.js';
+import { startSessionRun, type RunSink } from '../run-service.js';
 import {
   isValidModelParameters,
   normalizeModel,
@@ -36,6 +36,49 @@ interface ChatBody {
    * request starts a fresh run.
    */
   commandId?: string;
+}
+
+/** SSE sink for `/api/chat`: the run itself is independent of this response. */
+class ChatSseSink implements RunSink {
+  private closed = false;
+  private ended = false;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+
+  constructor(private readonly res: Response) {
+    res.on('close', () => {
+      this.closed = true;
+      this.stopHeartbeat();
+      // The daemon keeps the run alive so the phone can reconnect and resume
+      // watching via `GET /api/runs/:id/stream`. Cancel explicitly instead.
+      if (!this.ended) log.info('chat stream closed; run keeps running');
+    });
+  }
+
+  begin(): void {
+    this.res.writeHead(200, sseHeaders());
+    this.res.write(': connected\n\n');
+    this.heartbeat = setInterval(() => {
+      if (this.closed || this.res.writableEnded) return;
+      this.res.write(': keepalive\n\n');
+    }, 15000);
+  }
+
+  frame(frame: SseFrame): void {
+    if (this.closed || this.res.writableEnded) return;
+    writeSseFrame(this.res, frame);
+  }
+
+  end(): void {
+    this.ended = true;
+    this.stopHeartbeat();
+    if (!this.res.writableEnded) this.res.end();
+  }
+
+  private stopHeartbeat(): void {
+    if (!this.heartbeat) return;
+    clearInterval(this.heartbeat);
+    this.heartbeat = null;
+  }
 }
 
 /**
@@ -120,15 +163,17 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     // (Codex) runtimes both provide one. The route never branches on the
     // runtime name — an unknown runtime is simply one without a driver.
     const driver = ctx.registry.driver(runtime);
-    if (!driver) {
+    if (!driver || driver.internal) {
       res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
       return;
     }
 
-    const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
-    if (!detection?.available) {
-      res.status(503).json({ error: `runtime not available: ${runtime}`, code: 'runtime_unavailable' });
-      return;
+    if (driver.requiresDetection !== false) {
+      const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
+      if (!detection?.available) {
+        res.status(503).json({ error: `runtime not available: ${runtime}`, code: 'runtime_unavailable' });
+        return;
+      }
     }
 
     // Detection may yield before a run row exists. Recheck both guards before
@@ -210,11 +255,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     // A session with a native id resumes it. Otherwise the driver decides how
     // the session gets named — a host-picking runtime (Claude `--session-id`)
     // names it up front; one that allocates its own (Codex) reports it later.
-    let resumeNativeSessionId: string | undefined;
     if (!session) {
       const id = randomUUID();
       if (body.claudeSessionId && importedCwd) {
-        resumeNativeSessionId = body.claudeSessionId;
         session = ctx.db.createSession({
           id,
           runtime,
@@ -238,178 +281,30 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           title: titleFromPrompt(prompt),
         });
       }
-    } else if (session.native_session_id) {
-      resumeNativeSessionId = session.native_session_id;
-    }
-    ctx.db.touchWorkspace(workspace.id);
-
-    ctx.db.addMessage(session.id, 'user', prompt);
-    ctx.db.audit(
-      'chat',
-      JSON.stringify({
-        sessionId: session.id,
-        runtime,
-        model: effectiveModel ?? null,
-        modelParameters: effectiveParameters,
-      }),
-    );
-
-    const runId = randomUUID();
-    ctx.db.createRun({
-      id: runId,
-      sessionId: session.id,
-      runtime,
-      model: effectiveModel ?? null,
-      modelParameters: effectiveParameters,
-      prompt,
-      status: 'running',
-      commandId: commandId ?? null,
-    });
-
-    // Snapshot the workspace before the run can touch it, so its changes can be
-    // diffed and rolled back later. Best-effort: a non-git cwd or a git failure
-    // just means no checkpoint, and the run proceeds anyway.
-    const repoRoot = await repoRootFor(session.cwd);
-    const preRef = repoRoot ? await captureCheckpoint(repoRoot, `${runId}-pre`) : null;
-    if (repoRoot) {
-      ctx.db.upsertRunCheckpoint({
-        runId,
-        repoRoot,
-        preRef,
-        postRef: null,
-        status: preRef ? 'complete' : 'unavailable',
-      });
     }
 
-    res.writeHead(200, sseHeaders());
-    res.write(': connected\n\n');
-
-    let seq = 0;
-    let finished = false;
-    let assistantText = '';
-    // 运行期间会话可能被删（删会话 / 删工作区级联）。run 行一没，再写事件和消息就只是
-    // 往不存在的东西上挂孤儿行，所以置位后 send 直接静默。
-    let runDeleted = false;
-
-    const send = (ev: NormalizedEvent): void => {
-      if (runDeleted) return;
-      seq += 1;
-      if (ev.type === 'text_delta') assistantText += ev.delta;
-      try {
-        ctx.db.appendEvent(runId, seq, ev.type, ev);
-      } catch (err) {
-        log.warn('failed to persist event', err);
-      }
-      const frame: SseFrame = { runId, seq, event: ev };
-      writeSseFrame(res, frame);
-      ctx.notifier.broadcast(runId, frame);
-    };
-
-    send({ type: 'status', label: 'starting', runtime, sessionId: session.id });
-
-    // Roots this session may touch without an ask: the workspace's primary dir
-    // plus every dir granted to it. `--add-dir` covers the ones that aren't the
-    // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
-    // the primary to be granted explicitly). The engine also exports the same
-    // set to the hook as its spawn-time allowlist.
-    const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== session.cwd);
-    const extraDirs = existingDirs(wanted);
-    if (extraDirs.length < wanted.length) {
-      const dropped = wanted.filter((root) => !extraDirs.includes(root));
-      log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
-    }
-
-    // Captured so the closure below keeps the narrowed, non-optional session.
-    const sessionId = session.id;
-
-    const heartbeat = setInterval(() => {
-      if (res.writableEnded) return;
-      res.write(': keepalive\n\n');
-    }, 15000);
-
-    const cleanup = (): void => clearInterval(heartbeat);
-    res.on('close', () => {
-      cleanup();
-      // The daemon keeps the run alive so the phone can reconnect and resume
-      // watching via `GET /api/runs/:id/stream`. Stop it explicitly with
-      // `POST /api/runs/:id/cancel`.
-      if (!finished) {
-        log.info(`chat stream closed; run ${runId} keeps running`);
-      }
-    });
-    res.on('finish', cleanup);
-
-    ctx.notifier.register(runId, send);
+    const sink = new ChatSseSink(res);
     try {
-      const active = driver.start({
-        runId,
-        sessionId,
+      const handle = startSessionRun(ctx, {
+        session,
+        workspace,
         prompt,
-        cwd: session.cwd,
-        model: effectiveModel,
-        modelParameters: effectiveParameters ?? undefined,
+        driver,
         permissionMode: sessionPermissionMode,
-        resumeNativeSessionId,
-        // The driver reports the session's native id once known: a host-picking
-        // runtime names it up front, a self-allocating one (Codex) when the
-        // provider reports it.
-        onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
-        extraDirs,
-        // The route owns the terminal frame: provider errors may arrive before
-        // exit, while the final checkpoint and run metadata are not ready yet.
-        onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),
+        model: effectiveModel ?? null,
+        modelParameters: effectiveParameters ?? null,
+        trigger: 'user',
+        commandId: commandId ?? null,
+        sink,
       });
-
-      const outcome = await active.promise;
-      finished = true;
-      if (!ctx.db.getRun(runId)) {
-        // 会话/工作区在运行期间被删了：清掉从 cancel 到进程退出之间迟到写入的事件，
-        // 并跳过收尾持久化（会话行都没了，写消息只会留下孤儿行）。
-        runDeleted = true;
-        ctx.db.deleteEventsForRun(runId);
-      } else {
-        ctx.db.touchSession(session.id);
-        // Persist the assistant's aggregated visible text as a message so the
-        // transcript is complete without replaying every event. Tool / thinking
-        // detail stays in the events table.
-        if (assistantText.trim()) {
-          ctx.db.addMessage(session.id, 'assistant', assistantText.trim());
-        }
-        // Close the checkpoint pair so the run's diff (pre..post) is available.
-        // Cancelled runs converge here too, so they stay diffable/rollback-able.
-        if (repoRoot) {
-          const postRef = await captureCheckpoint(repoRoot, `${runId}-post`);
-          ctx.db.upsertRunCheckpoint({
-            runId,
-            repoRoot,
-            preRef,
-            postRef,
-            status: preRef && postRef ? 'complete' : 'unavailable',
-          });
-        }
-      }
-      // Keep the session busy until its post-checkpoint is durable. A new run
-      // must not edit files while the previous run is still taking its snapshot.
-      ctx.db.updateRun(runId, {
-        status: outcome.status,
-        endedAt: Date.now(),
-        exitCode: outcome.exitCode,
-        error: outcome.error,
-      });
-      if (outcome.error && outcome.status === 'failed') {
-        send({ type: 'error', code: 'run_failed', message: outcome.error, terminal: true });
-      }
-      send({ type: 'status', label: outcome.status, terminal: true });
+      await handle.done;
     } catch (err) {
-      finished = true;
-      log.error('run failed unexpectedly', err);
-      ctx.db.updateRun(runId, { status: 'failed', endedAt: Date.now(), error: String(err) });
-      send({ type: 'error', code: 'run_error', message: String(err), terminal: true });
-    } finally {
-      ctx.notifier.unregister(runId);
-      ctx.permissions.clearRun(runId);
-      cleanup();
-      res.end();
+      log.error('failed to start run', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'failed to start run', code: 'internal_error' });
+      } else {
+        sink.end();
+      }
     }
   });
 }

@@ -14,14 +14,15 @@
 
 | 表 | 内容 |
 |---|---|
-| `sessions` | 会话：`id`、`runtime`、`native_session_id`、`workspace_id`、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
+| `sessions` | 会话：`id`、`runtime`、`kind`（`chat` / `command`，后者是命令任务的隐藏会话）、`native_session_id`、`workspace_id`、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
 | `workspaces` | 工作区**主目录**：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
 | `workspace_dirs` | 工作区**附加目录**（agent 可读写、该工作区所有会话继承）：`workspace_id`、`path`、`created_at`；随工作区级联删除 |
 | `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
-| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters` |
+| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters`、`task_id`、`trigger`（`user\|scheduled\|run_now`）、`permission_mode` |
+| `scheduled_tasks` | 定时任务：任务类型/目标会话/工作区/runtime、prompt 或 command、`cron_expr` + `timezone` + `schedule_preset`、`next_run_at`、执行状态、`enabled` / `disabled_reason`、`created_by`（见 [scheduled-tasks.md](scheduled-tasks.md)） |
 | `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放 |
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
@@ -72,6 +73,17 @@
 | `PATCH /api/sessions/:id/permissions` | 是 | 修改 Session 权限模式（仅对后续 Run 生效） |
 | `DELETE /api/sessions/:id/permissions/grants/:toolName` | 是 | 撤销单个工具授权 |
 | `DELETE /api/sessions/:id/permissions/grants` | 是 | 撤销全部工具授权 |
+| `GET /api/scheduled-tasks` | 是 | 定时任务列表（`?workspaceId=&sessionId=` 过滤） |
+| `POST /api/scheduled-tasks` | 是 | 创建定时任务（AI 绑定已有/新建会话；命令绑定工作区；`schedule` 用预设或 5 段 cron） |
+| `GET /api/scheduled-tasks/:id` | 是 | 任务详情 + 最近 20 条 run |
+| `PATCH /api/scheduled-tasks/:id` | 是 | 改名 / prompt / command / 计划 / 启停 |
+| `DELETE /api/scheduled-tasks/:id` | 是 | 删除任务；命令任务连带删除隐藏会话 |
+| `POST /api/scheduled-tasks/:id/run-now` | 是 | 立即运行（不推进计划）；会话忙 → 409 |
+| `POST /api/scheduled-tasks/config-session` | 是 | 打开/创建该 workspace 的 AI 配置会话并起一条配置 run（每 workspace 复用） |
+| `POST /api/internal/mcp/schedule-task` | 是 | 内部：agent 创建任务；`target.mode=current/existing/new`，只收 `runId` |
+| `GET /api/internal/mcp/scheduled-tasks` | 是 | 内部：agent 查看当前会话的任务 |
+| `POST /api/internal/mcp/scheduled-tasks/:id/cancel` | 是 | 内部：agent 取消当前会话的任务 |
+| `GET /api/internal/mcp/sessions` | 是 | 内部：列出当前 workspace 的会话，供 agent 选择已有会话目标 |
 | `POST /api/permissions/:id/decision` | 是 | 工具审批决定（allow/deny/allow_all） |
 | `POST /api/internal/permissions/create` | 是 | 内部：hook 注册审批请求 |
 | `GET /api/internal/permissions/:id/status` | 是 | 内部：hook 轮询决定 |

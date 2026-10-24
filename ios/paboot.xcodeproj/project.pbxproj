@@ -37,6 +37,9 @@
 		AAAA00000000000000000092 /* SessionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000082 /* SessionRepository.swift */; };
 		AAAA00000000000000000093 /* SessionGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000083 /* SessionGroup.swift */; };
 		AAAA00000000000000000094 /* SessionListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000084 /* SessionListViewModel.swift */; };
+		E10000000000000000000001 /* ScheduledTaskRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000011 /* ScheduledTaskRepository.swift */; };
+		E10000000000000000000002 /* ScheduledTasksViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000012 /* ScheduledTasksViewModel.swift */; };
+		E10000000000000000000003 /* TasksViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000013 /* TasksViewController.swift */; };
 		AAAA00000000000000000095 /* AgentBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000085 /* AgentBadgeView.swift */; };
 		AAAA00000000000000000096 /* RunningDotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000086 /* RunningDotView.swift */; };
 		AAAA00000000000000000097 /* SessionCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000087 /* SessionCell.swift */; };
@@ -107,6 +110,9 @@
 		AAAA00000000000000000082 /* SessionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRepository.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000083 /* SessionGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionGroup.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000084 /* SessionListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListViewModel.swift; sourceTree = "<group>"; };
+		E10000000000000000000011 /* ScheduledTaskRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTaskRepository.swift; sourceTree = "<group>"; };
+		E10000000000000000000012 /* ScheduledTasksViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduledTasksViewModel.swift; sourceTree = "<group>"; };
+		E10000000000000000000013 /* TasksViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksViewController.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000085 /* AgentBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBadgeView.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000086 /* RunningDotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningDotView.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000087 /* SessionCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCell.swift; sourceTree = "<group>"; };
@@ -244,6 +250,7 @@
 				AAAA00000000000000000054 /* NewSession */,
 				C00000000000000000000020 /* SessionPermissions */,
 				AAAA0000000000000000000A /* Files */,
+				E10000000000000000000021 /* Tasks */,
 				AAAA0000000000000000000B /* Settings */,
 			);
 			path = Screens;
@@ -255,6 +262,14 @@
 				AAAA00000000000000000023 /* SessionsViewController.swift */,
 			);
 			path = Sessions;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000021 /* Tasks */ = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000013 /* TasksViewController.swift */,
+			);
+			path = Tasks;
 			sourceTree = "<group>";
 		};
 		AAAA0000000000000000000A /* Files */ = {
@@ -335,6 +350,7 @@
 			children = (
 				AAAA00000000000000000063 /* ConnectRepository.swift */,
 				AAAA00000000000000000082 /* SessionRepository.swift */,
+				E10000000000000000000011 /* ScheduledTaskRepository.swift */,
 				AAAA000000000000000000A2 /* ChatRepository.swift */,
 				C00000000000000000000001 /* WorkspaceRepository.swift */,
 				C00000000000000000000002 /* SessionPermissionRepository.swift */,
@@ -360,6 +376,7 @@
 			children = (
 				AAAA00000000000000000064 /* ConnectViewModel.swift */,
 				AAAA00000000000000000084 /* SessionListViewModel.swift */,
+				E10000000000000000000012 /* ScheduledTasksViewModel.swift */,
 				AAAA000000000000000000A3 /* ChatViewModel.swift */,
 				C00000000000000000000003 /* SettingsViewModel.swift */,
 				C00000000000000000000004 /* WorkspaceManagementViewModel.swift */,
@@ -572,6 +589,9 @@
 				AAAA00000000000000000092 /* SessionRepository.swift in Sources */,
 				AAAA00000000000000000093 /* SessionGroup.swift in Sources */,
 				AAAA00000000000000000094 /* SessionListViewModel.swift in Sources */,
+				E10000000000000000000001 /* ScheduledTaskRepository.swift in Sources */,
+				E10000000000000000000002 /* ScheduledTasksViewModel.swift in Sources */,
+				E10000000000000000000003 /* TasksViewController.swift in Sources */,
 				AAAA00000000000000000095 /* AgentBadgeView.swift in Sources */,
 				AAAA00000000000000000096 /* RunningDotView.swift in Sources */,
 				AAAA00000000000000000097 /* SessionCell.swift in Sources */,

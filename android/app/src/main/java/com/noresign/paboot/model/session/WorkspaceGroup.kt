@@ -28,14 +28,19 @@ data class SessionListModel(
     /** 根目录里超过 [SESSION_RECENT_WINDOW_MS] 没活动的会话，界面上默认折叠。 */
     val olderRootSessions: List<SessionDto>,
     val subGroups: List<WorkspaceGroup>,
+    /** 绑定过定时任务、或本身就是任务配置会话的会话，单独成组。 */
+    val taskSessions: List<SessionDto> = emptyList(),
 ) {
     /**
      * 平铺后的全部会话（删除 / 重命名做乐观更新时要把列表拼回来）。放在这里而不是让
      * 调用方自己拼 `rootSessions + subGroups`：折叠段每加一处，那种写法就会漏一处。
      */
     val allSessions: List<SessionDto>
-        get() = rootSessions + olderRootSessions + subGroups.flatMap { it.sessions }
+        get() = rootSessions + olderRootSessions + subGroups.flatMap { it.sessions } + taskSessions
 }
+
+private fun isTaskRelated(session: SessionDto): Boolean =
+    session.scheduledTaskCount > 0 || session.purpose == "task_config"
 
 /**
  * 把会话按 cwd 拆分：cwd 等于 [workspacePath] 的会话平铺进 [SessionListModel.rootSessions]
@@ -51,23 +56,26 @@ fun groupByCwd(
     now: Long = System.currentTimeMillis(),
 ): SessionListModel {
     val sorted = sessions.sortedByDescending { it.lastActiveAt }
+    // Task-bound sessions (and the per-workspace authoring chat) get their own
+    // section so they do not interleave with normal conversations.
+    val (taskSessions, normalSessions) = sorted.partition(::isTaskRelated)
     if (workspacePath.isNullOrBlank()) {
         // 未选中 workspace 时兜底：全部按 cwd 分组（保持旧行为）。
-        val groups = sorted
+        val groups = normalSessions
             .groupBy { it.cwd.ifBlank { "默认工作目录" } }
             .map { (cwd, list) -> WorkspaceGroup(cwd, cwd, list) }
             .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
-        return SessionListModel(emptyList(), emptyList(), groups)
+        return SessionListModel(emptyList(), emptyList(), groups, taskSessions)
     }
-    val (recent, older) = sorted
+    val (recent, older) = normalSessions
         .filter { normalize(it.cwd) == normalize(workspacePath) }
         .partition { it.lastActiveAt >= now - SESSION_RECENT_WINDOW_MS }
-    val subGroups = sorted
+    val subGroups = normalSessions
         .filter { normalize(it.cwd) != normalize(workspacePath) }
         .groupBy { it.cwd.ifBlank { "默认工作目录" } }
         .map { (cwd, list) -> WorkspaceGroup(cwd, relativeTo(cwd, workspacePath), list) }
         .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
-    return SessionListModel(recent, older, subGroups)
+    return SessionListModel(recent, older, subGroups, taskSessions)
 }
 
 private fun normalize(path: String): String = path.trimEnd('/')

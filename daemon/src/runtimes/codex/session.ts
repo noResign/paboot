@@ -56,6 +56,8 @@ export interface CodexRunRequest {
   onNativeSessionId?: (threadId: string) => void;
   permissionMode: ProductPermissionMode;
   env?: NodeJS.ProcessEnv;
+  /** Extra `codex app-server` args (e.g. `-c mcp_servers.*` overrides). */
+  extraArgs?: string[];
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
   deps: CodexRunDeps;
@@ -280,7 +282,11 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
 
   void (async (): Promise<void> => {
     try {
-      const conn = spawnCodexAppServer({ cwd: req.cwd, env: req.env });
+      const conn = spawnCodexAppServer({
+        cwd: req.cwd,
+        env: req.env,
+        ...(req.extraArgs?.length ? { args: ['app-server', ...req.extraArgs] } : {}),
+      });
       connection = conn;
       conn.onNotification((method, params) => {
         // Any notification proves the peer is alive, including the many the

@@ -96,3 +96,15 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
 # PABOOT_TLS_CERT=/path/cert.pem
 # PABOOT_TLS_KEY=/path/key.pem
 ```
+
+### 定时任务
+
+定时任务没有新增环境变量，以下行为固定：
+
+- 调度器每 **30 秒**扫一次 `next_run_at`；daemon 停机/休眠错过的触发**直接跳过**，不补跑。
+- 时区：创建任务时写入 daemon 当前的 IANA 时区，之后固定；不会随 daemon 迁移而改变语义。
+- 定时 run 固定 `bypass`（客户端创建时警告）。
+- `PABOOT_RUN_IDLE_TIMEOUT_SECONDS` 同样作用于定时 run 与命令任务：无输出/事件超时会取消。
+- 限制（代码常量，非配置）：每会话 20 个任务；prompt ≤ 16 KiB；command ≤ 8 KiB；cron 必须 5 段。
+
+详见 [scheduled-tasks.md](scheduled-tasks.md)。

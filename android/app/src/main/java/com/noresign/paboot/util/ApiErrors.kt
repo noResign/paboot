@@ -56,6 +56,15 @@ fun friendlyMessage(
     "permission_not_found" -> "该请求已失效，可能已超时或运行已结束"
     "bad_decision" -> "无效的审批决定"
 
+    // 定时任务
+    "schedule_invalid" -> "定时计划无效：$message"
+    "task_limit_reached" -> "定时任务数量已达上限"
+    "task_not_found" -> "定时任务不存在或已被删除"
+    "session_busy" -> "该会话正在运行，请稍后再试"
+    "session_deleted" -> "绑定的会话已删除，请重新创建任务"
+    "recursion_blocked" -> "定时触发的运行不能再创建定时任务"
+    "disabled" -> "任务已停用"
+
     else -> when (httpCode) {
         401 -> "token 无效或未授权（401）"
         -1 -> "无法连接 daemon，请检查网络与地址"

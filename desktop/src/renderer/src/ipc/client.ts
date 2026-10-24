@@ -21,7 +21,14 @@ import type {
   PermissionDto,
   PermissionGrantDto,
   ProductPermissionMode,
+  RunNowResponse,
   RunRollbackResponse,
+  ScheduledTaskDetailResponse,
+  ScheduledTaskDto,
+  ScheduledTasksResponse,
+  CreateScheduledTaskRequest,
+  UpdateScheduledTaskRequest,
+  TaskConfigSessionResponse,
   SessionDetailResponse,
   SessionsResponse,
   UpdateSessionModelResponse,
@@ -197,4 +204,22 @@ export const api = {
       // `response` only travels for UserInput answers; the daemon never stores it.
       body: response === undefined ? { decision, reason } : { decision, reason, response },
     }),
+  scheduledTasks: (params?: { workspaceId?: string; sessionId?: string }) =>
+    request<ScheduledTasksResponse>({ method: 'GET', path: ROUTES.scheduledTasks, query: { ...params } }),
+  scheduledTask: (id: string) =>
+    request<ScheduledTaskDetailResponse>({ method: 'GET', path: ROUTES.scheduledTask(id) }),
+  createScheduledTask: (body: CreateScheduledTaskRequest) =>
+    request<{ ok: boolean; task: ScheduledTaskDto }>({ method: 'POST', path: ROUTES.scheduledTasks, body }),
+  updateScheduledTask: (id: string, patch: UpdateScheduledTaskRequest) =>
+    request<{ ok: boolean; task: ScheduledTaskDto }>({
+      method: 'PATCH',
+      path: ROUTES.scheduledTask(id),
+      body: patch,
+    }),
+  deleteScheduledTask: (id: string) =>
+    request<{ ok: boolean; id: string }>({ method: 'DELETE', path: ROUTES.scheduledTask(id) }),
+  runScheduledTaskNow: (id: string) =>
+    request<RunNowResponse>({ method: 'POST', path: ROUTES.scheduledTaskRunNow(id) }),
+  startTaskConfigSession: (body: { workspaceId?: string; runtime?: string }) =>
+    request<TaskConfigSessionResponse>({ method: 'POST', path: ROUTES.taskConfigSession, body }),
 };

@@ -30,7 +30,8 @@ final class SessionsViewController: UIViewController {
     private var sections: [SessionSectionModel] = []
     private var currentModel = SessionListModel()
     private var sessionsByID: [String: SessionDto] = [:]
-    private var expandedSections: Set<String> = []
+    /// The task section starts expanded; directory/older sections start collapsed.
+    private var expandedSections: Set<String> = ["tasks"]
     private var lastWorkspaceID: String?
     private var workspaceMenuSignature: String?
 
@@ -302,7 +303,7 @@ final class SessionsViewController: UIViewController {
     private func render(_ state: SessionListViewModel.State) {
         if lastWorkspaceID != state.selectedWorkspaceID {
             lastWorkspaceID = state.selectedWorkspaceID
-            expandedSections.removeAll()
+            expandedSections = ["tasks"]
             tableView.setContentOffset(
                 CGPoint(x: 0, y: -tableView.adjustedContentInset.top),
                 animated: false
@@ -398,6 +399,21 @@ final class SessionsViewController: UIViewController {
                     sessions: group.sessions,
                     collapsible: true,
                     iconName: "folder",
+                    isExpanded: expandedSections.contains(id)
+                )
+            )
+        }
+
+        if !model.taskSessions.isEmpty {
+            let id = "tasks"
+            result.append(
+                SessionSectionModel(
+                    id: id,
+                    title: "定时任务",
+                    count: model.taskSessions.count,
+                    sessions: model.taskSessions,
+                    collapsible: true,
+                    iconName: "calendar.badge.clock",
                     isExpanded: expandedSections.contains(id)
                 )
             )

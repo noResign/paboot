@@ -74,6 +74,14 @@ agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输�
 | `tool-grants.ts` | grant key 映射：MCP 工具 → server 级 `mcp__<server>__*`，其余用 toolName |
 | `workspace.ts` / `workspace-service.ts` | Workspace 路径校验/包含关系；目录选择器复用 |
 | `permission-hook.ts` | PreToolUse hook 脚本（被 claude 调用，转发审批到 daemon） |
+| `schedule.ts` | cron 校验/求值、结构化预设 → cron、人类可读 label（`cron-parser`） |
+| `scheduler.ts` | 进程内调度器：启动对账、30s tick、到期触发、忙跳过、会话失效删除、工作区失效停用 |
+| `run-service.ts` | 可复用的 run 启动服务（chat / scheduler / command 共用生命周期与终态） |
+| `tool-server.ts` | 通用 MCP 工具 server 的规格与各 runtime 的注入参数（Claude JSON / Codex `-c`） |
+| `mcp-server.ts` | stdio MCP server（`schedule_task` 等），被各 runtime 以 `paboot_tasks` 启动 |
+| `runtimes/command.ts` | 命令任务 runtime：`/bin/sh -c`，复用 run/checkpoint/cancel 管线 |
+| `routes/scheduled-tasks.ts` / `routes/mcp-tasks.ts` | 定时任务公开 API / agent 内部 API |
+| `dto.ts` | run DTO 的共享映射（会话与定时任务详情共用） |
 | `claude-sessions.ts` | 枚举 `~/.claude/projects/` 下的 Claude 会话 |
 | `changes.ts` | `git status` / diff 的解析与缓存（文件 Tab 的改动视图） |
 | `file-browser.ts` | 目录懒加载、文本读取与二进制检测、原始字节流 |
@@ -101,6 +109,11 @@ daemon/
 │  ├─ command-safety.ts  只读命令白名单
 │  ├─ tool-grants.ts     grant key 映射（MCP → server 级通配）
 │  ├─ permission-hook.ts PreToolUse hook 脚本（→ dist/permission-hook.js）
+│  ├─ mcp-server.ts      stdio MCP 工具 server（→ dist/mcp-server.js）
+│  ├─ schedule.ts        cron 求值 / 预设转换
+│  ├─ scheduler.ts       定时任务调度器（30s tick + 启动对账）
+│  ├─ run-service.ts     chat / scheduler / command 共用的 run 启动服务
+│  ├─ tool-server.ts     通用 MCP server 规格与 runtime 注入
 │  ├─ claude-sessions.ts 枚举本机 Claude 会话
 │  ├─ changes.ts         git 改动与 diff
 │  ├─ file-browser.ts    目录懒加载与文件读取
@@ -108,7 +121,7 @@ daemon/
 │  ├─ routes/            HTTP/SSE 边界（按域拆）
 │  └─ runtimes/          types / registry / engine / active-runs + claude/ 与 codex/
 ├─ tests/                Vitest 单测（runtimes / routes / 权限 / workspace / 文件 等）
-├─ docs/                 daemon.md（索引）+ protocol / permissions / runtimes / configuration
+├─ docs/                 daemon.md（索引）+ protocol / permissions / runtimes / scheduled-tasks / configuration
 ├─ .env.example          配置模板
 ├─ package.json / tsconfig.json / vitest.config.ts
 └─ dist/                 构建产物（`paboot` bin 指向 dist/index.js）

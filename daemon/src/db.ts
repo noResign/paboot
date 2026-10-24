@@ -11,6 +11,8 @@ const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
 export interface SessionRow {
   id: string;
   runtime: string;
+  /** `chat` for agent sessions, `command` for the hidden sessions behind command tasks. */
+  kind: string;
   /**
    * The provider's own session handle: a Claude session id or a Codex thread
    * id. Name it for the role, not the provider — `runtime` already says which.
@@ -24,6 +26,8 @@ export interface SessionRow {
   model_parameters: string | null;
   cwd: string;
   title: string | null;
+  /** `task_config` for the per-workspace AI authoring chat; NULL otherwise. */
+  purpose: string | null;
   created_at: number;
   last_active_at: number;
 }
@@ -71,6 +75,42 @@ export interface RunRow {
   exit_code: number | null;
   error: string | null;
   command_id: string | null;
+  /** Set when the run was started by a scheduled task. */
+  task_id: string | null;
+  /** `user` | `scheduled` | `run_now`. */
+  trigger: string;
+  /** Permission mode actually used for this run. */
+  permission_mode: string | null;
+}
+
+export interface ScheduledTaskRow {
+  id: string;
+  name: string;
+  task_type: string;
+  session_mode: string;
+  session_id: string | null;
+  workspace_id: string;
+  runtime: string;
+  model: string | null;
+  model_parameters: string | null;
+  prompt: string | null;
+  command: string | null;
+  permission_mode: string;
+  cron_expr: string;
+  timezone: string;
+  schedule_preset: string | null;
+  next_run_at: number | null;
+  last_fire_at: number | null;
+  last_run_at: number | null;
+  last_status: string;
+  last_error: string | null;
+  last_run_id: string | null;
+  run_count: number;
+  enabled: number;
+  disabled_reason: string | null;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
 }
 
 /** Per-run workspace checkpoint. `status`: complete | unavailable | rolled_back. */
@@ -233,6 +273,39 @@ export class Db {
         value TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        session_mode TEXT NOT NULL,
+        session_id TEXT,
+        workspace_id TEXT NOT NULL,
+        runtime TEXT NOT NULL,
+        model TEXT,
+        model_parameters TEXT,
+        prompt TEXT,
+        command TEXT,
+        permission_mode TEXT NOT NULL DEFAULT 'bypass',
+        cron_expr TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        schedule_preset TEXT,
+        next_run_at INTEGER,
+        last_fire_at INTEGER,
+        last_run_at INTEGER,
+        last_status TEXT NOT NULL DEFAULT 'never',
+        last_error TEXT,
+        last_run_id TEXT,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        disabled_reason TEXT,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tasks_due ON scheduled_tasks (enabled, next_run_at);
+      CREATE INDEX IF NOT EXISTS idx_tasks_session ON scheduled_tasks (session_id);
+      CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON scheduled_tasks (workspace_id);
     `);
     // Only Claude existed when this column was named for it; Codex stores its
     // thread id in the same slot. Rename before any read so old daemons keep
@@ -247,6 +320,14 @@ export class Db {
     // (dropped response, flaky link) re-attaches to the run it already started
     // instead of starting a second one. NULL for callers that don't send one.
     this.ensureColumn('runs', 'command_id', 'TEXT');
+    this.ensureColumn('sessions', 'kind', "TEXT NOT NULL DEFAULT 'chat'");
+    this.ensureColumn('sessions', 'purpose', 'TEXT');
+    this.ensureColumn('runs', 'task_id', 'TEXT');
+    this.ensureColumn('runs', 'trigger', "TEXT NOT NULL DEFAULT 'user'");
+    this.ensureColumn('runs', 'permission_mode', 'TEXT');
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_runs_task ON runs (task_id, started_at DESC);`,
+    );
     this.ensureColumn('runs', 'model_parameters', 'TEXT');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
@@ -298,12 +379,16 @@ export class Db {
     modelParameters?: Record<string, string> | null;
     native_session_id?: string | null;
     title?: string | null;
+    /** Hidden command-task sessions use `command`; visible chat sessions use `chat`. */
+    kind?: 'chat' | 'command';
+    /** `task_config` marks the reusable AI authoring chat. */
+    purpose?: 'task_config' | null;
   }): SessionRow {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO sessions (id, runtime, native_session_id, workspace_id, permission_mode, model, model_parameters, cwd, title, created_at, last_active_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id, runtime, native_session_id, workspace_id, permission_mode, model, model_parameters, cwd, title, kind, purpose, created_at, last_active_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -315,6 +400,8 @@ export class Db {
         serializeModelParameters(input.modelParameters ?? null),
         input.cwd,
         input.title ?? null,
+        input.kind ?? 'chat',
+        input.purpose ?? null,
         now,
         now,
       );
@@ -325,7 +412,20 @@ export class Db {
     return this.db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as unknown as SessionRow | undefined;
   }
 
+  /** Visible sessions for clients. Hidden command-task sessions are excluded. */
   listSessions(workspaceId?: string): SessionRow[] {
+    if (workspaceId) {
+      return this.db
+        .prepare(`SELECT * FROM sessions WHERE workspace_id = ? AND kind = 'chat' ORDER BY last_active_at DESC`)
+        .all(workspaceId) as unknown as SessionRow[];
+    }
+    return this.db
+      .prepare(`SELECT * FROM sessions WHERE kind = 'chat' ORDER BY last_active_at DESC`)
+      .all() as unknown as SessionRow[];
+  }
+
+  /** Internal cleanup view: includes hidden command sessions. */
+  listAllSessions(workspaceId?: string): SessionRow[] {
     if (workspaceId) {
       return this.db
         .prepare(`SELECT * FROM sessions WHERE workspace_id = ? ORDER BY last_active_at DESC`)
@@ -369,6 +469,9 @@ export class Db {
 
   /** Delete a session and all its messages, runs, events and permission grants. */
   deleteSession(id: string): void {
+    // A task is meaningless without its bound session: delete it together with
+    // the session instead of leaving a broken row in the task list.
+    this.deleteScheduledTasksForSession(id);
     const runs = this.listRuns(id);
     for (const run of runs) {
       this.deleteEventsForRun(run.id);
@@ -511,6 +614,7 @@ export class Db {
   }
 
   deleteWorkspace(id: string): void {
+    this.disableScheduledTasksForWorkspace(id, 'workspace_deleted');
     this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
@@ -593,9 +697,30 @@ export class Db {
 
   countSessionsByWorkspace(): Map<string, number> {
     const rows = this.db
-      .prepare(`SELECT workspace_id, COUNT(*) AS count FROM sessions WHERE workspace_id IS NOT NULL GROUP BY workspace_id`)
+      .prepare(
+        `SELECT workspace_id, COUNT(*) AS count FROM sessions
+         WHERE workspace_id IS NOT NULL AND kind = 'chat' GROUP BY workspace_id`,
+      )
       .all() as unknown as { workspace_id: string; count: number }[];
     return new Map(rows.map((r) => [r.workspace_id, Number(r.count)]));
+  }
+
+  /** Scheduled-task counts per bound session, for the session list's task group. */
+  countScheduledTasksBySession(): Map<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, COUNT(*) AS count FROM scheduled_tasks
+         WHERE session_id IS NOT NULL GROUP BY session_id`,
+      )
+      .all() as unknown as { session_id: string; count: number }[];
+    return new Map(rows.map((row) => [row.session_id, Number(row.count)]));
+  }
+
+  countScheduledTasksForSession(sessionId: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM scheduled_tasks WHERE session_id = ?`)
+      .get(sessionId) as unknown as { count: number } | undefined;
+    return Number(row?.count ?? 0);
   }
 
   // ---- session permission grants ----
@@ -680,11 +805,14 @@ export class Db {
     prompt: string;
     status: string;
     commandId?: string | null;
+    taskId?: string | null;
+    trigger?: 'user' | 'scheduled' | 'run_now';
+    permissionMode?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, started_at, ended_at, exit_code, error, command_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -696,6 +824,9 @@ export class Db {
         input.prompt,
         Date.now(),
         input.commandId ?? null,
+        input.taskId ?? null,
+        input.trigger ?? 'user',
+        input.permissionMode ?? null,
       );
   }
 
@@ -761,6 +892,13 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC`)
       .all(sessionId) as unknown as RunRow[];
+  }
+
+  /** Newest first, for a scheduled task's history panel. */
+  listRunsByTask(taskId: string, limit = 20): RunRow[] {
+    return this.db
+      .prepare(`SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`)
+      .all(taskId, limit) as unknown as RunRow[];
   }
 
   // ---- run checkpoints ----
@@ -891,6 +1029,255 @@ export class Db {
         update.error !== undefined ? update.error : current.error,
         id,
       );
+  }
+
+  // ---- scheduled tasks ----
+
+  createScheduledTask(input: {
+    id: string;
+    name: string;
+    taskType: string;
+    sessionMode: string;
+    sessionId?: string | null;
+    workspaceId: string;
+    runtime: string;
+    model?: string | null;
+    modelParameters?: Record<string, string> | null;
+    prompt?: string | null;
+    command?: string | null;
+    permissionMode?: string;
+    cronExpr: string;
+    timezone: string;
+    schedulePreset?: string | null;
+    nextRunAt?: number | null;
+    enabled?: boolean;
+    createdBy: string;
+  }): ScheduledTaskRow {
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO scheduled_tasks
+           (id, name, task_type, session_mode, session_id, workspace_id, runtime, model, model_parameters,
+            prompt, command, permission_mode, cron_expr, timezone, schedule_preset, next_run_at, enabled,
+            created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.name,
+        input.taskType,
+        input.sessionMode,
+        input.sessionId ?? null,
+        input.workspaceId,
+        input.runtime,
+        input.model ?? null,
+        serializeModelParameters(input.modelParameters ?? null),
+        input.prompt ?? null,
+        input.command ?? null,
+        input.permissionMode ?? 'bypass',
+        input.cronExpr,
+        input.timezone,
+        input.schedulePreset ?? null,
+        input.nextRunAt ?? null,
+        input.enabled === false ? 0 : 1,
+        input.createdBy,
+        now,
+        now,
+      );
+    return this.getScheduledTask(input.id) as ScheduledTaskRow;
+  }
+
+  getScheduledTask(id: string): ScheduledTaskRow | undefined {
+    return this.db.prepare(`SELECT * FROM scheduled_tasks WHERE id = ?`).get(id) as unknown as
+      | ScheduledTaskRow
+      | undefined;
+  }
+
+  listScheduledTasks(filter: { workspaceId?: string; sessionId?: string; enabledOnly?: boolean } = {}): ScheduledTaskRow[] {
+    const where: string[] = [];
+    const args: string[] = [];
+    if (filter.workspaceId) {
+      where.push('workspace_id = ?');
+      args.push(filter.workspaceId);
+    }
+    if (filter.sessionId) {
+      where.push('session_id = ?');
+      args.push(filter.sessionId);
+    }
+    if (filter.enabledOnly) where.push('enabled = 1');
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    return this.db
+      .prepare(`SELECT * FROM scheduled_tasks ${clause} ORDER BY created_at DESC`)
+      .all(...args) as unknown as ScheduledTaskRow[];
+  }
+
+  listDueScheduledTasks(now: number): ScheduledTaskRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM scheduled_tasks
+         WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+         ORDER BY next_run_at ASC`,
+      )
+      .all(now) as unknown as ScheduledTaskRow[];
+  }
+
+  updateScheduledTask(
+    id: string,
+    update: {
+      name?: string;
+      prompt?: string | null;
+      command?: string | null;
+      cronExpr?: string;
+      timezone?: string;
+      schedulePreset?: string | null;
+      nextRunAt?: number | null;
+      enabled?: boolean;
+      disabledReason?: string | null;
+      lastStatus?: string;
+      lastError?: string | null;
+      lastFireAt?: number | null;
+      lastRunAt?: number | null;
+      lastRunId?: string | null;
+    },
+  ): void {
+    const sets: string[] = [];
+    const values: Array<string | number | null> = [];
+    const set = (column: string, value: string | number | null): void => {
+      sets.push(`${column} = ?`);
+      values.push(value);
+    };
+    if (update.name !== undefined) set('name', update.name);
+    if (update.prompt !== undefined) set('prompt', update.prompt);
+    if (update.command !== undefined) set('command', update.command);
+    if (update.cronExpr !== undefined) set('cron_expr', update.cronExpr);
+    if (update.timezone !== undefined) set('timezone', update.timezone);
+    if (update.schedulePreset !== undefined) set('schedule_preset', update.schedulePreset);
+    if (update.nextRunAt !== undefined) set('next_run_at', update.nextRunAt);
+    if (update.enabled !== undefined) {
+      set('enabled', update.enabled ? 1 : 0);
+      if (!update.enabled) set('next_run_at', null);
+      else set('disabled_reason', null);
+    }
+    if (update.disabledReason !== undefined) set('disabled_reason', update.disabledReason);
+    if (update.lastStatus !== undefined) set('last_status', update.lastStatus);
+    if (update.lastError !== undefined) set('last_error', update.lastError);
+    if (update.lastFireAt !== undefined) set('last_fire_at', update.lastFireAt);
+    if (update.lastRunAt !== undefined) set('last_run_at', update.lastRunAt);
+    if (update.lastRunId !== undefined) set('last_run_id', update.lastRunId);
+    if (sets.length === 0) return;
+    set('updated_at', Date.now());
+    values.push(id);
+    this.db.prepare(`UPDATE scheduled_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+  }
+
+  /**
+   * Compare-and-swap the scheduled slot. Returns false when another tick (or a
+   * manual edit) already advanced it, which keeps a fire at-most-once.
+   */
+  advanceScheduledTask(
+    id: string,
+    expectedNextRunAt: number | null,
+    input: { nextRunAt: number; lastFireAt?: number | null; lastStatus?: string; lastError?: string | null },
+  ): boolean {
+    const now = Date.now();
+    const result =
+      expectedNextRunAt === null
+        ? this.db
+            .prepare(
+              `UPDATE scheduled_tasks
+               SET next_run_at = ?, last_fire_at = ?, last_status = ?, last_error = ?, updated_at = ?
+               WHERE id = ? AND next_run_at IS NULL AND enabled = 1`,
+            )
+            .run(input.nextRunAt, input.lastFireAt ?? now, input.lastStatus ?? 'running', input.lastError ?? null, now, id)
+        : this.db
+            .prepare(
+              `UPDATE scheduled_tasks
+               SET next_run_at = ?, last_fire_at = ?, last_status = ?, last_error = ?, updated_at = ?
+               WHERE id = ? AND next_run_at = ? AND enabled = 1`,
+            )
+            .run(
+              input.nextRunAt,
+              input.lastFireAt ?? now,
+              input.lastStatus ?? 'running',
+              input.lastError ?? null,
+              now,
+              id,
+              expectedNextRunAt,
+            );
+    return Number(result.changes) > 0;
+  }
+
+  /** Bind a lazily-created session; only the first writer wins. */
+  setScheduledTaskSession(id: string, sessionId: string): boolean {
+    const result = this.db
+      .prepare(`UPDATE scheduled_tasks SET session_id = ?, updated_at = ? WHERE id = ? AND session_id IS NULL`)
+      .run(sessionId, Date.now(), id);
+    return Number(result.changes) > 0;
+  }
+
+  markScheduledTaskRunning(id: string, runId: string): void {
+    this.db
+      .prepare(
+        `UPDATE scheduled_tasks
+         SET last_run_id = ?, last_status = 'running', run_count = run_count + 1,
+             last_fire_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(runId, Date.now(), Date.now(), id);
+  }
+
+  recordScheduledTaskResult(id: string, status: string, error: string | null, at = Date.now()): void {
+    this.db
+      .prepare(
+        `UPDATE scheduled_tasks
+         SET last_status = ?, last_error = ?, last_run_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(status, error, at, Date.now(), id);
+  }
+
+  disableScheduledTask(id: string, reason: string): void {
+    this.db
+      .prepare(
+        `UPDATE scheduled_tasks
+         SET enabled = 0, disabled_reason = ?, next_run_at = NULL, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(reason, Date.now(), id);
+  }
+
+  deleteScheduledTasksForSession(sessionId: string): void {
+    this.db.prepare(`DELETE FROM scheduled_tasks WHERE session_id = ?`).run(sessionId);
+  }
+
+  /**
+   * Remove tasks whose bound session no longer exists. Covers rows left behind
+   * by older daemons (which disabled instead of deleting) and any manual DB
+   * edits. Tasks with no session yet (first fire pending) are kept.
+   */
+  deleteOrphanedScheduledTasks(): number {
+    const result = this.db
+      .prepare(
+        `DELETE FROM scheduled_tasks
+         WHERE session_id IS NOT NULL
+           AND session_id NOT IN (SELECT id FROM sessions)`,
+      )
+      .run();
+    return Number(result.changes);
+  }
+
+  disableScheduledTasksForWorkspace(workspaceId: string, reason: string): void {
+    this.db
+      .prepare(
+        `UPDATE scheduled_tasks
+         SET enabled = 0, disabled_reason = ?, next_run_at = NULL, updated_at = ?
+         WHERE workspace_id = ?`,
+      )
+      .run(reason, Date.now(), workspaceId);
+  }
+
+  deleteScheduledTask(id: string): void {
+    this.db.prepare(`DELETE FROM scheduled_tasks WHERE id = ?`).run(id);
   }
 
   // ---- audit ----

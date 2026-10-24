@@ -25,9 +25,17 @@ interface Props {
   onToggleAside(): void;
   /** Collapse the conversation column so the right panel gets the width. */
   onCollapseChat(): void;
+  /** Open the Tasks page filtered to this session. */
+  onOpenTasks?: (sessionId: string, title: string | null) => void;
 }
 
-export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollapseChat }: Props) {
+export function ChatView({
+  workspaceName,
+  asideVisible,
+  onToggleAside,
+  onCollapseChat,
+  onOpenTasks,
+}: Props) {
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
   const send = useChat((state) => state.send);
   const stop = useChat((state) => state.stop);
@@ -176,6 +184,15 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
           {busy && (
             <button className="btn" onClick={stop} title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}>
               停止
+            </button>
+          )}
+          {chat.sessionId && onOpenTasks && (
+            <button
+              className="btn ghost"
+              title="本会话的定时任务"
+              onClick={() => onOpenTasks(chat.sessionId as string, chat.title ?? null)}
+            >
+              ⏰
             </button>
           )}
           {chat.sessionId && (

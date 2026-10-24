@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -85,6 +86,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onOpenSession: (String) -> Unit,
     viewModel: ChatViewModel = viewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -108,6 +110,7 @@ fun ChatScreen(
     val models by viewModel.models.collectAsState()
     val modelsLoading by viewModel.modelsLoading.collectAsState()
     val modelsError by viewModel.modelsError.collectAsState()
+    val currentSessionId = activeSessionId ?: sessionId
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -116,6 +119,10 @@ fun ChatScreen(
     var input by rememberSaveable { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
     var composerVisible by rememberSaveable { mutableStateOf(true) }
+    var showSessionTasks by remember { mutableStateOf(false) }
+    // Hoisted so switching Files/Tasks/Settings and back does not reset the
+    // transcript scroll and flash the first message before re-attaching to the bottom.
+    val messageListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
     var todoExpanded by remember { mutableStateOf(false) }
     var showModels by remember { mutableStateOf(false) }
@@ -236,7 +243,15 @@ fun ChatScreen(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("权限设置…") },
+                                text = { Text("定时任务") },
+                                enabled = currentSessionId != null,
+                                onClick = {
+                                    showSessionMenu = false
+                                    showSessionTasks = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("权限设置") },
                                 enabled = activeSessionId != null,
                                 onClick = {
                                     showSessionMenu = false
@@ -299,6 +314,7 @@ fun ChatScreen(
             loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
             bottomOverlayPadding = innerPadding.calculateBottomPadding(),
+            listState = messageListState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
@@ -328,6 +344,10 @@ fun ChatScreen(
             tabStateHolder.SaveableStateProvider(selectedTab.name) {
                 when (selectedTab) {
                     MainTab.Files -> FilesScreen(bottomOverlayPadding = innerPadding.calculateBottomPadding())
+                    MainTab.Tasks -> TasksScreen(
+                        onOpenSession = onOpenSession,
+                        bottomOverlayPadding = innerPadding.calculateBottomPadding(),
+                    )
                     MainTab.Settings -> SettingsScreen(
                         onReconnect,
                         onManageWorkspaces,
@@ -493,6 +513,17 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    if (showSessionTasks && currentSessionId != null) {
+        SessionTasksSheet(
+            sessionId = currentSessionId,
+            onDismiss = { showSessionTasks = false },
+            onManage = {
+                showSessionTasks = false
+                selectedTab = MainTab.Tasks
+            },
+        )
     }
 }
 

@@ -16,6 +16,10 @@ public struct SessionDto: Decodable, Equatable, Sendable {
     public let lastActiveAt: Int64
     public let running: Bool
     public let runningRunId: String?
+    /// Scheduled tasks bound to this session (0 for older daemons).
+    public let scheduledTaskCount: Int
+    /// `task_config` marks the reusable AI authoring chat.
+    public let purpose: String?
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -31,11 +35,14 @@ public struct SessionDto: Decodable, Equatable, Sendable {
         lastActiveAt = try container.decodeIfPresent(Int64.self, forKey: .lastActiveAt) ?? 0
         running = try container.decodeIfPresent(Bool.self, forKey: .running) ?? false
         runningRunId = try container.decodeIfPresent(String.self, forKey: .runningRunId)
+        scheduledTaskCount = try container.decodeIfPresent(Int.self, forKey: .scheduledTaskCount) ?? 0
+        purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, runtime, workspaceId, permissionMode, model, modelParameters
         case cwd, title, createdAt, lastActiveAt, running, runningRunId
+        case scheduledTaskCount, purpose
     }
 }
 
@@ -99,6 +106,10 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let exitCode: Int?
     public let error: String?
     public let checkpoint: RunCheckpointDto?
+    public let taskId: String?
+    public let trigger: String?
+    public let permissionMode: String?
+    public let output: String?
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -114,11 +125,16 @@ public struct RunDto: Decodable, Equatable, Sendable {
         exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         checkpoint = try container.decodeIfPresent(RunCheckpointDto.self, forKey: .checkpoint)
+        taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
+        trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
+        permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
+        output = try container.decodeIfPresent(String.self, forKey: .output)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, runtime, model, modelParameters, status, prompt
         case startedAt, endedAt, exitCode, error, checkpoint
+        case taskId, trigger, permissionMode, output
     }
 }
 

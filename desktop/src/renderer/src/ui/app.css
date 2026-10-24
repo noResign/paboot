@@ -1065,6 +1065,15 @@ kbd {
   color: var(--primary);
   font-weight: 600;
 }
+/* Icon-only rail entries (files / tasks / settings): no label, keep a
+   comfortable hit target without the text's width. */
+.link-btn.icon-only {
+  justify-content: center;
+  min-width: 26px;
+  padding: 3px 6px;
+  font-size: 14px;
+  line-height: 1;
+}
 .rail-resize {
   position: absolute;
   top: 0;
@@ -2807,4 +2816,233 @@ a.btn {
   flex: none;
   font-size: 11px;
   color: var(--muted, #888);
+}
+
+/* ---------- scheduled tasks ---------- */
+
+.tasks {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tasks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex: none;
+}
+.tasks-head .title {
+  font-weight: 600;
+}
+.tasks-head .sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.tasks-head-actions {
+  display: flex;
+  gap: 8px;
+}
+.tasks-message {
+  padding: 8px 18px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: var(--primary-subtle);
+  cursor: pointer;
+  flex: none;
+}
+.tasks-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.tasks-list {
+  width: 320px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow: auto;
+}
+.task-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.task-row:hover {
+  background: var(--surface-2);
+}
+.task-row.active {
+  background: var(--primary-subtle);
+}
+.task-row.off {
+  opacity: 0.62;
+}
+.task-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-status {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.status-running { color: var(--primary); }
+.status-failed { color: var(--error); }
+.status-succeeded { color: var(--success); }
+.status-skipped_busy,
+.status-skipped_missed { color: var(--warning); }
+.task-row-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasks-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 18px 22px;
+}
+.task-detail {
+  max-width: 840px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.task-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-detail-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.task-meta {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.task-grid {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 7px 14px;
+  font-size: 12.5px;
+  align-items: center;
+}
+.task-grid span {
+  color: var(--text-muted);
+}
+.task-prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+.task-run {
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.task-run-row {
+  display: grid;
+  grid-template-columns: 150px 100px 70px auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.task-run-output {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  font: inherit;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.task-warning {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.task-ack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.task-editor {
+  width: 560px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+}
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 18px 18px;
+}
+.task-form textarea {
+  resize: vertical;
+}
+.task-schedule-row {
+  display: flex;
+  gap: 8px;
+}
+.task-schedule-row select {
+  flex: 1;
+}
+.task-days {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.task-days label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }

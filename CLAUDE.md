@@ -43,7 +43,7 @@ paboot/
 ├─ daemon/                daemon 子项目（Node 24 + Express + SQLite）
 │  ├─ src/                daemon 源码
 │  ├─ tests/              Vitest 单测
-│  └─ docs/               daemon 技术方案（daemon.md 为索引 + protocol / permissions / runtimes / configuration）
+│  └─ docs/               daemon 技术方案（daemon.md 为索引 + protocol / permissions / runtimes / scheduled-tasks / configuration）
 ├─ android/               Android 客户端（Kotlin + Compose）
 │  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
 │  ├─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
@@ -53,12 +53,12 @@ paboot/
 ```
 
 - **daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
-- **android/**：已实现（连接 / 会话列表 / 聊天 / 审批 / 会话权限 / 系统通知 / 文件 / 工作区）。
+- **android/**：已实现（连接 / 会话列表 / 聊天 / 审批 / 会话权限 / 系统通知 / 文件 / 工作区 / 定时任务）。
 - **传输契约**：跨端共享的 DTO、SSE 事件 union、错误形状放 `daemon/src/types/api.ts`。
 
 ## 技术栈
 
-- **daemon**：Node `~24`（ESM）、TypeScript（strict）、运行时依赖仅 `express`、存储用
+- **daemon**：Node `~24`（ESM）、TypeScript（strict）、运行时依赖 `express` + `cron-parser`、存储用
   `node:sqlite`（零原生依赖）、测试 Vitest、dev 用 `tsx`。
 - **Android**：Kotlin、Jetpack Compose + Material 3、Retrofit + kotlinx-serialization、
   OkHttp（SSE 手写解析）、MMKV、Navigation Compose、MVVM；多模块（`:app` 业务 + `:lib-network` 通用网络层）。
@@ -120,7 +120,7 @@ paboot/
   一一对齐）；跨 module 的 DTO 属性不能智能转换，先用局部变量接再判空。
 - **持久化**：MMKV（`SettingsStore`，留在 `:app`）。
 - **UI**：以 `docs/ui/` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
-  新增 agent 只加一行不改布局。
+  新增 agent 只加一行不改布局。底部 Tab 顺序固定为 **会话 / 文件 / 任务 / 设置**。
 - **注意**：用户没有主动提出帮忙运行android项目，再更改后请不要主动使用.gradlew命令运行，用户自己运行测试
 
 ### Desktop
@@ -155,6 +155,15 @@ paboot/
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
   `POST /api/runs/:id/cancel`。
+- **定时任务**：daemon 内调度（`scheduler.ts`，30s tick）；任务最终拥有一个会话（首次触发创建、
+  之后 resume）；时间统一存 5 段 cron，UI 只暴露结构化预设；错过直接跳过、忙则跳过、会话删除则**连带删除任务**。
+  定时 run 固定 `bypass`；命令任务用隐藏 `kind='command'` 会话复用 run 管线。
+  **新建任务走 AI 配置会话**：客户端先确认再进入；每个 workspace 复用一份（settings 存 session id），
+  首条用户消息是「定时任务配置模式」。AI 只问用户想完成什么任务，执行 prompt 由 AI 起草并展示，
+  用户确认后才调用 `schedule_task`；工具支持
+  `target=current|existing|new` 与 `list_sessions`，统一走 MCP 桥（Claude `--mcp-config` /
+  Codex `-c mcp_servers.*`），有递归拦截与每会话上限。已有任务仍可手动编辑（名称/内容/计划/启停）。
+  详见 `daemon/docs/scheduled-tasks.md`。
 - **会话**：`--session-id`/`--resume` 管理 Claude 会话，id 持久化在 `sessions.native_session_id`
   ——这一列存的是**对应运行时自己的**会话 id，Codex 存的是它的 thread id；
   `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔客户端双向续接。

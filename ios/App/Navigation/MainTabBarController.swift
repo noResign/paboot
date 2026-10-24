@@ -25,9 +25,10 @@ final class MainTabBarController: UIViewController, UINavigationControllerDelega
         self.navigationControllers = navigationControllers ?? [
             Self.makeNavigation(root: SessionsViewController()),
             Self.makeNavigation(root: FilesViewController()),
+            Self.makeNavigation(root: TasksViewController()),
             Self.makeNavigation(root: SettingsViewController()),
         ]
-        precondition(self.navigationControllers.count == 3)
+        precondition(self.navigationControllers.count == 4)
         super.init(nibName: nil, bundle: nil)
     }
 

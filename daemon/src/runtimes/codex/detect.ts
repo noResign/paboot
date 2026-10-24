@@ -47,6 +47,7 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   addDir: false,
   permissionHook: false,
   effort: false,
+  mcpConfig: false,
 };
 
 /**

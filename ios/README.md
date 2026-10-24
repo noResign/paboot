@@ -10,7 +10,7 @@ iOS 客户端**连接、会话列表、聊天、文件与设置已实现**（202
   `PabootClient`（`URLSession` + 手写 SSE 的传输层）、
   `PabootMarkdownUI`（`swift-markdown` AST + 原生 UIKit block 渲染 + 轻量语法高亮）。
 - `App/`：应用入口、设计 token、连接页（地址 + token → health + sessions 校验，Keychain 保存
-  token，支持最近 5 个连接），连接成功后进入三个 Tab（会话 / 文件 / 设置）。
+  token，支持最近 5 个连接），连接成功后进入四个 Tab（会话 / 文件 / 任务 / 设置）。
 - 会话列表：只显示当前选中的工作区（顶部可切换）；根目录会话平铺、3 天前折叠为「更早」，
   子目录按 cwd 分组折叠；运行中脉冲标识、Agent 徽章、下拉刷新（松手停留在拉出位置）、
   重命名 / 删除、断连后引导重新连接。

@@ -543,10 +543,21 @@ final class ChatViewController: UIViewController {
             self?.presentPermissionSettings()
         }
 
+        var tasksAttributes: UIAction.Attributes = []
+        if state.sessionId == nil {
+            tasksAttributes = .disabled
+        }
+        let tasksAction = UIAction(
+            title: "定时任务",
+            attributes: tasksAttributes
+        ) { [weak self] _ in
+            self?.openSessionTasks()
+        }
+
         let menu = UIMenu(children: [
             UIMenu(title: "权限模式", options: .displayInline, children: permissionActions),
             modelMenu,
-            UIMenu(options: .displayInline, children: [permissionSettings]),
+            UIMenu(options: .displayInline, children: [tasksAction, permissionSettings]),
         ])
 
         let item = UIBarButtonItem(
@@ -560,6 +571,15 @@ final class ChatViewController: UIViewController {
         )
         item.accessibilityLabel = "会话设置"
         navigationItem.rightBarButtonItem = item
+    }
+
+    private func openSessionTasks() {
+        guard let sessionId = viewModel.state.sessionId else { return }
+        let controller = TasksViewController(
+            viewModel: ScheduledTasksViewModel(sessionFilterId: sessionId),
+            screenTitle: "定时任务"
+        )
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     private func presentPermissionSettings() {

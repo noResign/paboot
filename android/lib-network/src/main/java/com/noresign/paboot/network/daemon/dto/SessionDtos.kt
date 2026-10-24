@@ -22,6 +22,10 @@ data class SessionDto(
     val lastActiveAt: Long = 0,
     val running: Boolean = false,
     val runningRunId: String? = null,
+    /** 绑定在该会话上的定时任务数量（旧 daemon 不发则为 0）。 */
+    val scheduledTaskCount: Int = 0,
+    /** `task_config` 表示每 workspace 复用的 AI 任务配置会话。 */
+    val purpose: String? = null,
 )
 
 @Serializable
@@ -59,6 +63,13 @@ data class RunDto(
     val endedAt: Long? = null,
     val exitCode: Long? = null,
     val error: String? = null,
+    /** 定时任务触发时带上任务 id。 */
+    val taskId: String? = null,
+    /** `user` | `scheduled` | `run_now` */
+    val trigger: String? = null,
+    val permissionMode: String? = null,
+    /** 命令任务的聚合输出（尾部截断）。 */
+    val output: String? = null,
 )
 
 /** `PATCH /api/sessions/:id/model`；`null` 表示回到默认。 */

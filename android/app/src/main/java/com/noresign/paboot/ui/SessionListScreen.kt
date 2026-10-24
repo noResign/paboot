@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -173,7 +174,9 @@ fun SessionListScreen(
                     }
                 }
                 is SessionListUiState.Content -> {
-                    if (state.model.rootSessions.isEmpty() && state.model.subGroups.isEmpty()) {
+                    if (state.model.rootSessions.isEmpty() && state.model.subGroups.isEmpty() &&
+                        state.model.taskSessions.isEmpty()
+                    ) {
                         Column(
                             modifier = Modifier.align(Alignment.Center),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -281,6 +284,9 @@ private fun SessionGroupedList(
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
     // 「更早」默认折叠，展开状态和子目录分组一样只活在本次 composition 里（见 docs）。
     var olderCollapsed by remember { mutableStateOf(true) }
+    // Task-related sessions stay visible by default; the user explicitly asked
+    // for them to be collected in their own section.
+    var taskCollapsed by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     var revealedId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(listState.isScrollInProgress) {
@@ -330,6 +336,21 @@ private fun SessionGroupedList(
             }
             if (!isCollapsed) {
                 sessionCards(group.sessions, revealedId, reveal, onOpenSession, onRename, onDelete)
+            }
+        }
+        if (model.taskSessions.isNotEmpty()) {
+            stickyHeader(key = "tasks") {
+                CollapsibleHeader(
+                    label = "定时任务",
+                    count = model.taskSessions.size,
+                    collapsed = taskCollapsed,
+                    onToggle = { taskCollapsed = !taskCollapsed },
+                    icon = Icons.Rounded.Schedule,
+                    labelStyle = MaterialTheme.typography.labelLarge,
+                )
+            }
+            if (!taskCollapsed) {
+                sessionCards(model.taskSessions, revealedId, reveal, onOpenSession, onRename, onDelete)
             }
         }
     }
@@ -463,6 +484,26 @@ private fun SessionCard(
                     )
                 }
                 AgentBadge(runtimeId = session.runtime)
+                if (session.scheduledTaskCount > 0 || session.purpose == "task_config") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Rounded.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            if (session.scheduledTaskCount > 0) {
+                                "${session.scheduledTaskCount} 个定时任务"
+                            } else {
+                                "定时任务配置"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }

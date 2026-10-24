@@ -35,4 +35,8 @@ export const ROUTES = {
   sessionPermissionGrants: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permissions/grants`,
   sessionPermissionGrant: (id: string, toolName: string) =>
     `/api/sessions/${encodeURIComponent(id)}/permissions/grants/${encodeURIComponent(toolName)}`,
+  scheduledTasks: '/api/scheduled-tasks',
+  scheduledTask: (id: string) => `/api/scheduled-tasks/${encodeURIComponent(id)}`,
+  scheduledTaskRunNow: (id: string) => `/api/scheduled-tasks/${encodeURIComponent(id)}/run-now`,
+  taskConfigSession: '/api/scheduled-tasks/config-session',
 } as const;

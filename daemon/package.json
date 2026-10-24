@@ -53,6 +53,7 @@
     "node": "~24"
   },
   "dependencies": {
+    "cron-parser": "^5.10.2",
     "express": "^4.21.2"
   },
   "devDependencies": {

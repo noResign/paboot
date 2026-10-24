@@ -1,8 +1,9 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
-import type { RunCheckpointRow, RunRow, SessionRow } from '../db.js';
+import type { SessionRow } from '../db.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { runningRunBySession } from '../session-runs.js';
+import { runDto } from '../dto.js';
 import {
   isValidModelParameters,
   normalizeModel,
@@ -10,7 +11,7 @@ import {
   parseStoredModelParameters,
 } from '../model-selection.js';
 
-function sessionDto(s: SessionRow, runningRunId: string | null = null) {
+function sessionDto(s: SessionRow, runningRunId: string | null = null, scheduledTaskCount = 0) {
   return {
     id: s.id,
     runtime: s.runtime,
@@ -24,31 +25,15 @@ function sessionDto(s: SessionRow, runningRunId: string | null = null) {
     lastActiveAt: s.last_active_at,
     running: runningRunId !== null,
     runningRunId,
+    scheduledTaskCount,
+    purpose: s.purpose ?? null,
   };
 }
 
-function runDto(r: RunRow, checkpoint?: RunCheckpointRow) {
-  return {
-    id: r.id,
-    sessionId: r.session_id,
-    runtime: r.runtime,
-    model: r.model,
-    modelParameters: parseStoredModelParameters(r.model_parameters),
-    status: r.status,
-    prompt: r.prompt,
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    exitCode: r.exit_code,
-    error: r.error,
-    checkpoint: checkpoint
-      ? {
-          status: checkpoint.status,
-          repoRoot: checkpoint.repo_root,
-          preRef: checkpoint.pre_ref,
-          postRef: checkpoint.post_ref,
-        }
-      : null,
-  };
+/** Command-task sessions are an internal detail; clients must not see them. */
+function visibleSession(ctx: AppContext, id: string): SessionRow | undefined {
+  const session = ctx.db.getSession(id);
+  return session && session.kind === 'chat' ? session : undefined;
 }
 
 export function registerSessionRoutes(app: Express, ctx: AppContext): void {
@@ -59,27 +44,32 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const running = runningRunBySession(ctx);
-    const sessions = ctx.db.listSessions(workspaceId).map((s) => sessionDto(s, running.get(s.id) ?? null));
+    const taskCounts = ctx.db.countScheduledTasksBySession();
+    const sessions = ctx.db
+      .listSessions(workspaceId)
+      .map((s) => sessionDto(s, running.get(s.id) ?? null, taskCounts.get(s.id) ?? 0));
     res.json({ sessions });
   });
 
   app.get('/api/sessions/:id', (req, res) => {
-    const s = ctx.db.getSession(req.params.id);
+    const s = visibleSession(ctx, req.params.id);
     if (!s) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
     const running = runningRunBySession(ctx);
     res.json({
-      session: sessionDto(s, running.get(s.id) ?? null),
+      session: sessionDto(s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
       messages: ctx.db.listMessages(s.id),
-      runs: ctx.db.listRuns(s.id).map((r) => runDto(r, ctx.db.getRunCheckpoint(r.id))),
+      runs: ctx.db
+        .listRuns(s.id)
+        .map((r) => runDto(r, ctx.db.getRunCheckpoint(r.id), s.workspace_id)),
     });
   });
 
   // Rename a session.
   app.patch('/api/sessions/:id', (req, res) => {
-    const s = ctx.db.getSession(req.params.id);
+    const s = visibleSession(ctx, req.params.id);
     if (!s) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
@@ -94,13 +84,13 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('rename_session', s.id);
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, session: sessionDto(updated, running.get(s.id) ?? null) });
+    res.json({ ok: true, session: sessionDto(updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   // Switch the model used by this session's subsequent runs. An in-flight run
   // keeps the model it already started with; there is nothing to restart.
   app.patch('/api/sessions/:id/model', (req, res) => {
-    const s = ctx.db.getSession(req.params.id);
+    const s = visibleSession(ctx, req.params.id);
     if (!s) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
@@ -130,13 +120,13 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('set_session_model', JSON.stringify({ sessionId: s.id, model, modelParameters }));
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, effective: 'next_run', session: sessionDto(updated, running.get(s.id) ?? null) });
+    res.json({ ok: true, effective: 'next_run', session: sessionDto(updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   // Delete a session, cancelling any in-flight run first so no child process is
   // left orphaned.
   app.delete('/api/sessions/:id', (req, res) => {
-    const s = ctx.db.getSession(req.params.id);
+    const s = visibleSession(ctx, req.params.id);
     if (!s) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;

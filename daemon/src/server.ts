@@ -18,6 +18,8 @@ import { registerPermissionRoutes } from './routes/permissions.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSessionPermissionRoutes } from './routes/session-permissions.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { registerScheduledTaskRoutes } from './routes/scheduled-tasks.js';
+import { registerMcpTaskRoutes } from './routes/mcp-tasks.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
 
 export function createApp(ctx: AppContext): Express {
@@ -43,6 +45,8 @@ export function createApp(ctx: AppContext): Express {
   registerRunRoutes(app, ctx);
   registerSessionPermissionRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
+  registerScheduledTaskRoutes(app, ctx);
+  registerMcpTaskRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
 
   app.use('/api', (_req, res) => {

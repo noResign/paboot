@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 internal enum class MainTab(val label: String, val icon: ImageVector) {
     Sessions("会话", Icons.Rounded.ChatBubble),
     Files("文件", Icons.Rounded.Folder),
+    Tasks("任务", Icons.Rounded.Schedule),
     Settings("设置", Icons.Rounded.Settings),
 }
 
@@ -54,6 +56,10 @@ fun MainScreen(
                     bottomOverlayPadding = innerPadding.calculateBottomPadding(),
                 )
                 MainTab.Files -> FilesScreen(bottomOverlayPadding = innerPadding.calculateBottomPadding())
+                MainTab.Tasks -> TasksScreen(
+                    onOpenSession = onOpenSession,
+                    bottomOverlayPadding = innerPadding.calculateBottomPadding(),
+                )
                 MainTab.Settings -> SettingsScreen(
                     onReconnect = onReconnect,
                     onManageWorkspaces = onManageWorkspaces,

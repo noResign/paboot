@@ -40,6 +40,7 @@ function probeCapabilities(help: string): RuntimeCapabilities {
     addDir: help.includes('--add-dir'),
     permissionHook: help.includes('--settings'),
     effort: help.includes('--effort'),
+    mcpConfig: help.includes('--mcp-config'),
   };
 }
 
@@ -51,6 +52,7 @@ const FALLBACK_CAPS: RuntimeCapabilities = {
   addDir: false,
   permissionHook: false,
   effort: false,
+  mcpConfig: false,
 };
 
 /**

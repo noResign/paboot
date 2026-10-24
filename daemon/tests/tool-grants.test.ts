@@ -21,6 +21,13 @@ describe('toGrantKey', () => {
     expect(toGrantKey('mcp__github')).toBe('mcp__github');
     expect(toGrantKey('mcp__')).toBe('mcp__');
   });
+
+  it('keeps privileged paboot task tools exact', () => {
+    expect(toGrantKey('mcp__paboot_tasks__schedule_task')).toBe('mcp__paboot_tasks__schedule_task');
+    expect(grantKeyCandidates('mcp__paboot_tasks__schedule_task')).toEqual([
+      'mcp__paboot_tasks__schedule_task',
+    ]);
+  });
 });
 
 describe('grantKeyCandidates', () => {

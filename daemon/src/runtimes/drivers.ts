@@ -3,6 +3,8 @@ import type { AppContext } from '../context.js';
 import { toClaudePermissionMode } from '../permission-mode.js';
 import { startRun } from './engine.js';
 import { startCodexRun } from './codex/session.js';
+import { createCommandDriver } from './command.js';
+import { codexToolServerArgs, taskToolServer } from '../tool-server.js';
 import { defaultCapabilities, type RuntimeAdapter, type RuntimeCapabilities } from './types.js';
 import type { Registry } from './registry.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';
@@ -21,6 +23,7 @@ export function registerRuntimeDrivers(registry: Registry, ctx: AppContext): voi
     registry.registerDriver(createArgvDriver(adapter, { ctx, capabilities }));
   }
   registry.registerDriver(createCodexDriver(ctx));
+  registry.registerDriver(createCommandDriver({ idleTimeoutMs: ctx.config.runIdleTimeoutMs }));
 }
 
 interface ArgvDriverDeps {
@@ -58,6 +61,7 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
         capabilities,
         env: process.env,
         extraDirs: req.extraDirs,
+        toolServers: [taskToolServer(deps.ctx, req.runId)],
         permissionHook:
           req.permissionMode === 'bypass'
             ? undefined
@@ -95,6 +99,7 @@ function createCodexDriver(ctx: AppContext): RuntimeDriver {
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
         env: process.env,
+        extraArgs: codexToolServerArgs([taskToolServer(ctx, req.runId)]),
         idleTimeoutMs: ctx.config.runIdleTimeoutMs,
         deps: { permissions: ctx.permissions, notifier: ctx.notifier, db: ctx.db },
         onEvent: req.onEvent,

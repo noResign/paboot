@@ -17,4 +17,6 @@ export interface AppContext {
   notifier: RunNotifier;
   /** Absolute path to the compiled PreToolUse permission-hook script. */
   hookPath: string;
+  /** Absolute path to the compiled stdio MCP server script. */
+  mcpServerPath: string;
 }

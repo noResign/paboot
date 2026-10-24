@@ -1,0 +1,544 @@
+import { useEffect, useState } from 'react';
+import { useScheduledTasks } from '../../store/scheduledTasks';
+import type {
+  RunDto,
+  ScheduleInput,
+  SchedulePresetKind,
+  ScheduledTaskDto,
+  UpdateScheduledTaskRequest,
+} from '../../../../shared/contract';
+
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const PRESET_LABELS: Record<SchedulePresetKind, string> = {
+  daily: '每天',
+  weekdays: '工作日',
+  weekly: '每周指定日',
+  every_minutes: '每 N 分钟',
+  every_hours: '每 N 小时',
+};
+
+function relativeTime(at: number | null): string {
+  if (!at) return '—';
+  const diff = at - Date.now();
+  const abs = Math.abs(diff);
+  if (abs < 60_000) return diff >= 0 ? '即将' : '刚刚';
+  const minutes = Math.round(abs / 60_000);
+  const text = minutes < 60 ? `${minutes} 分钟` : minutes < 1440 ? `${Math.round(minutes / 60)} 小时` : `${Math.round(minutes / 1440)} 天`;
+  return diff >= 0 ? `${text}后` : `${text}前`;
+}
+
+function statusLabel(task: ScheduledTaskDto): string {
+  if (!task.enabled) return '已停用';
+  switch (task.lastStatus) {
+    case 'running':
+      return '运行中';
+    case 'failed':
+      return '失败';
+    case 'skipped_busy':
+      return '已跳过（会话忙）';
+    case 'skipped_missed':
+      return '已跳过（错过）';
+    case 'succeeded':
+      return '成功';
+    case 'cancelled':
+      return '已取消';
+    case 'interrupted':
+      return '已中断';
+    default:
+      return '未运行';
+  }
+}
+
+interface Props {
+  connectionId: string | null;
+  workspaceId: string | null;
+  workspaceName: string | null;
+  /** When set, only this session's tasks are listed (opened from a chat). */
+  taskFilter: { id: string; title: string | null } | null;
+  onClearTaskFilter: () => void;
+  onOpenSession: (sessionId: string) => void;
+}
+
+export function TasksPage({
+  connectionId,
+  workspaceId,
+  workspaceName,
+  taskFilter,
+  onClearTaskFilter,
+  onOpenSession,
+}: Props) {
+  const scope = useScheduledTasks((state) => (connectionId ? state.byConnection[connectionId] : undefined));
+  const load = useScheduledTasks((state) => state.load);
+  const loadDetail = useScheduledTasks((state) => state.loadDetail);
+  const update = useScheduledTasks((state) => state.update);
+  const remove = useScheduledTasks((state) => state.remove);
+  const runNow = useScheduledTasks((state) => state.runNow);
+  const startConfigSession = useScheduledTasks((state) => state.startConfigSession);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<ScheduledTaskDto | null>(null);
+  const [confirmNewTask, setConfirmNewTask] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const tasks = scope?.tasks ?? [];
+  const detail = scope?.detail && scope.detail.task.id === selectedId ? scope.detail : null;
+  const filterId = taskFilter?.id;
+
+  useEffect(() => {
+    if (!connectionId) return;
+    void load(connectionId, workspaceId ?? undefined, { sessionId: filterId });
+  }, [connectionId, workspaceId, filterId, load]);
+
+  useEffect(() => {
+    if (!connectionId) return;
+    const timer = setInterval(() => {
+      void load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [connectionId, workspaceId, filterId, load]);
+
+  useEffect(() => {
+    if (!connectionId || !selectedId) return;
+    void loadDetail(connectionId, selectedId);
+  }, [connectionId, selectedId, loadDetail]);
+
+  useEffect(() => {
+    if (selectedId && tasks.some((task) => task.id === selectedId)) return;
+    setSelectedId(tasks[0]?.id ?? null);
+  }, [tasks, selectedId]);
+
+  async function refreshDetail(): Promise<void> {
+    if (!connectionId || !selectedId) return;
+    await loadDetail(connectionId, selectedId);
+    await load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+  }
+
+  async function toggle(task: ScheduledTaskDto): Promise<void> {
+    if (!connectionId) return;
+    const result = await update(connectionId, task.id, { enabled: !task.enabled });
+    setMessage(result.ok ? null : result.error);
+    if (result.ok) await refreshDetail();
+  }
+
+  async function run(task: ScheduledTaskDto): Promise<void> {
+    if (!connectionId) return;
+    const result = await runNow(connectionId, task.id);
+    setMessage(result.ok ? '已开始运行' : result.error);
+    if (result.ok) await refreshDetail();
+  }
+
+  async function removeTask(task: ScheduledTaskDto): Promise<void> {
+    if (!connectionId) return;
+    if (!window.confirm(`删除定时任务「${task.name}」？`)) return;
+    const result = await remove(connectionId, task.id);
+    setMessage(result.ok ? null : result.error);
+    if (result.ok) setSelectedId(null);
+  }
+
+  async function newTask(): Promise<void> {
+    if (!connectionId) return;
+    const result = await startConfigSession(connectionId, workspaceId ?? undefined);
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    onOpenSession(result.sessionId);
+  }
+
+  return (
+    <div className="tasks">
+      <div className="tasks-head">
+        <div>
+          <div className="title">定时任务</div>
+          <div className="sub">
+            {taskFilter
+              ? `会话：${taskFilter.title ?? taskFilter.id}`
+              : workspaceName
+                ? `工作区：${workspaceName}`
+                : '所有工作区'}{' '}
+            · 无人值守，完全权限
+          </div>
+        </div>
+        <div className="tasks-head-actions">
+          {taskFilter && (
+            <button className="btn" onClick={onClearTaskFilter}>
+              查看全部
+            </button>
+          )}
+          <button
+            className="btn"
+            onClick={() =>
+              void load(connectionId ?? '', workspaceId ?? undefined, {
+                silent: true,
+                sessionId: filterId,
+              })
+            }
+          >
+            刷新
+          </button>
+          <button className="btn primary" onClick={() => setConfirmNewTask(true)}>
+            新建任务
+          </button>
+        </div>
+      </div>
+
+      {message && (
+        <div className="tasks-message" onClick={() => setMessage(null)}>
+          {message}
+        </div>
+      )}
+
+      <div className="tasks-split">
+        <div className="tasks-list">
+          {scope?.error && <div className="empty">{scope.error}</div>}
+          {!scope?.error && tasks.length === 0 && (
+            <div className="empty">
+              {taskFilter ? '这个会话还没有定时任务。' : '还没有定时任务。'}
+              <br />
+              {taskFilter ? '点「新建任务」，让 AI 为这个会话创建一个。' : '创建一个：按计划自动唤醒会话或执行命令。'}
+            </div>
+          )}
+          {tasks.map((task) => (
+            <button
+              key={task.id}
+              className={`task-row${selectedId === task.id ? ' active' : ''}${task.enabled ? '' : ' off'}`}
+              onClick={() => setSelectedId(task.id)}
+            >
+              <div className="task-row-top">
+                <span className="task-name">{task.name}</span>
+                <span className={`task-status status-${task.lastStatus}`}>{statusLabel(task)}</span>
+              </div>
+              <div className="task-row-sub">
+                {task.schedule.label} · 下次 {relativeTime(task.nextRunAt)}
+              </div>
+              <div className="task-row-sub">
+                {task.type === 'command' ? '执行命令' : task.sessionTitle ? `会话：${task.sessionTitle}` : '新会话'}
+                {task.createdBy === 'mcp' ? ' · AI 创建' : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="tasks-detail">
+          {!detail && <div className="empty">选择一个任务查看详情</div>}
+          {detail && (
+            <TaskDetail
+              task={detail.task}
+              runs={detail.runs}
+              onOpenSession={onOpenSession}
+              onToggle={() => void toggle(detail.task)}
+              onRun={() => void run(detail.task)}
+              onDelete={() => void removeTask(detail.task)}
+              onEdit={() => setEditingTask(detail.task)}
+            />
+          )}
+        </div>
+      </div>
+
+      {confirmNewTask && (
+        <div className="modal-scrim" onClick={() => setConfirmNewTask(false)}>
+          <div className="modal task-editor" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div className="title">用 AI 配置定时任务</div>
+              <button className="btn ghost" onClick={() => setConfirmNewTask(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="task-form">
+              <p className="task-meta">
+                将打开「配置定时任务」会话。AI 会先问你想要完成什么任务，分析后给出名称、目标、计划和执行内容，
+                确认后才会创建。
+              </p>
+              <div className="modal-actions">
+                <button className="btn" onClick={() => setConfirmNewTask(false)}>
+                  取消
+                </button>
+                <button
+                  className="btn primary"
+                  onClick={() => {
+                    setConfirmNewTask(false);
+                    void newTask();
+                  }}
+                >
+                  开始配置
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingTask && connectionId && (
+        <TaskEditorDialog
+          connectionId={connectionId}
+          task={editingTask}
+          onClose={() => setEditingTask(null)}
+          onSaved={async (task) => {
+            setEditingTask(null);
+            setSelectedId(task.id);
+            await load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+            await loadDetail(connectionId, task.id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TaskDetail({
+  task,
+  runs,
+  onOpenSession,
+  onToggle,
+  onRun,
+  onDelete,
+  onEdit,
+}: {
+  task: ScheduledTaskDto;
+  runs: RunDto[];
+  onOpenSession: (sessionId: string) => void;
+  onToggle: () => void;
+  onRun: () => void;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="task-detail">
+      <div className="task-detail-head">
+        <div>
+          <h2>{task.name}</h2>
+          <div className="task-meta">
+            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · {task.schedule.label} · 完全权限
+            {task.createdBy === 'mcp' ? ' · AI 创建' : ''}
+          </div>
+        </div>
+        <div className="settings-actions">
+          <button className="btn" onClick={onRun}>
+            立即运行
+          </button>
+          <button className="btn" onClick={onToggle}>
+            {task.enabled ? '停用' : '启用'}
+          </button>
+          <button className="btn" onClick={onEdit}>
+            编辑
+          </button>
+          <button className="btn danger" onClick={onDelete}>
+            删除
+          </button>
+        </div>
+      </div>
+
+      {!task.enabled && task.disabledReason && (
+        <div className="task-warning">已停用：{task.disabledReason}</div>
+      )}
+      {task.lastError && <div className="task-warning">最近错误：{task.lastError}</div>}
+
+      <div className="scard">
+        <div className="task-grid">
+          <span>下次运行</span>
+          <b>{relativeTime(task.nextRunAt)}</b>
+          <span>上次运行</span>
+          <b>{relativeTime(task.lastRunAt)}</b>
+          <span>状态</span>
+          <b>{statusLabel(task)}</b>
+          <span>执行次数</span>
+          <b>{task.runCount}</b>
+          <span>目标</span>
+          <b>
+            {task.type === 'command'
+              ? '当前工作区'
+              : task.sessionTitle ?? '首次触发时创建会话'}
+            {task.type === 'ai' && task.sessionId && (
+              <button className="btn tiny" onClick={() => onOpenSession(task.sessionId as string)}>
+                打开会话
+              </button>
+            )}
+          </b>
+        </div>
+        <pre className="task-prompt">{task.type === 'command' ? task.command : task.prompt}</pre>
+      </div>
+
+      <div className="scard">
+        <h3>执行历史</h3>
+        {runs.length === 0 && <div className="empty">还没有执行记录</div>}
+        {runs.map((run) => (
+          <div key={run.id} className="task-run">
+            <div className="task-run-row">
+              <span>{new Date(run.startedAt).toLocaleString()}</span>
+              <span>{run.status}</span>
+              <span>{run.trigger === 'scheduled' ? '定时' : run.trigger === 'run_now' ? '手动' : '交互'}</span>
+              {task.type === 'ai' && (
+                <button className="btn tiny" onClick={() => onOpenSession(run.sessionId)}>
+                  查看会话
+                </button>
+              )}
+            </div>
+            {run.output && <pre className="task-run-output">{run.output}</pre>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface EditorProps {
+  connectionId: string;
+  task: ScheduledTaskDto;
+  onClose: () => void;
+  onSaved: (task: ScheduledTaskDto) => Promise<void> | void;
+}
+
+function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps) {
+  const update = useScheduledTasks((state) => state.update);
+  const presetDto = task.schedule.preset;
+  const [name, setName] = useState(task.name);
+  const [prompt, setPrompt] = useState(task.prompt ?? '');
+  const [command, setCommand] = useState(task.command ?? '');
+  const [preset, setPreset] = useState<SchedulePresetKind>(
+    (presetDto?.preset as SchedulePresetKind | undefined) ?? 'daily',
+  );
+  const [time, setTime] = useState(presetDto?.time ?? '09:00');
+  const [days, setDays] = useState<number[]>(presetDto?.days ?? [1]);
+  const [every, setEvery] = useState(presetDto?.every ?? 6);
+  const [error, setError] = useState<string | null>(null);
+  // Raw-cron tasks have no preset metadata; keep their schedule untouched.
+  const scheduleEditable = presetDto != null;
+
+  function buildSchedule(): ScheduleInput {
+    if (preset === 'every_minutes' || preset === 'every_hours') return { preset, every };
+    if (preset === 'weekly') return { preset, time, days };
+    return { preset, time };
+  }
+
+  async function submit(): Promise<void> {
+    setError(null);
+    if (!name.trim()) {
+      setError('请填写任务名称');
+      return;
+    }
+    if (task.type === 'ai' && !prompt.trim()) {
+      setError('请填写 prompt');
+      return;
+    }
+    if (task.type === 'command' && !command.trim()) {
+      setError('请填写命令');
+      return;
+    }
+    if (scheduleEditable && preset === 'weekly' && days.length === 0) {
+      setError('请至少选择一个星期');
+      return;
+    }
+    const patch: UpdateScheduledTaskRequest = {
+      name: name.trim(),
+      ...(task.type === 'ai' ? { prompt: prompt.trim() } : { command: command.trim() }),
+      ...(scheduleEditable ? { schedule: buildSchedule() } : {}),
+    };
+    const result = await update(connectionId, task.id, patch);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    await onSaved(result.task);
+  }
+
+  const targetText =
+    task.type === 'command'
+      ? '当前工作区'
+      : task.sessionTitle ?? (task.sessionMode === 'new' ? '首次触发时新建会话' : task.sessionId ?? '未知');
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal task-editor" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div className="title">编辑定时任务</div>
+          <button className="btn ghost" onClick={onClose}>
+            关闭
+          </button>
+        </div>
+
+        <div className="task-form">
+          <div className="task-meta">
+            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · 目标：{targetText} · 完全权限
+          </div>
+
+          <div className="field">
+            <label>名称</label>
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </div>
+
+          <div className="field">
+            <label>{task.type === 'command' ? '命令（在工作区根目录执行）' : 'Prompt'}</label>
+            {task.type === 'command' ? (
+              <textarea rows={4} value={command} onChange={(event) => setCommand(event.target.value)} />
+            ) : (
+              <textarea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+            )}
+          </div>
+
+          {scheduleEditable ? (
+            <div className="field">
+              <label>计划</label>
+              <div className="task-schedule-row">
+                <select value={preset} onChange={(event) => setPreset(event.target.value as SchedulePresetKind)}>
+                  {(Object.keys(PRESET_LABELS) as SchedulePresetKind[]).map((kind) => (
+                    <option key={kind} value={kind}>
+                      {PRESET_LABELS[kind]}
+                    </option>
+                  ))}
+                </select>
+                {(preset === 'daily' || preset === 'weekdays' || preset === 'weekly') && (
+                  <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+                )}
+                {(preset === 'every_minutes' || preset === 'every_hours') && (
+                  <input
+                    type="number"
+                    min={1}
+                    value={every}
+                    onChange={(event) => setEvery(Number(event.target.value) || 1)}
+                  />
+                )}
+              </div>
+              {preset === 'weekly' && (
+                <div className="task-days">
+                  {WEEKDAYS.map((label, day) => (
+                    <label key={label}>
+                      <input
+                        type="checkbox"
+                        checked={days.includes(day)}
+                        onChange={(event) =>
+                          setDays((current) =>
+                            event.target.checked
+                              ? [...current, day].sort((a, b) => a - b)
+                              : current.filter((value) => value !== day),
+                          )
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="task-warning">
+              该任务使用自定义 cron（{task.schedule.cron}），当前只能编辑名称和内容。
+            </div>
+          )}
+
+          <div className="task-warning">
+            修改从下一次触发开始生效；正在运行的 run 不受影响。
+          </div>
+
+          {error && <div className="task-warning">{error}</div>}
+
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose}>
+              取消
+            </button>
+            <button className="btn primary" onClick={() => void submit()}>
+              保存
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

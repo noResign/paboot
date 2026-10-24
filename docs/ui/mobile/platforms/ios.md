@@ -80,7 +80,7 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 
 ## 6. 导航结构
 
-载体已定：`UITabBarController`（底部会话 / 文件 / 设置三个 Tab）+ `UINavigationController`
+载体已定：`UITabBarController`（底部会话 / 文件 / 任务 / 设置四个 Tab）+ `UINavigationController`
 （聊天详情等 push）；需要浮层时用 `UISheetPresentationController`（对应 Android 的
 `ModalBottomSheet`）。**已实现**：Tab 图标 / 尺寸、会话列表 → 聊天 push、新建会话 sheet、设置 → 工作区管理 push、
 目录选择器与会话权限 sheet、文件列表 → Diff / 文件查看器 push。
@@ -91,7 +91,7 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 |---|---|---|
 | P0 | Xcode 工程 + 本地 SwiftPM 包 + 主题层（§4 的 token）+ 目录分层 | ✅ 已实现 |
 | P1 | 网络层：DTO 对齐 `types/api.ts`、`URLSession` + `async/await`、SSE 解析、重连策略 | ✅ 已实现 |
-| P2 | 导航骨架：三个 Tab + 图标 + 设计系统 | ✅ 已实现 |
+| P2 | 导航骨架：四个 Tab + 图标 + 设计系统 | ✅ 已实现 |
 | P3 | 连接页（health / sessions 校验、Keychain、最近连接）+ 单工作区会话列表 | ✅ 已实现 |
 | P4 | 聊天：历史重建、流式、工具 / 思考 / 问答 / Todo、审批、模型切换、新建会话、Markdown | ✅ 已实现 |
 | P5 | 文件 / Diff、设置、工作区、会话权限 | ✅ 已实现（并排 / 统一 diff、图片 / 视频预览） |

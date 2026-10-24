@@ -39,6 +39,7 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
             onBack = { navController.popBackStack() },
             onReconnect = { navController.navigateToConnect() },
             onManageWorkspaces = { navController.navigateToWorkspaces() },
+            onOpenSession = { id -> navController.navigateToConversation(id) },
         )
     }
 }

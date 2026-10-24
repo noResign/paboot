@@ -349,6 +349,85 @@ public final class PabootAPI {
         )
     }
 
+    // MARK: - Scheduled tasks
+
+    public func scheduledTasks(workspaceId: String? = nil, sessionId: String? = nil) async throws
+        -> ScheduledTasksResponse
+    {
+        var query: [URLQueryItem] = []
+        if let workspaceId {
+            query.append(URLQueryItem(name: "workspaceId", value: workspaceId))
+        }
+        if let sessionId {
+            query.append(URLQueryItem(name: "sessionId", value: sessionId))
+        }
+        return try await get("api/scheduled-tasks", query: query, authenticated: true, as: ScheduledTasksResponse.self)
+    }
+
+    public func scheduledTask(id: String) async throws -> ScheduledTaskDetailResponse {
+        try await get("api/scheduled-tasks/\(id)", authenticated: true, as: ScheduledTaskDetailResponse.self)
+    }
+
+    public func createScheduledTask(_ body: CreateScheduledTaskRequest) async throws -> ScheduledTaskResponse {
+        try await request(
+            "POST",
+            path: "api/scheduled-tasks",
+            body: try encode(body),
+            authenticated: true,
+            as: ScheduledTaskResponse.self
+        )
+    }
+
+    public func updateScheduledTask(
+        id: String,
+        body: UpdateScheduledTaskRequest
+    ) async throws -> ScheduledTaskResponse {
+        try await request(
+            "PATCH",
+            path: "api/scheduled-tasks/\(id)",
+            body: try encode(body),
+            authenticated: true,
+            as: ScheduledTaskResponse.self
+        )
+    }
+
+    public func deleteScheduledTask(id: String) async throws -> DeletedScheduledTaskResponse {
+        try await request(
+            "DELETE",
+            path: "api/scheduled-tasks/\(id)",
+            authenticated: true,
+            as: DeletedScheduledTaskResponse.self
+        )
+    }
+
+    public func runScheduledTaskNow(id: String) async throws -> RunNowResponse {
+        try await request(
+            "POST",
+            path: "api/scheduled-tasks/\(id)/run-now",
+            authenticated: true,
+            as: RunNowResponse.self
+        )
+    }
+
+    /// Opens (or creates) the reusable AI authoring chat for this workspace and
+    /// starts its first run. The caller switches to the returned session.
+    public func startTaskConfigSession(
+        workspaceId: String?,
+        runtime: String? = nil
+    ) async throws -> TaskConfigSessionResponse {
+        struct Body: Encodable {
+            let workspaceId: String?
+            let runtime: String?
+        }
+        return try await request(
+            "POST",
+            path: "api/scheduled-tasks/config-session",
+            body: try encode(Body(workspaceId: workspaceId, runtime: runtime)),
+            authenticated: true,
+            as: TaskConfigSessionResponse.self
+        )
+    }
+
     // MARK: - Plumbing
 
     private func get<T: Decodable>(

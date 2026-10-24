@@ -3,7 +3,7 @@ export { getActiveRun, listActiveRuns } from './active-runs.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { NormalizedEvent } from '../types/api.js';
 import { log } from '../log.js';
-import type { RuntimeAdapter, RuntimeCapabilities, StreamParser, SpawnContext } from './types.js';
+import type { RuntimeAdapter, RuntimeCapabilities, StreamParser, SpawnContext, ToolServerSpec } from './types.js';
 
 export type RunStatus = 'succeeded' | 'failed' | 'cancelled';
 
@@ -29,6 +29,8 @@ export interface RunRequest {
   extraDirs?: string[];
   /** Wiring for the PreToolUse permission hook (ignored when unsupported). */
   permissionHook?: { hookPath: string; daemonUrl: string; token: string; timeoutMs: number; matcher: string };
+  /** External tool servers (MCP) to expose to the agent. */
+  toolServers?: ToolServerSpec[];
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
   onEvent: (ev: NormalizedEvent) => void;
@@ -119,6 +121,7 @@ export function startRun(req: RunRequest): ActiveRun {
     capabilities: req.capabilities,
     extraDirs: req.extraDirs,
     permissionHook: hookSettings,
+    toolServers: req.toolServers,
   };
 
   const args = req.adapter.buildArgs(ctx);

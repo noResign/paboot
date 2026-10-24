@@ -16,9 +16,11 @@ struct SessionListModel: Equatable {
     var rootSessions: [SessionDto] = []
     var olderRootSessions: [SessionDto] = []
     var subGroups: [SessionGroup] = []
+    /// Sessions with attached tasks, plus the per-workspace authoring chat.
+    var taskSessions: [SessionDto] = []
 
     var isEmpty: Bool {
-        rootSessions.isEmpty && olderRootSessions.isEmpty && subGroups.isEmpty
+        rootSessions.isEmpty && olderRootSessions.isEmpty && subGroups.isEmpty && taskSessions.isEmpty
     }
 }
 
@@ -32,27 +34,39 @@ enum SessionGrouping {
         now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     ) -> SessionListModel {
         let sorted = sessions.sorted { $0.lastActiveAt > $1.lastActiveAt }
+        let taskSessions = sorted.filter(isTaskRelated)
+        let normalSessions = sorted.filter { !isTaskRelated($0) }
 
         guard let workspace else {
             // No workspace: fall back to grouping everything by cwd.
-            let groups = cwdGroups(for: sorted, workspacePath: nil)
-            return SessionListModel(rootSessions: [], olderRootSessions: [], subGroups: groups)
+            let groups = cwdGroups(for: normalSessions, workspacePath: nil)
+            return SessionListModel(
+                rootSessions: [],
+                olderRootSessions: [],
+                subGroups: groups,
+                taskSessions: taskSessions
+            )
         }
 
         let rootPath = normalize(workspace.path)
-        let root = sorted.filter { normalize($0.cwd) == rootPath }
+        let root = normalSessions.filter { normalize($0.cwd) == rootPath }
         let recent = root.filter { $0.lastActiveAt >= now - recentWindowMs }
         let older = root.filter { $0.lastActiveAt < now - recentWindowMs }
         let subGroups = cwdGroups(
-            for: sorted.filter { normalize($0.cwd) != rootPath },
+            for: normalSessions.filter { normalize($0.cwd) != rootPath },
             workspacePath: workspace.path
         )
 
         return SessionListModel(
             rootSessions: recent,
             olderRootSessions: older,
-            subGroups: subGroups
+            subGroups: subGroups,
+            taskSessions: taskSessions
         )
+    }
+
+    private static func isTaskRelated(_ session: SessionDto) -> Bool {
+        session.scheduledTaskCount > 0 || session.purpose == "task_config"
     }
 
     private static func cwdGroups(

@@ -31,6 +31,27 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。目前只有 
 
 **事件流是 runtime 无关的**：客户端只认 `NormalizedEvent`，不感知底层是哪个 CLI。
 
+## 命令任务（内部 runtime）
+
+`runtimes/command.ts` 注册为 id `command` 的 `RuntimeDriver`，标记 `internal: true` /
+`requiresDetection: false`：`/api/chat` 拒绝客户端直接使用，只有调度器会启动它。它 spawn
+`/bin/sh -c <command>`（独立进程组，取消时 SIGTERM → 3s → SIGKILL），把 stdout/stderr 以
+`text_delta` 写入事件流，结束时补 `tool_result`（只带 exit code）。run / checkpoint / rollback /
+cancel 全部复用 `startSessionRun`。
+
+## 通用工具桥（MCP，自建定时任务）
+
+daemon 用同一个 `ToolServerSpec` 向每个 runtime 注入 `paboot_tasks` MCP server：
+
+- **Claude**：探测到 `--mcp-config` 后内联 JSON（server 名 `paboot_tasks`，env 携带
+  `PABOOT_DAEMON_URL/TOKEN/RUN_ID`）。非 bypass 模式下 MCP 工具走既有 `mcp__.*` PreToolUse
+  matcher，会弹审批；bypass 不挂 hook。
+- **Codex**：通过 `codex app-server -c mcp_servers.paboot_tasks.*` 注入，并设
+  `default_tools_approval_mode="approve"`——Codex 在 `approvalPolicy=never` 下会拒绝未预批准的
+  MCP 调用。
+- **未来 runtime**：实现「把 `ToolServerSpec` 注册进自己的配置」这一件事即可；工具实现、内部端点、
+  调度完全复用。没有 MCP 的 runtime 可退回 CLI helper + `developer_instructions` 方案。
+
 ## 模型参数（可扩展）
 
 `ModelOption` 除 `id` / `label` 外可带 `parameters: ModelParameter[]`，每个参数是一个

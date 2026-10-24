@@ -115,7 +115,7 @@ M3 没有对应槽位的语义色走两个出口：
 
 ```
 connect（门禁，startDestination）
-  ├─ main ── 底部 Tab Bar：会话 / 文件 / 设置
+  ├─ main ── 底部 Tab Bar：会话 / 文件 / 任务 / 设置
   │     └─ 会话 --点卡片--> conversation?sessionId={id}（push，带顶栏返回键）
   └─ workspaces（push）
 ```

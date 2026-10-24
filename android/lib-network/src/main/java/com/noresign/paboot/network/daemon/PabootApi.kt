@@ -18,10 +18,16 @@ import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
 import com.noresign.paboot.network.daemon.dto.RenameRequest
 import com.noresign.paboot.network.daemon.dto.RenameResponse
 import com.noresign.paboot.network.daemon.dto.RunsResponse
+import com.noresign.paboot.network.daemon.dto.DeletedScheduledTaskResponse
+import com.noresign.paboot.network.daemon.dto.RunNowResponse
+import com.noresign.paboot.network.daemon.dto.ScheduledTaskDetailResponse
+import com.noresign.paboot.network.daemon.dto.ScheduledTaskResponse
+import com.noresign.paboot.network.daemon.dto.ScheduledTasksResponse
 import com.noresign.paboot.network.daemon.dto.SessionDetailResponse
 import com.noresign.paboot.network.daemon.dto.SessionPermissionsResponse
 import com.noresign.paboot.network.daemon.dto.SessionResponse
 import com.noresign.paboot.network.daemon.dto.SessionsResponse
+import com.noresign.paboot.network.daemon.dto.TaskConfigSessionResponse
 import com.noresign.paboot.network.daemon.dto.UpdateSessionModelRequest
 import com.noresign.paboot.network.daemon.dto.UpdateConfigRequest
 import com.noresign.paboot.network.daemon.dto.UpdateSessionPermissionsRequest
@@ -31,6 +37,7 @@ import com.noresign.paboot.network.daemon.dto.WorkspaceDirsResponse
 import com.noresign.paboot.network.daemon.dto.WorkspaceResponse
 import com.noresign.paboot.network.daemon.dto.WorkspaceShortcutsResponse
 import com.noresign.paboot.network.daemon.dto.WorkspacesResponse
+import kotlinx.serialization.json.JsonObject
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -191,4 +198,30 @@ interface PabootApi {
 
     @DELETE("api/sessions/{id}/permissions/grants")
     suspend fun deletePermissionGrants(@Path("id") id: String): OkResponse
+
+    // ---- Scheduled tasks ----
+
+    @GET("api/scheduled-tasks")
+    suspend fun scheduledTasks(
+        @Query("workspaceId") workspaceId: String? = null,
+        @Query("sessionId") sessionId: String? = null,
+    ): ScheduledTasksResponse
+
+    @GET("api/scheduled-tasks/{id}")
+    suspend fun scheduledTask(@Path("id") id: String): ScheduledTaskDetailResponse
+
+    @POST("api/scheduled-tasks")
+    suspend fun createScheduledTask(@Body body: JsonObject): ScheduledTaskResponse
+
+    @PATCH("api/scheduled-tasks/{id}")
+    suspend fun updateScheduledTask(@Path("id") id: String, @Body body: JsonObject): ScheduledTaskResponse
+
+    @DELETE("api/scheduled-tasks/{id}")
+    suspend fun deleteScheduledTask(@Path("id") id: String): DeletedScheduledTaskResponse
+
+    @POST("api/scheduled-tasks/{id}/run-now")
+    suspend fun runScheduledTaskNow(@Path("id") id: String): RunNowResponse
+
+    @POST("api/scheduled-tasks/config-session")
+    suspend fun startTaskConfigSession(@Body body: JsonObject): TaskConfigSessionResponse
 }

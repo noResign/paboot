@@ -38,5 +38,15 @@ export interface RuntimeDriverRequest {
  */
 export interface RuntimeDriver {
   id: string;
+  /**
+   * Whether the runtime must be probed for availability before starting. False
+   * for internal drivers (the command runner) that have no external CLI.
+   */
+  requiresDetection?: boolean;
+  /**
+   * Internal drivers are not exposed through `/api/chat`; only the daemon
+   * itself (scheduled command tasks) starts them.
+   */
+  internal?: boolean;
   start(req: RuntimeDriverRequest): ManagedRun<RunOutcome>;
 }

@@ -9,6 +9,13 @@
 
 const MCP_PREFIX = 'mcp__';
 
+/**
+ * Servers whose tools must be granted one by one. `paboot_tasks` is
+ * privileged (it can create recurring unattended runs), so "allow all" must
+ * not leak to tools added to the server later.
+ */
+const EXACT_GRANT_SERVERS = new Set(['paboot_tasks']);
+
 function mcpServer(toolName: string): string | undefined {
   if (!toolName.startsWith(MCP_PREFIX)) return undefined;
   const rest = toolName.slice(MCP_PREFIX.length);
@@ -19,13 +26,13 @@ function mcpServer(toolName: string): string | undefined {
 /** The key stored in `session_permission_grants` when the user allows all. */
 export function toGrantKey(toolName: string): string {
   const server = mcpServer(toolName);
-  return server === undefined ? toolName : `${MCP_PREFIX}${server}__*`;
+  if (server === undefined || EXACT_GRANT_SERVERS.has(server)) return toolName;
+  return `${MCP_PREFIX}${server}__*`;
 }
 
 /** Grant keys that authorize `toolName`, in lookup order. */
 export function grantKeyCandidates(toolName: string): string[] {
   const server = mcpServer(toolName);
-  return server === undefined
-    ? [toolName]
-    : [`${MCP_PREFIX}${server}__*`, toolName];
+  if (server === undefined || EXACT_GRANT_SERVERS.has(server)) return [toolName];
+  return [`${MCP_PREFIX}${server}__*`, toolName];
 }

@@ -129,7 +129,7 @@ extension ChatInputBar: UITextFieldDelegate {
 /// Two modes share one footprint; swapping content never changes transcript height.
 final class ChatBottomBar: UIView {
     enum Mode { case input, navigation }
-    enum Destination: Int { case sessions, files, settings }
+    enum Destination: Int { case sessions, files, tasks, settings }
 
     let inputBar = ChatInputBar()
     private(set) var mode: Mode = .input
@@ -176,6 +176,7 @@ final class ChatBottomBar: UIView {
         for (destination, title, symbol) in [
             (Destination.sessions, "会话", "bubble.left.and.bubble.right"),
             (.files, "文件", "folder"),
+            (.tasks, "任务", "calendar.badge.clock"),
             (.settings, "设置", "gearshape"),
         ] {
             let button = UIButton(type: .system)

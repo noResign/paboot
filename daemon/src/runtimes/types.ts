@@ -48,6 +48,8 @@ export interface RuntimeCapabilities {
   permissionHook: boolean;
   /** `--effort <level>` accepts a reasoning-effort level. */
   effort: boolean;
+  /** `--mcp-config` accepts an inline MCP server configuration. */
+  mcpConfig: boolean;
 }
 
 export const defaultCapabilities: RuntimeCapabilities = {
@@ -58,6 +60,7 @@ export const defaultCapabilities: RuntimeCapabilities = {
   addDir: false,
   permissionHook: false,
   effort: false,
+  mcpConfig: false,
 };
 
 export interface RuntimeDetection {
@@ -102,6 +105,20 @@ export interface SpawnContext {
   extraDirs?: string[];
   /** When set, the adapter wires tool-permission asks to a PreToolUse hook. */
   permissionHook?: { settingsJson: string };
+  /** External tool servers the runtime should expose to the agent. */
+  toolServers?: ToolServerSpec[];
+}
+
+/**
+ * A stdio MCP server the daemon wants the agent runtime to launch. The daemon
+ * builds one spec per run (the env carries that run's id) and each driver
+ * translates it into its runtime's own configuration mechanism.
+ */
+export interface ToolServerSpec {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 
 /**

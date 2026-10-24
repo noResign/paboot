@@ -106,6 +106,14 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
   TUI 会话列表时会包含落在内层 Workspace 里的会话（外层视为「其下所有内容」）。
 - **防御性超时**：run 空闲看门狗（`PABOOT_RUN_IDLE_TIMEOUT_SECONDS`，默认 900 秒、0=禁用）。
 - **审计**：所有写操作与 `browse_root` 记入 `audit_log`（清单见 [protocol.md](protocol.md) 的「数据模型」）。
+- **定时任务**：所有定时 run 固定 `bypass`，创建时客户端必须展示「完全权限无人值守」警告并让用户确认。
+  可回滚的只有工作区内 git 文件改动；外部副作用（push/部署/消息等）不可撤销，详见
+  [scheduled-tasks.md](scheduled-tasks.md)。agent 通过 `paboot_tasks` 的 `schedule_task` 创建任务：
+  `target` 可选当前会话 / 同 workspace 的已有会话 / 首次触发新建；目标会话由 daemon 校验，
+  agent 不能跨 workspace 指定。记录 `created_by='mcp'` 与 audit；每会话最多 20 个；定时 run 内再次
+  创建会被 `recursion_blocked`。AI 配置会话使用会话自身的权限模式（通常 `ask`），因此创建任务时
+  仍会经过现有 MCP 审批卡。`paboot_tasks` 是**精确授权 server**：「允许全部」只授权当前工具，
+  不扩到未来工具。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
 
 ### ⚠️ 重要边界：`workspace` 不是沙箱

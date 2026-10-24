@@ -12,6 +12,7 @@ import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
 import { SettingsPage, type SettingsSection } from '../settings/SettingsPage';
 import { FilesPage } from '../files/FilesPage';
+import { TasksPage } from '../tasks/TasksPage';
 import { ChatAside } from '../files/ChatAside';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
@@ -26,7 +27,7 @@ import type { SessionDto } from '../../../../shared/contract';
 /** One per renderer process — see `windowFocus.ts` for why it is memoized. */
 const windowFocus = createWindowFocus(() => window.paboot.focusSession());
 
-type Page = 'chat' | 'settings' | 'files';
+type Page = 'chat' | 'settings' | 'files' | 'tasks';
 
 /**
  * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
@@ -94,9 +95,14 @@ export function AppShell() {
     (id: string) => setWorkspaceChoice({ connectionId, id }),
     [connectionId],
   );
+  useEffect(() => {
+    setTaskFilter(null);
+  }, [connectionId, workspaceId]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
+  /** When set, the Tasks page shows only this session's tasks. */
+  const [taskFilter, setTaskFilter] = useState<{ id: string; title: string | null } | null>(null);
   // Which settings section is showing; kept here so the palette can open one directly.
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('connection');
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -409,6 +415,16 @@ export function AppShell() {
         run: () => openSettings('workspaces'),
       },
       { id: 'action:files', section: '动作', label: '浏览文件与改动', keywords: 'files diff 文件', run: () => setPage('files') },
+      {
+        id: 'action:tasks',
+        section: '动作',
+        label: '定时任务',
+        keywords: 'schedule cron 定时 任务',
+        run: () => {
+          setTaskFilter(null);
+          setPage('tasks');
+        },
+      },
       { id: 'action:refresh', section: '动作', label: '刷新会话列表', keywords: 'reload refresh', run: refresh },
       { id: 'action:stop', section: '动作', label: '停止当前运行', keywords: 'cancel abort', run: stopRun },
       theme('light', '主题：浅色'),
@@ -489,14 +505,28 @@ export function AppShell() {
 
           <div className="rail-foot">
             <button
-              className={`link-btn${page === 'files' ? ' active' : ''}`}
+              className={`link-btn icon-only${page === 'files' ? ' active' : ''}`}
               title="文件与 Diff"
               onClick={() => setPage('files')}
             >
-              📁 文件
+              📁
             </button>
-            <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => openSettings()}>
-              ⚙ 设置
+            <button
+              className={`link-btn icon-only${page === 'tasks' ? ' active' : ''}`}
+              title="定时任务"
+              onClick={() => {
+                setTaskFilter(null);
+                setPage('tasks');
+              }}
+            >
+              ⏰
+            </button>
+            <button
+              className={`link-btn icon-only${page === 'settings' ? ' active' : ''}`}
+              title="设置"
+              onClick={() => openSettings()}
+            >
+              ⚙
             </button>
             <button className="link-btn" title={`刷新 ${comboLabel('refresh', IS_MAC)}`} onClick={refresh}>
               <RefreshIcon />
@@ -522,6 +552,18 @@ export function AppShell() {
             workspaceId={workspaceId || null}
             workspaceName={selectedWorkspace?.name ?? null}
           />
+        ) : page === 'tasks' ? (
+          <TasksPage
+            connectionId={connectionId}
+            workspaceId={workspaceId || null}
+            workspaceName={selectedWorkspace?.name ?? null}
+            taskFilter={taskFilter}
+            onClearTaskFilter={() => setTaskFilter(null)}
+            onOpenSession={(id) => {
+              if (connectionId) void openSession(connectionId, id);
+              setPage('chat');
+            }}
+          />
         ) : (
           <div className="chat-row">
             {chatVisible ? (
@@ -530,6 +572,10 @@ export function AppShell() {
                 asideVisible={asideVisible}
                 onToggleAside={toggleAside}
                 onCollapseChat={toggleChat}
+                onOpenTasks={(sessionId, title) => {
+                  setTaskFilter({ id: sessionId, title });
+                  setPage('tasks');
+                }}
               />
             ) : (
               // Same treatment as the rail: a strip, so there is always a way back.

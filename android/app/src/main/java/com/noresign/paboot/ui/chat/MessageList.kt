@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,8 +49,13 @@ internal fun MessageList(
     onAnswer: (String, String) -> Unit,
     bottomOverlayPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
+    /**
+     * Hoisted by the chat screen so switching bottom tabs (which temporarily
+     * removes this composable) does not reset the scroll position and flash the
+     * first message before jumping back to the bottom.
+     */
+    listState: LazyListState = rememberLazyListState(),
 ) {
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     // 末尾占位 item 的 index，用来「滚到底」（滚到它 = 最后一条消息底部贴屏幕底）
     val bottomIndex = messages.size

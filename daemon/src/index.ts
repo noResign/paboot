@@ -11,6 +11,7 @@ import { PermissionManager } from './permissions.js';
 import { fromLegacyPermissionMode } from './permission-mode.js';
 import { RunNotifier } from './run-notifier.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
+import { Scheduler } from './scheduler.js';
 import { createRegistry } from './runtimes/registry.js';
 import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './runtime-info.js';
 import { startServer } from './server.js';
@@ -105,6 +106,10 @@ async function main(): Promise<void> {
   // previous process left behind — reconcile it before serving requests.
   const orphanedRuns = db.interruptOrphanedRuns('daemon restarted while the run was in flight');
   if (orphanedRuns > 0) log.warn(`interrupted ${orphanedRuns} orphaned run(s) left by a previous process`);
+  // Older daemons disabled tasks when their session disappeared. Tidy those
+  // dangling rows once at boot so the task list cannot show broken entries.
+  const orphanedTasks = db.deleteOrphanedScheduledTasks();
+  if (orphanedTasks > 0) log.warn(`deleted ${orphanedTasks} scheduled task(s) whose session no longer exists`);
   const registry = createRegistry();
 
   log.info('paboot daemon starting');
@@ -145,11 +150,14 @@ async function main(): Promise<void> {
     ),
     notifier,
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
+    mcpServerPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-server.js'),
   };
 
   // Register the execution driver for each runtime (argv and RPC alike) now
   // that the daemon services they depend on exist.
   registerRuntimeDrivers(registry, ctx);
+
+  const scheduler = new Scheduler(ctx);
 
   const server = startServer(ctx);
   printConnectInfo(config);
@@ -163,6 +171,7 @@ async function main(): Promise<void> {
       stopHeartbeat = startHeartbeat(config.dataDir);
       log.info(`runtime info: ${info.listen} (serverId ${info.serverId})`);
     }
+    scheduler.start();
   });
 
   // Until now a signal simply killed the process; now it also retracts the
@@ -173,6 +182,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     log.info(`${signal} received, shutting down`);
+    scheduler.stop();
     stopHeartbeat?.();
     clearRuntimeInfo(config.dataDir);
     lock.release();

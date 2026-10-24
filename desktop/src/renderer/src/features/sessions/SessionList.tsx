@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { bucketSessions, BUCKET_LABELS, type BucketId } from '../../store/sessionBuckets';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
@@ -43,11 +43,16 @@ export function SessionList({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [taskCollapsed, setTaskCollapsed] = useState(false);
   const { menu, open, close } = useContextMenu();
 
+  const isTaskRelated = (session: SessionDto): boolean =>
+    (session.scheduledTaskCount ?? 0) > 0 || session.purpose === 'task_config';
+  const taskSessions = useMemo(() => sessions.filter(isTaskRelated), [sessions]);
+  const normalSessions = useMemo(() => sessions.filter((session) => !isTaskRelated(session)), [sessions]);
   const buckets = useMemo(
-    () => bucketSessions({ sessions, needsInput: new Set(needsInput.keys()), failed }),
-    [sessions, needsInput, failed],
+    () => bucketSessions({ sessions: normalSessions, needsInput: new Set(needsInput.keys()), failed }),
+    [normalSessions, needsInput, failed],
   );
   const nonEmpty = buckets.filter((bucket) => bucket.sessions.length > 0);
 
@@ -81,6 +86,116 @@ export function SessionList({
     ];
   }
 
+  function renderRow(session: SessionDto): ReactNode {
+    const waiting = needsInput.get(session.id) ?? 0;
+    const identity = runtimeIdentity(session.runtime);
+    const isRenaming = renamingId === session.id;
+    const isConfirming = confirmingId === session.id;
+    const taskCount = session.scheduledTaskCount ?? 0;
+
+    return (
+      <div
+        key={session.id}
+        className={[
+          'session-row',
+          session.id === selectedId ? 'selected' : '',
+          session.running ? 'running' : '',
+          waiting > 0 ? 'waiting' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => onSelect(session.id)}
+        onContextMenu={(event) => open(event, menuFor(session))}
+      >
+        <span className="row-marker" />
+
+        <div className="session-info">
+          {isRenaming ? (
+            <input
+              className="session-rename"
+              autoFocus
+              defaultValue={session.title ?? ''}
+              onClick={(event) => event.stopPropagation()}
+              onBlur={(event) => {
+                setRenamingId(null);
+                const next = event.target.value.trim();
+                if (next && next !== session.title) onRename(session.id, next);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+                if (event.key === 'Escape') setRenamingId(null);
+              }}
+            />
+          ) : (
+            <div className="session-title">{session.title ?? '未命名会话'}</div>
+          )}
+          <div className="session-meta">
+            <span className="agent" style={{ color: identity.color }} title={identity.displayName}>
+              <RuntimeIcon id={session.runtime} size={11} />
+              {identity.displayName}
+            </span>
+            <span className="sep">·</span>
+            <span>{relativeTime(session.lastActiveAt)}</span>
+            {(taskCount > 0 || session.purpose === 'task_config') && (
+              <>
+                <span className="sep">·</span>
+                <span>⏰ {taskCount > 0 ? `${taskCount} 个定时任务` : '定时任务配置'}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {waiting > 0 && (
+          <span className="wait-badge" title={`${waiting} 个待审批请求`}>
+            {waiting}
+          </span>
+        )}
+        {waiting === 0 && session.running && <span className="pulse" />}
+
+        <div className="row-actions">
+          <button
+            className="icon-btn"
+            title="重命名"
+            onClick={(event) => {
+              event.stopPropagation();
+              setRenamingId(session.id);
+            }}
+          >
+            ✎
+          </button>
+          <button
+            className="icon-btn danger"
+            title="删除"
+            onClick={(event) => {
+              event.stopPropagation();
+              setConfirmingId(session.id);
+            }}
+          >
+            🗑
+          </button>
+        </div>
+
+        {isConfirming && (
+          <div className="row-confirm" onClick={(event) => event.stopPropagation()}>
+            <span>删除该会话？</span>
+            <button
+              className="btn tiny danger"
+              onClick={() => {
+                setConfirmingId(null);
+                onDelete(session.id);
+              }}
+            >
+              删除
+            </button>
+            <button className="btn tiny ghost" onClick={() => setConfirmingId(null)}>
+              取消
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {nonEmpty.map((bucket) => {
@@ -97,112 +212,25 @@ export function SessionList({
               <span className="bucket-count">{bucket.sessions.length}</span>
             </button>
 
-            {open_ &&
-              bucket.sessions.map((session) => {
-                const waiting = needsInput.get(session.id) ?? 0;
-                const identity = runtimeIdentity(session.runtime);
-                const isRenaming = renamingId === session.id;
-                const isConfirming = confirmingId === session.id;
-
-                return (
-                  <div
-                    key={session.id}
-                    className={[
-                      'session-row',
-                      session.id === selectedId ? 'selected' : '',
-                      session.running ? 'running' : '',
-                      waiting > 0 ? 'waiting' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    onClick={() => onSelect(session.id)}
-                    onContextMenu={(event) => open(event, menuFor(session))}
-                  >
-                    <span className="row-marker" />
-
-                    <div className="session-info">
-                      {isRenaming ? (
-                        <input
-                          className="session-rename"
-                          autoFocus
-                          defaultValue={session.title ?? ''}
-                          onClick={(event) => event.stopPropagation()}
-                          onBlur={(event) => {
-                            setRenamingId(null);
-                            const next = event.target.value.trim();
-                            if (next && next !== session.title) onRename(session.id, next);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') event.currentTarget.blur();
-                            if (event.key === 'Escape') setRenamingId(null);
-                          }}
-                        />
-                      ) : (
-                        <div className="session-title">{session.title ?? '未命名会话'}</div>
-                      )}
-                      <div className="session-meta">
-                        <span className="agent" style={{ color: identity.color }} title={identity.displayName}>
-                          <RuntimeIcon id={session.runtime} size={11} />
-                          {identity.displayName}
-                        </span>
-                        <span className="sep">·</span>
-                        <span>{relativeTime(session.lastActiveAt)}</span>
-                      </div>
-                    </div>
-
-                    {waiting > 0 && (
-                      <span className="wait-badge" title={`${waiting} 个待审批请求`}>
-                        {waiting}
-                      </span>
-                    )}
-                    {waiting === 0 && session.running && <span className="pulse" />}
-
-                    <div className="row-actions">
-                      <button
-                        className="icon-btn"
-                        title="重命名"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setRenamingId(session.id);
-                        }}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        className="icon-btn danger"
-                        title="删除"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setConfirmingId(session.id);
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-
-                    {isConfirming && (
-                      <div className="row-confirm" onClick={(event) => event.stopPropagation()}>
-                        <span>删除该会话？</span>
-                        <button
-                          className="btn tiny danger"
-                          onClick={() => {
-                            setConfirmingId(null);
-                            onDelete(session.id);
-                          }}
-                        >
-                          删除
-                        </button>
-                        <button className="btn tiny ghost" onClick={() => setConfirmingId(null)}>
-                          取消
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            {open_ && bucket.sessions.map(renderRow)}
           </section>
         );
       })}
+
+      {taskSessions.length > 0 && (
+        <section className="bucket">
+          <button
+            className={`bucket-head${taskCollapsed ? ' collapsed' : ''}`}
+            onClick={() => setTaskCollapsed((value) => !value)}
+            title={taskCollapsed ? '展开' : '折叠'}
+          >
+            <span className="chevron">{taskCollapsed ? '▸' : '▾'}</span>
+            <span className="bucket-label">定时任务</span>
+            <span className="bucket-count">{taskSessions.length}</span>
+          </button>
+          {!taskCollapsed && taskSessions.map(renderRow)}
+        </section>
+      )}
 
       <ContextMenu menu={menu} onClose={close} />
     </>

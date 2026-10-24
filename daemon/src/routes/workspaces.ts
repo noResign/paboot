@@ -251,16 +251,19 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const cascade = req.query.cascade === '1' || req.query.cascade === 'true';
-    const sessions = ctx.db.listSessions(workspace.id);
-    if (sessions.length > 0 && !cascade) {
+    // Hidden command-task sessions are internal bookkeeping: they should never
+    // block deleting a workspace and must be cleaned up along with it.
+    const visibleSessions = ctx.db.listSessions(workspace.id);
+    if (visibleSessions.length > 0 && !cascade) {
       res.status(409).json({
-        error: `workspace still has ${sessions.length} session(s)`,
+        error: `workspace still has ${visibleSessions.length} session(s)`,
         code: 'workspace_not_empty',
-        sessionCount: sessions.length,
+        sessionCount: visibleSessions.length,
       });
       return;
     }
-    for (const session of sessions) {
+    const allSessions = ctx.db.listAllSessions(workspace.id);
+    for (const session of allSessions) {
       // 先取消在跑的 run：否则子进程会被遗留，且它退出时还会往已删的 run 写事件。
       for (const active of listActiveRuns()) {
         const row = ctx.db.getRun(active.id);
@@ -270,7 +273,10 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       ctx.permissions.clearSession(session.id);
     }
     ctx.db.deleteWorkspace(workspace.id);
-    ctx.db.audit('delete_workspace', JSON.stringify({ id: workspace.id, cascade, sessions: sessions.length }));
-    res.json({ ok: true, id: workspace.id, deletedSessions: sessions.length });
+    ctx.db.audit(
+      'delete_workspace',
+      JSON.stringify({ id: workspace.id, cascade, sessions: visibleSessions.length }),
+    );
+    res.json({ ok: true, id: workspace.id, deletedSessions: visibleSessions.length });
   });
 }
