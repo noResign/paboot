@@ -10,7 +10,9 @@
 - `command` 任务：在工作区根目录执行一条固定 shell 命令，不进行 AI 对话。
 
 一个任务**最终拥有一个会话**。绑定已有会话时始终 resume 它；`session_mode='new'` 时首次触发创建会话并把
-`session_id` 写回任务，之后不再创建新会话。
+`session_id` 写回任务，之后不再创建新会话。绑定可以通过编辑任务重新指定（见 §4），下一次触发生效；
+正在跑的 run 不受影响。绑定了会话时 runtime 以**会话**为准（改绑到另一种 runtime 的会话时，
+任务的 `runtime`/`model` 会同步过去，调度器也按 `session.runtime` 选 driver）。
 
 ## 2. 调度语义
 
@@ -61,7 +63,7 @@
 | `GET /api/scheduled-tasks?workspaceId=&sessionId=` | 任务列表 |
 | `POST /api/scheduled-tasks` | 创建（AI 绑定已有/新建会话；命令绑定工作区） |
 | `GET /api/scheduled-tasks/:id` | 任务 + 最近 20 条 run |
-| `PATCH /api/scheduled-tasks/:id` | 改名 / prompt / command / schedule / enabled |
+| `PATCH /api/scheduled-tasks/:id` | 改名 / prompt / command / schedule / enabled / 目标会话（`target`） |
 | `DELETE /api/scheduled-tasks/:id` | 删除；命令任务连带删除隐藏会话 |
 | `POST /api/scheduled-tasks/:id/run-now` | 立即运行（不推进计划） |
 | `POST /api/scheduled-tasks/config-session` | 打开/创建 AI 配置会话并起一条配置 run；返回 `{sessionId, runId, busy}` |
@@ -89,6 +91,9 @@
   目标由 daemon 解析/校验，agent 不能跨工作区指定。
 - `list_sessions` 返回当前 workspace 的会话（id/标题/cwd/runtime），供 agent 让用户选择已有会话。
 - 手工创建入口已移除；已有任务仍可 `PATCH /api/scheduled-tasks/:id` 手动编辑名称/内容/计划/启停。
+- **改绑会话**：`PATCH` 的 `target` 支持 `{ mode: 'existing', sessionId }`（目标会话必须在任务的
+  workspace 内、`kind='chat'`；同时同步 runtime/model）和 `{ mode: 'new' }`（清空 `session_id`，
+  下次触发创建新会话，旧会话保留）。`command` 任务不允许改绑。下一次触发生效。
 
 ## 5. AI 自建任务（通用 MCP 工具桥）
 

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { api } from '../../ipc/client';
 import { useScheduledTasks } from '../../store/scheduledTasks';
 import type {
   RunDto,
   ScheduleInput,
   SchedulePresetKind,
   ScheduledTaskDto,
+  SessionDto,
   UpdateScheduledTaskRequest,
 } from '../../../../shared/contract';
 
@@ -388,6 +390,8 @@ interface EditorProps {
 
 function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps) {
   const update = useScheduledTasks((state) => state.update);
+  const [targetSessionId, setTargetSessionId] = useState<string | null>(task.sessionId);
+  const [targetSessions, setTargetSessions] = useState<SessionDto[] | null>(null);
   const presetDto = task.schedule.preset;
   const [name, setName] = useState(task.name);
   const [prompt, setPrompt] = useState(task.prompt ?? '');
@@ -401,6 +405,25 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
   const [error, setError] = useState<string | null>(null);
   // Raw-cron tasks have no preset metadata; keep their schedule untouched.
   const scheduleEditable = presetDto != null;
+
+  // Fetch locally instead of the sessions store: that store backs the rail and
+  // must not be repointed at another workspace by opening a task editor.
+  useEffect(() => {
+    if (task.type !== 'ai') return;
+    let cancelled = false;
+    setTargetSessions(null);
+    void (async () => {
+      const response = await api.sessions(task.workspaceId);
+      if (cancelled) return;
+      // The reusable task-authoring chat is not a meaningful target.
+      setTargetSessions(
+        response.ok ? response.data.sessions.filter((session) => session.purpose == null) : [],
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [task.type, task.workspaceId]);
 
   function buildSchedule(): ScheduleInput {
     if (preset === 'every_minutes' || preset === 'every_hours') return { preset, every };
@@ -426,10 +449,16 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
       setError('请至少选择一个星期');
       return;
     }
+    // Only rewrite the binding when the user actually changed it.
+    const targetChanged = task.type === 'ai' && targetSessionId !== task.sessionId;
+    const target: NonNullable<UpdateScheduledTaskRequest['target']> = targetSessionId
+      ? { mode: 'existing', sessionId: targetSessionId }
+      : { mode: 'new' };
     const patch: UpdateScheduledTaskRequest = {
       name: name.trim(),
       ...(task.type === 'ai' ? { prompt: prompt.trim() } : { command: command.trim() }),
       ...(scheduleEditable ? { schedule: buildSchedule() } : {}),
+      ...(targetChanged ? { target } : {}),
     };
     const result = await update(connectionId, task.id, patch);
     if (!result.ok) {
@@ -438,11 +467,6 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
     }
     await onSaved(result.task);
   }
-
-  const targetText =
-    task.type === 'command'
-      ? '当前工作区'
-      : task.sessionTitle ?? (task.sessionMode === 'new' ? '首次触发时新建会话' : task.sessionId ?? '未知');
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -456,13 +480,34 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
 
         <div className="task-form">
           <div className="task-meta">
-            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · 目标：{targetText} · 完全权限
+            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · 完全权限
           </div>
 
           <div className="field">
             <label>名称</label>
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </div>
+
+          {task.type === 'ai' && (
+            <div className="field">
+              <label>目标会话</label>
+              <select
+                value={targetSessionId ?? ''}
+                onChange={(event) => setTargetSessionId(event.target.value || null)}
+              >
+                <option value="">下次运行新建会话</option>
+                {targetSessionId && !(targetSessions ?? []).some((session) => session.id === targetSessionId) && (
+                  <option value={targetSessionId}>{task.sessionTitle ?? targetSessionId}</option>
+                )}
+                {(targetSessions ?? []).map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {(session.title?.trim() || session.cwd) + ' · ' + session.runtime}
+                  </option>
+                ))}
+              </select>
+              {targetSessions == null && <div className="task-meta">正在加载会话…</div>}
+            </div>
+          )}
 
           <div className="field">
             <label>{task.type === 'command' ? '命令（在工作区根目录执行）' : 'Prompt'}</label>
@@ -524,7 +569,7 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
           )}
 
           <div className="task-warning">
-            修改从下一次触发开始生效；正在运行的 run 不受影响。
+            修改（含目标会话）从下一次触发开始生效；正在运行的 run 不受影响。
           </div>
 
           {error && <div className="task-warning">{error}</div>}

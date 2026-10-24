@@ -14,6 +14,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 class ScheduledTaskRepository(
     private val settings: SettingsStore = SettingsStore,
@@ -53,12 +54,25 @@ class ScheduledTaskRepository(
         id: String,
         draft: TaskDraft,
         scheduleEditable: Boolean,
+        retarget: Boolean = false,
     ): NetworkResult<ScheduledTaskDto> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         val body = buildJsonObject {
             put("name", draft.name)
             if (draft.type == "command") put("command", draft.command) else put("prompt", draft.prompt)
             if (scheduleEditable) put("schedule", scheduleJson(draft))
+            // Only when the binding actually changed; omitted means "leave it".
+            if (retarget) {
+                putJsonObject("target") {
+                    val sessionId = draft.sessionId
+                    if (sessionId != null) {
+                        put("mode", "existing")
+                        put("sessionId", sessionId)
+                    } else {
+                        put("mode", "new")
+                    }
+                }
+            }
         }
         return when (val r = safeApiCall { api.updateScheduledTask(id, body) }) {
             is NetworkResult.Success -> NetworkResult.Success(r.data.task)

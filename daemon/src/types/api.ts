@@ -460,6 +460,7 @@ export interface UpdateScheduledTaskRequest {
   command?: string;
   schedule?: ScheduleInput;
   enabled?: boolean;
+  target?: { mode: 'existing'; sessionId: string } | { mode: 'new' };
 }
 
 export interface RunNowResponse {

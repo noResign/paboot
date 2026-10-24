@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -60,6 +62,7 @@ import com.noresign.paboot.model.task.TaskDraft
 import com.noresign.paboot.network.daemon.dto.RunDto
 import com.noresign.paboot.network.daemon.dto.ScheduledTaskDetailResponse
 import com.noresign.paboot.network.daemon.dto.ScheduledTaskDto
+import com.noresign.paboot.network.daemon.dto.SessionDto
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.ScheduledTasksViewModel
@@ -89,6 +92,7 @@ fun TasksScreen(
     val submitting by viewModel.submitting.collectAsState()
     val startingConfig by viewModel.startingConfig.collectAsState()
     val editorError by viewModel.editorError.collectAsState()
+    val targetSessions by viewModel.targetSessions.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingTask by remember { mutableStateOf<ScheduledTaskDto?>(null) }
@@ -230,6 +234,8 @@ fun TasksScreen(
             task = task,
             submitting = submitting,
             error = editorError,
+            targetSessions = targetSessions,
+            onLoadTargetSessions = { viewModel.loadTargetSessions(task.workspaceId) },
             onDismiss = {
                 editingTask = null
                 viewModel.clearEditorError()
@@ -454,6 +460,8 @@ private fun TaskEditorSheet(
     task: ScheduledTaskDto,
     submitting: Boolean,
     error: String?,
+    targetSessions: List<SessionDto>?,
+    onLoadTargetSessions: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (TaskDraft, Boolean) -> Unit,
 ) {
@@ -464,6 +472,8 @@ private fun TaskEditorSheet(
     var name by remember { mutableStateOf(task.name) }
     var prompt by remember { mutableStateOf(task.prompt.orEmpty()) }
     var command by remember { mutableStateOf(task.command.orEmpty()) }
+    var targetSessionId by remember { mutableStateOf(task.sessionId) }
+    var targetPicker by remember { mutableStateOf(false) }
     var preset by remember { mutableStateOf(presetDto?.preset ?: "daily") }
     var time by remember { mutableStateOf(presetDto?.time ?: "09:00") }
     var days by remember { mutableStateOf(presetDto?.days ?: listOf(1)) }
@@ -473,6 +483,25 @@ private fun TaskEditorSheet(
     // Hoisted so adding/removing conditional fields (time / days / interval) does
     // not reset the scroll position while the user is editing lower fields.
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        if (task.type == "ai") onLoadTargetSessions()
+    }
+
+    // `targetSessionId` is backed by `remember`, so it cannot be smart-cast.
+    val currentTargetId = targetSessionId
+    val selectedSession = targetSessions?.firstOrNull { it.id == currentTargetId }
+    val targetLabel: String = if (currentTargetId == null) {
+        "下次运行新建会话"
+    } else {
+        when {
+            selectedSession != null ->
+                selectedSession.title?.takeIf { it.isNotBlank() } ?: selectedSession.cwd
+            currentTargetId == task.sessionId ->
+                task.sessionTitle?.takeIf { it.isNotBlank() } ?: currentTargetId
+            else -> currentTargetId
+        }
+    }
 
     fun submit() {
         val trimmed = name.trim()
@@ -490,8 +519,8 @@ private fun TaskEditorSheet(
                 type = task.type,
                 prompt = prompt.trim(),
                 command = command.trim(),
-                targetMode = "existing",
-                sessionId = task.sessionId,
+                targetMode = if (targetSessionId == null) "new" else "existing",
+                sessionId = targetSessionId,
                 runtime = task.runtime,
                 preset = preset,
                 time = time,
@@ -500,13 +529,6 @@ private fun TaskEditorSheet(
             ),
             scheduleEditable,
         )
-    }
-
-    val target = when {
-        task.type == "command" -> "当前工作区"
-        task.sessionTitle != null -> "会话：${task.sessionTitle}"
-        task.sessionMode == "new" -> "首次触发时新建会话"
-        else -> task.sessionId ?: "未知"
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -518,7 +540,7 @@ private fun TaskEditorSheet(
             item(key = "title") { Text("编辑定时任务", style = MaterialTheme.typography.titleLarge) }
             item(key = "meta") {
                 Text(
-                    "${if (task.type == "command") "命令任务" else "AI 会话任务"} · 目标：$target · 完全权限",
+                    "${if (task.type == "command") "命令任务" else "AI 会话任务"} · 完全权限",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -531,6 +553,23 @@ private fun TaskEditorSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
+            }
+            if (task.type == "ai") {
+                item(key = "target") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "目标会话",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = { targetPicker = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(targetLabel)
+                        }
+                    }
+                }
             }
             if (task.type == "command") {
                 item(key = "command") {
@@ -618,7 +657,7 @@ private fun TaskEditorSheet(
             }
             item(key = "note") {
                 Text(
-                    "修改从下一次触发开始生效；正在运行的 run 不受影响。",
+                    "修改（含目标会话）从下一次触发开始生效；正在运行的 run 不受影响。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -635,6 +674,92 @@ private fun TaskEditorSheet(
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (submitting) "保存中…" else "保存") }
             }
+        }
+    }
+
+    if (targetPicker) {
+        AlertDialog(
+            onDismissRequest = { targetPicker = false },
+            title = { Text("目标会话") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    item(key = "new") {
+                        TargetOptionRow(
+                            title = "下次运行新建会话",
+                            subtitle = "首次触发时创建，之后一直复用",
+                            selected = targetSessionId == null,
+                        ) {
+                            targetSessionId = null
+                            targetPicker = false
+                        }
+                    }
+                    val sessions = targetSessions
+                    when {
+                        sessions == null -> item(key = "loading") {
+                            Text(
+                                "正在加载会话…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        sessions.isEmpty() -> item(key = "empty") {
+                            Text(
+                                "当前工作区还没有会话",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        else -> items(sessions, key = { it.id }) { session ->
+                            TargetOptionRow(
+                                title = session.title?.takeIf { it.isNotBlank() } ?: session.cwd,
+                                subtitle = "${session.runtime} · ${session.cwd}",
+                                selected = targetSessionId == session.id,
+                            ) {
+                                targetSessionId = session.id
+                                targetPicker = false
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { targetPicker = false }) { Text("关闭") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun TargetOptionRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (selected) {
+            Icon(
+                Icons.Rounded.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

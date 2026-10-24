@@ -23,6 +23,7 @@ interface Harness {
   sessionId: string;
   workspaceId: string;
   starts: RuntimeDriverRequest[];
+  codexStarts: RuntimeDriverRequest[];
 }
 
 async function setup(): Promise<Harness> {
@@ -37,24 +38,36 @@ async function setup(): Promise<Harness> {
     cwd: workspace.path,
   });
   const starts: RuntimeDriverRequest[] = [];
+  const codexStarts: RuntimeDriverRequest[] = [];
+  const run = (req: RuntimeDriverRequest) => ({
+    id: req.runId,
+    promise: Promise.resolve({ status: 'succeeded' as const, exitCode: 0, error: null }),
+    cancel: () => {},
+  });
   const driver: RuntimeDriver = {
     id: 'claude',
     start(req) {
       starts.push(req);
-      return {
-        id: req.runId,
-        promise: Promise.resolve({ status: 'succeeded', exitCode: 0, error: null }),
-        cancel: () => {},
-      };
+      return run(req);
+    },
+  };
+  const codexDriver: RuntimeDriver = {
+    id: 'codex',
+    start(req) {
+      codexStarts.push(req);
+      return run(req);
     },
   };
   const ctx = {
     db,
     registry: {
-      driver: (id: string) => (id === 'claude' ? driver : undefined),
+      driver: (id: string) => (id === 'claude' ? driver : id === 'codex' ? codexDriver : undefined),
       detection: () => ({ available: true }),
       detect: async () => ({ available: true }),
-      list: () => [{ id: 'claude', name: 'Claude Code', bin: 'claude' }],
+      list: () => [
+        { id: 'claude', name: 'Claude Code', bin: 'claude' },
+        { id: 'codex', name: 'Codex', bin: 'codex' },
+      ],
     },
     permissions: new PermissionManager(),
     notifier: new RunNotifier(),
@@ -69,7 +82,7 @@ async function setup(): Promise<Harness> {
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { db, base, sessionId: session.id, workspaceId: workspace.id, starts };
+  return { db, base, sessionId: session.id, workspaceId: workspace.id, starts, codexStarts };
 }
 
 async function json(response: Response): Promise<any> {
@@ -195,6 +208,137 @@ describe('scheduled task routes', () => {
     });
     expect(rejected.status).toBe(404);
     expect(await json(rejected)).toMatchObject({ code: 'task_not_found' });
+  });
+
+  it('retargets an AI task to another session, including another runtime', async () => {
+    const h = await setup();
+    const body = await json(
+      await fetch(`${h.base}/api/scheduled-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(aiBody(h.sessionId)),
+      }),
+    );
+    const id = body.task.id;
+    h.db.createSession({
+      id: 'session-codex',
+      runtime: 'codex',
+      workspaceId: h.workspaceId,
+      permissionMode: 'ask',
+      cwd: '/tmp/paboot-routes',
+      model: 'gpt-5-codex',
+    });
+
+    const patched = await json(
+      await fetch(`${h.base}/api/scheduled-tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: { mode: 'existing', sessionId: 'session-codex' } }),
+      }),
+    );
+    expect(patched.task).toMatchObject({
+      sessionId: 'session-codex',
+      sessionMode: 'existing',
+      runtime: 'codex',
+    });
+    expect(h.db.getScheduledTask(id)).toMatchObject({
+      session_id: 'session-codex',
+      session_mode: 'existing',
+      runtime: 'codex',
+      model: 'gpt-5-codex',
+    });
+
+    // The next fire resumes the new session with its own runtime's driver.
+    const result = await json(
+      await fetch(`${h.base}/api/scheduled-tasks/${id}/run-now`, { method: 'POST' }),
+    );
+    await vi.waitFor(() => expect(h.codexStarts).toHaveLength(1));
+    expect(h.codexStarts[0].sessionId).toBe('session-codex');
+    expect(h.starts).toHaveLength(0);
+    expect(result.sessionId).toBe('session-codex');
+  });
+
+  it('unbinds a task so the next fire creates a fresh session', async () => {
+    const h = await setup();
+    const body = await json(
+      await fetch(`${h.base}/api/scheduled-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(aiBody(h.sessionId)),
+      }),
+    );
+    const id = body.task.id;
+
+    const patched = await json(
+      await fetch(`${h.base}/api/scheduled-tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: { mode: 'new' } }),
+      }),
+    );
+    expect(patched.task).toMatchObject({ sessionId: null, sessionMode: 'new' });
+
+    const result = await json(
+      await fetch(`${h.base}/api/scheduled-tasks/${id}/run-now`, { method: 'POST' }),
+    );
+    await vi.waitFor(() => expect(h.starts).toHaveLength(1));
+    const task = h.db.getScheduledTask(id)!;
+    expect(task.session_id).not.toBeNull();
+    expect(task.session_id).not.toBe(h.sessionId);
+    expect(result.sessionId).toBe(task.session_id);
+    expect(h.starts[0].sessionId).toBe(task.session_id);
+    // The previous session is left alone, not deleted.
+    expect(h.db.getSession(h.sessionId)).toBeDefined();
+  });
+
+  it('rejects retargeting outside the workspace or for command tasks', async () => {
+    const h = await setup();
+    const body = await json(
+      await fetch(`${h.base}/api/scheduled-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(aiBody(h.sessionId)),
+      }),
+    );
+    const id = body.task.id;
+    const other = h.db.createWorkspace({ name: 'other', path: '/tmp/paboot-other' });
+    h.db.createSession({
+      id: 'other-session',
+      runtime: 'claude',
+      workspaceId: other.id,
+      permissionMode: 'ask',
+      cwd: other.path,
+    });
+
+    const crossing = await fetch(`${h.base}/api/scheduled-tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: { mode: 'existing', sessionId: 'other-session' } }),
+    });
+    expect(crossing.status).toBe(400);
+    expect(await json(crossing)).toMatchObject({ code: 'workspace_mismatch' });
+    expect(h.db.getScheduledTask(id)?.session_id).toBe(h.sessionId);
+
+    const command = await json(
+      await fetch(`${h.base}/api/scheduled-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'nightly',
+          type: 'command',
+          command: 'printf hi',
+          target: { mode: 'workspace', workspaceId: h.workspaceId },
+          schedule: { preset: 'every_hours', every: 6, timezone: 'Asia/Shanghai' },
+        }),
+      }),
+    );
+    const rejected = await fetch(`${h.base}/api/scheduled-tasks/${command.task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: { mode: 'new' } }),
+    });
+    expect(rejected.status).toBe(400);
+    expect(await json(rejected)).toMatchObject({ code: 'bad_request' });
   });
 
   it('runs a task immediately without advancing its schedule', async () => {

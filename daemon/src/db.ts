@@ -1154,6 +1154,10 @@ export class Db {
       lastFireAt?: number | null;
       lastRunAt?: number | null;
       lastRunId?: string | null;
+      sessionId?: string | null;
+      sessionMode?: string;
+      runtime?: string;
+      model?: string | null;
     },
   ): void {
     const sets: string[] = [];
@@ -1169,6 +1173,10 @@ export class Db {
     if (update.timezone !== undefined) set('timezone', update.timezone);
     if (update.schedulePreset !== undefined) set('schedule_preset', update.schedulePreset);
     if (update.nextRunAt !== undefined) set('next_run_at', update.nextRunAt);
+    if (update.sessionId !== undefined) set('session_id', update.sessionId);
+    if (update.sessionMode !== undefined) set('session_mode', update.sessionMode);
+    if (update.runtime !== undefined) set('runtime', update.runtime);
+    if (update.model !== undefined) set('model', update.model);
     if (update.enabled !== undefined) {
       set('enabled', update.enabled ? 1 : 0);
       if (!update.enabled) set('next_run_at', null);

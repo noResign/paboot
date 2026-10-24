@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.data.repository.ScheduledTaskRepository
+import com.noresign.paboot.data.repository.SessionRepository
 import com.noresign.paboot.model.task.TaskDraft
 import com.noresign.paboot.network.daemon.dto.ScheduledTaskDetailResponse
 import com.noresign.paboot.network.daemon.dto.ScheduledTaskDto
+import com.noresign.paboot.network.daemon.dto.SessionDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.util.friendlyError
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,10 +23,15 @@ sealed class TasksUiState {
 
 class ScheduledTasksViewModel(
     private val repository: ScheduledTaskRepository = ScheduledTaskRepository(),
+    private val sessionRepository: SessionRepository = SessionRepository(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<TasksUiState>(TasksUiState.Loading)
     val uiState = _uiState.asStateFlow()
+
+    /** Candidate sessions for retargeting an AI task; `null` while loading. */
+    private val _targetSessions = MutableStateFlow<List<SessionDto>?>(null)
+    val targetSessions = _targetSessions.asStateFlow()
 
     private val _detail = MutableStateFlow<ScheduledTaskDetailResponse?>(null)
     val detail = _detail.asStateFlow()
@@ -131,6 +138,19 @@ class ScheduledTasksViewModel(
         }
     }
 
+    fun loadTargetSessions(workspaceId: String) {
+        _targetSessions.value = null
+        viewModelScope.launch {
+            when (val r = sessionRepository.listSessions(workspaceId)) {
+                is NetworkResult.Success -> {
+                    // The reusable task-authoring chat is not a meaningful target.
+                    _targetSessions.value = r.data.filter { it.purpose == null }
+                }
+                is NetworkResult.Error -> _targetSessions.value = emptyList()
+            }
+        }
+    }
+
     fun updateTask(
         task: ScheduledTaskDto,
         draft: TaskDraft,
@@ -140,9 +160,12 @@ class ScheduledTasksViewModel(
         if (_submitting.value) return
         _submitting.value = true
         _editorError.value = null
+        // `null` means "next fire creates a session"; compare the desired
+        // binding with the current one so an unrelated edit does not rewrite it.
+        val retarget = task.type == "ai" && draft.sessionId != task.sessionId
         viewModelScope.launch {
             try {
-                when (val r = repository.update(task.id, draft, scheduleEditable)) {
+                when (val r = repository.update(task.id, draft, scheduleEditable, retarget)) {
                     is NetworkResult.Success -> {
                         onSuccess()
                         refetchQuietly()

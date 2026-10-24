@@ -140,14 +140,16 @@ final class ScheduledTasksViewModel {
     func update(
         taskId: String,
         draft: TaskDraft,
-        scheduleEditable: Bool
+        scheduleEditable: Bool,
+        target: ScheduledTaskTargetInput? = nil
     ) async -> Bool {
         let schedule: SchedulePresetInput? = scheduleEditable ? Self.scheduleInput(draft) : nil
         let body = UpdateScheduledTaskRequest(
             name: draft.name,
             prompt: draft.type == "ai" ? draft.prompt : nil,
             command: draft.type == "command" ? draft.command : nil,
-            schedule: schedule
+            schedule: schedule,
+            target: target
         )
         do {
             _ = try await repository.update(id: taskId, body: body)

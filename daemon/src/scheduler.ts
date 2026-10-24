@@ -214,17 +214,21 @@ async function fireInner(ctx: AppContext, taskId: string, mode: FireMode, now: n
     return fail('missing_prompt', 'task has no prompt/command');
   }
 
-  const driver = ctx.registry.driver(task.runtime);
+  // The session is the source of truth once bound: a task can be retargeted to
+  // a session of another runtime, and resuming it with the task's stale runtime
+  // would hand a Codex thread id to Claude (or vice versa).
+  const runtimeId = session.runtime;
+  const driver = ctx.registry.driver(runtimeId);
   if (!driver) {
-    ctx.db.recordScheduledTaskResult(task.id, 'failed', `unknown runtime: ${task.runtime}`);
-    return fail('failed', `unknown runtime: ${task.runtime}`);
+    ctx.db.recordScheduledTaskResult(task.id, 'failed', `unknown runtime: ${runtimeId}`);
+    return fail('failed', `unknown runtime: ${runtimeId}`);
   }
   if (driver.requiresDetection !== false) {
     const detection =
-      ctx.registry.detection(task.runtime) ?? (await ctx.registry.detect(task.runtime, process.env));
+      ctx.registry.detection(runtimeId) ?? (await ctx.registry.detect(runtimeId, process.env));
     if (!detection?.available) {
-      ctx.db.recordScheduledTaskResult(task.id, 'failed', `runtime not available: ${task.runtime}`);
-      return fail('runtime_unavailable', `runtime not available: ${task.runtime}`);
+      ctx.db.recordScheduledTaskResult(task.id, 'failed', `runtime not available: ${runtimeId}`);
+      return fail('runtime_unavailable', `runtime not available: ${runtimeId}`);
     }
   }
 

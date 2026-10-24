@@ -636,12 +636,76 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
       }
     }
 
+    // Retargeting only changes where the NEXT fire runs. A live run keeps the
+    // session it already started with.
+    let retarget:
+      | {
+          sessionId: string | null;
+          sessionMode: 'existing' | 'new';
+          runtime?: string;
+          model?: string | null;
+        }
+      | undefined;
+    if (body.target !== undefined) {
+      if (task.task_type === 'command') {
+        sendError(res, 400, 'bad_request', 'command tasks cannot be retargeted');
+        return;
+      }
+      const target = body.target as LooseTarget | undefined;
+      if (!target || typeof target !== 'object') {
+        sendError(res, 400, 'bad_request', 'target must be an object');
+        return;
+      }
+      if (target.mode === 'existing') {
+        const sessionId = typeof target.sessionId === 'string' ? target.sessionId : '';
+        const session = sessionId ? ctx.db.getSession(sessionId) : undefined;
+        if (!session || session.kind !== 'chat') {
+          sendError(res, 404, 'session_not_found', 'target session not found');
+          return;
+        }
+        if (session.workspace_id !== task.workspace_id) {
+          sendError(res, 400, 'workspace_mismatch', 'target session belongs to another workspace');
+          return;
+        }
+        const workspace = ctx.db.getWorkspace(task.workspace_id);
+        if (!workspace) {
+          sendError(res, 409, 'workspace_deleted', 'workspace no longer exists');
+          return;
+        }
+        if (!workspaceContains(workspace.path, session.cwd)) {
+          sendError(res, 400, 'cwd_not_allowed', 'target session cwd is outside the workspace');
+          return;
+        }
+        retarget = {
+          sessionId: session.id,
+          sessionMode: 'existing',
+          // The bound session is the source of truth for how it must be resumed:
+          // keep the task row's runtime/model in sync with it.
+          runtime: session.runtime,
+          model: normalizeModel(session.model) ?? null,
+        };
+      } else if (target.mode === 'new') {
+        retarget = { sessionId: null, sessionMode: 'new' };
+      } else {
+        sendError(res, 400, 'bad_request', 'target.mode must be existing or new');
+        return;
+      }
+    }
+
     ctx.db.updateScheduledTask(task.id, {
       ...(name !== undefined ? { name } : {}),
       ...(task.task_type === 'command' ? { command } : { prompt }),
       ...(scheduleChanged ? { cronExpr: cron, timezone, schedulePreset } : {}),
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
       ...(body.enabled === true || (scheduleChanged && task.enabled === 1) ? { nextRunAt: next } : {}),
+      ...(retarget
+        ? {
+            sessionId: retarget.sessionId,
+            sessionMode: retarget.sessionMode,
+            ...(retarget.runtime !== undefined ? { runtime: retarget.runtime } : {}),
+            ...(retarget.model !== undefined ? { model: retarget.model } : {}),
+          }
+        : {}),
     });
     ctx.db.audit('scheduled_task_update', JSON.stringify({ id: task.id, fields: Object.keys(body) }));
     res.json({ ok: true, task: scheduledTaskDto(ctx, ctx.db.getScheduledTask(task.id) as ScheduledTaskRow) });

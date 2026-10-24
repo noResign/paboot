@@ -479,6 +479,10 @@ final class TaskEditorViewController: UIViewController {
     private let presetButton = UIButton(type: .system)
     private let contentLabel = UILabel()
     private let contentTextView = UITextView()
+    private let targetButton = UIButton(type: .system)
+    private var targetMode: String
+    private var targetSessionId: String?
+    private var targetTitle: String
     private let timePicker = UIDatePicker()
     private let everyField = UITextField()
     private let daysStack = UIStackView()
@@ -510,6 +514,13 @@ final class TaskEditorViewController: UIViewController {
         self.scheduleEditable = presetDto != nil
         self.preset = presetDto?.preset ?? "daily"
         self.selectedDays = Set(presetDto?.days ?? [1])
+        // A "new" task that has already fired has a bound session; the binding,
+        // not the creation mode, is what the scheduler resumes.
+        self.targetMode = task.sessionId == nil ? "new" : "existing"
+        self.targetSessionId = task.sessionId
+        self.targetTitle = task.sessionTitle.flatMap { $0.isEmpty ? nil : $0 }
+            ?? task.sessionId
+            ?? "首次触发时新建会话"
 
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -577,21 +588,20 @@ final class TaskEditorViewController: UIViewController {
         metaLabel.font = Typography.caption
         metaLabel.textColor = Theme.Colors.textMuted
         metaLabel.numberOfLines = 0
-        let target: String
-        if task.type == "command" {
-            target = "当前工作区"
-        } else if let title = task.sessionTitle {
-            target = "会话：\(title)"
-        } else if task.sessionMode == "new" {
-            target = "首次触发时新建会话"
-        } else {
-            target = task.sessionId ?? "未知"
-        }
-        metaLabel.text = "\(task.type == "command" ? "命令任务" : "AI 会话任务") · 目标：\(target) · 完全权限"
+        metaLabel.text = "\(task.type == "command" ? "命令任务" : "AI 会话任务") · 完全权限"
 
         nameField.borderStyle = .roundedRect
         nameField.font = Typography.body
         nameField.text = task.name
+
+        targetButton.contentHorizontalAlignment = .leading
+        targetButton.titleLabel?.font = Typography.body
+        targetButton.setTitleColor(Theme.Colors.primary, for: .normal)
+        targetButton.addAction(
+            UIAction { [weak self] _ in self?.presentTargetPicker() },
+            for: .touchUpInside
+        )
+        updateTargetButton()
 
         presetButton.contentHorizontalAlignment = .leading
         presetButton.showsMenuAsPrimaryAction = true
@@ -638,7 +648,7 @@ final class TaskEditorViewController: UIViewController {
         noteLabel.font = Typography.caption
         noteLabel.textColor = Theme.Colors.textSecondary
         noteLabel.numberOfLines = 0
-        noteLabel.text = "修改从下一次触发开始生效；正在运行的 run 不受影响。"
+        noteLabel.text = "修改（含目标会话）从下一次触发开始生效；正在运行的 run 不受影响。"
 
         errorLabel.font = Typography.caption
         errorLabel.textColor = Theme.Colors.error
@@ -652,13 +662,48 @@ final class TaskEditorViewController: UIViewController {
         saveButton.configuration = saveConfiguration
         saveButton.addAction(UIAction { [weak self] _ in self?.saveTapped() }, for: .touchUpInside)
 
-        [
-            metaLabel,
-            makeCaption("名称"), nameField,
+        var fields: [UIView] = [metaLabel, makeCaption("名称"), nameField]
+        if task.type == "ai" {
+            fields.append(makeCaption("目标会话"))
+            fields.append(targetButton)
+        }
+        fields.append(contentsOf: [
             contentLabel, contentTextView,
             makeCaption("计划"), presetButton, timePicker, daysStack, everyField,
             cronLabel, noteLabel, errorLabel, saveButton,
-        ].forEach { stack.addArrangedSubview($0) }
+        ])
+        fields.forEach { stack.addArrangedSubview($0) }
+    }
+
+    private func updateTargetButton() {
+        let title = targetMode == "new" ? "下次运行新建会话" : "会话：\(targetTitle)"
+        targetButton.setTitle("\(title)  ›", for: .normal)
+    }
+
+    private func presentTargetPicker() {
+        let picker = TargetSessionPickerViewController(
+            workspaceId: task.workspaceId,
+            selectedSessionId: targetMode == "existing" ? targetSessionId : nil,
+            newSelected: targetMode == "new"
+        )
+        picker.onSelect = { [weak self] mode, session in
+            guard let self else { return }
+            self.targetMode = mode
+            self.targetSessionId = session?.id
+            if let session {
+                self.targetTitle = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? session.cwd
+            } else {
+                self.targetTitle = "首次触发时新建会话"
+            }
+            self.updateTargetButton()
+        }
+        let navigation = UINavigationController(rootViewController: picker)
+        navigation.modalPresentationStyle = .pageSheet
+        if let sheet = navigation.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
     }
 
     private func rebuildMenus() {
@@ -712,13 +757,32 @@ final class TaskEditorViewController: UIViewController {
         if scheduleEditable && preset == "weekly" && selectedDays.isEmpty {
             return showError("请至少选择一个星期")
         }
+        if isAI && targetMode == "existing" && targetSessionId == nil {
+            return showError("请选择目标会话")
+        }
+
+        // Only send `target` when the binding actually changed; otherwise the
+        // server would rewrite runtime/model on every save.
+        let currentMode = task.sessionId == nil ? "new" : "existing"
+        let targetChanged = isAI
+            && (targetMode != currentMode
+                || (targetMode == "existing" && targetSessionId != task.sessionId))
+        let target: ScheduledTaskTargetInput?
+        if !targetChanged {
+            target = nil
+        } else if targetMode == "existing", let sessionId = targetSessionId {
+            target = ScheduledTaskTargetInput(mode: "existing", sessionId: sessionId)
+        } else {
+            target = ScheduledTaskTargetInput(mode: "new")
+        }
+
         let draft = TaskDraft(
             name: name,
             type: task.type,
             prompt: isAI ? content : "",
             command: isAI ? "" : content,
-            targetMode: "existing",
-            sessionId: task.sessionId,
+            targetMode: targetMode,
+            sessionId: targetSessionId,
             runtime: task.runtime,
             preset: preset,
             time: timeFormatter.string(from: timePicker.date),
@@ -730,7 +794,8 @@ final class TaskEditorViewController: UIViewController {
             let saved = await viewModel.update(
                 taskId: task.id,
                 draft: draft,
-                scheduleEditable: scheduleEditable
+                scheduleEditable: scheduleEditable,
+                target: target
             )
             saveButton.isEnabled = true
             if saved {
@@ -750,5 +815,95 @@ final class TaskEditorViewController: UIViewController {
         label.font = Typography.caption
         label.textColor = Theme.Colors.textSecondary
         return label
+    }
+}
+
+/// Picks the session a scheduled AI task runs in. Selecting "new session"
+/// unbinds the task so the next fire creates one.
+private final class TargetSessionPickerViewController: UITableViewController {
+    private let workspaceId: String
+    private let selectedSessionId: String?
+    private let newSelected: Bool
+    private var sessions: [SessionDto] = []
+    private var loading = true
+    var onSelect: ((String, SessionDto?) -> Void)?
+
+    init(workspaceId: String, selectedSessionId: String?, newSelected: Bool) {
+        self.workspaceId = workspaceId
+        self.selectedSessionId = selectedSessionId
+        self.newSelected = newSelected
+        super.init(style: .insetGrouped)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Theme.Colors.background
+        title = "目标会话"
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped)
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            let sessions = (try? await SessionRepository().loadSessions(workspaceId: workspaceId)) ?? []
+            guard !Task.isCancelled else { return }
+            // The reusable task-authoring chat is not a meaningful target.
+            self.sessions = sessions.filter { $0.purpose == nil }
+            self.loading = false
+            self.tableView.reloadData()
+        }
+    }
+
+    @objc private func cancelTapped() {
+        dismiss(animated: true)
+    }
+
+    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        section == 0 ? "运行方式" : "已有会话"
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        section == 0 ? 1 : (loading ? 1 : sessions.count)
+    }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        cell.backgroundColor = Theme.Colors.surface
+        cell.textLabel?.font = Typography.body
+        cell.textLabel?.textColor = Theme.Colors.textPrimary
+        cell.detailTextLabel?.font = Typography.caption
+        cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
+
+        if indexPath.section == 0 {
+            cell.textLabel?.text = "下次运行新建会话"
+            cell.detailTextLabel?.text = "首次触发时创建，之后一直复用"
+            cell.accessoryType = newSelected ? .checkmark : .none
+        } else if loading {
+            cell.textLabel?.text = "正在加载会话…"
+            cell.selectionStyle = .none
+        } else {
+            let session = sessions[indexPath.row]
+            cell.textLabel?.text = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? session.cwd
+            cell.detailTextLabel?.text = "\(session.runtime) · \(session.cwd)"
+            cell.accessoryType = session.id == selectedSessionId ? .checkmark : .none
+        }
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        if indexPath.section == 0 {
+            onSelect?("new", nil)
+        } else {
+            guard !loading else { return }
+            onSelect?("existing", sessions[indexPath.row])
+        }
+        dismiss(animated: true)
     }
 }

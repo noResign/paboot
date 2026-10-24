@@ -173,18 +173,23 @@ public struct UpdateScheduledTaskRequest: Encodable, Sendable {
     public let command: String?
     public let enabled: Bool?
     public let schedule: SchedulePresetInput?
+    /// Retargets where the NEXT fire runs: an existing chat session or a fresh
+    /// one. Omit to leave the binding untouched.
+    public let target: ScheduledTaskTargetInput?
 
     public init(
         name: String? = nil,
         prompt: String? = nil,
         command: String? = nil,
         enabled: Bool? = nil,
-        schedule: SchedulePresetInput? = nil
+        schedule: SchedulePresetInput? = nil,
+        target: ScheduledTaskTargetInput? = nil
     ) {
         self.name = name
         self.prompt = prompt
         self.command = command
         self.enabled = enabled
         self.schedule = schedule
+        self.target = target
     }
 }
