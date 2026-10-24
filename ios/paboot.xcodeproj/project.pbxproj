@@ -7,11 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F10000000000000000000013 /* RunWatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
 		F10000000000000000000012 /* RunNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
 		F10000000000000000000011 /* RunWatchCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
-		D20000000000000000000001 /* AsyncStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002; };
-		D20000000000000000000003 /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = D20000000000000000000004; };
 		D10000000000000000000001 /* UserInputViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* UserInputViewController.swift */; };
 		AAAA00000000000000000030 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000020 /* AppDelegate.swift */; };
 		AAAA00000000000000000031 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAA00000000000000000021 /* SceneDelegate.swift */; };
@@ -80,11 +77,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F10000000000000000000003 /* RunWatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunWatchTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* RunNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunNotifications.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* RunWatchCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunWatchCenter.swift; sourceTree = "<group>"; };
-		D20000000000000000000002 /* AsyncStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncStateTests.swift; sourceTree = "<group>"; };
-		D20000000000000000000005 /* pabootTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = pabootTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D10000000000000000000002 /* UserInputViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInputViewController.swift; sourceTree = "<group>"; };
 		AAAA00000000000000000013 /* paboot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = paboot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAAA00000000000000000020 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -154,12 +148,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		D2000000000000000000000A = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (D20000000000000000000003,);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AAAA00000000000000000011 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -171,17 +159,10 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		D20000000000000000000006 /* AppTests */ = {
-			isa = PBXGroup;
-			children = (D20000000000000000000002, F10000000000000000000003,);
-			path = AppTests;
-			sourceTree = "<group>";
-		};
 		AAAA00000000000000000002 = {
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000004 /* App */,
-				D20000000000000000000006 /* AppTests */,
 				AAAA00000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -190,7 +171,6 @@
 			isa = PBXGroup;
 			children = (
 				AAAA00000000000000000013 /* paboot.app */,
-				D20000000000000000000005 /* pabootTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -456,18 +436,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		D20000000000000000000007 /* pabootTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D20000000000000000000008;
-			buildPhases = (D20000000000000000000009, D2000000000000000000000A,);
-			buildRules = ();
-			dependencies = (D2000000000000000000000B,);
-			name = pabootTests;
-			packageProductDependencies = (D20000000000000000000004,);
-			productName = pabootTests;
-			productReference = D20000000000000000000005;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 		AAAA0000000000000000000F /* paboot */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AAAA00000000000000000015 /* Build configuration list for PBXNativeTarget "paboot" */;
@@ -489,23 +457,6 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
-
-/* Begin PBXContainerItemProxy section */
-		D2000000000000000000000C = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AAAA00000000000000000001;
-			proxyType = 1;
-			remoteGlobalIDString = AAAA0000000000000000000F;
-			remoteInfo = paboot;
-		};
-/* End PBXContainerItemProxy section */
-/* Begin PBXTargetDependency section */
-		D2000000000000000000000B = {
-			isa = PBXTargetDependency;
-			target = AAAA0000000000000000000F;
-			targetProxy = D2000000000000000000000C;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		AAAA00000000000000000001 /* Project object */ = {
@@ -536,7 +487,6 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				D20000000000000000000007 /* pabootTests */,
 				AAAA0000000000000000000F /* paboot */,
 			);
 		};
@@ -554,12 +504,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		D20000000000000000000009 = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (D20000000000000000000001, F10000000000000000000013,);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AAAA00000000000000000010 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -635,34 +579,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		D2000000000000000000000D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noresign.paboot.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/paboot.app/paboot";
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
-			};
-			name = Debug;
-		};
-		D2000000000000000000000E /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				GENERATE_INFOPLIST_FILE = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.noresign.paboot.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/paboot.app/paboot";
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
-			};
-			name = Release;
-		};
 		AAAA00000000000000000016 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -756,12 +672,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		D20000000000000000000008 = {
-			isa = XCConfigurationList;
-			buildConfigurations = (D2000000000000000000000D, D2000000000000000000000E,);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		AAAA00000000000000000014 /* Build configuration list for PBXProject "paboot" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -790,11 +700,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		D20000000000000000000004 /* PabootCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AAAA0000000000000000001A /* PabootCore */;
-			productName = PabootCore;
-		};
 		AAAA0000000000000000001B /* PabootCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AAAA0000000000000000001A /* XCLocalSwiftPackageReference "PabootCore" */;

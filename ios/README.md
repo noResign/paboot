@@ -59,18 +59,15 @@ open paboot.xcodeproj    # 或打开 pod install 生成的 paboot.xcworkspace
 命令行验证（不需要签名）：
 
 ```bash
-cd ios/PabootCore && swift test
+cd ios/PabootCore && swift build
 
 cd ios
 xcodebuild -project paboot.xcodeproj -scheme paboot \
   -destination 'generic/platform=iOS Simulator' \
   build CODE_SIGNING_ALLOWED=NO
-
-# App 状态回归测试（选择本机可用的 iPhone 模拟器）
-xcodebuild -project paboot.xcodeproj -scheme paboot \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  test CODE_SIGNING_ALLOWED=NO
 ```
+
+移动端不维护单元测试；CI 只做编译验证。
 
 ## 目标形态
 

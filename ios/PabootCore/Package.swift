@@ -40,7 +40,5 @@ let package = Package(
                 .product(name: "Markdown", package: "swift-markdown"),
             ]
         ),
-        .testTarget(name: "PabootProtocolTests", dependencies: ["PabootProtocol"]),
-        .testTarget(name: "PabootClientTests", dependencies: ["PabootClient", "PabootProtocol"]),
     ]
 )
