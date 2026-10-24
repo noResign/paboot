@@ -577,7 +577,7 @@ final class ChatViewController: UIViewController {
         guard let sessionId = viewModel.state.sessionId else { return }
         let controller = TasksViewController(
             viewModel: ScheduledTasksViewModel(sessionFilterId: sessionId),
-            screenTitle: "定时任务"
+            screenTitle: "本会话定时任务"
         )
         navigationController?.pushViewController(controller, animated: true)
     }

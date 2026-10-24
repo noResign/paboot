@@ -18,10 +18,15 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
     private var cancellables = Set<AnyCancellable>()
     private var tasks: [ScheduledTaskDto] = []
 
-    init(
-        viewModel: ScheduledTasksViewModel = ScheduledTasksViewModel(),
-        screenTitle: String = "任务"
-    ) {
+    /// Default arguments are evaluated in a nonisolated context, so the
+    /// `@MainActor` view model is constructed inside the (isolated) init body.
+    init(screenTitle: String = "任务") {
+        self.viewModel = ScheduledTasksViewModel()
+        self.screenTitle = screenTitle
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    init(viewModel: ScheduledTasksViewModel, screenTitle: String = "任务") {
         self.viewModel = viewModel
         self.screenTitle = screenTitle
         super.init(nibName: nil, bundle: nil)
@@ -52,6 +57,8 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
         tableView.delegate = self
         tableView.register(TaskCell.self, forCellReuseIdentifier: TaskCell.reuseIdentifier)
         tableView.backgroundColor = Theme.Colors.background
+        // `.insetGrouped` reserves a large gap above the first section by default.
+        tableView.sectionHeaderTopPadding = 0
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.refreshControl = refreshControl
         refreshControl.addTarget(self, action: #selector(refreshPulled), for: .valueChanged)
@@ -62,11 +69,11 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
         view.addSubview(tableView)
         view.addSubview(emptyView)
         NSLayoutConstraint.activate([
-            messageLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Spacing.xs),
+            messageLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Spacing.xxs),
             messageLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Spacing.lg),
             messageLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Spacing.lg),
 
-            tableView.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: Spacing.xxs),
+            tableView.topAnchor.constraint(equalTo: messageLabel.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
