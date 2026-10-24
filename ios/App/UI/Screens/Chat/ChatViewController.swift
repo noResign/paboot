@@ -65,13 +65,13 @@ final class ChatViewController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Re-render on return so approvals/errors that arrived while another tab was
-        // visible are presented now.
-        render(viewModel.state)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Render after the pop/push animation. Doing it in viewWillAppear blocked
+        // the navigation transition while the transcript relaid itself out.
+        render(viewModel.state)
         if let id = sessionIdentifier { RunNotifications.shared.clearSession(id) }
     }
 

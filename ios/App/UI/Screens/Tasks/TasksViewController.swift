@@ -17,6 +17,7 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
     private let messageLabel = UILabel()
     private var cancellables = Set<AnyCancellable>()
     private var tasks: [ScheduledTaskDto] = []
+    private var loadTask: Task<Void, Never>?
 
     /// Default arguments are evaluated in a nonisolated context, so the
     /// `@MainActor` view model is constructed inside the (isolated) init body.
@@ -92,7 +93,18 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        Task { await viewModel.load(showLoading: tasks.isEmpty) }
+        loadTask?.cancel()
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            await self.viewModel.load(showLoading: self.tasks.isEmpty)
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // A late response must not reload the table while the controller is popping.
+        loadTask?.cancel()
+        loadTask = nil
     }
 
     private func render() {

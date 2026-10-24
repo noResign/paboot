@@ -63,11 +63,11 @@ final class ScheduledTasksViewModel {
                 workspaceId: workspaceId,
                 sessionId: sessionFilterId
             )
-            guard generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             state.tasks = tasks
             state.loadError = nil
         } catch {
-            guard generation == loadGeneration else { return }
+            guard !Task.isCancelled, generation == loadGeneration else { return }
             state.loadError = error.localizedDescription
         }
 
