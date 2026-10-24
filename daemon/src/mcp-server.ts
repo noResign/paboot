@@ -16,6 +16,10 @@ const RUN_ID = process.env.PABOOT_RUN_ID ?? '';
 const PROTOCOL_VERSION = '2024-11-05';
 const SERVER_NAME = 'paboot-tasks';
 
+/** Server-level MCP guidance, without touching the agent's own system prompt. */
+const SERVER_INSTRUCTIONS =
+  'Prefer paboot_tasks for scheduled tasks; do not use system cron/systemd timers or other scheduling mechanisms.';
+
 interface RpcMessage {
   jsonrpc?: string;
   id?: string | number | null;
@@ -223,6 +227,7 @@ async function handleMessage(message: RpcMessage): Promise<void> {
           typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: SERVER_NAME, version: '1.0.0' },
+        instructions: SERVER_INSTRUCTIONS,
       });
       return;
     case 'ping':

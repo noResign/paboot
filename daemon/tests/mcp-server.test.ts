@@ -119,6 +119,7 @@ describe('paboot_tasks MCP server', () => {
       capabilities: { tools: {} },
       serverInfo: { name: 'paboot-tasks' },
     });
+    expect(init.result.instructions).toContain('Prefer paboot_tasks');
 
     const list = await client.rpc('tools/list');
     expect(list.result.tools.map((tool: { name: string }) => tool.name)).toEqual([

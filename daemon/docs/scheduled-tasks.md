@@ -107,6 +107,9 @@ daemon 自带一个 stdio MCP server（`dist/mcp-server.js`），通过 `ToolSer
 - `cancel_scheduled_task`：取消当前会话的任务。
 - `list_sessions`：列出当前 workspace 的会话，供选择 `existing` 目标。
 
+MCP `initialize` 返回一句 server-level `instructions`：`Prefer paboot_tasks for scheduled tasks;
+do not use system cron/systemd timers or other scheduling mechanisms.` 这样不用修改 agent 自身的系统提示词。
+
 内部端点只接受 `runId`，由 daemon 反查 session/workspace；`existing` 的目标会话也在 daemon 侧校验，
 **不接受调用方直接指定任意 sessionId 作为调用作用域**。
 
