@@ -184,9 +184,11 @@ describe('Codex reasoning', () => {
   it('stays silent for an empty reasoning item (no card with nothing in it)', () => {
     const events = collect([
       ['item/started', { item: { id: 'rs-4', type: 'reasoning', summary: [], content: [] } }],
+      ['item/reasoning/summaryPartAdded', { itemId: 'rs-4' }],
       ['item/completed', { item: { id: 'rs-4', type: 'reasoning', summary: [], content: [] } }],
     ]);
     expect(events.filter(ev => ev.type === 'thinking_delta')).toEqual([]);
+    expect(events.filter(ev => ev.type === 'thinking_start')).toEqual([]);
   });
 });
 

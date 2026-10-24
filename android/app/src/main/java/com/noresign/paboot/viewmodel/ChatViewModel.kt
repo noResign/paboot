@@ -222,7 +222,7 @@ class ChatViewModel(
     }
 
     /**
-     * 用「run + 逐 run 回放 events」重建完整历史（含思考块 / 工具卡 / 用量），
+     * 用「run + 逐 run 回放 events」重建完整历史（含工具卡 / 用量），
      * 而不是只看聚合后的 messages。正在运行的 run 留空、交给 attach() 续流。
      */
     private suspend fun reconstructHistory(
@@ -652,11 +652,17 @@ class ChatViewModel(
             permissionQueue.clear()
             queuedPermissionIds.clear()
         }
-        if (markDone) {
-            _messages.update { list ->
-                val lastIndex = list.lastIndex
-                list.mapIndexed { i, m ->
-                    if (i == lastIndex && m is ChatUiMessage.Assistant) finalizeAssistant(m) else m
+        _messages.update { list ->
+            val lastIndex = list.lastIndex
+            list.mapIndexed { i, m ->
+                when {
+                    i != lastIndex || m !is ChatUiMessage.Assistant -> m
+                    markDone -> finalizeAssistant(m)
+                    else -> {
+                        // 流已经结束，卡片不能继续转（即使保留可续接的未完成状态）。
+                        val blocks = endThinking(m.blocks)
+                        if (blocks === m.blocks) m else m.copy(blocks = blocks)
+                    }
                 }
             }
         }
@@ -682,14 +688,18 @@ class ChatViewModel(
 
     private fun updateAssistant(a: ChatUiMessage.Assistant, e: NormalizedEvent): ChatUiMessage.Assistant = when (e) {
         is NormalizedEvent.Status -> if (e.terminal == true) finalizeAssistant(a) else a
-        is NormalizedEvent.TextDelta -> a.copy(blocks = appendText(a.blocks, e.delta))
-        is NormalizedEvent.ThinkingDelta -> a.copy(blocks = appendThinking(a.blocks, e.delta))
-        is NormalizedEvent.ThinkingStart -> a
+        is NormalizedEvent.TextDelta -> a.copy(blocks = appendText(endThinking(a.blocks), e.delta))
+        // 思考正文不再下发（旧 daemon 仍可能发 delta）：保留卡片，不存文本。
+        is NormalizedEvent.ThinkingDelta -> a.copy(blocks = keepThinking(a.blocks))
+        is NormalizedEvent.ThinkingStart -> a.copy(
+            blocks = endThinking(a.blocks) + ContentBlock.Thinking(active = true),
+        )
         is NormalizedEvent.ToolUse -> a.copy(
-            blocks = a.blocks + ContentBlock.ToolUse(id = e.id, name = e.name, input = e.input, running = true)
+            blocks = endThinking(a.blocks) +
+                ContentBlock.ToolUse(id = e.id, name = e.name, input = e.input, running = true),
         )
         is NormalizedEvent.ToolResult -> a.copy(
-            blocks = a.blocks.map { b ->
+            blocks = endThinking(a.blocks).map { b ->
                 if (b is ContentBlock.ToolUse && b.id == e.toolUseId) {
                     b.copy(
                         result = e.content,
@@ -700,16 +710,39 @@ class ChatViewModel(
                 } else {
                     b
                 }
-            }
+            },
         )
-        is NormalizedEvent.Usage -> a.copy(usage = parseUsage(e) ?: a.usage)
-        is NormalizedEvent.TurnEnd -> a
+        // 用量帧出现在一次模型回合的边界，即思考块已经结束。
+        is NormalizedEvent.Usage -> a.copy(blocks = endThinking(a.blocks), usage = parseUsage(e) ?: a.usage)
+        is NormalizedEvent.TurnEnd -> a.copy(blocks = endThinking(a.blocks))
         is NormalizedEvent.Error ->
-            if (e.terminal == true) finalizeAssistant(a.copy(error = e.message)) else a.copy(error = e.message)
-        is NormalizedEvent.PermissionRequest -> a
+            if (e.terminal == true) {
+                finalizeAssistant(a.copy(error = e.message))
+            } else {
+                a.copy(error = e.message, blocks = endThinking(a.blocks))
+            }
+        is NormalizedEvent.PermissionRequest -> a.copy(blocks = endThinking(a.blocks))
         is NormalizedEvent.Question -> a.copy(
-            blocks = a.blocks + ContentBlock.Question(toolUseId = e.toolUseId, questions = e.questions)
+            blocks = endThinking(a.blocks) +
+                ContentBlock.Question(toolUseId = e.toolUseId, questions = e.questions),
         )
+    }
+
+    /** 可见内容或回合边界到来时，结束最后一张思考卡片（停止转圈）。 */
+    private fun endThinking(blocks: List<ContentBlock>): List<ContentBlock> {
+        val last = blocks.lastOrNull()
+        if (last !is ContentBlock.Thinking || !last.active) return blocks
+        return blocks.dropLast(1) + last.copy(active = false)
+    }
+
+    /** 旧 daemon 仍会流式发 thinking_delta：保证卡片存在且处于进行中，不存内容。 */
+    private fun keepThinking(blocks: List<ContentBlock>): List<ContentBlock> {
+        val last = blocks.lastOrNull()
+        return if (last is ContentBlock.Thinking) {
+            if (last.active) blocks else blocks.dropLast(1) + last.copy(active = true)
+        } else {
+            blocks + ContentBlock.Thinking(active = true)
+        }
     }
 
     /**
@@ -719,10 +752,13 @@ class ChatViewModel(
      * 所以本地收口必须自己再关一遍，否则卡片会一直转圈。
      */
     private fun finalizeAssistant(a: ChatUiMessage.Assistant): ChatUiMessage.Assistant {
-        if (a.done && a.blocks.none { it is ContentBlock.ToolUse && it.running }) return a
+        val ended = endThinking(a.blocks)
+        if (a.done && ended.none { it is ContentBlock.ToolUse && it.running }) {
+            return if (ended === a.blocks) a else a.copy(blocks = ended)
+        }
         return a.copy(
             done = true,
-            blocks = a.blocks.map { b ->
+            blocks = ended.map { b ->
                 if (b is ContentBlock.ToolUse && b.running) b.copy(running = false, interrupted = true) else b
             },
         )
@@ -734,15 +770,6 @@ class ChatViewModel(
             blocks.dropLast(1) + last.copy(text = last.text + delta)
         } else {
             blocks + ContentBlock.Text(delta)
-        }
-    }
-
-    private fun appendThinking(blocks: List<ContentBlock>, delta: String): List<ContentBlock> {
-        val last = blocks.lastOrNull()
-        return if (last is ContentBlock.Thinking) {
-            blocks.dropLast(1) + last.copy(text = last.text + delta)
-        } else {
-            blocks + ContentBlock.Thinking(delta)
         }
     }
 

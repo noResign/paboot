@@ -16,10 +16,18 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
 
     public struct TextDelta: Decodable, Equatable, Sendable {
         public let delta: String
+
+        public init(delta: String) {
+            self.delta = delta
+        }
     }
 
     public struct ThinkingDelta: Decodable, Equatable, Sendable {
         public let delta: String
+
+        public init(delta: String) {
+            self.delta = delta
+        }
     }
 
     public struct ThinkingStart: Decodable, Equatable, Sendable {

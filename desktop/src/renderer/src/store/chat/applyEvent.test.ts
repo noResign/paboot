@@ -120,18 +120,22 @@ describe('transcript structure', () => {
     expect(lastAssistant(state.messages)?.blocks).toEqual([]);
   });
 
-  it('appends text and thinking into single growing blocks', () => {
-    const state = run([
+  it('keeps a thinking card whose active state follows the stream', () => {
+    const thinking = run([
+      { type: 'thinking_start' },
       { type: 'thinking_delta', delta: 'a' },
       { type: 'thinking_delta', delta: 'b' },
-      { type: 'text_delta', delta: 'x' },
-      { type: 'text_delta', delta: 'y' },
-      { type: 'thinking_delta', delta: 'c' },
     ]);
-    expect(lastAssistant(state.messages)?.blocks).toEqual([
-      { kind: 'thinking', text: 'ab' },
-      { kind: 'text', text: 'xy' },
-      { kind: 'thinking', text: 'c' },
+    expect(lastAssistant(thinking.messages)?.blocks).toEqual([{ kind: 'thinking', active: true }]);
+
+    const answered = run([
+      { type: 'thinking_start' },
+      { type: 'thinking_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'x' },
+    ]);
+    expect(lastAssistant(answered.messages)?.blocks).toEqual([
+      { kind: 'thinking', active: false },
+      { kind: 'text', text: 'x' },
     ]);
   });
 

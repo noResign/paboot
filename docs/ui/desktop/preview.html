@@ -304,21 +304,24 @@
   }
   .msg.assistant .text strong { font-weight: 650; }
 
-  /* 思考块：默认折叠；折叠行与工具组行等高 */
+  /* 思考卡片：正文不下发，只保留标题行与转圈；折叠行与工具组行等高 */
   .think, .toolgroup {
     border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface);
   }
-  .think > summary, .toolgroup > summary {
+  .think > summary, .toolgroup > summary, .think-head {
     display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 11px;
     cursor: pointer; list-style: none; font-size: 12.5px; color: var(--text-secondary);
   }
+  .think-head { cursor: default; }
   .think > summary::-webkit-details-marker, .toolgroup > summary::-webkit-details-marker { display: none; }
   .think > summary .tri, .toolgroup > summary .tri { font-size: 9px; color: var(--text-muted); transition: transform .15s; }
   .think[open] > summary .tri, .toolgroup[open] > summary .tri { transform: rotate(90deg); }
-  .think .th-body {
-    padding: 4px 12px 12px 30px; font-size: 13px; line-height: 1.7; color: var(--thinking);
-    border-top: 1px solid var(--border); font-style: italic;
+  .think .spin {
+    width: 10px; height: 10px; flex: none; border-radius: 50%;
+    border: 1.5px solid var(--thinking); border-right-color: transparent;
+    animation: think-spin .8s linear infinite;
   }
+  @keyframes think-spin { to { transform: rotate(360deg); } }
   .toolgroup .tg-body { border-top: 1px solid var(--border); padding: 9px; display: flex; flex-direction: column; gap: 7px; }
   .tg-meta { margin-left: auto; font-size: 11px; color: var(--text-muted); }
   .chips { display: flex; gap: 5px; margin-left: auto; }
@@ -843,11 +846,10 @@
                 <div class="msg user"><div class="bubble">帮我把 auth 模块的 token 刷新逻辑补上，并加单测</div></div>
 
                 <div class="msg assistant">
-                  <!-- 思考块：默认折叠，行高与工具组行一致 -->
-                  <details class="think">
-                    <summary><span class="tri">▶</span> 思考 <span class="tg-meta">2.4s</span></summary>
-                    <div class="th-body">先确认现有的 token 结构与过期判定写在哪，再决定是抽一个纯函数还是改调用点。测试要覆盖 skew 边界。</div>
-                  </details>
+                  <!-- 思考卡片：正文不下发，只有标题行与转圈，不可展开 -->
+                  <div class="think">
+                    <div class="think-head"><span class="spin"></span>思考中</div>
+                  </div>
 
                   <!-- 工具组：连续的工具调用折叠成一行 -->
                   <details class="toolgroup">

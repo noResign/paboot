@@ -129,7 +129,8 @@ final class AssistantMessageCell: UITableViewCell {
 
         let items = Self.renderItems(message.blocks)
         let kinds = items.map(Self.kind)
-        if kinds != itemKinds {
+        let structureChanged = kinds != itemKinds
+        if structureChanged {
             rebuild(items: items)
         }
 
@@ -137,8 +138,11 @@ final class AssistantMessageCell: UITableViewCell {
             view.updateItem(item, streaming: streaming)
         }
 
+        let wasLoading = !loadingLabel.isHidden
         loadingLabel.isHidden = !(message.blocks.isEmpty && !message.done)
+        let loadingChanged = wasLoading != !loadingLabel.isHidden
 
+        let wasFooterHidden = footerLabel.isHidden
         if let error = message.error, !error.isEmpty {
             footerLabel.text = error
             footerLabel.textColor = Theme.Colors.error
@@ -149,6 +153,16 @@ final class AssistantMessageCell: UITableViewCell {
             footerLabel.isHidden = false
         } else {
             footerLabel.isHidden = true
+        }
+        let footerChanged = wasFooterHidden != footerLabel.isHidden
+
+        // Adding a block (or revealing the loading/footer line) changes the
+        // cell's intrinsic height. A diffable reconfigure updates the cell in
+        // place but does not re-query a self-sizing row, so without this the new
+        // cards stay clipped inside the previous row height until the transcript
+        // is rebuilt.
+        if structureChanged || loadingChanged || footerChanged {
+            notifyEnclosingTableHeightChanged(animated: false)
         }
     }
 
@@ -391,11 +405,12 @@ final class ChatTextBlockView: ChatBlockView {
     }
 }
 
-/// Collapsed by default; tap the header to show the thinking text.
+/// Thinking marker. The reasoning text is never sent, so the card is a plain,
+/// non-interactive status row whose spinner is the proof the model is working.
 final class ChatThinkingBlockView: ChatBlockView {
     private let headerLabel = UILabel()
-    private let bodyLabel = UILabel()
-    private var expanded = false
+    private let spinner = UIActivityIndicatorView(style: .medium)
+    private var displayedActive: Bool?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -403,16 +418,16 @@ final class ChatThinkingBlockView: ChatBlockView {
         backgroundColor = Theme.Colors.surface
         layer.cornerRadius = 8
 
+        spinner.color = Theme.Colors.thinking
+        spinner.hidesWhenStopped = true
+        spinner.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+
         headerLabel.font = Typography.caption
         headerLabel.textColor = Theme.Colors.thinking
 
-        bodyLabel.font = Typography.code
-        bodyLabel.textColor = Theme.Colors.thinking
-        bodyLabel.numberOfLines = 0
-        bodyLabel.isHidden = true
-
-        let stack = UIStackView(arrangedSubviews: [headerLabel, bodyLabel])
-        stack.axis = .vertical
+        let stack = UIStackView(arrangedSubviews: [spinner, headerLabel])
+        stack.axis = .horizontal
+        stack.alignment = .center
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -424,11 +439,7 @@ final class ChatThinkingBlockView: ChatBlockView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
         ])
 
-        isUserInteractionEnabled = true
-        addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(toggle))
-        )
-        updateHeader()
+        updateHeader(active: true)
     }
 
     @available(*, unavailable)
@@ -437,19 +448,21 @@ final class ChatThinkingBlockView: ChatBlockView {
     }
 
     override func update(block: ContentBlock, streaming: Bool) {
-        guard case .thinking(let text) = block else { return }
-        bodyLabel.text = text
+        guard case .thinking(let block) = block else { return }
+        guard block.active != displayedActive else { return }
+        displayedActive = block.active
+        if block.active {
+            spinner.startAnimating()
+        } else {
+            spinner.stopAnimating()
+        }
+        updateHeader(active: block.active)
+        // Hiding the spinner changes the header height by a couple of points.
+        notifyEnclosingTableHeightChanged(animated: false)
     }
 
-    @objc private func toggle() {
-        expanded.toggle()
-        bodyLabel.isHidden = !expanded
-        updateHeader()
-        notifyEnclosingTableHeightChanged()
-    }
-
-    private func updateHeader() {
-        headerLabel.text = expanded ? "▾ 思考中（点击收起）" : "▸ 思考中（点击展开）"
+    private func updateHeader(active: Bool) {
+        headerLabel.text = active ? "思考中" : "思考"
     }
 }
 
@@ -824,6 +837,15 @@ final class ChatQuestionCardView: ChatBlockView {
     override func update(block: ContentBlock, streaming: Bool) {
         guard case .question(let block) = block else { return }
 
+        // Reconfigures fire on every stream tick; only rebuild the option rows
+        // when the card's content or interaction state actually changed.
+        guard block.toolUseId != toolUseId
+            || block.questions != questions
+            || block.answered != answered
+            || streaming != self.streaming else {
+            return
+        }
+
         self.streaming = streaming
 
         if block.toolUseId != toolUseId {
@@ -836,6 +858,7 @@ final class ChatQuestionCardView: ChatBlockView {
         answered = block.answered
 
         render()
+        notifyEnclosingTableHeightChanged(animated: false)
     }
 
     private var allAnswered: Bool {

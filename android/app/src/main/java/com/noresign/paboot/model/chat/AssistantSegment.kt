@@ -2,12 +2,12 @@ package com.noresign.paboot.model.chat
 
 /**
  * 助手消息里的一段渲染单元。连续的工具调用合成一个 [ToolGroup]——一个 run 常在两句正文之间
- * 打十几个工具调用，逐张卡片渲染会把正文埋掉。断组点是真正插入的正文/思考/提问，不是计时器。
+ * 打十几个工具调用，逐张卡片渲染会把正文埋掉。断组点是真正插入的正文/提问，不是计时器。
  */
 sealed interface AssistantSegment {
     data class Text(val text: String) : AssistantSegment
 
-    data class Thinking(val text: String) : AssistantSegment
+    data class Thinking(val active: Boolean) : AssistantSegment
 
     data class ToolGroup(val tools: List<ContentBlock.ToolUse>) : AssistantSegment
 
@@ -34,7 +34,7 @@ fun segmentBlocks(blocks: List<ContentBlock>): List<AssistantSegment> {
             }
             is ContentBlock.Thinking -> {
                 flush()
-                segments += AssistantSegment.Thinking(block.text)
+                segments += AssistantSegment.Thinking(block.active)
             }
             is ContentBlock.Question -> {
                 flush()

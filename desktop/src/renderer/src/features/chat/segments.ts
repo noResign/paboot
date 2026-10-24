@@ -3,12 +3,12 @@ import type { ContentBlock } from '../../store/chat/types';
 /**
  * A run routinely makes a dozen-plus tool calls between two sentences. Rendering
  * one card each buries the prose, so consecutive tool calls collapse into one
- * group row — the group breaks where real text or thinking intervenes, not on a
- * timer.
+ * group row — the group breaks where real text or a thinking card intervenes,
+ * not on a timer.
  */
 export type Segment =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string }
+  | { kind: 'thinking'; active: boolean }
   | { kind: 'question'; toolUseId: string; questions: Extract<ContentBlock, { kind: 'question' }>['questions']; answered: boolean }
   | { kind: 'tools'; tools: Array<Extract<ContentBlock, { kind: 'tool' }>>; key: string };
 
@@ -35,7 +35,7 @@ export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
         break;
       case 'thinking':
         flush();
-        segments.push({ kind: 'thinking', text: block.text });
+        segments.push({ kind: 'thinking', active: block.active });
         break;
       case 'question':
         flush();

@@ -27,8 +27,9 @@
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
 
-> `messages` 只是「聚合可见文本」；**工具卡、思考块、用量这些细节只存在 `events`**，
+> `messages` 只是「聚合可见文本」；**工具卡、用量这些细节只存在 `events`**，
 > 客户端重进会话时需用 `GET /api/runs/:id/events` 回放（Android 已实现）。
+> 思考正文不落库也不回放，只有 `thinking_start` 用于思考卡片的转圈状态。
 
 ## HTTP / SSE 协议
 
@@ -137,9 +138,15 @@ claude 每来一条主回合 assistant 帧就发一次（值相同则跳过；�
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 
 ```
-status | text_delta | thinking_delta | thinking_start | tool_use
+status | text_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request | question
 ```
+
+**思考内容不下发**：运行时产生的 `thinking_delta` 在 run service 里直接丢弃——既不落库也不进
+SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（标题行转圈），收到下一条内容事件
+（文本 / 工具 / 提问 / 终局）时停止转圈。历史回放同样在 SQL 层排除旧的 `thinking_delta` 行
+（数据保留在库中，不再传输），否则长会话一次重建就是几十万帧。`thinking_delta` 仍保留在事件
+类型里，用于兼容旧数据解码。
 
 **流的不变量**：终局 `status` 之前，每个 `tool_use` 都有配对的 `tool_result`。run 可能在工具还没返回时
 就结束（取消 / 崩溃 / 空闲看门狗），此时引擎补发一帧合成结果（`interrupted: true`、`isError: true`，

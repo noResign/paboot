@@ -91,16 +91,18 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
     case 'status':
       return event.terminal === true ? finalizeAssistant(a) : a;
     case 'text_delta':
-      return { ...a, blocks: appendText(a.blocks, event.delta) };
+      return { ...a, blocks: appendText(endThinking(a.blocks), event.delta) };
+    // Thinking content is no longer sent. An older daemon may still stream it,
+    // so keep its card alive without storing the text.
     case 'thinking_delta':
-      return { ...a, blocks: appendThinking(a.blocks, event.delta) };
+      return { ...a, blocks: keepThinking(a.blocks) };
     case 'thinking_start':
-      return a;
+      return { ...a, blocks: [...endThinking(a.blocks), { kind: 'thinking', active: true }] };
     case 'tool_use':
       return {
         ...a,
         blocks: [
-          ...a.blocks,
+          ...endThinking(a.blocks),
           {
             kind: 'tool',
             id: event.id,
@@ -116,7 +118,7 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
     case 'tool_result':
       return {
         ...a,
-        blocks: a.blocks.map((block) =>
+        blocks: endThinking(a.blocks).map((block) =>
           block.kind === 'tool' && block.id === event.toolUseId
             ? {
                 ...block,
@@ -130,19 +132,36 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
       };
     case 'usage':
       // Invariant 1: a frame without usage numbers must not clear the last one.
-      return { ...a, usage: parseUsage(event) ?? a.usage };
+      // Usage lands on a model-turn boundary, i.e. after the thinking block ended.
+      return { ...a, blocks: endThinking(a.blocks), usage: parseUsage(event) ?? a.usage };
     case 'turn_end':
-      return a;
+      return { ...a, blocks: endThinking(a.blocks) };
     case 'error':
-      return { ...a, error: event.message };
+      return { ...a, error: event.message, blocks: endThinking(a.blocks) };
     case 'permission_request':
-      return a;
+      return { ...a, blocks: endThinking(a.blocks) };
     case 'question':
       return {
         ...a,
-        blocks: [...a.blocks, { kind: 'question', toolUseId: event.toolUseId, questions: event.questions, answered: false }],
+        blocks: [...endThinking(a.blocks), { kind: 'question', toolUseId: event.toolUseId, questions: event.questions, answered: false }],
       };
   }
+}
+
+/** Visible content or a turn boundary stops the trailing thinking card's spinner. */
+function endThinking(blocks: ContentBlock[]): ContentBlock[] {
+  const last = blocks[blocks.length - 1];
+  if (last?.kind !== 'thinking' || !last.active) return blocks;
+  return [...blocks.slice(0, -1), { ...last, active: false }];
+}
+
+/** Keep a card alive for an older daemon that still streams thinking deltas. */
+function keepThinking(blocks: ContentBlock[]): ContentBlock[] {
+  const last = blocks[blocks.length - 1];
+  if (last?.kind === 'thinking') {
+    return last.active ? blocks : [...blocks.slice(0, -1), { ...last, active: true }];
+  }
+  return [...blocks, { kind: 'thinking', active: true }];
 }
 
 /**
@@ -154,11 +173,14 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
  * spins forever.
  */
 export function finalizeAssistant(a: AssistantMessage): AssistantMessage {
-  if (a.done && !a.blocks.some((block) => block.kind === 'tool' && block.running)) return a;
+  const blocks = endThinking(a.blocks);
+  if (a.done && !blocks.some((block) => block.kind === 'tool' && block.running)) {
+    return blocks === a.blocks ? a : { ...a, blocks };
+  }
   return {
     ...a,
     done: true,
-    blocks: a.blocks.map((block) =>
+    blocks: blocks.map((block) =>
       block.kind === 'tool' && block.running ? { ...block, running: false, interrupted: true } : block,
     ),
   };
@@ -202,12 +224,6 @@ export function appendText(blocks: ContentBlock[], delta: string): ContentBlock[
   const last = blocks[blocks.length - 1];
   if (last?.kind === 'text') return [...blocks.slice(0, -1), { kind: 'text', text: last.text + delta }];
   return [...blocks, { kind: 'text', text: delta }];
-}
-
-export function appendThinking(blocks: ContentBlock[], delta: string): ContentBlock[] {
-  const last = blocks[blocks.length - 1];
-  if (last?.kind === 'thinking') return [...blocks.slice(0, -1), { kind: 'thinking', text: last.text + delta }];
-  return [...blocks, { kind: 'thinking', text: delta }];
 }
 
 export function isTerminal(event: NormalizedEvent): boolean {

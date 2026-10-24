@@ -4,7 +4,8 @@ import type { PermissionStatus, QuestionDto, RunDto } from '../../../../shared/c
 /** One ordered piece of an assistant turn, in the order the runtime produced it. */
 export type ContentBlock =
   | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string }
+  /** Thinking card: content is never sent, so it only carries its live state. */
+  | { kind: 'thinking'; active: boolean }
   | {
       kind: 'tool';
       id: string;

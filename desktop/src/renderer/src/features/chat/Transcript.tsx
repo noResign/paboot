@@ -181,7 +181,7 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
           case 'text':
             return <Markdown key={index} text={segment.text} />;
           case 'thinking':
-            return <ThinkingBlock key={index} text={segment.text} />;
+            return <ThinkingBlock key={index} active={segment.active} />;
           case 'question':
             return (
               <QuestionBlock
@@ -230,12 +230,17 @@ function FoldRow({
   );
 }
 
-function ThinkingBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Thinking content is never sent, so the card carries only its live state: the
+ * spinner is the proof the model is working. Nothing to expand, so no chevron.
+ */
+function ThinkingBlock({ active }: { active: boolean }) {
   return (
     <div className="block-thinking">
-      <FoldRow open={open} onToggle={() => setOpen((value) => !value)} label={<span>思考</span>} />
-      {open && <div className="thinking-body">{text}</div>}
+      <div className="thinking-head">
+        {active && <span className="thinking-spinner" aria-hidden="true" />}
+        <span>{active ? '思考中' : '思考'}</span>
+      </div>
     </div>
   );
 }

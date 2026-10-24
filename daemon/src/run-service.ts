@@ -89,6 +89,10 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
 
     const send = (ev: NormalizedEvent): void => {
       if (runDeleted) return;
+      // Thinking comes as thousands of tiny deltas per run (a long turn can
+      // carry >100k of them). Clients only need the `thinking_start` marker to
+      // show their indicator, so the content is neither persisted nor streamed.
+      if (ev.type === 'thinking_delta') return;
       seq += 1;
       if (ev.type === 'text_delta') assistantText += ev.delta;
       try {

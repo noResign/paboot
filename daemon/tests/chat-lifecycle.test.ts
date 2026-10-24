@@ -123,6 +123,53 @@ describe('chat lifecycle serialization', () => {
     expect(start).toHaveBeenCalledOnce();
   });
 
+  it('drops thinking deltas from the stream and the events table', async () => {
+    const { post, outcome, start, db } = await setup();
+    const response = await post('think');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    start.mock.calls[0][0].onEvent({ type: 'thinking_start' });
+    start.mock.calls[0][0].onEvent({ type: 'thinking_delta', delta: 'secret thought' });
+    start.mock.calls[0][0].onEvent({ type: 'text_delta', delta: 'visible' });
+    outcome.resolve(finished);
+    const text = await response.text();
+
+    expect(text).toContain('"type":"thinking_start"');
+    expect(text).toContain('"type":"text_delta"');
+    expect(text).not.toContain('thinking_delta');
+    expect(text).not.toContain('secret thought');
+
+    const run = db.listRuns('s')[0];
+    expect(db.listEvents(run.id).map((row) => row.type)).toEqual([
+      'status',
+      'thinking_start',
+      'text_delta',
+      'status',
+    ]);
+  });
+
+  it('hides legacy thinking deltas when replaying a finished run', async () => {
+    const { post, outcome, start, db, base } = await setup();
+    const response = await post('legacy');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    outcome.resolve(finished);
+    await response.text();
+
+    const run = db.listRuns('s')[0];
+    // Rows recorded before the daemon stopped persisting thinking content.
+    db.appendEvent(run.id, 100, 'thinking_delta', { type: 'thinking_delta', delta: 'old thought' });
+
+    // The exclusion must happen in SQL, not after loading every payload in Node.
+    expect(db.listEvents(run.id).some((row) => row.type === 'thinking_delta')).toBe(true);
+    expect(db.listReplayEvents(run.id).some((row) => row.type === 'thinking_delta')).toBe(false);
+
+    const replay = await fetch(`${base}/api/runs/${run.id}/events`).then((r) => r.json());
+    expect(replay.events.some((frame: { event: { type: string } }) => frame.event.type === 'thinking_delta')).toBe(false);
+
+    const stream = await fetch(`${base}/api/runs/${run.id}/stream`).then((r) => r.text());
+    expect(stream).not.toContain('thinking_delta');
+    expect(stream).not.toContain('old thought');
+  });
+
   it('keeps the session busy until the post-checkpoint completes', async () => {
     const postCheckpoint = deferred<string>();
     vi.mocked(captureCheckpoint).mockResolvedValueOnce('pre').mockImplementationOnce(() => postCheckpoint.promise);

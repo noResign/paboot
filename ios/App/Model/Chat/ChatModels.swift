@@ -17,13 +17,18 @@ struct ChatUiMessage: Equatable, Identifiable {
     var done: Bool = true
 }
 
-/// Ordered assistant content. `thinking_start` is folded into the first
-/// `thinking_delta`; tool calls and questions keep their arrival order.
+/// Ordered assistant content. Tool calls and questions keep their arrival order.
 enum ContentBlock: Equatable {
     case text(String)
-    case thinking(String)
+    case thinking(ThinkingBlock)
     case tool(ToolUseBlock)
     case question(QuestionBlock)
+}
+
+/// A thinking card. The runtime's reasoning text is deliberately not sent, so the
+/// card is an empty, collapsible marker that spins while the block is active.
+struct ThinkingBlock: Equatable {
+    var active: Bool = true
 }
 
 struct ToolUseBlock: Equatable {

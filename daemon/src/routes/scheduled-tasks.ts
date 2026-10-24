@@ -147,7 +147,7 @@ export function insertAiTaskOnSession(
 /** Aggregated command output, tail-capped so a chatty command cannot bloat the response. */
 function commandOutput(ctx: AppContext, runId: string): string {
   const parts: string[] = [];
-  for (const event of ctx.db.listEvents(runId)) {
+  for (const event of ctx.db.listReplayEvents(runId)) {
     if (event.type !== 'text_delta') continue;
     try {
       const payload = JSON.parse(event.payload) as { delta?: unknown };

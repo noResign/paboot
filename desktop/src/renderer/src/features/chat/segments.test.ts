@@ -25,7 +25,7 @@ describe('segmentBlocks', () => {
   });
 
   it('breaks a tool group on thinking too', () => {
-    const segments = segmentBlocks([tool('a'), { kind: 'thinking', text: 'hmm' }, tool('b')]);
+    const segments = segmentBlocks([tool('a'), { kind: 'thinking', active: false }, tool('b')]);
     expect(segments.map((s) => s.kind)).toEqual(['tools', 'thinking', 'tools']);
   });
 

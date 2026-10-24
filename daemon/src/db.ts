@@ -959,6 +959,22 @@ export class Db {
       .all(runId, afterSeq) as unknown as EventRow[];
   }
 
+  /**
+   * Events a client should replay: everything except legacy `thinking_delta`
+   * rows. The filter must stay in SQL — a long run can hold >100k thinking
+   * deltas, and loading them into Node just to discard them is what this exists
+   * to avoid.
+   */
+  listReplayEvents(runId: string, afterSeq = 0): EventRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, run_id, seq, type, payload, created_at FROM events
+         WHERE run_id = ? AND seq > ? AND type != 'thinking_delta'
+         ORDER BY seq ASC`,
+      )
+      .all(runId, afterSeq) as unknown as EventRow[];
+  }
+
   /** 把 permission_request 事件的最终审批状态写回 payload，供重连回放判定是否还 pending。 */
   updateEventPermissionStatus(permissionId: string, status: string): void {
     this.db

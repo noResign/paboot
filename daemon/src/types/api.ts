@@ -58,6 +58,12 @@ export type NormalizedEvent =
       terminal?: boolean;
     }
   | { type: 'text_delta'; delta: string }
+  /**
+   * Legacy: parsers still emit it, but the run service drops it before
+   * persistence/broadcast. Kept in the union so old events and older clients
+   * stay decodable; clients drive the "thinking" indicator from
+   * `thinking_start` instead of rendering this content.
+   */
   | { type: 'thinking_delta'; delta: string }
   | { type: 'thinking_start' }
   | { type: 'tool_use'; id: string; name: string; input: unknown }

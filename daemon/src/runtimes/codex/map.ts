@@ -270,7 +270,8 @@ export function createCodexStreamMapper(
         }
 
         case 'item/reasoning/summaryPartAdded':
-          startThinking(readString(p, 'itemId'));
+          // No text yet: wait for a delta (or the completed item) so an empty
+          // reasoning item does not paint an empty thinking card.
           return;
 
         case 'item/reasoning/textDelta':
@@ -287,7 +288,7 @@ export function createCodexStreamMapper(
         case 'item/started': {
           const item = readItem(p);
           if (!item) return;
-          if (item.type === 'reasoning') startThinking(item.id);
+          // A reasoning item only starts its card once it actually has text.
           const name = codexItemToolName(item);
           if (name) onEvent({ type: 'tool_use', id: item.id, name, input: codexItemToolInput(item) });
           return;

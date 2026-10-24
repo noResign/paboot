@@ -41,6 +41,12 @@ final class ChatViewModel {
     private var historyTask: Task<Void, Never>?
     private var streamGeneration = 0
     private var lastSeq: Int64 = -1
+    /// SSE frames are applied in small batches instead of one by one. Text streams
+    /// token-by-token (and older daemons still stream thinking), so folding deltas
+    /// keeps string growth and Combine/UI churn off the critical path.
+    private var pendingFrames: [SSEFrame] = []
+    private var flushTask: Task<Void, Never>?
+    private static let streamFlushInterval: UInt64 = 120_000_000
     private var giveUp = false
     private var permissionQueue: [PendingPermission] = []
     private var seenPermissionIds: Set<String> = []
@@ -125,21 +131,21 @@ final class ChatViewModel {
                 guard !Task.isCancelled else { return }
                 var assistant = ChatUiMessage(id: "a-\(run.id)", role: .assistant, done: true)
 
-                for frame in frames {
-                    if case .permissionRequest = frame.event {
+                for event in ChatEventReducer.coalesced(frames.map(\.event)) {
+                    if case .permissionRequest = event {
                         continue
                     }
-                    if case .toolUse(let tool) = frame.event, tool.name == "TodoWrite" {
+                    if case .toolUse(let tool) = event, tool.name == "TodoWrite" {
                         let parsed = parseTodos(tool.input)
                         if !parsed.isEmpty {
                             todos = parsed
                         }
                         continue
                     }
-                    if case .usage(let usage) = frame.event, let tokens = usage.contextTokens {
+                    if case .usage(let usage) = event, let tokens = usage.contextTokens {
                         context = ContextUsage(tokens: tokens, window: usage.contextWindow)
                     }
-                    ChatEventReducer.apply(frame.event, to: &assistant)
+                    ChatEventReducer.apply(event, to: &assistant)
                 }
 
                 ChatEventReducer.finalize(&assistant)
@@ -259,6 +265,9 @@ final class ChatViewModel {
         streamGeneration += 1
         streamTask?.cancel()
         streamTask = nil
+        flushTask?.cancel()
+        flushTask = nil
+        pendingFrames.removeAll(keepingCapacity: true)
         state.streaming = false
         state.reconnecting = false
     }
@@ -274,6 +283,10 @@ final class ChatViewModel {
         streamTask?.cancel()
         streamGeneration += 1
         let generation = streamGeneration
+
+        flushTask?.cancel()
+        flushTask = nil
+        pendingFrames.removeAll(keepingCapacity: true)
 
         state.streaming = true
         state.reconnecting = false
@@ -306,7 +319,7 @@ final class ChatViewModel {
                         if frame.seq > lastSeq { lastSeq = frame.seq }
                         if currentRunId == nil { currentRunId = frame.runId }
 
-                        handleFrame(frame)
+                        enqueue(frame)
                         if ChatEventReducer.isTerminal(frame.event) { terminal = true }
                     }
                 } catch {
@@ -314,6 +327,7 @@ final class ChatViewModel {
                 }
 
                 if Task.isCancelled || giveUp || generation != streamGeneration { return }
+                flushPendingFrames()
 
                 let streamMs = Date().timeIntervalSince(startedAt) * 1000
                 let resumable = currentRunId ?? state.runId
@@ -378,9 +392,11 @@ final class ChatViewModel {
                             after: lastSeq >= 0 ? lastSeq : nil
                         ) {
                             guard !Task.isCancelled, generation == streamGeneration else { return }
-                            for frame in frames where frame.seq > lastSeq {
-                                lastSeq = frame.seq
-                                handleFrame(frame)
+                            let missed = frames.filter { $0.seq > lastSeq }
+                            if let seq = missed.last?.seq { lastSeq = seq }
+                            let missedRunId = missed.last?.runId ?? resumable
+                            for event in ChatEventReducer.coalesced(missed.map(\.event)) {
+                                handle(event, runId: missedRunId)
                             }
                         }
                     }
@@ -428,12 +444,60 @@ final class ChatViewModel {
         }
     }
 
-    private func handleFrame(_ frame: SSEFrame) {
-        state.runId = frame.runId
-        let event = frame.event
+    /// Buffer one frame. Text/thinking deltas are sampled at ~8 Hz because they
+    /// arrive faster than the UI can usefully redraw; structural events (tools,
+    /// usage, status, approvals) are applied immediately so cards appear at once.
+    private func enqueue(_ frame: SSEFrame) {
+        pendingFrames.append(frame)
+
+        guard Self.isDelta(frame.event) else {
+            flushPendingFrames()
+            return
+        }
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.streamFlushInterval)
+            guard !Task.isCancelled else { return }
+            self?.flushPendingFrames()
+        }
+    }
+
+    private static func isDelta(_ event: NormalizedEvent) -> Bool {
+        switch event {
+        case .textDelta, .thinkingDelta:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Apply buffered frames in order, merging consecutive deltas first. One
+    /// merged append per flush keeps a block from copying its whole accumulated
+    /// string once per token.
+    private func flushPendingFrames() {
+        flushTask?.cancel()
+        flushTask = nil
+        guard !pendingFrames.isEmpty else { return }
+
+        let frames = pendingFrames
+        pendingFrames.removeAll(keepingCapacity: true)
+        let runId = frames.last?.runId ?? state.runId ?? ""
+        for event in ChatEventReducer.coalesced(frames.map(\.event)) {
+            handle(event, runId: runId)
+        }
+    }
+
+    private func handle(_ event: NormalizedEvent, runId: String) {
+        state.runId = runId
 
         if case .permissionRequest(let request) = event {
-            handlePermissionRequest(request, runId: frame.runId)
+            // The run pauses for an approval, so the thinking spinner must stop.
+            if let index = state.messages.lastIndex(where: { $0.role == .assistant }) {
+                var assistant = state.messages[index]
+                ChatEventReducer.endThinking(&assistant)
+                state.messages[index] = assistant
+            }
+            handlePermissionRequest(request, runId: runId)
             return
         }
 
@@ -455,7 +519,7 @@ final class ChatViewModel {
                 state.runtime = value
             }
             if status.terminal != true, let id = state.sessionId {
-                RunNotifications.shared.watch(runId: frame.runId, sessionId: id, title: state.title)
+                RunNotifications.shared.watch(runId: runId, sessionId: id, title: state.title)
                 if AppRouter.shared.isViewingSession(id) { RunNotifications.shared.clearSession(id) }
             }
         }
@@ -524,6 +588,7 @@ final class ChatViewModel {
     }
 
     private func finish(clearPermissions: Bool = true, markDone: Bool = true) {
+        flushPendingFrames()
         state.streaming = false
         state.reconnecting = false
         state.runId = nil
@@ -535,9 +600,15 @@ final class ChatViewModel {
             seenPermissionIds.removeAll()
         }
 
-        if markDone, let index = state.messages.lastIndex(where: { $0.role == .assistant }) {
+        if let index = state.messages.lastIndex(where: { $0.role == .assistant }) {
             var assistant = state.messages[index]
-            ChatEventReducer.finalize(&assistant)
+            // Never leave the thinking spinner running after the stream is gone,
+            // even when the run is left resumable (markDone: false).
+            if markDone {
+                ChatEventReducer.finalize(&assistant)
+            } else {
+                ChatEventReducer.endThinking(&assistant)
+            }
             state.messages[index] = assistant
         }
     }

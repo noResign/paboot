@@ -87,10 +87,11 @@ internal fun MessageList(
     }
 
     // 流式内容增长 → 跟随状态下平滑滚到底
-    val lastContentLen = (messages.lastOrNull() as? ChatUiMessage.Assistant)?.blocks?.sumOf { block ->
+    val lastAssistant = messages.lastOrNull() as? ChatUiMessage.Assistant
+    val lastContentLen = lastAssistant?.blocks?.sumOf { block ->
         when (block) {
             is ContentBlock.Text -> block.text.length
-            is ContentBlock.Thinking -> block.text.length
+            is ContentBlock.Thinking -> 1
             is ContentBlock.ToolUse -> (block.result?.length ?: 0) + 1
             is ContentBlock.Question -> 1
         }
@@ -191,8 +192,8 @@ internal fun AssistantBlock(
         val segments = remember(message.blocks) { segmentBlocks(message.blocks) }
         segments.forEach { segment ->
             when (segment) {
-                is AssistantSegment.Thinking -> ThinkingBlock(segment.text)
                 is AssistantSegment.Text -> TextBlock(segment.text, streaming = !message.done)
+                is AssistantSegment.Thinking -> ThinkingBlock(active = segment.active)
                 is AssistantSegment.ToolGroup -> ToolGroupView(segment.tools)
                 is AssistantSegment.Question -> QuestionCard(segment.block, streaming, onAnswer)
             }

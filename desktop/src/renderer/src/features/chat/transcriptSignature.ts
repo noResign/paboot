@@ -20,8 +20,10 @@ function messageWeight(message: ChatMessage): number {
   for (const block of message.blocks) {
     switch (block.kind) {
       case 'text':
-      case 'thinking':
         weight += block.text.length;
+        break;
+      case 'thinking':
+        weight += 1;
         break;
       case 'tool':
         weight += block.name.length + (block.result?.length ?? 0) + (block.running ? 0 : 1);

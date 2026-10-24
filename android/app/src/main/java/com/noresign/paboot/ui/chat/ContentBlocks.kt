@@ -157,29 +157,35 @@ private fun rememberSampledText(text: String, intervalMs: Long = 200L): String {
     return sampled
 }
 
+/**
+ * 思考卡片。正文不下发，卡片只是一行状态：思考中转圈，结束后停止。
+ * 没有内容可展开，所以不可点击。
+ */
 @Composable
-internal fun ThinkingBlock(thinking: String) {
-    var expanded by remember { mutableStateOf(false) }
+internal fun ThinkingBlock(active: Boolean) {
+    val thinkingColor = LocalSemanticColors.current.thinking
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            val thinkingColor = LocalSemanticColors.current.thinking
-            Text(
-                text = if (expanded) "▾ 思考中（点击收起）" else "▸ 思考中（点击展开）",
-                style = MaterialTheme.typography.labelSmall,
-                color = thinkingColor,
-            )
-            if (expanded) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = thinking,
-                    style = CodeBody,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+        ) {
+            if (active) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
                     color = thinkingColor,
                 )
             }
+            Text(
+                text = if (active) "思考中" else "思考",
+                style = MaterialTheme.typography.labelSmall,
+                color = thinkingColor,
+            )
         }
     }
 }

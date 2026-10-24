@@ -300,15 +300,10 @@
   }
 
   .thinking {
-    font-size: 12.5px; color: var(--thinking); cursor: pointer; padding: 9px 12px;
+    font-size: 12.5px; color: var(--thinking); padding: 9px 12px;
     background: var(--code-bg); border-radius: 10px; border: 1px dashed var(--border);
-    user-select: none;
   }
   .thinking .th-head { display: flex; align-items: center; gap: 7px; font-weight: 500; }
-  .thinking .th-head .caret { transition: transform .15s; font-size: 11px; }
-  .thinking.open .th-head .caret { transform: rotate(90deg); }
-  .thinking .th-body { display: none; margin-top: 8px; line-height: 1.6; color: var(--thinking); }
-  .thinking.open .th-body { display: block; }
 
   .tool { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
   .tool-head { display: flex; align-items: center; gap: 9px; padding: 11px 13px; cursor: pointer; }
@@ -793,9 +788,8 @@
           <div class="msg user">把认证模块重构成 JWT + refresh token 双 token 机制，并更新单元测试</div>
 
           <div class="msg assistant">
-            <div class="thinking open">
-              <div class="th-head"><span class="caret">▸</span>思考中（可展开）</div>
-              <div class="th-body mono">需要先读现有认证实现，理解 token 生成与校验位置，再决定 JWT 与 refresh token 的分层边界。</div>
+            <div class="thinking">
+              <div class="th-head"><span class="spinner"></span>思考中</div>
             </div>
 
             <div class="bubble">我来重构认证模块。先读取现有实现，然后拆分 JWT 与 refresh token 的逻辑。</div>

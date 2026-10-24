@@ -55,7 +55,11 @@ export function streamRunToResponse(
     }
   });
 
-  const rows = ctx.db.listEvents(run.id, afterSeq);
+  // Legacy runs still hold thinking deltas. They are never replayed: the client
+  // shows a transient indicator from `thinking_start`, and shipping the content
+  // is both useless and ruinous for long transcripts. The exclusion happens in
+  // SQL so those rows are never materialized.
+  const rows = ctx.db.listReplayEvents(run.id, afterSeq);
   for (const row of rows) {
     writeSseFrame(res, {
       runId: row.run_id,
@@ -206,7 +210,7 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    const events: SseFrame[] = ctx.db.listEvents(run.id, afterSeq).map((row) => ({
+    const events: SseFrame[] = ctx.db.listReplayEvents(run.id, afterSeq).map((row) => ({
       runId: row.run_id,
       seq: row.seq,
       event: JSON.parse(row.payload) as NormalizedEvent,

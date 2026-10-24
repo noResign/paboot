@@ -29,7 +29,7 @@ class AssistantSegmentTest {
                 tool("1"),
                 ContentBlock.Text("hi"),
                 tool("2"),
-                ContentBlock.Thinking("hmm"),
+                ContentBlock.Thinking(active = false),
                 tool("3"),
             ),
         )

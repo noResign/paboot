@@ -5,7 +5,11 @@ import kotlinx.serialization.json.JsonElement
 
 /** 助手消息里的一段有序内容块，按 Claude 实际返回的顺序排列。 */
 sealed interface ContentBlock {
-    data class Thinking(val text: String) : ContentBlock
+    /**
+     * 思考卡片。运行时不下发思考正文，所以卡片只保留「正在思考」状态：
+     * [active] 为 true 时标题行转圈，展开后没有内容。
+     */
+    data class Thinking(val active: Boolean = true) : ContentBlock
 
     data class Text(val text: String) : ContentBlock
 
