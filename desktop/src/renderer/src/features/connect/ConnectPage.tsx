@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
-import { isInsecure } from '../../../../shared/net';
+import { displayHost, isInsecure, maskAddress } from '../../../../shared/net';
 import { parseAddress } from './address';
 import { BrandMark } from '../../ui/BrandMark';
 import type {
@@ -37,6 +37,7 @@ export function ConnectPage() {
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const [spawnLogPath, setSpawnLogPath] = useState<string | null>(null);
   const [token, setToken] = useState('');
+  const [name, setName] = useState('');
   const [recent, setRecent] = useState<RecentConnection[]>([]);
 
   // Discovery is a snapshot taken once, at boot (`App` calls `boot()`). It knows
@@ -74,6 +75,13 @@ export function ConnectPage() {
     const known = view?.baseUrl ?? recent[0]?.baseUrl ?? null;
     if (known) setAddress((current) => current || known);
   }, [view?.baseUrl, recent]);
+
+  // A restored target may still carry its user-given name; keep it when the form
+  // is used to reconnect, instead of silently saving `null` over it.
+  useEffect(() => {
+    const known = view?.name?.trim();
+    if (known) setName((current) => current || known);
+  }, [view?.name]);
 
   // A local daemon whose token lives in an env var can't be auto-read; hand the
   // user the address and ask for the token instead of failing generically.
@@ -129,7 +137,11 @@ export function ConnectPage() {
   async function connectRemote(): Promise<void> {
     const parsed = parseAddress(address);
     if (!parsed) return;
-    await connect({ ...parsed, token: token.trim() || undefined });
+    await connect({
+      ...parsed,
+      token: token.trim() || undefined,
+      name: name.trim() || undefined,
+    });
   }
 
   /**
@@ -157,7 +169,7 @@ export function ConnectPage() {
       <div className="gate-card">
         {returnView && (
           <button className="btn ghost" style={{ marginBottom: 12 }} onClick={cancelAddHost} title="返回上一台主机">
-            ← 返回 {returnView.name ?? returnView.baseUrl ?? '上一台主机'}
+            ← 返回 {displayHost(returnView.name, returnView.host)}
           </button>
         )}
         <div className="gate-brand">
@@ -199,11 +211,14 @@ export function ConnectPage() {
                 key={entry.baseUrl}
                 type="button"
                 className="recent-item"
-                title={entry.baseUrl}
-                onClick={() => setAddress(entry.baseUrl)}
+                title={maskAddress(entry.baseUrl)}
+                onClick={() => {
+                  setAddress(entry.baseUrl);
+                  setName(entry.name ?? '');
+                }}
               >
-                <span className="recent-name">{entry.name ?? entry.baseUrl}</span>
-                {entry.name && <span className="recent-url mono">{entry.baseUrl}</span>}
+                <span className="recent-name">{displayHost(entry.name, entry.baseUrl)}</span>
+                {entry.name && <span className="recent-url mono">{maskAddress(entry.baseUrl)}</span>}
               </button>
             ))}
           </div>
@@ -217,6 +232,16 @@ export function ConnectPage() {
             placeholder="粘贴 daemon 的访问 token"
             value={token}
             onChange={(e) => setToken(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="conn-name">名称（可选）</label>
+          <input
+            id="conn-name"
+            placeholder="这台电脑的名字"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             autoComplete="off"
           />
         </div>
@@ -303,7 +328,7 @@ export function ConnectPage() {
             等同于那台电脑上的远程 shell 权限。
           </div>
         )}
-        {error && !insecureWarning && <div className="error-text">{error}</div>}
+        {error && !insecureWarning && <div className="error-text">{maskAddress(error)}</div>}
         {errorCode === 'token_required' && (
           <div className="hint">
             这个 daemon 的 token 来自环境变量或启动参数，客户端读不到，请手动粘贴。
@@ -317,7 +342,7 @@ export function ConnectPage() {
 
         {view?.connected && (
           <button className="btn full" style={{ marginTop: 12 }} onClick={() => void disconnectAll()}>
-            当前已连接 {view.name ?? view.baseUrl}，断开重连
+            当前已连接 {displayHost(view.name, view.host)}，断开重连
           </button>
         )}
       </div>

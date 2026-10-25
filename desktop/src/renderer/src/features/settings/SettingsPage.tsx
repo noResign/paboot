@@ -6,6 +6,7 @@ import { PreferencesSection } from './PreferencesSection';
 import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
+import { maskAddress } from '../../../../shared/net';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
@@ -190,9 +191,9 @@ export function SettingsPage({
                 <h3>连接</h3>
                 <dl className="kv">
                   <dt>服务器</dt>
-                  <dd className="mono">{view?.baseUrl ?? '未连接'}</dd>
+                  <dd className="mono">{view?.host ? maskAddress(view.host) : '未连接'}</dd>
                   <dt>名称</dt>
-                  <dd>{view?.name ?? '—'}</dd>
+                  <dd>{view ? maskAddress(view.name?.trim() || '未命名') : '未配置'}</dd>
                   <dt>Token</dt>
                   <dd>
                     {view?.hasToken ? '已持有' : '无'}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
+import { displayHost, maskAddress } from '../../../../shared/net';
 
 /**
  * The rail-top connection pill, now a real switcher (`▾ 我的笔记本（本机） /
@@ -34,11 +35,15 @@ export function ConnectionSwitcher() {
   }, [open]);
 
   const active = views.find((view) => view.id === activeId) ?? null;
-  const label = active?.name ?? active?.baseUrl ?? '未选择主机';
+  const label = active ? displayHost(active.name, active.host) : '未选择主机';
 
   return (
     <div className="conn-switch" ref={ref}>
-      <button className="conn-pill" onClick={() => setOpen((value) => !value)} title={active?.baseUrl ?? ''}>
+      <button
+        className="conn-pill"
+        onClick={() => setOpen((value) => !value)}
+        title={active?.host ? maskAddress(active.host) : ''}
+      >
         <span className={`dot ${active?.connected ? 'ok' : 'warn'}`} />
         <span className="conn-name">{label}</span>
         <span className="chevron">▾</span>
@@ -50,17 +55,17 @@ export function ConnectionSwitcher() {
             <div key={view.id} className={`conn-row${view.id === activeId ? ' active' : ''}`}>
               <button
                 className="conn-pick"
-                title={view.baseUrl ?? ''}
+                title={view.host ? maskAddress(view.host) : ''}
                 onClick={() => {
                   setOpen(false);
                   switchTo(view.id);
                 }}
               >
                 <span className={`dot ${view.connected ? 'ok' : 'err'}`} />
-                <span className="conn-row-name">{view.name ?? view.baseUrl ?? view.id}</span>
+                <span className="conn-row-name">{displayHost(view.name, view.host)}</span>
                 {!view.connected && (
                   <span className="hint" style={{ margin: 0 }}>
-                    {view.error ?? '未连接'}
+                    {maskAddress(view.error ?? '未连接')}
                   </span>
                 )}
               </button>
