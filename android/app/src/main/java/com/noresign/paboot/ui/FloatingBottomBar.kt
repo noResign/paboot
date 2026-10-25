@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -110,9 +111,14 @@ internal fun FloatingBottomBar(
                             Text(
                                 tab.label,
                                 color = tint,
-                                fontSize = 11.sp,
-                                // iOS 选中只变主色、不加粗——保持一致，避免切换时文字跳动。
-                                fontWeight = FontWeight.Medium,
+                                // 只改 fontSize 会把行高留在默认 bodyLarge 的 24sp，图标和文字之间
+                                // 会凭空多出一截；收紧行高并去掉字体额外 padding，与 iOS 的间距一致。
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    lineHeight = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                                ),
                             )
                         }
                     }
