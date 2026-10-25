@@ -376,7 +376,8 @@ private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
         cardView.backgroundColor = Theme.Colors.surface
         cardView.layer.cornerRadius = Radius.card
         cardView.clipsToBounds = true
-        cardView.isUserInteractionEnabled = false
+        // Must stay interactive: while closed it shields the edit/delete buttons
+        // underneath, so a tap on the row cannot trigger an action without swiping.
         cardView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(cardView)
 
