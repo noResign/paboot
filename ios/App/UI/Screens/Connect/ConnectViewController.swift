@@ -522,7 +522,7 @@ private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
     }
 
     /// A horizontal pan belongs to the row; a vertical one belongs to the scroll view.
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: self)
         return abs(velocity.x) > abs(velocity.y)
