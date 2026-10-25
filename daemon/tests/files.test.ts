@@ -27,6 +27,20 @@ describe('file browser', () => {
     expect(result.entries.map((e) => e.path).sort()).toEqual(['README.md', 'src']);
   });
 
+  it('points a top-level directory at the root through an empty parent', () => {
+    const result = listFiles(dir, 'src');
+    expect(result.path).toBe('src');
+    expect(result.parent).toBe('');
+  });
+
+  it('returns the parent path for deeper directories', () => {
+    fs.mkdirSync(path.join(dir, 'src', 'nested'));
+    fs.writeFileSync(path.join(dir, 'src', 'nested', 'deep.ts'), '');
+    const result = listFiles(dir, 'src/nested');
+    expect(result.path).toBe('src/nested');
+    expect(result.parent).toBe('src');
+  });
+
   it('can include hidden and ignored entries', () => {
     const result = listFiles(dir, '', { showHidden: true, showIgnored: true });
     expect(result.entries.map((e) => e.path).sort()).toEqual(['.secret', 'README.md', 'node_modules', 'src']);

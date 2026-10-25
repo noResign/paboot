@@ -159,10 +159,12 @@ export function listFiles(
 
   const page = entries.slice(offset, offset + limit);
   const nextOffset = offset + page.length;
+  // Root has no parent (`null`); every other directory points at its parent
+  // relative to the root, with the root itself represented by an empty string.
   const parentWire = current.wire ? toWire(path.dirname(current.wire)) : null;
   return {
     path: current.wire,
-    parent: current.wire && parentWire !== '.' ? parentWire : null,
+    parent: parentWire === '.' ? '' : parentWire,
     entries: page,
     nextCursor: nextOffset < entries.length ? String(nextOffset) : null,
   };

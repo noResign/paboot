@@ -338,6 +338,10 @@ export interface FilesResponse {
   /** Browse-only bookmarks; not roots, grant nothing. See `WorkspaceDto.shortcutDirs`. */
   shortcutDirs: string[];
   path: string;
+  /**
+   * Parent directory relative to `root`. `null` only when `path` is the root
+   * itself; an empty string means the parent is the root (a top-level directory).
+   */
   parent: string | null;
   entries: FileEntryDto[];
   nextCursor: string | null;

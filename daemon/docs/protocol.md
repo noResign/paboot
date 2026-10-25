@@ -49,7 +49,7 @@
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
 | `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>`；带 `?runId=` 时改为该 run 的 `pre..post` 改动 |
 | `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>`（可带 `?runId=`） |
-| `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=` |
+| `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=`；响应里的 `parent`：根目录为 `null`，一级目录为 `""`（父目录即根），更深为父目录的相对路径 |
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&root=<abs>&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
