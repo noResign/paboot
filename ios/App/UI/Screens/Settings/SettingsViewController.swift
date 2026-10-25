@@ -153,7 +153,7 @@ final class SettingsViewController: UIViewController {
     }
 
     private func configureConnectionSection() {
-        configureActionButton(reconnectButton, title: "重新连接")
+        configureOutlinedActionButton(reconnectButton, title: "重新连接")
         reconnectButton.addAction(
             UIAction { _ in AppRouter.shared.showConnect() },
             for: .touchUpInside
@@ -195,7 +195,7 @@ final class SettingsViewController: UIViewController {
     }
 
     private func configureWorkspaceSection() {
-        configureActionButton(manageWorkspacesButton, title: "管理工作区")
+        configureOutlinedActionButton(manageWorkspacesButton, title: "管理工作区")
         manageWorkspacesButton.addAction(
             UIAction { [weak self] _ in self?.openWorkspaceManagement() },
             for: .touchUpInside
@@ -243,6 +243,19 @@ final class SettingsViewController: UIViewController {
         configuration.title = title
         configuration.baseForegroundColor = Theme.Colors.primary
         configuration.baseBackgroundColor = Theme.Colors.primary
+        configuration.cornerStyle = .medium
+        button.configuration = configuration
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+    }
+
+    /// White fill with a colored outline (used by the connection/workspace actions).
+    private func configureOutlinedActionButton(_ button: UIButton, title: String) {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.baseForegroundColor = Theme.Colors.primary
+        configuration.background.backgroundColor = Theme.Colors.surface
+        configuration.background.strokeColor = Theme.Colors.primary
+        configuration.background.strokeWidth = 1
         configuration.cornerStyle = .medium
         button.configuration = configuration
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
