@@ -1,22 +1,31 @@
 package com.noresign.paboot.ui
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -25,13 +34,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -41,27 +57,23 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.data.SavedConnection
 import com.noresign.paboot.ui.theme.Brand
 import com.noresign.paboot.ui.theme.BrandGlyph
+import com.noresign.paboot.util.maskAddress
 import com.noresign.paboot.viewmodel.ConnectUiState
 import com.noresign.paboot.viewmodel.ConnectViewModel
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 @Composable
 fun ConnectScreen(
@@ -121,70 +133,12 @@ fun ConnectScreen(
                 )
             }
 
-            var nameMenuOpen by remember { mutableStateOf(false) }
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val menuWidth = maxWidth
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = viewModel::onNameChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("名称") },
-                    // placeholder 必须锁成一行：singleLine 只约束输入文本，长 placeholder 换行会把输入框撑高
-                    placeholder = { Text("如：家里的 Mac mini", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    trailingIcon = {
-                        if (savedConnections.isNotEmpty()) {
-                            IconButton(onClick = { nameMenuOpen = true }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowDropDown,
-                                    contentDescription = "选择已保存的连接",
-                                )
-                            }
-                        }
-                    },
-                )
-                DropdownMenu(
-                    expanded = nameMenuOpen,
-                    onDismissRequest = { nameMenuOpen = false },
-                    // 和输入框等宽
-                    modifier = Modifier.width(menuWidth),
-                    // 默认是灰色 surfaceContainer + tonalElevation，改成干净的 surface
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 6.dp,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    savedConnections.forEach { connection ->
-                        // 用自定义 Row 而不是 DropdownMenuItem：后者的默认行高偏大
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    nameMenuOpen = false
-                                    viewModel.fillSaved(connection)
-                                }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = connection.name.ifBlank { connection.baseUrl },
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
-
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = viewModel::onBaseUrlChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("daemon 地址") },
-                placeholder = { Text("http://192.168.1.5:4780", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                label = { Text("地址") },
+                placeholder = { Text("192.168.1.2:4780", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
@@ -197,13 +151,13 @@ fun ConnectScreen(
                 value = token,
                 onValueChange = viewModel::onTokenChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("token") },
-                placeholder = { Text("粘贴 ~/.paboot/token 的内容", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                label = { Text("Token") },
+                placeholder = { Text("从 ~/.paboot/token 读取", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done
+                    imeAction = ImeAction.Next
                 ),
                 trailingIcon = {
                     IconButton(onClick = { tokenVisible = !tokenVisible }) {
@@ -217,6 +171,17 @@ fun ConnectScreen(
                         )
                     }
                 }
+            )
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = viewModel::onNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("名称（可选）") },
+                placeholder = { Text("这台电脑的名字", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { viewModel.connect() }),
             )
 
             Button(
@@ -239,13 +204,15 @@ fun ConnectScreen(
             if (savedConnections.isNotEmpty()) {
                 SavedConnectionsSection(
                     connections = savedConnections,
-                    onSelect = viewModel::selectSaved,
+                    onSelect = viewModel::fillSaved,
+                    onEdit = viewModel::updateSaved,
                     onForget = viewModel::forgetSaved,
                 )
             }
 
             Text(
-                text = "提示：在运行 daemon 的电脑上执行 cat ~/.paboot/token 可获取 token；daemon 默认监听 0.0.0.0:4780。",
+                text = "token 等同于在电脑上执行命令的权限，请只在可信网络或隧道中使用。" +
+                    "在电脑上执行 cat ~/.paboot/token 可获取 token。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -253,15 +220,17 @@ fun ConnectScreen(
     }
 }
 
-/** 「最近连接」列表：点击即填入并连接，长按可移除。 */
-@OptIn(ExperimentalFoundationApi::class)
+/** 「最近连接」列表：点击回填表单，左滑露出「编辑 / 删除」（与 iOS 一致）。 */
 @Composable
 private fun SavedConnectionsSection(
     connections: List<SavedConnection>,
     onSelect: (SavedConnection) -> Unit,
+    onEdit: (SavedConnection, String, String, String) -> Boolean,
     onForget: (String) -> Unit,
 ) {
-    var pendingForget by remember { mutableStateOf<SavedConnection?>(null) }
+    // 同一时刻只允许一张滑开。
+    var revealedUrl by remember { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf<SavedConnection?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -270,24 +239,149 @@ private fun SavedConnectionsSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         connections.forEach { connection ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = { onSelect(connection) },
-                        onLongClick = { pendingForget = connection },
-                    ),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            SwipeRevealConnectionRow(
+                connection = connection,
+                revealed = revealedUrl == connection.baseUrl,
+                onRevealChange = { open ->
+                    revealedUrl = if (open) connection.baseUrl else revealedUrl.takeUnless { it == connection.baseUrl }
+                },
+                onSelect = { onSelect(connection) },
+                onEdit = {
+                    revealedUrl = null
+                    editing = connection
+                },
+                onDelete = { onForget(connection.baseUrl) },
+            )
+        }
+    }
+
+    editing?.let { connection ->
+        EditSavedConnectionDialog(
+            connection = connection,
+            onDismiss = { editing = null },
+            onSave = { name, baseUrl, token -> onEdit(connection, name, baseUrl, token) },
+        )
+    }
+}
+
+/**
+ * 卡片默认不显示动作；左滑后停在滑开位置露出「编辑 / 删除」，点卡片本身收起。
+ * 不用 M3 的 `SwipeToDismissBox`：那个松手即触发动作、停不在中间，而这里要的是「滑开 → 再点」。
+ */
+@Composable
+private fun SwipeRevealConnectionRow(
+    connection: SavedConnection,
+    revealed: Boolean,
+    onRevealChange: (Boolean) -> Unit,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val actionWidth = 80.dp
+    val actionPx = with(LocalDensity.current) { (actionWidth * 2).toPx() }
+    var offsetX by remember(connection.baseUrl) { mutableFloatStateOf(0f) }
+    // 每次拖拽结束 +1：即使滑开状态没变（滑一点点又放开），也要补间回锚点。
+    var settle by remember(connection.baseUrl) { mutableIntStateOf(0) }
+
+    LaunchedEffect(revealed, settle, actionPx) {
+        animate(
+            initialValue = offsetX,
+            targetValue = if (revealed) -actionPx else 0f,
+            animationSpec = tween(180),
+        ) { value, _ -> offsetX = value }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium),
+    ) {
+        // 底下的动作：卡片被推开后露出来。
+        Box(
+            modifier = Modifier.matchParentSize(),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Row(modifier = Modifier.fillMaxHeight()) {
+                Box(
+                    modifier = Modifier
+                        .width(actionWidth)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable(onClick = onEdit),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        text = connection.name.ifBlank { connection.baseUrl },
+                        "编辑",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .width(actionWidth)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.error)
+                        .clickable(onClick = onDelete),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "删除",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onError,
+                    )
+                }
+            }
+        }
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offsetX.roundToInt(), 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    state = rememberDraggableState { delta ->
+                        offsetX = (offsetX + delta).coerceIn(-actionPx, 0f)
+                    },
+                    onDragStopped = { velocity ->
+                        val open = when {
+                            velocity < -800f -> true
+                            velocity > 800f -> false
+                            else -> offsetX < -actionPx / 2f
+                        }
+                        onRevealChange(open)
+                        settle += 1
+                    },
+                )
+                .clickable {
+                    if (revealed) onRevealChange(false) else onSelect()
+                }
+                // 滑动手势对 TalkBack 不可用，额外提供编辑 / 删除的无障碍动作。
+                .semantics {
+                    customActions = listOf(
+                        CustomAccessibilityAction("编辑") {
+                            onEdit()
+                            true
+                        },
+                        CustomAccessibilityAction("删除") {
+                            onDelete()
+                            true
+                        },
+                    )
+                },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = connection.displayName,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = connection.baseUrl,
+                        text = maskAddress(connection.baseUrl),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -297,23 +391,80 @@ private fun SavedConnectionsSection(
             }
         }
     }
+}
 
-    pendingForget?.let { connection ->
-        AlertDialog(
-            onDismissRequest = { pendingForget = null },
-            title = { Text("移除记录") },
-            text = { Text("确定移除「${connection.name.ifBlank { connection.baseUrl }}」吗？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onForget(connection.baseUrl)
-                    pendingForget = null
-                }) { Text("移除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingForget = null }) { Text("取消") }
-            },
-        )
-    }
+/** 编辑最近连接：名称 / 地址 / token；保存时写回列表（地址与 token 必填）。 */
+@Composable
+private fun EditSavedConnectionDialog(
+    connection: SavedConnection,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Boolean,
+) {
+    var name by remember(connection.baseUrl) { mutableStateOf(connection.name) }
+    var baseUrl by remember(connection.baseUrl) { mutableStateOf(connection.baseUrl) }
+    var token by remember(connection.baseUrl) { mutableStateOf(connection.token) }
+    var tokenVisible by remember(connection.baseUrl) { mutableStateOf(false) }
+    val canSave = baseUrl.isNotBlank() && token.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑连接") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("名称（可选）") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("地址") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Token") },
+                    singleLine = true,
+                    visualTransformation = if (tokenVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                            Icon(
+                                imageVector = if (tokenVisible) {
+                                    Icons.Rounded.VisibilityOff
+                                } else {
+                                    Icons.Rounded.Visibility
+                                },
+                                contentDescription = if (tokenVisible) "隐藏 token" else "显示 token",
+                            )
+                        }
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (onSave(name, baseUrl, token)) onDismiss()
+                },
+                enabled = canSave,
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 /** 连接失败时的原因卡片；成功会直接跳会话，不在这里展示。 */

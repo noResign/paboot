@@ -7,7 +7,8 @@
 **目的**：查看当前选中 Workspace 下的历史会话（根目录平铺 + 子目录分组）、当前哪个在运行、进入会话。
 
 **关键元素**：
-1. 顶栏：标题「会话」+ **Workspace 切换器**（当前 Workspace 名/path；点击打开 Workspace 列表和目录选择）+ 全局连接状态胶囊（connected/offline）。
+1. 顶栏：**右上角 folder 图标 = Workspace 切换器**（下拉列出全部 Workspace，当前项打勾；标题下方显示当前
+   Workspace 路径）+ 标题「会话」+ 全局连接状态胶囊（connected/offline）。
 2. 会话列表（LazyColumn），**只展示当前 Workspace 的 Session**：
    - **当前 Workspace 根目录**（`cwd == workspace.path`）的会话**平铺在顶部**，不显示分组头；
      其中 `lastActiveAt` 超过 **3 天**没活动的收进平铺列表底部一个**默认折叠**的「更早」段

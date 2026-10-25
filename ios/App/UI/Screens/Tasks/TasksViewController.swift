@@ -7,7 +7,7 @@ import PabootProtocol
 final class TasksViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
     private let viewModel: ScheduledTasksViewModel
     private let screenTitle: String
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let tableView = UITableView(frame: .zero, style: .plain)
     private let refreshControl = UIRefreshControl()
     private let emptyView = EmptyStateView(
         symbolName: "calendar.badge.clock",
@@ -58,8 +58,13 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
         tableView.delegate = self
         tableView.register(TaskCell.self, forCellReuseIdentifier: TaskCell.reuseIdentifier)
         tableView.backgroundColor = Theme.Colors.background
-        // `.insetGrouped` reserves a large gap above the first section by default.
-        tableView.sectionHeaderTopPadding = 0
+        // Plain style: card spacing is controlled by TaskCell + contentInset, without
+        // `.insetGrouped`'s ~35pt gap above the first cell.
+        tableView.separatorStyle = .none
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 72
+        tableView.contentInsetAdjustmentBehavior = .never
+        tableView.contentInset = UIEdgeInsets(top: Spacing.xxs, left: 0, bottom: 0, right: 0)
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.refreshControl = refreshControl
         refreshControl.addTarget(self, action: #selector(refreshPulled), for: .valueChanged)
@@ -77,7 +82,8 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
             tableView.topAnchor.constraint(equalTo: messageLabel.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Never-adjusted insets: end above the floating tab bar, no duplicated safe area.
+            tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
             emptyView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
@@ -167,13 +173,34 @@ final class TasksViewController: UIViewController, UITableViewDataSource, UITabl
 private final class TaskCell: UITableViewCell {
     static let reuseIdentifier = "TaskCell"
 
+    private let cardView = UIView()
     private let nameLabel = UILabel()
     private let metaLabel = UILabel()
     private let statusLabel = UILabel()
+    private let chevron = UIImageView(
+        image: UIImage(
+            systemName: "chevron.right",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        )
+    )
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        backgroundColor = Theme.Colors.surface
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        selectionStyle = .none
+
+        cardView.backgroundColor = Theme.Colors.surface
+        cardView.layer.cornerRadius = Radius.card
+        cardView.layer.cornerCurve = .continuous
+        cardView.clipsToBounds = true
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(cardView)
+
+        chevron.tintColor = Theme.Colors.textMuted
+        chevron.contentMode = .scaleAspectFit
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(chevron)
 
         nameLabel.font = Typography.cardTitle
         nameLabel.textColor = Theme.Colors.textPrimary
@@ -188,28 +215,41 @@ private final class TaskCell: UITableViewCell {
 
         [nameLabel, metaLabel, statusLabel].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
-            contentView.addSubview($0)
+            cardView.addSubview($0)
         }
 
         NSLayoutConstraint.activate([
-            nameLabel.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
-            nameLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Spacing.md),
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Spacing.xxs),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Spacing.xxs),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Spacing.lg),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.lg),
+
+            chevron.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Spacing.sm),
+            chevron.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+
+            nameLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Spacing.sm),
+            nameLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Spacing.md),
             nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusLabel.leadingAnchor, constant: -Spacing.xs),
 
-            statusLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
+            statusLabel.trailingAnchor.constraint(equalTo: chevron.leadingAnchor, constant: -Spacing.xs),
             statusLabel.firstBaselineAnchor.constraint(equalTo: nameLabel.firstBaselineAnchor),
 
             metaLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
             metaLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            metaLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
-            metaLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            metaLabel.trailingAnchor.constraint(equalTo: chevron.leadingAnchor, constant: -Spacing.xs),
+            metaLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -Spacing.sm),
         ])
-        accessoryType = .disclosureIndicator
+        accessoryType = .none
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        cardView.backgroundColor = highlighted ? Theme.Colors.codeBackground : Theme.Colors.surface
     }
 
     func configure(task: ScheduledTaskDto) {
@@ -226,7 +266,6 @@ private final class TaskCell: UITableViewCell {
         metaLabel.text = "\(task.schedule.label) · 下次 \(next) · \(target)\(task.createdBy == "mcp" ? " · AI 创建" : "")"
         statusLabel.text = statusText(task)
         statusLabel.textColor = statusColor(task)
-        accessoryType = .disclosureIndicator
     }
 
     private func statusText(_ task: ScheduledTaskDto) -> String {

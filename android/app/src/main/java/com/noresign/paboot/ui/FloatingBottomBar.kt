@@ -1,5 +1,8 @@
 package com.noresign.paboot.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,11 +20,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -47,15 +50,27 @@ internal fun FloatingBottomBar(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
-            shadowElevation = 6.dp,
+            // 对齐 iOS 的 ultraThinMaterial 胶囊：近白半透明 + 细边，而不是灰色 surfaceContainer。
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            shadowElevation = 2.dp,
         ) {
             Row(
                 modifier = Modifier.heightIn(min = 56.dp).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (onToggle != null) {
-                    IconButton(onClick = onToggle, modifier = Modifier.size(48.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Button,
+                                onClick = onToggle,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Icon(
                             imageVector = if (composerVisible) Icons.Rounded.Dashboard else Icons.Rounded.Edit,
                             contentDescription = if (composerVisible) "切换到导航" else "切换到输入框",
@@ -76,10 +91,17 @@ internal fun FloatingBottomBar(
                         val active = tab == selected
                         val tint = if (active) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
+                        val interactionSource = remember { MutableInteractionSource() }
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .selectable(selected = active, role = Role.Tab, onClick = { onSelect(tab) })
+                                .selectable(
+                                    selected = active,
+                                    interactionSource = interactionSource,
+                                    indication = null,
+                                    role = Role.Tab,
+                                    onClick = { onSelect(tab) },
+                                )
                                 .padding(vertical = 5.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -89,7 +111,8 @@ internal fun FloatingBottomBar(
                                 tab.label,
                                 color = tint,
                                 fontSize = 11.sp,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                // iOS 选中只变主色、不加粗——保持一致，避免切换时文字跳动。
+                                fontWeight = FontWeight.Medium,
                             )
                         }
                     }

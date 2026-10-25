@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.data.repository.SessionRepository
+import com.noresign.paboot.data.repository.WorkspaceRepository
+import com.noresign.paboot.network.daemon.dto.WorkspaceDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.model.session.SessionListModel
 import com.noresign.paboot.model.session.groupByCwd
@@ -20,10 +22,15 @@ sealed class SessionListUiState {
 
 class SessionListViewModel(
     private val repository: SessionRepository = SessionRepository(),
+    private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SessionListUiState>(SessionListUiState.Loading)
     val uiState = _uiState.asStateFlow()
+
+    /** 供顶栏工作区切换器使用；列表加载失败不清空，避免菜单突然变空。 */
+    private val _workspaces = MutableStateFlow<List<WorkspaceDto>>(emptyList())
+    val workspaces = _workspaces.asStateFlow()
 
     /** Transient message (e.g. delete failure), cleared after being shown. */
     private val _message = MutableStateFlow<String?>(null)
@@ -39,11 +46,45 @@ class SessionListViewModel(
     val renameError = _renameError.asStateFlow()
 
     init {
+        viewModelScope.launch { loadWorkspaces() }
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
                 _uiState.value = SessionListUiState.Loading
                 fetch(workspaceId)
             }
+        }
+    }
+
+    /** 切换工作区：只改全局选择，选中项变化会触发 session 重新拉取。 */
+    fun selectWorkspace(workspace: WorkspaceDto) {
+        if (WorkspaceSelection.current() == workspace.id) return
+        WorkspaceSelection.select(workspace.id, workspace.path)
+    }
+
+    /** 从设置页新增/删除了工作区后回到本页时，刷新切换器里的列表。 */
+    fun refreshWorkspaces() {
+        viewModelScope.launch { loadWorkspaces() }
+    }
+
+    private suspend fun loadWorkspaces() {
+        when (val r = workspaceRepository.listWorkspaces()) {
+            is NetworkResult.Success -> {
+                _workspaces.value = r.data
+                // 没有选择或选中的工作区已被删除时，落到默认工作区（与 iOS 一致）。
+                val selected = WorkspaceSelection.current()
+                val resolved = r.data.firstOrNull { it.id == selected }
+                    ?: r.data.firstOrNull { it.isDefault }
+                    ?: r.data.firstOrNull()
+                if (resolved != null) {
+                    if (selected != resolved.id || WorkspaceSelection.selectedPath.value != resolved.path) {
+                        WorkspaceSelection.select(resolved.id, resolved.path)
+                    }
+                } else if (selected != null) {
+                    WorkspaceSelection.select(null)
+                }
+            }
+            // 会话列表自己的请求会给出错误态；这里静默，避免顶栏菜单抢提示。
+            is NetworkResult.Error -> Unit
         }
     }
 

@@ -11,7 +11,13 @@ final class FilesViewController: UIViewController {
     private let rootBar = FileRootBarView()
     private let breadcrumbBar = FileBreadcrumbBarView()
     private var breadcrumbHeight: NSLayoutConstraint!
+    private let filterBar = UIView()
+    private let filterField = UITextField()
+    private var filterHeight: NSLayoutConstraint!
     private let tableView = UITableView(frame: .zero, style: .plain)
+    private var filterText = ""
+    private var lastFilterPath: String?
+    private var latestState: FilesViewModel.State?
 
     private let refreshIndicatorContainer = UIView()
     private let refreshSpinner = UIActivityIndicatorView(style: .medium)
@@ -41,6 +47,7 @@ final class FilesViewController: UIViewController {
         case repo(String)
         case entry(FileEntryDto)
         case up
+        case noMatches
     }
 
     private var rows: [Row] = []
@@ -58,6 +65,7 @@ final class FilesViewController: UIViewController {
         configureModeControl()
         configureRootBar()
         configureBreadcrumbBar()
+        configureFilterBar()
         configureTable()
         configureRefreshIndicator()
         configureStateContainer()
@@ -121,6 +129,52 @@ final class FilesViewController: UIViewController {
         ])
     }
 
+    private func configureFilterBar() {
+        filterBar.translatesAutoresizingMaskIntoConstraints = false
+        filterBar.backgroundColor = Theme.Colors.codeBackground
+        filterBar.layer.cornerRadius = 8
+        filterBar.clipsToBounds = true
+        filterBar.isHidden = true
+        view.addSubview(filterBar)
+
+        filterField.translatesAutoresizingMaskIntoConstraints = false
+        filterField.attributedPlaceholder = NSAttributedString(
+            string: "筛选当前目录",
+            attributes: [.foregroundColor: Theme.Colors.textMuted]
+        )
+        filterField.font = Typography.body
+        filterField.textColor = Theme.Colors.textPrimary
+        filterField.returnKeyType = .search
+        filterField.clearButtonMode = .whileEditing
+        filterField.autocapitalizationType = .none
+        filterField.autocorrectionType = .no
+        filterField.accessibilityLabel = "筛选当前目录"
+        filterField.delegate = self
+        filterField.addTarget(self, action: #selector(filterChanged), for: .editingChanged)
+
+        let iconContainer = UIView(frame: CGRect(x: 0, y: 0, width: 28, height: 20))
+        let icon = UIImageView(image: UIImage(systemName: "magnifyingglass"))
+        icon.tintColor = Theme.Colors.textMuted
+        icon.contentMode = .scaleAspectFit
+        icon.frame = CGRect(x: 8, y: 2, width: 16, height: 16)
+        iconContainer.addSubview(icon)
+        filterField.leftView = iconContainer
+        filterField.leftViewMode = .always
+        filterBar.addSubview(filterField)
+
+        filterHeight = filterBar.heightAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            filterBar.topAnchor.constraint(equalTo: breadcrumbBar.bottomAnchor),
+            filterBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Spacing.lg),
+            filterBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Spacing.lg),
+            filterHeight,
+            filterField.leadingAnchor.constraint(equalTo: filterBar.leadingAnchor, constant: 4),
+            filterField.trailingAnchor.constraint(equalTo: filterBar.trailingAnchor, constant: -4),
+            filterField.centerYAnchor.constraint(equalTo: filterBar.centerYAnchor),
+            filterField.heightAnchor.constraint(equalToConstant: 28),
+        ])
+    }
+
     private func configureTable() {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.backgroundColor = Theme.Colors.background
@@ -134,9 +188,13 @@ final class FilesViewController: UIViewController {
         tableView.dataSource = self
         tableView.delegate = self
 
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissFilterKeyboard))
+        tap.cancelsTouchesInView = false
+        tableView.addGestureRecognizer(tap)
+
         view.addSubview(tableView)
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: breadcrumbBar.bottomAnchor, constant: Spacing.xxs),
+            tableView.topAnchor.constraint(equalTo: filterBar.bottomAnchor, constant: Spacing.xxs),
             // Extend beneath the transparent tab bar; automatic safe-area insets keep
             // the last item reachable above its buttons when scrolling to the bottom.
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -187,7 +245,7 @@ final class FilesViewController: UIViewController {
         stateContainer.addSubview(loadingStack)
 
         NSLayoutConstraint.activate([
-            stateContainer.topAnchor.constraint(equalTo: breadcrumbBar.bottomAnchor),
+            stateContainer.topAnchor.constraint(equalTo: filterBar.bottomAnchor),
             stateContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             stateContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             stateContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -206,7 +264,23 @@ final class FilesViewController: UIViewController {
     }
 
     private func render(_ state: FilesViewModel.State) {
+        latestState = state
         segmentedControl.selectedSegmentIndex = state.mode == .changes ? 0 : 1
+
+        // Filtering only exists in「全部文件」; switching mode / directory clears it.
+        let showsFilter = state.mode == .all
+        if showsFilter {
+            if lastFilterPath != state.path {
+                lastFilterPath = state.path
+                clearFilter()
+            }
+        } else {
+            lastFilterPath = nil
+            clearFilter()
+            filterField.resignFirstResponder()
+        }
+        filterBar.isHidden = !showsFilter
+        filterHeight.constant = showsFilter ? 36 : 0
 
         let signature = state.knownRoots.joined(separator: "|")
             + "#" + state.shortcuts.joined(separator: "|")
@@ -308,7 +382,15 @@ final class FilesViewController: UIViewController {
             if state.parent != nil {
                 result.append(.up)
             }
-            result.append(contentsOf: state.entries.map { Row.entry($0) })
+            let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let entries = query.isEmpty
+                ? state.entries
+                : state.entries.filter { $0.name.localizedCaseInsensitiveContains(query) }
+            if entries.isEmpty && !query.isEmpty {
+                result.append(.noMatches)
+            } else {
+                result.append(contentsOf: entries.map { Row.entry($0) })
+            }
             return result
         }
     }
@@ -374,6 +456,25 @@ final class FilesViewController: UIViewController {
 
     @objc private func toggleHidden() {
         Task { await viewModel.toggleHidden() }
+    }
+
+    @objc private func filterChanged() {
+        let next = filterField.text ?? ""
+        guard next != filterText else { return }
+        filterText = next
+        if let state = latestState {
+            render(state)
+        }
+    }
+
+    @objc private func dismissFilterKeyboard() {
+        filterField.resignFirstResponder()
+    }
+
+    private func clearFilter() {
+        guard !filterText.isEmpty || !(filterField.text ?? "").isEmpty else { return }
+        filterText = ""
+        filterField.text = ""
     }
 
     private func presentAddRootPicker() {
@@ -503,6 +604,13 @@ extension FilesViewController: UITableViewDataSource {
             ) as! FileEntryCell
             cell.configureUp()
             return cell
+        case .noMatches:
+            let cell = tableView.dequeueReusableCell(
+                withIdentifier: FileEntryCell.reuseIdentifier,
+                for: indexPath
+            ) as! FileEntryCell
+            cell.configureMessage("当前目录没有匹配项")
+            return cell
         }
     }
 }
@@ -533,6 +641,8 @@ extension FilesViewController: UITableViewDelegate {
             }
         case .up:
             Task { await viewModel.goUp() }
+        case .noMatches:
+            return
         }
     }
 
@@ -542,6 +652,7 @@ extension FilesViewController: UITableViewDelegate {
         forRowAt indexPath: IndexPath
     ) {
         guard viewModel.state.mode == .all,
+              filterText.isEmpty,
               viewModel.state.nextCursor != nil,
               !rows.isEmpty,
               indexPath.row == rows.count - 1 else {
@@ -581,5 +692,12 @@ extension FilesViewController: UITableViewDelegate {
         }
 
         beginRefresh(hold: min(pull, refreshMaxHold))
+    }
+}
+
+extension FilesViewController: UITextFieldDelegate {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
     }
 }

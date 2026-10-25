@@ -14,6 +14,14 @@ final class AppRouter {
 
     func start(in window: UIWindow) {
         self.window = window
+        // Cold start with a saved connection enters the main tabs directly, matching
+        // Android's gate. An expired token is not caught here — the session list shows
+        // the error and offers「重新连接」.
+        if let recent = ConnectionStore.shared.savedConnections.first,
+           DaemonSession.shared.activate(recent) != nil {
+            showMain(animated: false)
+            return
+        }
         showConnect(animated: false)
     }
 
@@ -34,8 +42,8 @@ final class AppRouter {
         setRoot(navigation, animated: animated)
     }
 
-    func showMain() {
-        setRoot(MainTabBarController(), animated: true)
+    func showMain(animated: Bool = true) {
+        setRoot(MainTabBarController(), animated: animated)
         RunNotifications.shared.connectionActivated()
     }
 

@@ -126,13 +126,18 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 尺寸以 `docs/ui/mobile/preview.html` 为准（紧凑稿），实现时不要套平台默认高度。
 
 **底部 Tab Bar**（会话 / 文件 / 任务 / 设置）
-- 条高约 **61dp + 系统导航栏 inset**；**不用** Material3 `NavigationBar` 的 80dp 默认（它不暴露高度参数，压不到这个尺寸）。
-- 每项：icon **24dp** + 上方内边距 7dp、图标与文字间距 3dp、下方内边距 9dp；文字 **10.5sp**。
-- 选中：主色 + 文字加粗；未选中：次要文字色 + Medium。
-- 顶部 1px 分隔线；条背景用 `surface`（预览稿的毛玻璃为可选增强，见 §4.1.1）。
+- **悬浮胶囊**：左右各留 **20dp**、距系统导航栏 inset **8dp**，圆角 **28dp**，胶囊高约 **56dp**。
+  **不用** Material3 `NavigationBar`（固定 80dp，且不暴露高度参数）。
+- 背景：iOS 用 `ultraThinMaterial` 毛玻璃；Android 用 `surface` 92% 透明度 + 1dp 细边 +
+  2dp 轻阴影近似，避免灰色 `surfaceContainer` 的「实心块」观感。
+- 每项：icon **20dp**、图标与文字间距 2dp；文字 **11sp**、字重 **Medium**（选中不加粗）。
+- 选中：主色；未选中：次要文字色。无顶部整条分隔线（靠胶囊细边与悬浮位置分层）。
 
 **顶部栏**
 - 用 Material3 `TopAppBar` 默认高度（64dp）+ 状态栏 inset 即可，**不要再额外加状态栏高度**。
+- 顶栏右侧的动作图标用**小号中性圆钮**（Android 封装成 `TopBarActionButton`：32dp
+  半透明中性底、无描边、18dp 主色图标、44dp 触控区），不要裸 `IconButton`，也不要用
+  大号描边圆钮或主色浅底——前者太重，后者会在顶栏形成成块的绿色。与 iOS 的 bar button 观感对齐。
 - ⚠️ 每个 Tab 页各自带 Scaffold + TopAppBar，而外层 `MainScreen` 的 Scaffold 已经把系统栏 inset 算进了 `innerPadding`；
   外层必须 `consumeWindowInsets(innerPadding)`，否则 inset 会被应用两次 —— 表现为标题上方多一条状态栏高度的空白、底栏上方多一段空隙。
 

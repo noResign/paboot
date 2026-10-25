@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import com.noresign.paboot.ui.identity.permissionModeOptions
+import com.noresign.paboot.util.maskAddress
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -123,7 +124,16 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             SectionTitle("连接")
-            InfoRow("服务器地址", baseUrl.ifBlank { "未配置" }, monospace = true)
+            val name = SettingsStore.name
+            InfoRow(
+                "名称",
+                when {
+                    !name.isNullOrBlank() -> maskAddress(name)
+                    baseUrl.isBlank() -> "未配置"
+                    else -> "未命名"
+                },
+            )
+            InfoRow("服务器地址", maskAddress(baseUrl).ifBlank { "未配置" }, monospace = true)
             InfoRow("token", if (token.isBlank()) "未配置" else "••••••••")
             OutlinedButton(onClick = onReconnect, modifier = Modifier.fillMaxWidth()) {
                 Text("重新连接")

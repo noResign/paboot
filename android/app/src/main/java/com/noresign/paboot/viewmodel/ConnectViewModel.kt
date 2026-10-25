@@ -43,13 +43,7 @@ class ConnectViewModel(
     private val _savedConnections = MutableStateFlow(settings.savedConnections)
     val savedConnections = _savedConnections.asStateFlow()
 
-    /** 选中「最近连接」里的某条：回填后直接发起连接。 */
-    fun selectSaved(connection: SavedConnection) {
-        fillSaved(connection)
-        connect()
-    }
-
-    /** 名称下拉框选中某条：只回填三个输入框，不自动连接，方便先改再连。 */
+    /** 选中「最近连接」里的某条：只回填三个输入框，不自动连接，方便先改再连。 */
     fun fillSaved(connection: SavedConnection) {
         _name.value = connection.name
         _baseUrl.value = connection.baseUrl
@@ -60,6 +54,20 @@ class ConnectViewModel(
     fun forgetSaved(baseUrl: String) {
         settings.forgetConnection(baseUrl)
         _savedConnections.value = settings.savedConnections
+    }
+
+    /** 保存「最近连接」的编辑结果；返回 false 表示地址 / token 为空，未写入。 */
+    fun updateSaved(connection: SavedConnection, name: String, baseUrl: String, token: String): Boolean {
+        val wasCurrent = settings.baseUrl == connection.baseUrl
+        if (!settings.updateConnection(connection.baseUrl, name, baseUrl, token)) return false
+        _savedConnections.value = settings.savedConnections
+        // 改的是表单当前那条：同步输入框，避免再点连接时用旧值。
+        if (wasCurrent) {
+            _name.value = settings.name ?: ""
+            _baseUrl.value = settings.baseUrl ?: ""
+            _token.value = settings.token ?: ""
+        }
+        return true
     }
 
     fun onNameChange(value: String) {
@@ -84,6 +92,7 @@ class ConnectViewModel(
     }
 
     fun connect() {
+        if (_uiState.value is ConnectUiState.Connecting) return
         val nm = _name.value.trim()
         val url = _baseUrl.value.trim()
         val tk = _token.value.trim()

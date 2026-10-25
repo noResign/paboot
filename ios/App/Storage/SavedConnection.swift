@@ -11,9 +11,7 @@ struct SavedConnection: Codable, Equatable {
     let lastUsedAt: TimeInterval
 
     var displayName: String {
-        if !name.isEmpty {
-            return name
-        }
-        return URL(string: baseUrl)?.host ?? baseUrl
+        let raw = name.isEmpty ? (URL(string: baseUrl)?.host ?? baseUrl) : name
+        return AddressMask.mask(raw)
     }
 }

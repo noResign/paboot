@@ -46,11 +46,10 @@ final class ConnectionStore {
             storedServerId = nil
         }
         let id = storedServerId ?? baseUrl
-        let displayName = trimmedName.isEmpty ? (url.host ?? baseUrl) : trimmedName
 
         let connection = SavedConnection(
             id: id,
-            name: displayName,
+            name: trimmedName,
             baseUrl: baseUrl,
             serverId: storedServerId,
             lastUsedAt: Date().timeIntervalSince1970
@@ -64,6 +63,53 @@ final class ConnectionStore {
         active = connection
         persist()
         return connection
+    }
+
+    /// Edit a saved connection in place (name / address / token), keeping its position.
+    /// Returns nil when the address is invalid or the token is empty.
+    @discardableResult
+    func update(
+        _ connection: SavedConnection,
+        name: String,
+        rawURL: String,
+        token: String
+    ) -> SavedConnection? {
+        guard let url = URLNormalizer.normalize(rawURL) else { return nil }
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else { return nil }
+        guard let index = savedConnections.firstIndex(where: { $0.id == connection.id }) else { return nil }
+
+        let baseUrl = url.absoluteString
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A daemon with `serverId` keeps its identity across address edits; older
+        // ones are keyed by URL, so a changed address means a new Keychain key.
+        let newId = connection.serverId ?? baseUrl
+        guard KeychainStore.set(trimmedToken, for: newId) else { return nil }
+        if newId != connection.id {
+            KeychainStore.delete(connection.id)
+        }
+
+        let updated = SavedConnection(
+            id: newId,
+            name: trimmedName,
+            baseUrl: baseUrl,
+            serverId: connection.serverId,
+            lastUsedAt: connection.lastUsedAt
+        )
+
+        let previous = savedConnections
+        savedConnections = previous.enumerated().compactMap { offset, item in
+            if offset == index { return updated }
+            // Editing onto an address/identity that already exists merges the two.
+            if item.baseUrl == baseUrl || item.id == newId { return nil }
+            return item
+        }
+
+        if active?.id == connection.id {
+            active = updated
+        }
+        persist()
+        return updated
     }
 
     func forget(_ connection: SavedConnection) {

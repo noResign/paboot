@@ -30,12 +30,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
@@ -45,6 +47,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -83,6 +87,7 @@ import com.noresign.paboot.model.session.SessionListModel
 import com.noresign.paboot.ui.component.AgentBadge
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.RunningIndicator
+import com.noresign.paboot.ui.component.TopBarActionButton
 import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.SessionListUiState
@@ -103,6 +108,9 @@ fun SessionListScreen(
     val renameError by viewModel.renameError.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
+    val selectedWorkspaceId by WorkspaceSelection.selectedId.collectAsState()
+    val workspaces by viewModel.workspaces.collectAsState()
+    var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
     var renameTitle by remember { mutableStateOf("") }
@@ -111,6 +119,7 @@ fun SessionListScreen(
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshSilently()
+        viewModel.refreshWorkspaces()
         onPauseOrDispose { }
     }
     // The ViewModel outlives this composable; refresh on tab re-entry so a
@@ -129,6 +138,71 @@ fun SessionListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                actions = {
+                    Box {
+                        TopBarActionButton(
+                            icon = Icons.Rounded.Folder,
+                            contentDescription = "切换工作区",
+                            onClick = { workspaceMenuOpen = true },
+                        )
+                        DropdownMenu(
+                            expanded = workspaceMenuOpen,
+                            onDismissRequest = { workspaceMenuOpen = false },
+                        ) {
+                            Text(
+                                "切换工作区",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                            if (workspaces.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("暂无工作区") },
+                                    onClick = {},
+                                    enabled = false,
+                                )
+                            } else {
+                                workspaces.forEach { workspace ->
+                                    val selected = workspace.id == selectedWorkspaceId
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column(modifier = Modifier.widthIn(max = 280.dp)) {
+                                                Text(
+                                                    workspace.name.ifBlank { workspace.path },
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                if (workspace.name.isNotBlank() &&
+                                                    workspace.name != workspace.path
+                                                ) {
+                                                    Text(
+                                                        workspace.path,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        trailingIcon = {
+                                            if (selected) {
+                                                Icon(
+                                                    Icons.Rounded.Check,
+                                                    contentDescription = "当前工作区",
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            workspaceMenuOpen = false
+                                            viewModel.selectWorkspace(workspace)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
                 title = {
                     Column {
                         Text("会话")

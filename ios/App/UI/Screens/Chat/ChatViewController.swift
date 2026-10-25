@@ -537,7 +537,7 @@ final class ChatViewController: UIViewController {
             permissionSettingsAttributes = .disabled
         }
         let permissionSettings = UIAction(
-            title: "权限设置…",
+            title: "权限设置",
             attributes: permissionSettingsAttributes
         ) { [weak self] _ in
             self?.presentPermissionSettings()

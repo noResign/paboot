@@ -52,6 +52,8 @@ final class FileEntryCell: UITableViewCell {
 
     func configure(with entry: FileEntryDto) {
         let isDirectory = entry.type == "directory"
+        nameLabel.textColor = Theme.Colors.textPrimary
+        selectionStyle = .default
         iconView.image = UIImage(systemName: isDirectory ? "folder" : "doc")
         iconView.tintColor = isDirectory ? Theme.Colors.primary : Theme.Colors.textMuted
         nameLabel.text = entry.name
@@ -75,6 +77,8 @@ final class FileEntryCell: UITableViewCell {
     }
 
     func configureUp() {
+        nameLabel.textColor = Theme.Colors.textPrimary
+        selectionStyle = .default
         iconView.image = UIImage(systemName: "arrow.up")
         iconView.tintColor = Theme.Colors.textSecondary
         nameLabel.text = "上一级"
@@ -84,11 +88,25 @@ final class FileEntryCell: UITableViewCell {
     }
 
     func configureRepo(_ relativePath: String) {
+        nameLabel.textColor = Theme.Colors.textPrimary
+        selectionStyle = .default
         iconView.image = UIImage(systemName: "folder.badge.gearshape")
         iconView.tintColor = Theme.Colors.primary
         nameLabel.text = relativePath
         detailLabel.text = "Git 仓库"
         accessoryType = .disclosureIndicator
         accessibilityLabel = "\(relativePath)，Git 仓库"
+    }
+
+    /// A one-line, non-selectable message (e.g. no entries match the filter).
+    func configureMessage(_ text: String) {
+        nameLabel.textColor = Theme.Colors.textSecondary
+        selectionStyle = .none
+        iconView.image = UIImage(systemName: "magnifyingglass")
+        iconView.tintColor = Theme.Colors.textMuted
+        nameLabel.text = text
+        detailLabel.text = nil
+        accessoryType = .none
+        accessibilityLabel = text
     }
 }

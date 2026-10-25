@@ -127,6 +127,39 @@ object SettingsStore {
         writeSavedConnections(updated.take(MAX_SAVED_CONNECTIONS))
     }
 
+    /**
+     * 编辑一条已保存的连接（名称 / 地址 / token），保持它在列表里的位置。
+     * 改的若正是当前使用的连接，同步 `baseUrl` / `token` / `name`，保证冷启动仍能直接进入。
+     * 地址或 token 为空时不做修改并返回 false。
+     */
+    fun updateConnection(oldBaseUrl: String, name: String, baseUrl: String, token: String): Boolean {
+        val current = savedConnections.firstOrNull { it.baseUrl == oldBaseUrl } ?: return false
+        val nm = sanitizeField(name)
+        val url = baseUrl.trim()
+        val tk = token.trim()
+        if (url.isEmpty() || tk.isEmpty()) return false
+
+        val updated = SavedConnection(url, tk, nm, current.serverId)
+        val next = mutableListOf<SavedConnection>()
+        savedConnections.forEach { item ->
+            when {
+                item.baseUrl == oldBaseUrl -> next += updated
+                // 改成了已有地址、或同一台 daemon（serverId）的条目：合并成一条。
+                item.baseUrl == url -> Unit
+                updated.serverId.isNotEmpty() && item.serverId == updated.serverId -> Unit
+                else -> next += item
+            }
+        }
+        writeSavedConnections(next.take(MAX_SAVED_CONNECTIONS))
+
+        if (this.baseUrl == oldBaseUrl) {
+            this.name = nm
+            this.baseUrl = url
+            this.token = tk
+        }
+        return true
+    }
+
     fun forgetConnection(baseUrl: String) {
         writeSavedConnections(savedConnections.filterNot { it.baseUrl == baseUrl })
     }

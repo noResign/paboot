@@ -11,6 +11,7 @@ final class SettingsViewController: UIViewController {
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
 
+    private let nameRow = SettingsInfoRow(title: "名称")
     private let addressRow = SettingsInfoRow(title: "服务器地址", monospaced: true)
     private let tokenRow = SettingsInfoRow(title: "token")
     private let reconnectButton = UIButton(type: .system)
@@ -159,6 +160,7 @@ final class SettingsViewController: UIViewController {
         )
 
         contentStack.addArrangedSubview(SettingsSectionTitle("连接"))
+        contentStack.addArrangedSubview(nameRow)
         contentStack.addArrangedSubview(addressRow)
         contentStack.addArrangedSubview(tokenRow)
         contentStack.addArrangedSubview(reconnectButton)
@@ -256,7 +258,13 @@ final class SettingsViewController: UIViewController {
 
     private func render(_ state: SettingsViewModel.State) {
         let connection = DaemonSession.shared.connection
-        addressRow.setValue(connection?.baseUrl ?? "未配置")
+        let connectionName = connection?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if connection == nil {
+            nameRow.setValue("未配置")
+        } else {
+            nameRow.setValue(connectionName.isEmpty ? "未命名" : AddressMask.mask(connectionName))
+        }
+        addressRow.setValue(connection.map { AddressMask.mask($0.baseUrl) } ?? "未配置")
         tokenRow.setValue(connection == nil ? "未配置" : "••••••••")
         currentWorkspaceRow.setValue(state.selectedWorkspacePath ?? "未选择")
 

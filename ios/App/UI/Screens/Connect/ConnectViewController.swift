@@ -229,6 +229,49 @@ final class ConnectViewController: UIViewController {
         }
     }
 
+    private func presentEdit(_ connection: SavedConnection) {
+        let alert = UIAlertController(title: "编辑连接", message: nil, preferredStyle: .alert)
+
+        alert.addTextField { field in
+            field.text = connection.name
+            field.placeholder = "名称（可选）"
+            field.autocapitalizationType = .none
+        }
+        alert.addTextField { field in
+            field.text = connection.baseUrl
+            field.placeholder = "地址"
+            field.keyboardType = .URL
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+        }
+        alert.addTextField { [weak self] field in
+            field.text = self?.viewModel.token(for: connection) ?? ""
+            field.placeholder = "Token"
+            field.isSecureTextEntry = true
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+        }
+
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
+            guard let self, let fields = alert.textFields, fields.count == 3 else { return }
+            self.viewModel.update(
+                connection,
+                name: fields[0].text ?? "",
+                address: fields[1].text ?? "",
+                token: fields[2].text ?? ""
+            )
+        })
+        present(alert, animated: true)
+    }
+
+    private func closeSavedRows(except row: SavedConnectionRow) {
+        savedStack.arrangedSubviews
+            .compactMap { $0 as? SavedConnectionRow }
+            .filter { $0 !== row }
+            .forEach { $0.close() }
+    }
+
     private func rebuildSavedRows(_ connections: [SavedConnection]) {
         savedSection.isHidden = connections.isEmpty
         savedStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -237,28 +280,14 @@ final class ConnectViewController: UIViewController {
             let row = SavedConnectionRow(connection: connection)
             row.setContentHuggingPriority(.defaultLow, for: .horizontal)
             row.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
-            row.addAction(
-                UIAction { [weak self] _ in self?.viewModel.select(connection) },
-                for: .touchUpInside
-            )
-
-            let deleteButton = UIButton(type: .system)
-            deleteButton.setImage(UIImage(systemName: "trash"), for: .normal)
-            deleteButton.tintColor = Theme.Colors.error
-            deleteButton.accessibilityLabel = "删除连接"
-            deleteButton.setContentHuggingPriority(.required, for: .horizontal)
-            deleteButton.widthAnchor.constraint(equalToConstant: Layout.minTouchTarget).isActive = true
-            deleteButton.heightAnchor.constraint(equalToConstant: Layout.minTouchTarget).isActive = true
-            deleteButton.addAction(
-                UIAction { [weak self] _ in self?.viewModel.forget(connection) },
-                for: .touchUpInside
-            )
-
-            let line = UIStackView(arrangedSubviews: [row, deleteButton])
-            line.axis = .horizontal
-            line.alignment = .center
-            line.spacing = Spacing.xs
-            savedStack.addArrangedSubview(line)
+            row.onSelect = { [weak self] in self?.viewModel.select(connection) }
+            row.onEdit = { [weak self] in self?.presentEdit(connection) }
+            row.onDelete = { [weak self] in self?.viewModel.forget(connection) }
+            row.onOpen = { [weak self, weak row] in
+                guard let self, let row else { return }
+                self.closeSavedRows(except: row)
+            }
+            savedStack.addArrangedSubview(row)
         }
     }
 
@@ -293,13 +322,63 @@ extension ConnectViewController: UITextFieldDelegate {
     }
 }
 
-/// One saved connection: name + URL, tappable to fill the form.
-private final class SavedConnectionRow: UIControl {
+/// One saved connection: name + URL, tap to fill the form, swipe left to reveal delete.
+private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
+    private let actionWidth: CGFloat = 80
+    private var revealWidth: CGFloat { actionWidth * 2 }
+    private let cardView = UIView()
+    private let editButton = UIButton(type: .system)
+    private let deleteButton = UIButton(type: .system)
+    private var isOpen = false
+    private var isDragging = false
+
+    var onSelect: (() -> Void)?
+    var onEdit: (() -> Void)?
+    var onDelete: (() -> Void)?
+    /// Called when this row starts opening, so the list can close the others.
+    var onOpen: (() -> Void)?
+
     init(connection: SavedConnection) {
         super.init(frame: .zero)
 
-        backgroundColor = Theme.Colors.surface
+        clipsToBounds = true
         layer.cornerRadius = Radius.card
+
+        editButton.setTitle("编辑", for: .normal)
+        editButton.titleLabel?.font = Typography.cardTitle
+        editButton.setTitleColor(Theme.Colors.onPrimary, for: .normal)
+        editButton.backgroundColor = Theme.Colors.primary
+        editButton.accessibilityLabel = "编辑连接"
+        editButton.isAccessibilityElement = false
+        editButton.translatesAutoresizingMaskIntoConstraints = false
+        editButton.addAction(
+            UIAction { [weak self] _ in
+                self?.setOpen(false, animated: false)
+                self?.onEdit?()
+            },
+            for: .touchUpInside
+        )
+        addSubview(editButton)
+
+        deleteButton.setTitle("删除", for: .normal)
+        deleteButton.titleLabel?.font = Typography.cardTitle
+        deleteButton.setTitleColor(.white, for: .normal)
+        deleteButton.backgroundColor = Theme.Colors.error
+        deleteButton.accessibilityLabel = "删除连接"
+        deleteButton.isAccessibilityElement = false
+        deleteButton.translatesAutoresizingMaskIntoConstraints = false
+        deleteButton.addAction(
+            UIAction { [weak self] _ in self?.onDelete?() },
+            for: .touchUpInside
+        )
+        addSubview(deleteButton)
+
+        cardView.backgroundColor = Theme.Colors.surface
+        cardView.layer.cornerRadius = Radius.card
+        cardView.clipsToBounds = true
+        cardView.isUserInteractionEnabled = false
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(cardView)
 
         let nameLabel = UILabel()
         nameLabel.text = connection.displayName
@@ -307,7 +386,7 @@ private final class SavedConnectionRow: UIControl {
         nameLabel.textColor = Theme.Colors.textPrimary
 
         let urlLabel = UILabel()
-        urlLabel.text = connection.baseUrl
+        urlLabel.text = AddressMask.mask(connection.baseUrl)
         urlLabel.font = Typography.caption
         urlLabel.textColor = Theme.Colors.textSecondary
 
@@ -316,18 +395,52 @@ private final class SavedConnectionRow: UIControl {
         stack.spacing = 2
         stack.isUserInteractionEnabled = false
         stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        cardView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Spacing.sm),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Spacing.sm),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.sm),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.sm),
+            deleteButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            deleteButton.topAnchor.constraint(equalTo: topAnchor),
+            deleteButton.bottomAnchor.constraint(equalTo: bottomAnchor),
+            deleteButton.widthAnchor.constraint(equalToConstant: actionWidth),
+
+            editButton.trailingAnchor.constraint(equalTo: deleteButton.leadingAnchor),
+            editButton.topAnchor.constraint(equalTo: topAnchor),
+            editButton.bottomAnchor.constraint(equalTo: bottomAnchor),
+            editButton.widthAnchor.constraint(equalToConstant: actionWidth),
+
+            cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            cardView.topAnchor.constraint(equalTo: topAnchor),
+            cardView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            stack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: Spacing.sm),
+            stack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -Spacing.sm),
+            stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -Spacing.sm),
         ])
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
+        pan.delegate = self
+        addGestureRecognizer(pan)
+
+        addAction(UIAction { [weak self] _ in self?.handleTap() }, for: .touchUpInside)
 
         isAccessibilityElement = true
         accessibilityTraits = .button
-        accessibilityLabel = "\(connection.displayName), \(connection.baseUrl)"
+        accessibilityLabel = "\(connection.displayName), \(AddressMask.mask(connection.baseUrl))"
+        accessibilityHint = "左滑可编辑或删除"
+        accessibilityCustomActions = [
+            UIAccessibilityCustomAction(
+                name: "编辑连接",
+                target: self,
+                selector: #selector(handleEditAction)
+            ),
+            UIAccessibilityCustomAction(
+                name: "删除连接",
+                target: self,
+                selector: #selector(handleDeleteAction)
+            ),
+        ]
     }
 
     @available(*, unavailable)
@@ -337,7 +450,81 @@ private final class SavedConnectionRow: UIControl {
 
     override var isHighlighted: Bool {
         didSet {
-            alpha = isHighlighted ? 0.6 : 1
+            alpha = isHighlighted && !isOpen && !isDragging ? 0.6 : 1
         }
+    }
+
+    private func handleTap() {
+        if isOpen {
+            setOpen(false, animated: true)
+        } else {
+            onSelect?()
+        }
+    }
+
+    func close(animated: Bool = true) {
+        guard isOpen else { return }
+        setOpen(false, animated: animated)
+    }
+
+    @objc private func handleEditAction() -> Bool {
+        setOpen(false, animated: false)
+        onEdit?()
+        return true
+    }
+
+    @objc private func handleDeleteAction() -> Bool {
+        onDelete?()
+        return true
+    }
+
+    private func setOpen(_ next: Bool, animated: Bool) {
+        if next { onOpen?() }
+        isOpen = next
+        let changes = {
+            self.cardView.transform = CGAffineTransform(translationX: next ? -self.revealWidth : 0, y: 0)
+            self.alpha = 1
+        }
+        if animated {
+            UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut], animations: changes)
+        } else {
+            changes()
+        }
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: self).x
+        let base: CGFloat = isOpen ? -revealWidth : 0
+
+        switch gesture.state {
+        case .began:
+            isDragging = true
+            alpha = 1
+        case .changed:
+            let x = min(0, max(-revealWidth, base + translation))
+            cardView.transform = CGAffineTransform(translationX: x, y: 0)
+        case .ended, .cancelled, .failed:
+            isDragging = false
+            let velocity = gesture.velocity(in: self).x
+            let current = base + translation
+            let next: Bool
+            if velocity < -300 {
+                next = true
+            } else if velocity > 300 {
+                next = false
+            } else {
+                next = current < -revealWidth / 2
+            }
+            setOpen(next, animated: true)
+        default:
+            break
+        }
+    }
+
+    /// A horizontal pan belongs to the row; a vertical one belongs to the scroll view.
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+        let velocity = pan.velocity(in: self)
+        return abs(velocity.x) > abs(velocity.y)
     }
 }
