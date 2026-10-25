@@ -22,6 +22,12 @@ struct RuntimeIdentity: Equatable {
             symbolName: "terminal",
             tint: UIColor(hex: 0x10A37F)
         ),
+        "deepseek": RuntimeIdentity(
+            id: "deepseek",
+            displayName: "DeepSeek Harness",
+            symbolName: "bolt.fill",
+            tint: UIColor(hex: 0x4D6BFE)
+        ),
     ]
 
     /// Unknown ids stay neutral but keep the daemon-provided name.

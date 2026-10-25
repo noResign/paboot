@@ -3,7 +3,6 @@ import type { Express, Response } from 'express';
 import type { AppContext } from '../context.js';
 import type { SseFrame } from '../types/api.js';
 import { log } from '../log.js';
-import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
 import { activeRunIdForSession } from '../session-runs.js';
@@ -21,8 +20,6 @@ import {
 interface ChatBody {
   sessionId?: string;
   workspaceId?: string;
-  /** Resume an existing Claude Code session (e.g. one started in the desktop TUI). */
-  claudeSessionId?: string;
   prompt?: string;
   model?: string;
   /** Generic per-model knobs (e.g. `{reasoningEffort: "high"}`). */
@@ -154,10 +151,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const runtime = session?.runtime ?? requestedRuntime ?? 'claude';
-    if (body.claudeSessionId && runtime !== 'claude') {
-      res.status(400).json({ error: 'Claude sessions require the claude runtime', code: 'runtime_mismatch' });
-      return;
-    }
 
     // The execution seam is the registered driver; argv (Claude) and RPC
     // (Codex) runtimes both provide one. The route never branches on the
@@ -234,53 +227,21 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       ? normalizeModelParameters(body.modelParameters)
       : parseStoredModelParameters(session?.model_parameters);
 
-    // Import an existing Claude Code session (e.g. started in the desktop TUI)
-    // by its claude session id; its cwd is needed for --resume to find it.
-    let importedCwd: string | undefined;
-    let importedTitle: string | null | undefined;
-    if (!session && body.claudeSessionId) {
-      const found = listClaudeSessions().find((s) => s.sessionId === body.claudeSessionId);
-      if (!found) {
-        res.status(404).json({ error: 'claude session not found', code: 'claude_session_not_found' });
-        return;
-      }
-      if (!workspaceContains(workspace.path, found.cwd)) {
-        res.status(400).json({ error: `claude session cwd not allowed: ${found.cwd}`, code: 'cwd_not_allowed' });
-        return;
-      }
-      importedCwd = found.cwd;
-      importedTitle = found.summary || null;
-    }
-
     // A session with a native id resumes it. Otherwise the driver decides how
     // the session gets named — a host-picking runtime (Claude `--session-id`)
     // names it up front; one that allocates its own (Codex) reports it later.
     if (!session) {
       const id = randomUUID();
-      if (body.claudeSessionId && importedCwd) {
-        session = ctx.db.createSession({
-          id,
-          runtime,
-          workspaceId: workspace.id,
-          permissionMode: sessionPermissionMode,
-          model: effectiveModel ?? null,
-          modelParameters: effectiveParameters,
-          cwd: importedCwd,
-          native_session_id: body.claudeSessionId,
-          title: importedTitle ?? null,
-        });
-      } else {
-        session = ctx.db.createSession({
-          id,
-          runtime,
-          workspaceId: workspace.id,
-          permissionMode: sessionPermissionMode,
-          model: effectiveModel ?? null,
-          modelParameters: effectiveParameters,
-          cwd: workspace.path,
-          title: titleFromPrompt(prompt),
-        });
-      }
+      session = ctx.db.createSession({
+        id,
+        runtime,
+        workspaceId: workspace.id,
+        permissionMode: sessionPermissionMode,
+        model: effectiveModel ?? null,
+        modelParameters: effectiveParameters,
+        cwd: workspace.path,
+        title: titleFromPrompt(prompt),
+      });
     }
 
     const sink = new ChatSseSink(res);

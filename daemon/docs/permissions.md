@@ -95,8 +95,7 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 - **删除工作区**：默认只删注册信息（行 + 附加目录 + 浏览书签），磁盘上的目录和文件一律不动；
   有 Session 时 409 `workspace_not_empty`，`?cascade=1` 才会连 Session（含聊天记录、run、事件、
   会话级授权）一起删。级联会先取消这些 Session 在跑的 run。**级联不删**
-  `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的会话记录，删了会破坏电脑上的续接，
-  所以同一目录重新加成工作区后，`GET /api/claude-sessions` 仍会列出它们。
+  `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的会话记录，删了会破坏电脑上的续接。
 - **默认工作区不可删**（409 `workspace_is_default`）：它是客户端没指定工作区时的落点，删了新会话
   无处落地。要删就先把另一个设为默认。这条顺带保证了「永远删不掉最后一个工作区」——最后一个必然
   是默认的那个，所以「零工作区」这个状态不可达，`resolveWorkspaceForRequest` 不会拿到 null。

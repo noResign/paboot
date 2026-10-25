@@ -39,15 +39,6 @@ import type {
   WorkspacesResponse,
 } from '../../../shared/contract';
 
-/** `GET /api/claude-sessions` — a Claude Code session on the daemon's machine. */
-export interface ClaudeSessionSummary {
-  sessionId: string;
-  cwd: string;
-  summary: string;
-  messageCount: number;
-  lastActiveAt: number;
-}
-
 /**
  * The typed face of the daemon, over the single generic IPC proxy. Paths come
  * from shared/routes.ts so a typo fails the build here rather than 404ing at
@@ -162,12 +153,6 @@ export const api = {
     request<{ ok: boolean }>({ method: 'PATCH', path: ROUTES.session(id), body: { title } }),
   deleteSession: (id: string) =>
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.session(id) }),
-  claudeSessions: (workspaceId?: string) =>
-    request<{ sessions: ClaudeSessionSummary[] }>({
-      method: 'GET',
-      path: ROUTES.claudeSessions,
-      query: { workspaceId },
-    }),
   sessionPermissions: (sessionId: string) =>
     request<{ mode: ProductPermissionMode; grants: PermissionGrantDto[] }>({
       method: 'GET',

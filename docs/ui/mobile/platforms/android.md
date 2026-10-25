@@ -86,7 +86,7 @@ M3 没有对应槽位的语义色走两个出口：
 | `chat_bubble` / `folder` / `settings` | `Icons.Rounded.ChatBubble` / `Folder` / `Settings` |
 | 发送 | `Icons.AutoMirrored.Filled.Send` |
 | 语音输入 / 停止 | `Icons.Rounded.Mic` |
-| runtime（Claude / Codex / 未知） | `Icons.Rounded.SmartToy` / `Terminal` / `Build` |
+| runtime（Claude / Codex / DeepSeek / 未知） | `Icons.Rounded.SmartToy` / `Terminal` / `Bolt` / `Build` |
 
 其余按需从 Material Symbols（Rounded）取，当前用到的还有：`Add`、`Remove`、`Check`、`Close`、
 `ExpandLess`、`ExpandMore`、`ArrowDropDown`、`Visibility`、`VisibilityOff`、
@@ -99,8 +99,8 @@ M3 没有对应槽位的语义色走两个出口：
 
 `RuntimeIdentities` 是一张 **id → 身份** 的映射表，每个身份带 `displayName` / `icon` / `color`：
 
-- `claude` → SmartToy + Claude 暖橙；`codex` → Terminal + 绿色（刻意与 Claude 用不同图标——
-  两个 agent 同图标时，选择器里只剩颜色可分辨）。
+- `claude` → SmartToy + Claude 暖橙；`codex` → Terminal + 绿色；`deepseek` → Bolt + DeepSeek 蓝
+  （刻意与已有 agent 用不同图标——两个 agent 同图标时，选择器里只剩颜色可分辨）。
 - 未知 id 走中性兜底（`Build` 图标 + 灰），并直接展示后端返回的 name。
 - **新增 agent = 表里加一行，不改布局。**
 
@@ -109,7 +109,7 @@ M3 没有对应槽位的语义色走两个出口：
 - `defaultAgentId(agents)` —— 新建会话默认选中第一个**已安装**的 agent。不能取 `first()`：
   列表顺序是 daemon 的注册顺序，第一个很可能没装，用户一进来就选中一个发不出去的。
 - `permissionModeOptions(runtime)` —— 每个 runtime 的权限模式文案。同一个模式名在不同 runtime
-  下语义不同（Codex 是沙箱策略、Claude 是审批策略），所以文案按 runtime 分别给。
+  下语义不同（Codex / DeepSeek 是沙箱策略、Claude 是审批策略），所以文案按 runtime 分别给。
 
 ## 7. 导航结构
 

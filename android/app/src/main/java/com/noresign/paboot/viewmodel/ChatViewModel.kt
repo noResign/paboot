@@ -160,8 +160,7 @@ class ChatViewModel(
     /** 用户主动停止 / 切会话 / 发新消息时置位，让在途的重连循环退出。 */
     private var giveUp = false
 
-    // 新建会话时由 Sheet 传入的续接 Claude 会话 / runtime / Workspace / 权限模式
-    private var initialClaudeSessionId: String? = null
+    // 新建会话时由 Sheet 传入的 runtime / Workspace / 权限模式
     private var initialRuntime: String? = null
     private var initialWorkspaceId: String? = null
     private var initialPermissionMode: String? = null
@@ -184,7 +183,6 @@ class ChatViewModel(
         sessionId?.let { RunWatchCenter.clearFor(it) }
         if (sessionId == null) {
             PendingNewSession.take()?.let {
-                initialClaudeSessionId = it.claudeSessionId
                 initialRuntime = it.runtime
                 _sessionRuntime.value = it.runtime ?: "claude"
                 initialWorkspaceId = it.workspaceId
@@ -280,7 +278,6 @@ class ChatViewModel(
         _error.value = null
         // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
         val sessionIdAtSend = sessionId
-        val claudeSessionId = initialClaudeSessionId
         val runtime = initialRuntime
         val workspaceId = initialWorkspaceId
         val permissionMode = initialPermissionMode
@@ -293,7 +290,6 @@ class ChatViewModel(
             repository.chatStream(
                 sessionId = sessionIdAtSend,
                 prompt = prompt,
-                claudeSessionId = claudeSessionId,
                 runtime = runtime,
                 workspaceId = workspaceId,
                 permissionMode = permissionMode,
@@ -309,7 +305,6 @@ class ChatViewModel(
             initialAfter = null,
             resendChat = chatFlow,
         )
-        initialClaudeSessionId = null
         initialRuntime = null
         initialWorkspaceId = null
         initialPermissionMode = null

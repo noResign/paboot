@@ -45,7 +45,7 @@ private fun isTaskRelated(session: SessionDto): Boolean =
 /**
  * 把会话按 cwd 拆分：cwd 等于 [workspacePath] 的会话平铺进 [SessionListModel.rootSessions]
  * （按 [SESSION_RECENT_WINDOW_MS] 再切成「近期 / 更早」两段）；其余（workspace 内子目录，
- * 通常来自续接本机会话）按 cwd 分组进 [SessionListModel.subGroups]。各段内部都按
+ * 例如历史数据里的导入会话）按 cwd 分组进 [SessionListModel.subGroups]。各段内部都按
  * lastActiveAt 倒序，子目录组间按「组内最近活跃」倒序。
  *
  * [now] 只用于判定「更早」，注入是为了可测。

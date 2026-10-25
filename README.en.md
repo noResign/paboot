@@ -13,11 +13,11 @@
 
 </div>
 
-**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code and Codex today).**
+**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code, Codex and DeepSeek Harness today).**
 **Your data always stays on your computer**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
 
-- **One client for all your agents** — Claude Code and Codex today. Adding a new agent does not
-  touch the clients.
+- **One client for all your agents** — Claude Code, Codex and DeepSeek Harness today. Adding a new
+  agent does not touch the clients.
 - **Three clients, one system, each native** — Android, iOS and desktop share one protocol and one
   design system, operate on the same sessions, and are each implemented natively.
 - **Your data stays on your machine** — agents use your environment, tools, configs and skills;
@@ -38,11 +38,15 @@
 
 ### 0. Prerequisites
 
-paboot drives Codex and Claude Code today — install and log in to at least one of them:
+paboot drives Claude Code, Codex and DeepSeek Harness today — install and configure at least one of them:
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
 > [Claude Code](https://code.claude.com/docs) and run `claude auth login`
+>
+> [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): `npm install -g @deepseek-ai/dsh`;
+> provide model credentials through the `DEEPSEEK_API_KEY` environment variable, or fill them in
+> under **Settings → Models** in `dsh web`.
 
 ### 1. Server
 

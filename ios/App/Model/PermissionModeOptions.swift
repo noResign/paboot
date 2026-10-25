@@ -29,6 +29,12 @@ enum PermissionModeOptions {
                     detail: "关闭沙箱并跳过工具审批（高风险）"
                 ),
             ]
+        case "deepseek":
+            return [
+                Option(mode: "ask", title: "询问", detail: "只读沙箱；写文件或提权命令需要审批"),
+                Option(mode: "acceptEdits", title: "自动接受编辑", detail: "工作区可写；越出工作区的操作需要审批"),
+                Option(mode: "bypass", title: "绕过审批", detail: "关闭沙箱并跳过工具审批（高风险）"),
+            ]
         case "claude":
             return [
                 Option(mode: "ask", title: "询问", detail: "修改类操作询问"),

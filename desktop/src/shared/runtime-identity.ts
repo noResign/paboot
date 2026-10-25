@@ -5,7 +5,7 @@ import type { AgentDto, ProductPermissionMode } from './contract';
  * (docs/ui/shared/design-principles.md §5.2). Adding an agent is one row in the table,
  * never a layout change.
  */
-export type RuntimeIcon = 'robot' | 'terminal' | 'build';
+export type RuntimeIcon = 'robot' | 'terminal' | 'bolt' | 'build';
 
 export interface RuntimeIdentity {
   id: string;
@@ -21,6 +21,7 @@ const TABLE: Record<string, RuntimeIdentity> = {
   // A distinct icon, not just a distinct colour: with both showing the same
   // glyph the selector would be readable only by hue.
   codex: { id: 'codex', displayName: 'Codex', icon: 'terminal', color: '#10A37F' },
+  deepseek: { id: 'deepseek', displayName: 'DeepSeek Harness', icon: 'bolt', color: '#4D6BFE' },
 };
 
 export function runtimeIdentity(id: string): RuntimeIdentity {
@@ -48,6 +49,12 @@ export function permissionModeOptions(runtime: string | null | undefined): Permi
       return [
         { mode: 'ask', description: '工作区沙箱；不受信任的命令需要审批，工作区编辑可能自动执行' },
         { mode: 'acceptEdits', description: '工作区沙箱内的命令和编辑可自动执行；提权由 Codex 请求审批' },
+        { mode: 'bypass', description: '关闭沙箱并跳过工具审批（高风险）' },
+      ];
+    case 'deepseek':
+      return [
+        { mode: 'ask', description: '只读沙箱；写文件或提权命令需要审批' },
+        { mode: 'acceptEdits', description: '工作区可写；越出工作区的操作需要审批' },
         { mode: 'bypass', description: '关闭沙箱并跳过工具审批（高风险）' },
       ];
     case 'claude':

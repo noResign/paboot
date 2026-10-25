@@ -10,7 +10,7 @@ import type { NormalizedEvent } from '../../types/api.js';
  *
  * Field names come from `codex app-server generate-json-schema` (v2), not from
  * memory. Regenerate after a codex upgrade and re-check this file against the
- * diff — the protocol is marked experimental.
+ * diff — the app-server surface still changes between CLI versions.
  */
 
 /** One entry of the `ThreadItem` union, as carried by `item/*` notifications. */

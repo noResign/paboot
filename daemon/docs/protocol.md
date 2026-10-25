@@ -54,12 +54,11 @@
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
-| `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`），Registry 缓存 5 分钟（失败 30 秒） |
+| `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
 | `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
-| `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
@@ -153,11 +152,11 @@ SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（�
 content 说明未返回结果）。客户端因此可以把「没有配对的 tool_use」一律当成"仍在运行"，不必各自兜底；
 历史回放读到的也是同一份自洽的流。
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode?, commandId? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, model?, runtime?, permissionMode?, commandId? }`。
 
 - 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
 - `model` 缺省 / 空串 / `'default'` 都表示沿用 CLI 默认。新建会话通常不带 `model`（`sessions.model` 留空）；会话模型用 `PATCH /api/sessions/:id/model` 切换，下一轮生效。单轮请求仍可用 `body.model` 覆盖（`runs.model` 记录实际使用的值），但不会改写会话。
-- `modelParameters` 是通用字符串 map（当前只有 `reasoningEffort`）。解析顺序与 `model` 相同：请求体 > 会话保存值 > provider 默认。Claude 映射为 `--effort`（探测到才传），Codex 写进 `turn/start.effort`。新增参数不需要改协议：目录声明描述符，daemon 原样存储/透传，客户端按描述符渲染。
+- `modelParameters` 是通用字符串 map（当前只有 `reasoningEffort`）。解析顺序与 `model` 相同：请求体 > 会话保存值 > provider 默认。Claude 映射为 `--effort`（探测到才传），Codex 写进 `turn/start.effort`，DeepSeek 走 ACP `session/set_config_option(reasoning_effort)`。新增参数不需要改协议：目录声明描述符，daemon 原样存储/透传，客户端按描述符渲染。
 - 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
 - `permissionMode` 是 Session 级配置，切换后只影响后续 Run。
 - **幂等（`commandId`）**：客户端可为一次「发送」生成一个 `commandId` 并随重试一并发回。daemon 把
@@ -198,16 +197,14 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
   内容不入快照也不还原。且**文件回滚了，agent 对话不回退**——响应带 `conversationRewound:false`，
   并追加一条合成助手消息说明，避免历史"说改了却没改"。
 
-## 会话与跨端续接
+## 会话续接
 
 - Claude Code 的所有会话（TUI 与 headless）统一存 `~/.claude/projects/<cwd>/<id>.jsonl`，
   会话 id 就是文件名；`claude --resume <id>` 续接。
 - daemon 自己生成 `--session-id`，续接用 `--resume`，并把该 id 存进 `sessions.native_session_id`
   ——这一列存的是**对应运行时自己的会话 id**：Claude 是 `--session-id` 生成的那个，Codex 是它的
-  thread id（续接走 `thread/resume`）。
-- `GET /api/claude-sessions` 枚举**workspace 内**的会话，客户端可「导入」一个 TUI 会话继续
-  （`POST /api/chat` 带 `claudeSessionId`）。
-- 双向互通：手机会话 → 电脑 `claude --resume <id>`；电脑 TUI 会话 → 手机导入继续。
+  thread id（续接走 `thread/resume`），DeepSeek 是 ACP `session/new` 返回的 session id
+  （续接走 `session/resume`）。客户端只续接自己创建的会话。
 
 ## 运行信息文件（`daemon_runtime.json`）
 

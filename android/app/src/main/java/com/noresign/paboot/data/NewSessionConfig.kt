@@ -1,8 +1,7 @@
 package com.noresign.paboot.data
 
-/** 新建会话时选择的配置（工作区 / 续接 Claude 会话 / runtime / 权限模式）。 */
+/** 新建会话时选择的配置（工作区 / runtime / 权限模式）。 */
 data class NewSessionConfig(
-    val claudeSessionId: String? = null,
     val runtime: String? = null,
     val workspaceId: String? = null,
     val permissionMode: String? = null,
@@ -16,13 +15,11 @@ object PendingNewSession {
     private var config: NewSessionConfig? = null
 
     fun set(
-        claudeSessionId: String? = null,
         runtime: String? = null,
         workspaceId: String? = null,
         permissionMode: String? = null,
     ) {
         config = NewSessionConfig(
-            claudeSessionId = claudeSessionId,
             runtime = runtime,
             workspaceId = workspaceId,
             permissionMode = permissionMode,

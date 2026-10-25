@@ -1,6 +1,8 @@
 import { claudeAdapter } from './claude/adapter.js';
 import { detectCodex } from './codex/detect.js';
 import { listCodexModels } from './codex/models.js';
+import { DEEPSEEK_BIN, detectDeepSeek } from './deepseek/detect.js';
+import { listDeepSeekModels } from './deepseek/models.js';
 import { log } from '../log.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';
 import type { ModelOption, RuntimeAdapter, RuntimeDetection } from './types.js';
@@ -52,13 +54,20 @@ const DETECTORS: RuntimeDetector[] = [
     detect: (env) => detectCodex(CODEX_BIN, env),
     listModels: (env) => listCodexModels(CODEX_BIN, env),
   },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek Harness',
+    bin: DEEPSEEK_BIN,
+    detect: (env) => detectDeepSeek(DEEPSEEK_BIN, env),
+    listModels: async (env) => listDeepSeekModels(env),
+  },
 ];
 
 /**
- * Runtime registry. Claude enters through `RuntimeAdapter`; Codex enters
- * through `RuntimeDetector` because it is driven over RPC. Detection (is it
- * installed? which models?) is orthogonal to driving: every runtime is
- * probeable, and drivers are registered separately by id.
+ * Runtime registry. Claude enters through `RuntimeAdapter`; Codex and DeepSeek
+ * Harness enter through `RuntimeDetector` because they are driven over RPC.
+ * Detection (is it installed? which models?) is orthogonal to driving: every
+ * runtime is probeable, and drivers are registered separately by id.
  */
 export function createRegistry(): Registry {
   const adapters = new Map<string, RuntimeAdapter>();
@@ -68,7 +77,6 @@ export function createRegistry(): Registry {
 
   adapters.set(claudeAdapter.id, claudeAdapter);
   for (const detector of DETECTORS) detectors.set(detector.id, detector);
-  // Future: adapters.set(deepseekHarnessAdapter.id, deepseekHarnessAdapter);
 
   const source = (id: string): RuntimeAdapter | RuntimeDetector | undefined =>
     adapters.get(id) ?? detectors.get(id);

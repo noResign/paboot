@@ -247,7 +247,6 @@ export interface ChatStreamSpec {
   runtime?: string;
   workspaceId?: string;
   permissionMode?: string;
-  claudeSessionId?: string;
   /**
    * Idempotency key for `POST /api/chat`. A retry carrying the same value makes
    * the daemon re-attach to the run it already started instead of starting a

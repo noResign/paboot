@@ -57,7 +57,6 @@ lib-network/src/main/java/com/noresign/paboot/network/
    ├─ ChatStreamEvent.kt   Frame / Failed / Closed
    └─ dto/                 wire 模型，按业务域分文件（不再往下建子目录）
       ├─ AgentDtos.kt              AgentDto + AgentsResponse
-      ├─ ClaudeSessionDtos.kt      ClaudeSessionDto + ClaudeSessionsResponse
       ├─ SessionDtos.kt            SessionDto / SessionsResponse / SessionDetailResponse / MessageDto / RunDto / RunsResponse
       ├─ SessionPermissionDtos.kt  PermissionGrantDto / SessionPermissionsResponse / UpdateSessionPermissionsRequest
       ├─ EventDtos.kt              NormalizedEvent（sealed，11 个子类）/ SseFrame / EventsResponse / ChatRequest / PermissionDecisionRequest / QuestionDto

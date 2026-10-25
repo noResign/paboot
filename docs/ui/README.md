@@ -5,7 +5,7 @@
 > 不改信息架构、组件与交互语义。
 >
 > 这是**要长期使用的正式产品（非一次性 MVP）**：所有页面、所有状态都按生产级质量设计，
-> 并预留多 runtime（agent）扩展——当前接入 Claude Code 与 Codex（见
+> 并预留多 runtime（agent）扩展——当前接入 Claude Code、Codex 与 DeepSeek Harness（见
 > [shared/design-principles.md](shared/design-principles.md) §1.2）。
 
 ## 共享规范 · [`shared/`](shared/)

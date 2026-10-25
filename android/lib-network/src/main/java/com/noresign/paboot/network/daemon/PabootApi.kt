@@ -3,7 +3,6 @@ package com.noresign.paboot.network.daemon
 import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
 import com.noresign.paboot.network.daemon.dto.ChangesResponse
-import com.noresign.paboot.network.daemon.dto.ClaudeSessionsResponse
 import com.noresign.paboot.network.daemon.dto.DiffResponse
 import com.noresign.paboot.network.daemon.dto.ConfigResponse
 import com.noresign.paboot.network.daemon.dto.ConfigUpdateResponse
@@ -75,9 +74,6 @@ interface PabootApi {
 
     @GET("api/agents/{id}/models")
     suspend fun agentModels(@Path("id") id: String): AgentModelsResponse
-
-    @GET("api/claude-sessions")
-    suspend fun claudeSessions(@Query("workspaceId") workspaceId: String? = null): ClaudeSessionsResponse
 
     @GET("api/runs")
     suspend fun runs(@Query("workspaceId") workspaceId: String? = null): RunsResponse

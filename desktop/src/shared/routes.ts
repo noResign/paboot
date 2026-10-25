@@ -30,7 +30,6 @@ export const ROUTES = {
   chat: '/api/chat',
   permissions: '/api/permissions',
   permissionDecision: (id: string) => `/api/permissions/${encodeURIComponent(id)}/decision`,
-  claudeSessions: '/api/claude-sessions',
   sessionPermissions: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permissions`,
   sessionPermissionGrants: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permissions/grants`,
   sessionPermissionGrant: (id: string, toolName: string) =>

@@ -6,15 +6,15 @@
 ## 项目简介
 
 **paboot** 是一个「一个客户端，操纵你所有的 agent」的项目：电脑上跑一个 daemon，用它 spawn
-本机编码 agent（已接入 Claude Code 与 Codex（实验性），后续还有更多），把输出解析成统一流式
-事件，通过 HTTP/SSE 推给手机与桌面客户端（Android / iOS / desktop），并支持会话续接、
+本机编码 agent（已接入 Claude Code、Codex 与 DeepSeek Harness，后续还有更多），把输出
+解析成统一流式事件，通过 HTTP/SSE 推给手机与桌面客户端（Android / iOS / desktop），并支持会话续接、
 断线重连、取消、工具审批、多 agent 并发。
 
 运行时按驱动方式分**两条路径**接入：argv + stdout 流式的实现 `RuntimeAdapter`（当前只有
 Claude Code），RPC 对等的用 `RuntimeDetector` 登记 + 专用会话驱动（Codex 走 `codex app-server`
-的 JSON-RPC，**不实现 `RuntimeAdapter`**；两种运行时都注册 `RuntimeDriver`，chat 路由按 id 取
-driver、不写 runtime 分支）。未来可加
-OpenCode / DeepSeek Harness 等。客户端**多 runtime 可扩展**：事件流是 runtime 无关的，
+的 JSON-RPC，DeepSeek Harness 走 `dsh acp` 的 ACP JSON-RPC，**都不实现 `RuntimeAdapter`**；
+所有运行时都注册 `RuntimeDriver`，chat 路由按 id 取 driver、不写 runtime 分支）。未来可加
+OpenCode 等。客户端**多 runtime 可扩展**：事件流是 runtime 无关的，
 UI 只对「agent 身份」做可配置映射。
 
 定位不止于「操纵 agent」，分四个阶段演进：
@@ -88,8 +88,10 @@ paboot/
 
 - **接入新 agent**：先看驱动方式——argv + stdout 流式的实现 `src/runtimes/types.ts` 的
   `RuntimeAdapter`，在 `src/runtimes/registry.ts` 注册一行，路由/引擎/持久化/传输都不用动；
-  RPC 对等的（如 Codex）用 `RuntimeDetector` 登记并自写会话驱动（`runtimes/codex/session.ts`），
-  再在 `runtimes/drivers.ts` 注册 `RuntimeDriver`；chat 路由只按 id 取 driver，不写分支。
+  RPC 对等的（Codex 的 `codex app-server`、DeepSeek Harness 的 `dsh acp`）用
+  `RuntimeDetector` 登记并自写会话驱动（`runtimes/codex/session.ts` /
+  `runtimes/deepseek/session.ts`），再在 `runtimes/drivers.ts` 注册 `RuntimeDriver`；
+  chat 路由只按 id 取 driver，不写分支。两种 RPC 运行时共用 `runtimes/stdio-rpc.ts`。
 - **路由归属**：daemon 域端点放 `src/routes/<domain>.ts`，只有进程级元数据（health）留在
   `server.ts`。
 - **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录、
@@ -162,11 +164,11 @@ paboot/
   首条用户消息是「定时任务配置模式」。AI 只问用户想完成什么任务，执行 prompt 由 AI 起草并展示，
   用户确认后才调用 `schedule_task`；工具支持
   `target=current|existing|new` 与 `list_sessions`，统一走 MCP 桥（Claude `--mcp-config` /
-  Codex `-c mcp_servers.*`），有递归拦截与每会话上限。已有任务仍可手动编辑（名称/内容/计划/启停）。
-  详见 `daemon/docs/scheduled-tasks.md`。
+  Codex `-c mcp_servers.*` / DeepSeek `session/new.mcpServers`），有递归拦截与每会话上限。
+  已有任务仍可手动编辑（名称/内容/计划/启停）。详见 `daemon/docs/scheduled-tasks.md`。
 - **会话**：`--session-id`/`--resume` 管理 Claude 会话，id 持久化在 `sessions.native_session_id`
-  ——这一列存的是**对应运行时自己的**会话 id，Codex 存的是它的 thread id；
-  `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔客户端双向续接。
+  ——这一列存的是**对应运行时自己的**会话 id，Codex 存的是它的 thread id、DeepSeek 存的是
+  ACP session id。客户端**不再**导入/续接本机已有的 Claude TUI 会话。
 - **token**：持久化在 `<data-dir>/token`，启动复用（删文件即轮换）。
 
 ## 部署（作者本机私有工作流）

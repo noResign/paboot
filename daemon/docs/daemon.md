@@ -13,7 +13,7 @@
 ## 概述
 
 `daemon` 是一个跑在 macOS/Linux 本机的守护进程：它 `spawn` 本机已安装的编码
-agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输出解析成统一的
+agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方式执行，把输出解析成统一的
 流式事件，通过 HTTP/SSE 推给客户端（Android / iOS / 桌面），并支持会话续接、断线重连、
 取消、工具审批、多 agent 并发。
 
@@ -35,11 +35,11 @@ agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输�
 │  ├─ db.ts             SQLite（会话/消息/运行/事件/审计）   │
 │  ├─ permissions.ts    工具审批 + auto-allow + 超时拒绝    │
 │  ├─ run-notifier.ts   runId → 多个 SSE 订阅者（fan-out）  │
-│  └─ runtimes/        engine(claude) / session(codex) →事件│
+│  └─ runtimes/   engine(claude) / session(codex|deepseek) →事件│
 └────────────────────────────────────────────────────────┘
    │ spawn(cli, [...], { cwd: session.cwd })
    ▼
-本机编码 agent（Claude Code 无头 -p，stdin stream-json；Codex app-server，JSON-RPC）
+本机编码 agent（Claude Code 无头 -p；Codex app-server；DeepSeek Harness dsh acp）
 ```
 
 数据流：
@@ -63,6 +63,8 @@ agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输�
 | `routes/*.ts` | HTTP/SSE 边界，按域拆分（完整清单见 [protocol.md](protocol.md) 的端点表） |
 | `runtimes/engine.ts` | 通用 spawn 生命周期（argv 路径，见 [runtimes.md](runtimes.md)） |
 | `runtimes/codex/` | Codex 的 JSON-RPC 会话驱动：`detect` / `rpc` / `map` / `session`（见 [runtimes.md](runtimes.md)） |
+| `runtimes/deepseek/` | DeepSeek Harness 的 ACP 会话驱动：`detect` / `models` / `rpc` / `map` / `session`（见 [runtimes.md](runtimes.md)） |
+| `runtimes/stdio-rpc.ts` | Codex / DeepSeek 共用的换行分隔 JSON-RPC peer 传输（含服务端反向请求） |
 | `permission-mode.ts` | 产品权限模式 ↔ Claude `--permission-mode` 的映射（见 [configuration.md](configuration.md) 的「权限模式」） |
 | `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + 同 Session allow-all 结算 |
 | `run-notifier.ts` | `RunNotifier`：runId → 该 run 的多个 SSE 订阅者（emitter + listeners） |
@@ -77,12 +79,11 @@ agent CLI（已接入 Claude Code 与 Codex），以无头方式执行，把输�
 | `schedule.ts` | cron 校验/求值、结构化预设 → cron、人类可读 label（`cron-parser`） |
 | `scheduler.ts` | 进程内调度器：启动对账、30s tick、到期触发、忙跳过、会话失效删除、工作区失效停用 |
 | `run-service.ts` | 可复用的 run 启动服务（chat / scheduler / command 共用生命周期与终态） |
-| `tool-server.ts` | 通用 MCP 工具 server 的规格与各 runtime 的注入参数（Claude JSON / Codex `-c`） |
+| `tool-server.ts` | 通用 MCP 工具 server 的规格与各 runtime 的注入参数（Claude JSON / Codex `-c` / DeepSeek ACP `mcpServers`） |
 | `mcp-server.ts` | stdio MCP server（`schedule_task` 等），被各 runtime 以 `paboot_tasks` 启动 |
 | `runtimes/command.ts` | 命令任务 runtime：`/bin/sh -c`，复用 run/checkpoint/cancel 管线 |
 | `routes/scheduled-tasks.ts` / `routes/mcp-tasks.ts` | 定时任务公开 API / agent 内部 API |
 | `dto.ts` | run DTO 的共享映射（会话与定时任务详情共用） |
-| `claude-sessions.ts` | 枚举 `~/.claude/projects/` 下的 Claude 会话 |
 | `changes.ts` | `git status` / diff 的解析与缓存（文件 Tab 的改动视图） |
 | `file-browser.ts` | 目录懒加载、文本读取与二进制检测、原始字节流 |
 | `sse.ts` | SSE 帧写入 + `isTerminalEvent` 判断（chat 与 stream 复用） |
@@ -114,12 +115,11 @@ daemon/
 │  ├─ scheduler.ts       定时任务调度器（30s tick + 启动对账）
 │  ├─ run-service.ts     chat / scheduler / command 共用的 run 启动服务
 │  ├─ tool-server.ts     通用 MCP server 规格与 runtime 注入
-│  ├─ claude-sessions.ts 枚举本机 Claude 会话
 │  ├─ changes.ts         git 改动与 diff
 │  ├─ file-browser.ts    目录懒加载与文件读取
 │  ├─ types/api.ts       传输契约
 │  ├─ routes/            HTTP/SSE 边界（按域拆）
-│  └─ runtimes/          types / registry / engine / active-runs + claude/ 与 codex/
+│  └─ runtimes/          types / registry / engine / active-runs / stdio-rpc + claude/ · codex/ · deepseek/
 ├─ tests/                Vitest 单测（runtimes / routes / 权限 / workspace / 文件 等）
 ├─ docs/                 daemon.md（索引）+ protocol / permissions / runtimes / scheduled-tasks / configuration
 ├─ .env.example          配置模板
@@ -127,7 +127,7 @@ daemon/
 └─ dist/                 构建产物（`paboot` bin 指向 dist/index.js）
 ```
 
-## 安装使用（本机已装并登录 Claude Code / Codex）：
+## 安装使用（本机已装并配置 Claude Code / Codex / DeepSeek Harness 至少一种）：
 
 ```bash
 npx @noresign/paboot --help             # 免安装试用

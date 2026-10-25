@@ -325,7 +325,6 @@ export class RunStreamer {
           runtime: spec.runtime,
           workspaceId: spec.workspaceId,
           permissionMode: spec.permissionMode,
-          claudeSessionId: spec.claudeSessionId,
           commandId: spec.commandId,
         },
       },

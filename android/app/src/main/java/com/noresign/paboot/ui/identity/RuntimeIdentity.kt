@@ -1,6 +1,7 @@
 package com.noresign.paboot.ui.identity
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
@@ -32,6 +33,7 @@ object RuntimeIdentities {
         // 图标用 §5.1 已有的 `terminal` 语义名，和 Claude 的 `smart_toy` 区分开——
         // 两个 agent 同图标时，选择器里只剩颜色可分辨。
         "codex" to RuntimeIdentity("codex", "Codex", Icons.Rounded.Terminal, Color(0xFF10A37F)),
+        "deepseek" to RuntimeIdentity("deepseek", "DeepSeek Harness", Icons.Rounded.Bolt, Color(0xFF4D6BFE)),
     )
 
     /** 未知 id 兜底：build 图标 + 中性色 + 直接展示后端 name（§5.2）。 */
@@ -61,6 +63,11 @@ internal fun permissionModeOptions(runtime: String?): List<Pair<String, String>>
     "codex" -> listOf(
         "ask" to "工作区沙箱；不受信任的命令需要审批，工作区编辑可能自动执行",
         "acceptEdits" to "工作区沙箱内的命令和编辑可自动执行；提权由 Codex 请求审批",
+        "bypass" to "关闭沙箱并跳过工具审批（高风险）",
+    )
+    "deepseek" -> listOf(
+        "ask" to "只读沙箱；写文件或提权命令需要审批",
+        "acceptEdits" to "工作区可写；越出工作区的操作需要审批",
         "bypass" to "关闭沙箱并跳过工具审批（高风险）",
     )
     "claude" -> listOf(

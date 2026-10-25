@@ -5,12 +5,11 @@ import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
-import com.noresign.paboot.network.daemon.dto.ClaudeSessionsResponse
 import com.noresign.paboot.network.daemon.dto.HealthResponse
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 
-/** Daemon 元数据（agents / 本机 Claude 会话 / 版本）。 */
+/** Daemon 元数据（agents / 模型目录 / 版本）。 */
 class MetaRepository(
     private val settings: SettingsStore = SettingsStore,
 ) {
@@ -29,11 +28,6 @@ class MetaRepository(
     suspend fun models(agentId: String): NetworkResult<AgentModelsResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return safeApiCall { api.agentModels(agentId) }
-    }
-
-    suspend fun claudeSessions(workspaceId: String? = null): NetworkResult<ClaudeSessionsResponse> {
-        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.claudeSessions(workspaceId) }
     }
 
     suspend fun health(): NetworkResult<HealthResponse> {

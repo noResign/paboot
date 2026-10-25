@@ -75,8 +75,8 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 ### 5.2 Runtime 身份
 
 **已实现**：`App/UI/DesignSystem/RuntimeIdentity.swift` —— `claude` → `sparkles` + Claude 暖橙；
-`codex` → `terminal` + OpenAI 绿；未知 id 用中性色 + 后端展示名兜底。
-结构照 Android 的 `ui/identity/RuntimeIdentity.kt`。
+`codex` → `terminal` + OpenAI 绿；`deepseek` → `bolt.fill` + DeepSeek 蓝；未知 id 用中性色 +
+后端展示名兜底。结构照 Android 的 `ui/identity/RuntimeIdentity.kt`。
 
 ## 6. 导航结构
 

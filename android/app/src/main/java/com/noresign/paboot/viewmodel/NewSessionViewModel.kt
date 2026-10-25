@@ -8,7 +8,6 @@ import com.noresign.paboot.data.repository.WorkspaceRepository
 import com.noresign.paboot.ui.identity.defaultAgentId
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.network.daemon.dto.AgentDto
-import com.noresign.paboot.network.daemon.dto.ClaudeSessionDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceDto
 import com.noresign.paboot.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +18,6 @@ sealed class NewSessionUiState {
     object Loading : NewSessionUiState()
     data class Ready(
         val agents: List<AgentDto>,
-        val claudeSessions: List<ClaudeSessionDto>,
         val workspaces: List<WorkspaceDto>,
     ) : NewSessionUiState()
     data class Error(val message: String) : NewSessionUiState()
@@ -36,9 +34,6 @@ class NewSessionViewModel(
     private val _selectedAgent = MutableStateFlow<String?>(null)
     val selectedAgent = _selectedAgent.asStateFlow()
 
-    private val _selectedClaudeSession = MutableStateFlow<String?>(null)
-    val selectedClaudeSession = _selectedClaudeSession.asStateFlow()
-
     private val _selectedWorkspaceId = MutableStateFlow(WorkspaceSelection.current())
     val selectedWorkspaceId = _selectedWorkspaceId.asStateFlow()
 
@@ -49,8 +44,6 @@ class NewSessionViewModel(
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
                 _selectedWorkspaceId.value = workspaceId
-                // 切换工作区后，原先选中的本机会话已不属于当前工作区。
-                _selectedClaudeSession.value = null
                 load()
             }
         }
@@ -80,11 +73,6 @@ class NewSessionViewModel(
             _selectedWorkspaceId.value = current
             if (current != null) WorkspaceSelection.select(current, workspaceList.find { it.id == current }?.path)
 
-            val claudeSessions = repository.claudeSessions(current)
-            if (claudeSessions is NetworkResult.Error) {
-                _uiState.value = NewSessionUiState.Error(friendlyError(claudeSessions))
-                return@launch
-            }
             val config = workspaceRepository.config()
             if (config is NetworkResult.Success) {
                 _permissionMode.value = config.data.defaultPermissionMode
@@ -93,7 +81,6 @@ class NewSessionViewModel(
             if (_selectedAgent.value == null) _selectedAgent.value = defaultAgentId(agentList)
             _uiState.value = NewSessionUiState.Ready(
                 agents = agentList,
-                claudeSessions = (claudeSessions as NetworkResult.Success).data.sessions,
                 workspaces = workspaceList,
             )
         }
@@ -104,10 +91,6 @@ class NewSessionViewModel(
         val ready = _uiState.value as? NewSessionUiState.Ready ?: return
         if (ready.agents.none { it.id == id && it.available }) return
         _selectedAgent.value = id
-    }
-
-    fun selectClaudeSession(id: String) {
-        _selectedClaudeSession.value = id
     }
 
     fun selectPermissionMode(mode: String) {

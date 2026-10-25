@@ -26,7 +26,6 @@ class ChatRepository(
     fun chatStream(
         sessionId: String?,
         prompt: String,
-        claudeSessionId: String? = null,
         runtime: String? = null,
         workspaceId: String? = null,
         permissionMode: String? = null,
@@ -43,7 +42,6 @@ class ChatRepository(
                 prompt = prompt,
                 sessionId = sessionId,
                 workspaceId = workspaceId,
-                claudeSessionId = claudeSessionId,
                 model = model,
                 modelParameters = modelParameters,
                 runtime = runtime,

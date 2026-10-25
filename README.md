@@ -13,10 +13,10 @@
 
 </div>
 
-**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code 与 Codex）** 
+**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code、Codex 与 DeepSeek Harness）**
 **数据始终在电脑上**，手机和桌面可操纵同一份会话，断连不影响任务，重连自动续上。
 
-- **一个客户端，操纵所有 agent** —— 已接入 Claude Code 与 Codex。
+- **一个客户端，操纵所有 agent** —— 已接入 Claude Code、Codex 与 DeepSeek Harness。
   接新的 agent 不用改客户端。
 - **三端同源，原生实现** —— Android / iOS / 桌面共用一份协议和一套设计规范，操作的是同一份会话，且各自原生实现。
 - **数据在你自己电脑上** —— agent 用你本机的环境、工具、配置和技能；数据始终在你电脑上，paboot 自己不要账号，也不收集任何数据。
@@ -31,11 +31,14 @@
 
 ### 0. 前置
 
-目前paboot支持codex/claude code，请提前安装并登陆至少一种agent
+目前 paboot 支持 Claude Code / Codex / DeepSeek Harness，请提前安装并配置至少一种 agent：
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
 > [Claude Code](https://code.claude.com/docs) and run `claude auth login`
+>
+> [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：`npm install -g @deepseek-ai/dsh`；模型凭据用
+> `DEEPSEEK_API_KEY` 环境变量，或在 `dsh web` 的「设置 → 模型」里填写。
 
 ### 1. Server
 

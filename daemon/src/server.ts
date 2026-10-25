@@ -9,7 +9,6 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerChangesRoutes } from './routes/changes.js';
-import { registerClaudeSessionRoutes } from './routes/claude-sessions.js';
 import { registerConfigRoutes } from './routes/config.js';
 import { registerDeployRoutes } from './routes/deploy.js';
 import { registerFileRoutes } from './routes/files.js';
@@ -40,7 +39,6 @@ export function createApp(ctx: AppContext): Express {
   registerFileRoutes(app, ctx);
   registerFsRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
-  registerClaudeSessionRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerRunRoutes(app, ctx);
   registerSessionPermissionRoutes(app, ctx);

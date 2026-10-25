@@ -212,7 +212,6 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
     public let prompt: String
     public let sessionId: String?
     public let workspaceId: String?
-    public let claudeSessionId: String?
     public let model: String?
     public let modelParameters: [String: String]?
     public let runtime: String?
@@ -224,7 +223,6 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         prompt: String,
         sessionId: String? = nil,
         workspaceId: String? = nil,
-        claudeSessionId: String? = nil,
         model: String? = nil,
         modelParameters: [String: String]? = nil,
         runtime: String? = nil,
@@ -234,7 +232,6 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         self.prompt = prompt
         self.sessionId = sessionId
         self.workspaceId = workspaceId
-        self.claudeSessionId = claudeSessionId
         self.model = model
         self.modelParameters = modelParameters
         self.runtime = runtime

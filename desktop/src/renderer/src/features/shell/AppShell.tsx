@@ -597,7 +597,6 @@ export function AppShell() {
       {newSessionOpen && (
         <NewSessionDialog
           workspaceName={selectedWorkspace?.name ?? null}
-          workspaceId={workspaceId || null}
           onCancel={() => setNewSessionOpen(false)}
           onCreate={createSession}
         />

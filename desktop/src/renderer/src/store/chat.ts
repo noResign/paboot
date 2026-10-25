@@ -51,10 +51,6 @@ export interface NewSessionOptions {
   runtime: string | null;
   workspaceId: string | null;
   permissionMode: string;
-  /** Resume a Claude Code session that already exists on the daemon's machine. */
-  claudeSessionId?: string | null;
-  /** Shown until the daemon reports the real title. */
-  title?: string | null;
 }
 
 interface ChatStore {
@@ -167,7 +163,6 @@ export const useChat = create<ChatStore>((set, get) => ({
         ...state.byKey,
         [key]: {
           ...emptyChat(key, connectionId),
-          title: options.title ?? null,
           runtime: options.runtime,
           permissionMode: options.permissionMode,
           pendingNew: options,
@@ -206,7 +201,6 @@ export const useChat = create<ChatStore>((set, get) => ({
       runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
       workspaceId: chat.pendingNew?.workspaceId ?? undefined,
       permissionMode: chat.pendingNew?.permissionMode,
-      claudeSessionId: chat.pendingNew?.claudeSessionId ?? undefined,
       // One send = one run. A stable id lets a resend re-attach instead of
       // starting a second run if the response was lost.
       commandId: crypto.randomUUID(),

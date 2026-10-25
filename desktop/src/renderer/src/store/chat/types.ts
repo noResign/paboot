@@ -96,8 +96,6 @@ export interface ChatSessionState {
     runtime: string | null;
     workspaceId: string | null;
     permissionMode: string;
-    claudeSessionId?: string | null;
-    title?: string | null;
   } | null;
 }
 

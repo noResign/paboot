@@ -11,6 +11,8 @@ const PATHS: Record<string, string> = {
   robot: ROBOT_GLYPH,
   // terminal prompt
   terminal: 'M4 5h12v10H4zM7 9l2 2-2 2M11 13h3',
+  // lightning bolt
+  bolt: 'M11 2L5 11h4l-1 7 7-9h-4z',
   // generic tool
   build: 'M12 3l2 4 4 .6-3 2.9.7 4.2L12 12.6 8.3 14.7 9 10.5 6 7.6l4-.6z',
 };

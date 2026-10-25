@@ -199,7 +199,7 @@
 | 6.1 | ① 连接服务器 | [pages/connect.md](pages/connect.md) | `pages/connect.md` | M1 |
 | 6.2 | ② 会话列表（→ 左栏） | [pages/sessions.md](pages/sessions.md) | `pages/sessions.md` | M1 |
 | 6.3 | ③ 聊天详情（→ 主区，核心） | [pages/chat.md](pages/chat.md) | `pages/chat.md` | M1 |
-| 6.4 | ④ 新建 / 续接会话 | [pages/new-session.md](pages/new-session.md) | `pages/new-session.md` | M1（方式 A）/ M2（方式 B） |
+| 6.4 | ④ 新建会话 | [pages/new-session.md](pages/new-session.md) | `pages/new-session.md` | M1 |
 | 6.5 | Ⓟ 权限审批（+ 6.5.1 User Input）🔴 | [pages/permission-approval.md](pages/permission-approval.md) | `pages/permission-approval.md` | M1 |
 | 6.6 | ⑥ **本机 daemon 管理** 🖥 桌面独有 | [pages/daemon.md](pages/daemon.md) | **无对应** | M1（只读）/ M4（启停） |
 | 6.7 | ⑦ 设置 | [pages/settings.md](pages/settings.md) | `pages/settings.md` | M1（连接/关于）/ M2（其余） |
@@ -358,8 +358,8 @@
 | 里程碑 | UI 范围 |
 |---|---|
 | **M0** | 无 UI（纯 daemon 前置改动：同会话守卫 + `daemon_runtime.json`；桌面端还没开工） |
-| **M1** | §6.1 连接页（含本机发现区块）、§6.2 左栏会话列表（**含状态分桶的「等待我处理 / 运行中」两桶**）、§6.3 聊天（**含工具组折叠与部分虚拟化**）、**§6.4 新建会话模态的「方式 A」+ Agent 选择器**、§6.5 审批模态、§6.7 设置（连接/关于）、§7.1 快捷键（**数据数组 + 按 id 存自定义**）、§4 token 桌面列、§3 窗口外壳与主题 |
-| **M2** | §6.4 的「方式 B 续接 Claude 本机会话」、§6.5.1 UserInput、§6.2 其余状态桶、§6.9 ⑧⑨⑩、§6.7 完整设置（外观/通知）、§7.1 `⌘K` 命令面板、§7.4 托盘与通知、§7.5 退出确认、runtime 身份、上下文环、Markdown |
+| **M1** | §6.1 连接页（含本机发现区块）、§6.2 左栏会话列表（**含状态分桶的「等待我处理 / 运行中」两桶**）、§6.3 聊天（**含工具组折叠与部分虚拟化**）、**§6.4 新建会话模态 + Agent 选择器**、§6.5 审批模态、§6.7 设置（连接/关于）、§7.1 快捷键（**数据数组 + 按 id 存自定义**）、§4 token 桌面列、§3 窗口外壳与主题 |
+| **M2** | §6.5.1 UserInput、§6.2 其余状态桶、§6.9 ⑧⑨⑩、§6.7 完整设置（外观/通知）、§7.1 `⌘K` 命令面板、§7.4 托盘与通知、§7.5 退出确认、runtime 身份、上下文环、Markdown |
 | **M3** | §6.8 文件与 Diff（两级分栏）、右栏面板、§7.3 多窗口 |
 | **M4** | §6.6 daemon 管理页（托管形态）、启动本机 daemon 分支 |
 

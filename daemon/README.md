@@ -1,6 +1,6 @@
 # daemon
 
-paboot 的守护进程：`spawn` 本机已安装的编码 agent CLI（已接入 Claude Code 与 Codex），
+paboot 的守护进程：`spawn` 本机已安装的编码 agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），
 以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给客户端。
 
 完整技术方案见 **[docs/daemon.md](docs/daemon.md)**（索引：总览 / [协议](docs/protocol.md) /
@@ -78,7 +78,6 @@ curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 | `GET /api/fs/directories` | 目录选择器 |
 | `GET /api/changes`、`/api/changes/diff` | Git 未提交改动与单文件 diff |
 | `GET /api/files`、`/api/files/content` | 目录懒加载与文本文件内容 |
-| `GET /api/claude-sessions` | 枚举 workspace 内的 Claude 会话（可导入续接） |
 | `POST /api/deploy` | 触发发布（默认关闭） |
 
 SSE 每帧为 `{ runId, seq, event }`，`event` 是 `NormalizedEvent`：
@@ -101,7 +100,9 @@ Bearer token；默认权限模式为 `ask`，审批超时未处理默认拒绝�
 
 ## 安装
 
-需 Node `~24` + 本机已装并登录 Claude Code / Codex：
+需 Node `~24` + 本机已装并配置至少一种 agent：Claude Code（`claude auth login`）、
+Codex（`codex login`），或 DeepSeek Harness（Node `>=24.9`，`npm install -g @deepseek-ai/dsh`，
+`DEEPSEEK_API_KEY` 或 `dsh web` 的模型设置）：
 
 ```bash
 npx @noresign/paboot --help           # 免安装试用

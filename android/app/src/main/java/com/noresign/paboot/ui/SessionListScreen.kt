@@ -339,7 +339,6 @@ fun SessionListScreen(
             onDismiss = { showNewSession = false },
             onCreate = { config ->
                 PendingNewSession.set(
-                    claudeSessionId = config.claudeSessionId,
                     runtime = config.runtime,
                     workspaceId = config.workspaceId,
                     permissionMode = config.permissionMode,

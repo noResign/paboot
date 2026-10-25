@@ -71,7 +71,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 │  ② 会话 Tab
 │    ├─ 顶部：Workspace 切换器
 │    ├─ 点击会话 ──▶ ③ 聊天详情
-│    └─ FAB ──▶ ④ 新建/续接会话（底部 Sheet）
+│    └─ FAB ──▶ ④ 新建会话（底部 Sheet）
 │
 │  ③ 聊天详情
 │    ├─ 顶部：Workspace / Session / 权限模式
@@ -92,7 +92,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | ① | 连接服务器 | 全屏门禁 | M1 |
 | ② | 会话列表 | 主 Tab | M1 |
 | ③ | 聊天详情 | 详情页（push） | M1（核心） |
-| ④ | 新建/续接会话 | 底部 Sheet | M1 |
+| ④ | 新建会话 | 底部 Sheet | M1 |
 | ⑤ | 文件（改动 / 全部文件） | Tab | M2 |
 | ⑥ | Diff / 文件查看器 | 子页（push） | M2 |
 | ⑦ | 设置 | Tab | M1 |
@@ -281,7 +281,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 
 ### 5.2 Runtime（Agent）身份系统
 
-后端 `GET /api/agents` 返回 `[{id, name, bin, available}]`，`id` 是稳定标识（当前 `claude`、`codex`）。
+后端 `GET /api/agents` 返回 `[{id, name, bin, available}]`，`id` 是稳定标识（当前 `claude`、`codex`、`deepseek`）。
 `available` 是 daemon 探测 `--version` 的结果；**没装的 agent 仍要列出来但置灰不可选**（用户能知道它
 存在，而不是发出去换回一个 503）。UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色、展示名**。
 未知 id 用通用兜底（`build` 图标 + 中性色 + 直接用后端 `name`）。
@@ -292,8 +292,8 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 |---|---|---|---|
 | `claude` | Claude Code | `smart_toy` / 品牌图标 | `#D97757`（Claude 暖橙） |
 | `codex` | Codex | `terminal` | `#10A37F`（OpenAI 绿） |
+| `deepseek` | DeepSeek Harness | `bolt` | `#4D6BFE`（DeepSeek 蓝） |
 | `opencode`（预留） | OpenCode | `code` | 待定 |
-| `deepseek-harness`（预留） | DeepSeek Harness | `build` | 待定 |
 | *（未知）* | 后端 `name` | `build` | `text-secondary` |
 
 > 每个 runtime 的图标必须互不相同：同图标时选择器里只剩颜色可分辨，等于没有身份。

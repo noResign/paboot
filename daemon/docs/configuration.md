@@ -46,6 +46,7 @@
 | `PABOOT_TLS_CERT` | 无 | TLS 证书路径（与 KEY 同设才启用 TLS） |
 | `PABOOT_TLS_KEY` | 无 | TLS 私钥路径 |
 | `PABOOT_ENV_FILE` | `./.env` | `.env` 路径（等价 `--env-file`） |
+| `DEEPSEEK_API_KEY` | 无 | 透传给 `dsh acp` 的模型凭据；也可由 `dsh web` 写入 `~/.dsh/.credentials.yaml` |
 | `PABOOT_ALLOW_DEPLOY` | 关闭 | 允许 `POST /api/deploy` 触发部署（`1` / `true` 开启） |
 | `PABOOT_DEPLOY_SCRIPT` | `<cwd>/../.claude/skills/deploy/scripts/deploy.sh` | 部署脚本路径 |
 

@@ -13,18 +13,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import com.noresign.paboot.data.NewSessionConfig
-import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.NewSessionUiState
 import com.noresign.paboot.viewmodel.NewSessionViewModel
 
@@ -45,12 +40,8 @@ fun NewSessionSheet(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
-    val selectedClaudeSession by viewModel.selectedClaudeSession.collectAsState()
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
     val permissionMode by viewModel.permissionMode.collectAsState()
-
-    // "new" 或 "resume"
-    var mode by remember { mutableStateOf("new") }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -67,21 +58,6 @@ fun NewSessionSheet(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item { Text("新建会话", style = MaterialTheme.typography.titleLarge) }
-
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = mode == "new",
-                            onClick = { mode = "new" },
-                            label = { Text("新建空会话") },
-                        )
-                        FilterChip(
-                            selected = mode == "resume",
-                            onClick = { mode = "resume" },
-                            label = { Text("续接 Claude 本机会话") },
-                        )
-                    }
-                }
 
                 when (val state = uiState) {
                     is NewSessionUiState.Loading -> {
@@ -111,109 +87,66 @@ fun NewSessionSheet(
                             )
                         }
 
-                        if (mode == "resume") {
-                            if (state.claudeSessions.isEmpty()) {
-                                item {
+                        item { Text("Agent", style = MaterialTheme.typography.labelLarge) }
+                        items(state.agents, key = { it.id }) { agent ->
+                            // 没装的 Agent 仍列出来（用户能知道它存在），但置灰不可选：
+                            // 选中它只会在发送时换回一个 503。
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = agent.available) { viewModel.selectAgent(agent.id) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = selectedAgent == agent.id,
+                                    onClick = { viewModel.selectAgent(agent.id) },
+                                    enabled = agent.available,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "没有可续接的本机 Claude 会话",
+                                        agent.name.ifBlank { agent.id },
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (agent.available) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
                                     )
-                                }
-                            } else {
-                                items(state.claudeSessions, key = { it.sessionId }) { session ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { viewModel.selectClaudeSession(session.sessionId) }
-                                            .padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        RadioButton(
-                                            selected = selectedClaudeSession == session.sessionId,
-                                            onClick = { viewModel.selectClaudeSession(session.sessionId) },
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                session.summary.ifBlank { "(无摘要)" },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                            )
-                                            Text(
-                                                text = "${session.cwd} · ${relativeTime(session.lastActiveAt)}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            item { Text("Agent", style = MaterialTheme.typography.labelLarge) }
-                            items(state.agents, key = { it.id }) { agent ->
-                                // 没装的 Agent 仍列出来（用户能知道它存在），但置灰不可选：
-                                // 选中它只会在发送时换回一个 503。
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable(enabled = agent.available) { viewModel.selectAgent(agent.id) }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = selectedAgent == agent.id,
-                                        onClick = { viewModel.selectAgent(agent.id) },
-                                        enabled = agent.available,
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    if (!agent.available) {
                                         Text(
-                                            agent.name.ifBlank { agent.id },
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = if (agent.available) {
-                                                MaterialTheme.colorScheme.onSurface
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant
-                                            },
-                                        )
-                                        if (!agent.available) {
-                                            Text(
-                                                "未安装",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            item { Text("模型与推理强度使用电脑端 Agent 默认配置", style = MaterialTheme.typography.bodySmall) }
-                            item { Text("权限模式", style = MaterialTheme.typography.labelLarge) }
-                            items(permissionModeOptions(selectedAgent)) { (value, desc) ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { viewModel.selectPermissionMode(value) }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    RadioButton(
-                                        selected = permissionMode == value,
-                                        onClick = { viewModel.selectPermissionMode(value) },
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(value, style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            desc,
+                                            "未安装",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        item { Text("模型与推理强度使用电脑端 Agent 默认配置", style = MaterialTheme.typography.bodySmall) }
+                        item { Text("权限模式", style = MaterialTheme.typography.labelLarge) }
+                        items(permissionModeOptions(selectedAgent)) { (value, desc) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectPermissionMode(value) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = permissionMode == value,
+                                    onClick = { viewModel.selectPermissionMode(value) },
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(value, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        desc,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
@@ -223,28 +156,20 @@ fun NewSessionSheet(
 
             Button(
                 onClick = {
-                    val config = if (mode == "resume" && selectedClaudeSession != null) {
-                        NewSessionConfig(
-                            claudeSessionId = selectedClaudeSession,
-                            workspaceId = selectedWorkspaceId,
-                            permissionMode = permissionMode,
-                        )
-                    } else {
+                    onCreate(
                         NewSessionConfig(
                             runtime = selectedAgent,
                             workspaceId = selectedWorkspaceId,
                             permissionMode = permissionMode,
-                        )
-                    }
-                    onCreate(config)
+                        ),
+                    )
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
                     .padding(top = 16.dp),
-                enabled = mode == "resume" && selectedClaudeSession != null || mode == "new",
             ) {
-                Text(if (mode == "resume") "开始" else "创建")
+                Text("创建")
             }
         }
     }

@@ -19,9 +19,8 @@
 | 某 agent 的模型目录 | `GET /api/agents/:id/models` |
 | 当前 Workspace 的会话列表 | `GET /api/sessions?workspaceId=<id>` |
 | 单个会话的消息历史 + runs | `GET /api/sessions/:id` |
-| 续接本机 Claude 会话列表 | `GET /api/claude-sessions?workspaceId=<id>` |
 | Session 权限模式与 grants | `GET /api/sessions/:id/permissions`；`PATCH /api/sessions/:id/permissions`；`DELETE /api/sessions/:id/permissions/grants/:toolName` |
-| 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, modelParameters?, runtime?}`） |
+| 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, prompt, model?, modelParameters?, runtime?}`） |
 | 停止运行中的任务 | `POST /api/runs/:id/cancel` |
 | 工具审批决策 | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
 | 当前 Workspace 的改动文件列表 | 🟡 `GET /api/changes?workspaceId=<id>`（**待后端实现**） |
@@ -34,7 +33,7 @@
 > 这是长期维护的正式产品，按里程碑增量交付，但**每个页面从设计到实现都按生产级标准**，不留"临时版"。
 
 **M1（首批可用）**：
-- ① 连接页、② 会话列表、③ 聊天详情、④ 新建/续接会话、⑦ 设置、Ⓟ Bash 权限审批。
+- ① 连接页、② 会话列表、③ 聊天详情、④ 新建会话、⑦ 设置、Ⓟ Bash 权限审批。
 - 覆盖：连接、列会话（含运行指示）、建会话（选 agent / Workspace 展示）、会话重命名/删除、发消息、流式回复、思考卡片、工具卡片、用量、**Bash 命令审批**、停止任务、断线重连。
 
 **M2（增强）**：
@@ -52,7 +51,7 @@
 
 1. **信息架构图**确认（可对本文档第 3 章提出优化）。
 2. **高保真页面稿**（浅色为默认，附暗色对照）：
-   - 连接页、会话列表、聊天详情、新建/续接会话、设置、**权限审批浮层**；
+   - 连接页、会话列表、聊天详情、新建会话、设置、**权限审批浮层**；
    - 工作区管理、目录选择器、会话权限设置 —— 各含关键状态。
 3. **组件库**：消息气泡、工具卡片（running/done/error/interrupted）、思考卡片、状态条、运行指示器、Runtime 身份（§5.2）、权限模式徽章、**Workspace 切换器**、空态、**权限审批卡片**。
 4. **交互说明**：流式追加、工具卡状态流转、**命令审批流**、Workspace 切换刷新流、断线重连、**语音输入流（按住说话→转写→确认发送）** 的动效示意。
@@ -84,7 +83,7 @@
 | `/api/sessions/:id/permissions` | PATCH | 是 | body `{mode:"ask"|"acceptEdits"|"bypass"}`；仅影响后续 Run |
 | `/api/sessions/:id/permissions/grants/:toolName` | DELETE | 是 | 撤销单个工具授权 |
 | `/api/sessions/:id/permissions/grants` | DELETE | 是 | 撤销全部授权 |
-| `/api/chat` | POST | 是 | SSE 流；body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, runtime?, permissionMode?}` |
+| `/api/chat` | POST | 是 | SSE 流；body `{sessionId?, workspaceId?, prompt, model?, runtime?, permissionMode?}` |
 | `/api/runs` | GET | 是 | `?workspaceId=<id>`；当前运行中的 run |
 | `/api/runs/:id/cancel` | POST | 是 | `{ok, id}` |
 | `/api/runs/:id/events` | GET | 是 | `?after=<seq>` 一次性回放 |
@@ -93,7 +92,6 @@
 | `/api/agents/:id/models` | GET | 是 | `{models:[{id,label,parameters?:[{id,label,values,defaultId?}]}]}`；未知 runtime → 404 `unknown_runtime` |
 | `/api/sessions/:id/model` | PATCH | 是 | body `{model?: string|null, modelParameters?: object|null}`；至少给一个，`null` = 回到默认。返回 `{ok, effective:"next_run", session}` |
 | `/api/agent` | GET | 是 | 检测信息 |
-| `/api/claude-sessions` | GET | 是 | `?workspaceId=<id>`；枚举该 Workspace 内的 Claude 会话 |
 | `/api/permissions/:id/decision` | POST | 是 | body `{decision:"allow"|"deny"|"allow_all", reason?}` |
 
 **流事件补充**：
@@ -130,7 +128,7 @@
 | 术语 | 含义 |
 |---|---|
 | daemon | 跑在电脑上的守护进程，真正执行任务 |
-| agent / runtime | 编码 CLI（当前为 Claude Code，未来可加 codex 等） |
+| agent / runtime | 编码 agent / CLI（当前为 Claude Code、Codex、DeepSeek Harness） |
 | 会话（session / conversation） | 一次持续的对话，绑定 runtime/工作目录 |
 | run | 一次「发消息 → 跑完」的执行单元；一个会话可包含多次 run |
 | 工作区（workspace） | agent 干活的根目录；daemon 启动时把 `--workspace` 注册为第一个 Workspace，之后可在手机上切换 |

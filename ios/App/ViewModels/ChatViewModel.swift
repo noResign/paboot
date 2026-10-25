@@ -35,7 +35,6 @@ final class ChatViewModel {
     private var sessionId: String?
     private let workspaceId: String?
     private var runtime: String?
-    private let claudeSessionId: String?
 
     private var streamTask: Task<Void, Never>?
     private var historyTask: Task<Void, Never>?
@@ -56,7 +55,6 @@ final class ChatViewModel {
         sessionId: String?,
         workspaceId: String? = nil,
         runtime: String? = nil,
-        claudeSessionId: String? = nil,
         permissionMode: String? = nil,
         title: String? = nil,
         repository: any ChatRepositoryProtocol = ChatRepository()
@@ -65,7 +63,6 @@ final class ChatViewModel {
         self.sessionId = sessionId
         self.workspaceId = workspaceId
         self.runtime = runtime
-        self.claudeSessionId = claudeSessionId
 
         state.sessionId = sessionId
         state.runtime = runtime ?? ""
@@ -222,7 +219,6 @@ final class ChatViewModel {
             prompt: prompt,
             sessionId: state.sessionId,
             workspaceId: isNewSession ? workspaceId : nil,
-            claudeSessionId: claudeSessionId,
             model: isNewSession ? state.model : nil,
             modelParameters: isNewSession && !state.modelParameters.isEmpty ? state.modelParameters : nil,
             runtime: isNewSession ? runtime : nil,
