@@ -282,8 +282,12 @@ export class StdioRpcConnection {
     this.pending.delete(message.id);
     if (pending.timer) clearTimeout(pending.timer);
     if (message.error) {
+      const base = message.error.message ?? `${this.label} error`;
+      // ACP puts the actionable cause (e.g. a failed MCP mount) in
+      // `error.data.details`; the top-level message is only "Internal error".
+      const details = asErrorDetail(message.error.data);
       pending.reject(
-        new StdioRpcError(message.error.message ?? `${this.label} error`, message.error.code, message.error.data),
+        new StdioRpcError(details ? `${base}: ${details}` : base, message.error.code, message.error.data),
       );
       return;
     }
@@ -327,6 +331,13 @@ export class StdioRpcConnection {
     }
     this.pending.clear();
   }
+}
+
+/** ACP's `error.data.details`; other peers may omit `data` or use another shape. */
+function asErrorDetail(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const details = (data as Record<string, unknown>)['details'];
+  return typeof details === 'string' && details.trim().length > 0 ? details : null;
 }
 
 function assertPiped(child: ChildProcess): asserts child is ChildProcessWithoutNullStreams {

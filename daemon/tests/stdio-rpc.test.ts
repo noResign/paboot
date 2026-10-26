@@ -32,6 +32,16 @@ process.stdin.on('data', (chunk) => {
         method: 'seen',
         params: { framed: message.jsonrpc === '2.0' },
       }) + '\\n');
+    } else if (message.method === 'fail') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: { details: 'mcp-client(paboot_tasks): initial connection or tool synchronization failed' },
+        },
+      }) + '\\n');
     }
   }
 });
@@ -58,6 +68,11 @@ describe('stdio JSON-RPC transport', () => {
         method: 'ping',
       });
       await expect(seen).resolves.toEqual({ framed: true });
+      // ACP's actionable cause lives in error.data.details; hiding it leaves
+      // the operator with a useless "Internal error".
+      await expect(connection.request('fail', {}, 5_000)).rejects.toThrow(
+        'Internal error: mcp-client(paboot_tasks): initial connection or tool synchronization failed',
+      );
     } finally {
       await connection.close();
       rmSync(dir, { recursive: true, force: true });

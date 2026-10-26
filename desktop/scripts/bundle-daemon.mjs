@@ -11,15 +11,18 @@
  * pure-JS tree) so the copy we ship has no bare imports at all, and the app keeps
  * needing no `node_modules`.
  *
- * **Two entries, not one**: `permission-hook.js` is spawned *by path* by the
- * running daemon (`ctx.hookPath`, resolved next to `import.meta.url`), so it has
- * to exist as its own file beside the bundle.
+ * **Three entries, not one**: `permission-hook.js` and `mcp-server.js` are
+ * spawned *by path* by the running daemon (`ctx.hookPath` / `ctx.mcpServerPath`,
+ * resolved next to `import.meta.url`), so they have to exist as their own files
+ * beside the bundle. A missing `mcp-server.js` makes every run that mounts
+ * `paboot_tasks` fail at startup.
  *
  * The output **mirrors the daemon package layout** — `package.json` at the root,
- * `dist/` under it — because two things are resolved relative to the entry at
- * runtime and both assume it: `ctx.hookPath` (`./permission-hook.js`) and the
- * version (`require('../package.json')` in `src/version.ts`). The package.json is
- * the daemon's own, copied verbatim: it carries the version *and* the
+ * `dist/` under it — because three things are resolved relative to the entry at
+ * runtime and all assume it: `ctx.hookPath` (`./permission-hook.js`),
+ * `ctx.mcpServerPath` (`./mcp-server.js`), and the version
+ * (`require('../package.json')` in `src/version.ts`). The package.json is the
+ * daemon's own, copied verbatim: it carries the version *and* the
  * `"type": "module"` that makes these files load as ESM.
  */
 import fs from 'node:fs';
@@ -33,7 +36,7 @@ const from = path.join(repo, 'daemon', 'dist');
 const outRoot = path.join(repo, 'desktop', 'build', 'daemon');
 const outDir = path.join(outRoot, 'dist');
 
-const entries = ['index.js', 'permission-hook.js'];
+const entries = ['index.js', 'permission-hook.js', 'mcp-server.js'];
 for (const entry of entries) {
   if (!fs.existsSync(path.join(from, entry))) {
     console.error(`缺少 ${path.join(from, entry)}——先编译 daemon（pnpm build 的 prebuild 会做）`);
