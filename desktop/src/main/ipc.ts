@@ -194,6 +194,7 @@ function sanitizePrefs(patch: Partial<AppPrefs>): Partial<AppPrefs> {
     if (patch.closeBehavior && CLOSE_BEHAVIORS.has(patch.closeBehavior)) out.closeBehavior = patch.closeBehavior;
     if (patch.daemonOnQuit && DAEMON_ON_QUIT.has(patch.daemonOnQuit)) out.daemonOnQuit = patch.daemonOnQuit;
     if (typeof patch.desktopNotifications === 'boolean') out.desktopNotifications = patch.desktopNotifications;
+    if (typeof patch.autoStartDaemon === 'boolean') out.autoStartDaemon = patch.autoStartDaemon;
   }
   return out;
 }

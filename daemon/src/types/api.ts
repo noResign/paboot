@@ -157,6 +157,8 @@ export interface WorkspaceDto {
    */
   shortcutDirs: string[];
   isDefault: boolean;
+  /** The built-in fallback root. It is visible only while it is the only workspace. */
+  isBuiltin: boolean;
   enabled: boolean;
   sessionCount: number;
   createdAt: number;

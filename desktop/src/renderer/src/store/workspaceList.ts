@@ -23,20 +23,28 @@ export function setWorkspaceDirs(list: WorkspaceDto[], id: string, dirs: string[
   return list.map((item) => (item.id === id ? { ...item, dirs } : item));
 }
 
-/**
- * `isDefault` is exclusive on the daemon, but a PATCH response only carries the
- * changed row — so the client has to clear the old flag itself.
- */
-export function applyWorkspacePatch(
-  list: WorkspaceDto[],
-  workspace: WorkspaceDto,
-  patch: { isDefault?: boolean },
-): WorkspaceDto[] {
-  const cleared = patch.isDefault ? list.map((item) => ({ ...item, isDefault: false })) : list;
-  return replaceWorkspace(cleared, workspace);
-}
-
 /** What the shell falls back to when the chosen workspace is gone. */
 export function fallbackWorkspaceId(list: WorkspaceDto[]): string | null {
   return (list.find((item) => item.isDefault) ?? list[0])?.id ?? null;
+}
+
+/** Workspaces the user manages/sees; the built-in fallback is never rendered. */
+export function visibleWorkspaces(list: WorkspaceDto[]): WorkspaceDto[] {
+  return list.filter((workspace) => !workspace.isBuiltin);
+}
+
+/** User-facing name. The built-in fallback has no path the user should read. */
+export function workspaceLabel(workspace: WorkspaceDto | null | undefined): string | null {
+  if (!workspace) return null;
+  return workspace.isBuiltin ? '内置工作区' : workspace.name || workspace.path;
+}
+
+/**
+ * First workspace to show when this device has no live choice: the one it used
+ * last, then the daemon default, then the first. `remembered` is validated
+ * against the list so a workspace deleted elsewhere is not requested.
+ */
+export function initialWorkspaceId(list: WorkspaceDto[], remembered: string | null): string | null {
+  if (remembered && list.some((workspace) => workspace.id === remembered)) return remembered;
+  return fallbackWorkspaceId(list);
 }

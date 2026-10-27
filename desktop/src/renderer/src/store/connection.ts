@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { connectionApi, setActiveConnectionId } from '../ipc/client';
+import { isLoopback } from '../../../shared/net';
+import { DEFAULT_WORKSPACE_PATH } from '../../../shared/workspace';
+import { parseAddress } from '../features/connect/address';
 import { useChat } from './chat';
 import type { ConnectInput, ConnectionView, ProbeResult } from '../../../shared/ipc';
 
@@ -61,16 +64,88 @@ export const useConnection = create<ConnectionState>((set, get) => ({
     set({ booting: true });
     try {
       const result = await connectionApi.boot();
-      // Prefer the remembered host, but never land on one we cannot talk to when
-      // another one is usable.
-      const remembered = result.connections.find((view) => view.id === result.activeId);
-      const activeId =
-        remembered?.connected === true
-          ? remembered.id
-          : (result.connections.find((view) => view.connected)?.id ?? result.activeId);
-      // The probe is informational only — it never connects or starts anything.
-      set({ views: result.connections, activeId, probe: result.probe, booting: false, error: null, errorCode: null });
-      setActiveConnectionId(activeId);
+      const remembered = result.connections.find((view) => view.id === result.activeId) ?? null;
+      const anyConnected = result.connections.find((view) => view.connected) ?? null;
+      const base = {
+        views: result.connections,
+        probe: result.probe,
+        error: null,
+        errorCode: null,
+      };
+
+      // The host the user was last on wins. If it is a remote that is down, stay
+      // on it (connect page) instead of silently dropping the user into another
+      // machine's workspaces. A down loopback host is this machine — recover it.
+      if (remembered?.connected) {
+        set({ ...base, activeId: remembered.id, booting: false });
+        setActiveConnectionId(remembered.id);
+        return;
+      }
+      if (remembered?.host && !isLoopback(remembered.host)) {
+        set({ ...base, activeId: remembered.id, booting: false });
+        setActiveConnectionId(remembered.id);
+        return;
+      }
+      if (!remembered && anyConnected) {
+        set({ ...base, activeId: anyConnected.id, booting: false });
+        setActiveConnectionId(anyConnected.id);
+        return;
+      }
+
+      set(base);
+
+      // 1) A local daemon already answering → attach without a form or a token.
+      const found = result.probe.found;
+      if (found) {
+        const discovered = parseAddress(found.listen);
+        if (!discovered) {
+          set({ booting: false });
+          return;
+        }
+        await get().connect({
+          ...discovered,
+          tls: found.tls,
+          name: found.hostname ?? undefined,
+        });
+        // token_required / unreachable leaves its reason on the store for the
+        // connect page; a success already switched activeId.
+        set({ booting: false });
+        return;
+      }
+
+      // 2) None running → start one when the user allows it.
+      const prefs = await connectionApi.prefsGet();
+      if (!prefs.autoStartDaemon) {
+        set({ booting: false });
+        return;
+      }
+      const started = await connectionApi.daemonStart({ workspace: DEFAULT_WORKSPACE_PATH, port: 0 });
+      if (!started.ok) {
+        // It may have come up between the probe and the start (systemd, another
+        // window). Re-probe before surfacing the start error.
+        const retry = await get().probeNow();
+        const retryAddress = retry.found ? parseAddress(retry.found.listen) : null;
+        if (retry.found && retryAddress) {
+          const ok = await get().connect({
+            ...retryAddress,
+            tls: retry.found.tls,
+            name: retry.found.hostname ?? undefined,
+          });
+          set({ booting: false });
+          if (ok) return;
+          return;
+        }
+        set({ booting: false, error: started.message, errorCode: started.code });
+        return;
+      }
+
+      const bound = started.listen ? parseAddress(started.listen) : null;
+      if (!bound) {
+        set({ booting: false, error: `daemon 起来了但没报告地址（${started.listen ?? '未知'}）` });
+        return;
+      }
+      await get().connect({ ...bound, token: started.token, name: '本机 daemon（本应用启动）' });
+      set({ booting: false });
     } catch (err) {
       set({ booting: false, error: messageOf(err) });
     }

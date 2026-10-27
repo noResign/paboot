@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useConnection } from './store/connection';
 import { ConnectPage } from './features/connect/ConnectPage';
 import { AppShell } from './features/shell/AppShell';
@@ -10,7 +10,12 @@ export function App() {
   const booting = useConnection((s) => s.booting);
   const boot = useConnection((s) => s.boot);
 
+  // StrictMode replays effects in development; booting twice would start two
+  // daemons now that boot can auto-provision one.
+  const started = useRef(false);
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     // One subscription for the app's lifetime, before anything can stream.
     startStreamBridge();
     void boot();

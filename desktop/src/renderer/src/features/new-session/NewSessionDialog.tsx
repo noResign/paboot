@@ -75,7 +75,7 @@ export function NewSessionDialog({ workspaceName, onCancel, onCreate }: Props) {
 
         <div className="field">
           <label>Workspace</label>
-          <div className="readonly mono">{workspaceName ?? '（默认工作区）'}</div>
+          <div className="readonly mono">{workspaceName ?? '（未选择）'}</div>
           <div className="hint">会话在这个工作区内运行，不能在这里切换。</div>
         </div>
 

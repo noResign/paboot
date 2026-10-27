@@ -194,7 +194,7 @@ export interface ManagedDaemonStatus {
 }
 
 export interface ManagedDaemonStartInput {
-  /** The agent's writable root. Must come from a directory picker, never guessed (§2). */
+  /** The agent's writable root — the built-in fallback for app-started daemons. */
   workspace: string;
   port: number;
   /** Defaults to `0.0.0.0` (the LAN can reach it); pass loopback explicitly to close it. */
@@ -327,6 +327,12 @@ export interface AppPrefs {
    */
   daemonOnQuit: 'ask' | 'stop' | 'keep';
   desktopNotifications: boolean;
+  /**
+   * On launch, start a local daemon when none is running. Saved/discovered
+   * connections are still tried first; this only decides the "nothing is up"
+   * fallback, and never replaces a saved remote host.
+   */
+  autoStartDaemon: boolean;
 }
 
 export interface RunningSessionRef {

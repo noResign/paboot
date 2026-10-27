@@ -13,6 +13,7 @@ function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], sh
     dirs,
     shortcutDirs,
     isDefault: w.is_default === 1,
+    isBuiltin: w.is_builtin === 1,
     enabled: w.enabled === 1,
     sessionCount,
     createdAt: w.created_at,
@@ -35,7 +36,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     const shortcutsByWorkspace = ctx.db.listAllWorkspaceShortcuts();
     res.json({
       workspaces: ctx.db
-        .listWorkspaces()
+        .listVisibleWorkspaces()
         .map((w) =>
           workspaceDto(
             w,
@@ -63,7 +64,10 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         return;
       }
       const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : path.basename(realPath) || realPath;
-      const created = ctx.db.createWorkspace({ name, path: realPath, isDefault: workspaces.length === 0 });
+      // The first real workspace replaces the built-in fallback as the default;
+      // later ones only become default when the user asks for it.
+      const hasUserWorkspace = workspaces.some((w) => w.is_builtin !== 1 && w.enabled === 1);
+      const created = ctx.db.createWorkspace({ name, path: realPath, isDefault: !hasUserWorkspace });
       ctx.db.audit('create_workspace', JSON.stringify({ id: created.id, path: created.path }));
       res.status(201).json({ ok: true, workspace: workspaceDto(created, 0) });
     } catch (err) {
@@ -78,6 +82,16 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const body = (req.body ?? {}) as { name?: unknown; isDefault?: unknown; enabled?: unknown };
+    // The built-in fallback is not a user choice: keep it enabled, and never let
+    // it hold the default while a real workspace exists (clients would be
+    // pointed at a workspace they cannot see).
+    if (workspace.is_builtin === 1) {
+      const realWorkspaceExists = ctx.db.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1);
+      if (body.enabled === false || (body.isDefault === true && realWorkspaceExists)) {
+        res.status(409).json({ error: 'built-in workspace cannot be disabled or default', code: 'workspace_is_builtin' });
+        return;
+      }
+    }
     const update: { name?: string; enabled?: boolean } = {};
     if (body.name !== undefined) {
       if (typeof body.name !== 'string' || !body.name.trim()) {
@@ -231,9 +245,9 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
   // 删工作区只删注册信息，磁盘上的目录/文件一律不动。带 `?cascade=1` 时连它的会话一起
   // 删（聊天记录、run、事件、会话级授权）；不带时只要还有会话就 409。
   //
-  // 默认工作区不可删：客户端没指定工作区时用的就是它，删掉会让新会话无处落地。这条也顺带
-  // 保证了「永远删不掉最后一个工作区」——最后一个必然是默认的那个，所以工作区数为零的
-  // 状态不可达。要删它就先把另一个设为默认。
+  // 默认工作区可以删，只要还有另一处可落地：daemon 先把默认切给另一个真实工作区，
+  // 没有就切给内置 fallback。内置 fallback 自己不可删（它是最后的兜底）。这样「工作区数
+  // 为零」仍然不可达，但用户不会因为删不掉最后一个真实工作区而卡住。
   //
   // 注意级联也**不会**删 `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的
   // 会话记录，删了会破坏电脑上的续接，所以同一个目录重新加成工作区后，续接列表里还能看到它们。
@@ -243,11 +257,8 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    if (workspace.is_default === 1) {
-      res.status(409).json({
-        error: 'default workspace cannot be deleted',
-        code: 'workspace_is_default',
-      });
+    if (workspace.is_builtin === 1) {
+      res.status(409).json({ error: 'built-in workspace cannot be deleted', code: 'workspace_is_builtin' });
       return;
     }
     const cascade = req.query.cascade === '1' || req.query.cascade === 'true';
@@ -261,6 +272,18 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         sessionCount: visibleSessions.length,
       });
       return;
+    }
+    if (workspace.is_default === 1) {
+      const enabled = ctx.db.listWorkspaces().filter((w) => w.id !== workspace.id && w.enabled === 1);
+      const fallback = enabled.find((w) => w.is_builtin !== 1) ?? enabled[0];
+      if (!fallback) {
+        res.status(409).json({
+          error: 'default workspace cannot be deleted',
+          code: 'workspace_is_default',
+        });
+        return;
+      }
+      ctx.db.setDefaultWorkspace(fallback.id);
     }
     const allSessions = ctx.db.listAllSessions(workspace.id);
     for (const session of allSessions) {

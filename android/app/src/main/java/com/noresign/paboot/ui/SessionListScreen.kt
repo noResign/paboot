@@ -110,6 +110,12 @@ fun SessionListScreen(
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val selectedWorkspaceId by WorkspaceSelection.selectedId.collectAsState()
     val workspaces by viewModel.workspaces.collectAsState()
+    // daemon 的内置 fallback 仍用它的 id 拉会话/文件，但不作为可切换的工作区展示。
+    val shownWorkspaces = workspaces.filter { !it.isBuiltin }
+    val shownWorkspacePath = workspaces.find { it.id == selectedWorkspaceId }
+        ?.takeIf { it.isBuiltin }
+        ?.let { "内置工作区" }
+        ?: workspacePath
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
@@ -139,30 +145,24 @@ fun SessionListScreen(
         topBar = {
             TopAppBar(
                 actions = {
-                    Box {
-                        TopBarActionButton(
-                            icon = Icons.Rounded.Folder,
-                            contentDescription = "切换工作区",
-                            onClick = { workspaceMenuOpen = true },
-                        )
-                        DropdownMenu(
-                            expanded = workspaceMenuOpen,
-                            onDismissRequest = { workspaceMenuOpen = false },
-                        ) {
-                            Text(
-                                "切换工作区",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    if (shownWorkspaces.isNotEmpty()) {
+                        Box {
+                            TopBarActionButton(
+                                icon = Icons.Rounded.Folder,
+                                contentDescription = "切换工作区",
+                                onClick = { workspaceMenuOpen = true },
                             )
-                            if (workspaces.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text("暂无工作区") },
-                                    onClick = {},
-                                    enabled = false,
+                            DropdownMenu(
+                                expanded = workspaceMenuOpen,
+                                onDismissRequest = { workspaceMenuOpen = false },
+                            ) {
+                                Text(
+                                    "切换工作区",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 )
-                            } else {
-                                workspaces.forEach { workspace ->
+                                shownWorkspaces.forEach { workspace ->
                                     val selected = workspace.id == selectedWorkspaceId
                                     DropdownMenuItem(
                                         text = {
@@ -206,7 +206,7 @@ fun SessionListScreen(
                 title = {
                     Column {
                         Text("会话")
-                        workspacePath?.let {
+                        shownWorkspacePath?.let {
                             Text(
                                 it,
                                 style = MaterialTheme.typography.labelSmall,

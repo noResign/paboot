@@ -279,7 +279,10 @@ final class SettingsViewController: UIViewController {
         }
         addressRow.setValue(connection.map { AddressMask.mask($0.baseUrl) } ?? "未配置")
         tokenRow.setValue(connection == nil ? "未配置" : "••••••••")
-        currentWorkspaceRow.setValue(state.selectedWorkspacePath ?? "未选择")
+        let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceId })
+        currentWorkspaceRow.setValue(
+            selectedWorkspace?.isBuiltin == true ? "内置工作区" : (state.selectedWorkspacePath ?? "未选择")
+        )
 
         for row in permissionRows {
             row.setSelected(row.mode == state.defaultPermissionMode)

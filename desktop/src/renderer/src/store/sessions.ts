@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { api } from '../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
-import { applyWorkspacePatch, removeWorkspace, replaceWorkspace, setWorkspaceDirs } from './workspaceList';
+import { removeWorkspace, replaceWorkspace, setWorkspaceDirs } from './workspaceList';
 import type { SessionDto, WorkspaceDto } from '../../../shared/contract';
 
 /**
@@ -60,7 +60,7 @@ interface SessionsState {
   updateWorkspace(
     connectionId: string,
     id: string,
-    patch: { name?: string; isDefault?: boolean; enabled?: boolean },
+    patch: { name?: string; enabled?: boolean },
   ): Promise<WorkspaceMutation>;
   deleteWorkspace(connectionId: string, id: string, cascade: boolean): Promise<WorkspaceMutation>;
   addWorkspaceDir(connectionId: string, id: string, path: string): Promise<WorkspaceMutation>;
@@ -150,6 +150,9 @@ export const useSessions = create<SessionsState>((set, get) => ({
     if (!res.ok) return mutationFailure(res);
     const workspace = res.data.workspace;
     set((state) => ({ byConnection: mapWorkspaces(state, connectionId, (list) => replaceWorkspace(list, workspace)) }));
+    // The first real workspace hides the built-in fallback and takes the default;
+    // only a server list tells us that, so re-read it.
+    await get().loadWorkspaces(connectionId, { silent: true });
     return { ok: true, workspace };
   },
 
@@ -158,8 +161,11 @@ export const useSessions = create<SessionsState>((set, get) => ({
     if (!res.ok) return mutationFailure(res);
     const workspace = res.data.workspace;
     set((state) => ({
-      byConnection: mapWorkspaces(state, connectionId, (list) => applyWorkspacePatch(list, workspace, patch)),
+      byConnection: mapWorkspaces(state, connectionId, (list) => replaceWorkspace(list, workspace)),
     }));
+    // Enabling/disabling can change which workspaces are visible (and which is
+    // the default), so mirror the server instead of guessing.
+    await get().loadWorkspaces(connectionId, { silent: true });
     return { ok: true, workspace };
   },
 
@@ -176,6 +182,9 @@ export const useSessions = create<SessionsState>((set, get) => ({
         ),
       };
     });
+    // Deleting the default hands the flag to another workspace server-side; the
+    // local list has to learn which one so the next fallback opens the right row.
+    await get().loadWorkspaces(connectionId, { silent: true });
     return { ok: true };
   },
 

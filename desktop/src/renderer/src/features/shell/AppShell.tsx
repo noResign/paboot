@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, visibleSessions } from '../../store/sessions';
-import { fallbackWorkspaceId } from '../../store/workspaceList';
+import { fallbackWorkspaceId, initialWorkspaceId, visibleWorkspaces, workspaceLabel } from '../../store/workspaceList';
+import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
@@ -48,6 +49,10 @@ export function AppShell() {
   // Several hosts can be live at once (§4); the rail and main area are scoped to
   // whichever one is current.
   const connectionId = useConnection((state) => state.activeId);
+  // The daemon's stable identity — survives LAN ↔ loopback address changes.
+  const serverId = useConnection(
+    (state) => state.views.find((view) => view.id === state.activeId)?.serverId ?? null,
+  );
   const disconnectAll = useConnection((state) => state.disconnectAll);
   const scope = useScope(connectionId);
   const loadWorkspaces = useSessions((state) => state.loadWorkspaces);
@@ -95,6 +100,7 @@ export function AppShell() {
     (id: string) => setWorkspaceChoice({ connectionId, id }),
     [connectionId],
   );
+  const workspaceIdentity = lastWorkspaceIdentity(connectionId, serverId);
   useEffect(() => {
     setTaskFilter(null);
   }, [connectionId, workspaceId]);
@@ -161,12 +167,19 @@ export function AppShell() {
     return () => clearInterval(timer);
   }, [connectionId, workspaceId, loadSessions]);
 
-  // Pick the default workspace once, then keep whatever the user chose.
+  // Open where this device left off: the workspace it used last, then the
+  // daemon default, then the first. Waits for the list so a stale remembered id
+  // is never requested.
   useEffect(() => {
-    if (workspaceId) return;
-    const fallback = scope.workspaces.find((workspace) => workspace.isDefault) ?? scope.workspaces[0];
-    if (fallback) setWorkspaceId(fallback.id);
-  }, [scope.workspaces, workspaceId]);
+    if (workspaceId || scope.workspaces.length === 0) return;
+    const chosen = initialWorkspaceId(scope.workspaces, readLastWorkspace(workspaceIdentity));
+    if (chosen) setWorkspaceId(chosen);
+  }, [scope.workspaces, workspaceId, workspaceIdentity, setWorkspaceId]);
+
+  // Remember the selection per daemon so the next launch opens it.
+  useEffect(() => {
+    if (workspaceId) writeLastWorkspace(workspaceIdentity, workspaceId);
+  }, [workspaceId, workspaceIdentity]);
 
   // The chosen workspace can disappear under us (deleted from the 工作区 page, or
   // by another device) — fall back rather than showing an empty rail forever.
@@ -247,6 +260,10 @@ export function AppShell() {
   );
 
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
+  const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
+  // The built-in fallback keeps its id for fetching, but never shows up as a
+  // row/menu entry. It is the only entry only until the first real workspace.
+  const shownWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
   const runningCount = sessions.filter((session) => session.running).length;
   const overlayOpen = paletteOpen || helpOpen || newSessionOpen;
 
@@ -377,7 +394,7 @@ export function AppShell() {
         section: '会话',
         label: session.title ?? '未命名会话',
         hint: [
-          scope.workspaces.find((workspace) => workspace.id === session.workspaceId)?.name,
+          workspaceLabel(scope.workspaces.find((workspace) => workspace.id === session.workspaceId)),
           session.runtime,
           session.running ? '运行中' : null,
         ]
@@ -387,11 +404,11 @@ export function AppShell() {
         run: () => openSessionIn(session.id, session.workspaceId),
       });
     }
-    for (const workspace of scope.workspaces) {
+    for (const workspace of shownWorkspaces) {
       items.push({
         id: `workspace:${workspace.id}`,
         section: '工作区',
-        label: workspace.name,
+        label: workspaceLabel(workspace) ?? '',
         hint: `${workspace.sessionCount} 个会话`,
         keywords: 'workspace',
         run: () => switchWorkspace(workspace.id),
@@ -469,13 +486,15 @@ export function AppShell() {
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
             <ConnectionSwitcher />
-            <select className="ws-select" value={workspaceId} onChange={(event) => switchWorkspace(event.target.value)}>
-              {scope.workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name} · {workspace.sessionCount} 个会话
-                </option>
-              ))}
-            </select>
+            {shownWorkspaces.length > 0 && (
+              <select className="ws-select" value={workspaceId} onChange={(event) => switchWorkspace(event.target.value)}>
+                {shownWorkspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>
+                    {workspaceLabel(workspace)} · {workspace.sessionCount} 个会话
+                  </option>
+                ))}
+              </select>
+            )}
             <button className="btn primary" onClick={() => setNewSessionOpen(true)} title={`新建会话 ${comboLabel('new-session', IS_MAC)}`}>
               ＋ 新建会话
             </button>
@@ -550,13 +569,13 @@ export function AppShell() {
           <FilesPage
             key={connectionId ?? 'none'}
             workspaceId={workspaceId || null}
-            workspaceName={selectedWorkspace?.name ?? null}
+            workspaceName={selectedWorkspaceLabel}
           />
         ) : page === 'tasks' ? (
           <TasksPage
             connectionId={connectionId}
             workspaceId={workspaceId || null}
-            workspaceName={selectedWorkspace?.name ?? null}
+            workspaceName={selectedWorkspaceLabel}
             taskFilter={taskFilter}
             onClearTaskFilter={() => setTaskFilter(null)}
             onOpenSession={(id) => {
@@ -568,7 +587,7 @@ export function AppShell() {
           <div className="chat-row">
             {chatVisible ? (
               <ChatView
-                workspaceName={selectedWorkspace?.name ?? null}
+                workspaceName={selectedWorkspaceLabel}
                 asideVisible={asideVisible}
                 onToggleAside={toggleAside}
                 onCollapseChat={toggleChat}
@@ -596,7 +615,7 @@ export function AppShell() {
 
       {newSessionOpen && (
         <NewSessionDialog
-          workspaceName={selectedWorkspace?.name ?? null}
+          workspaceName={selectedWorkspaceLabel}
           onCancel={() => setNewSessionOpen(false)}
           onCreate={createSession}
         />

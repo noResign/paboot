@@ -31,7 +31,8 @@ fun friendlyMessage(
     // 工作区
     "workspace_exists" -> "该目录已经是工作区了"
     "workspace_not_empty" -> "该工作区还有会话，请勾选「同时删除会话」后再删"
-    "workspace_is_default" -> "默认工作区不能删除，请先把另一个工作区设为默认"
+    "workspace_is_default" -> "最后一个工作区不能删除，请先添加另一个工作区"
+    "workspace_is_builtin" -> "这是内置的默认工作区，不能删除或停用"
     "workspace_disabled" -> "该工作区已停用"
     "directory_not_found" -> "目录不存在或已被删除"
     "not_a_directory" -> "所选路径不是文件夹"

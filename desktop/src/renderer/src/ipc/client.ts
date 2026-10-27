@@ -1,8 +1,11 @@
 import { ROUTES } from '../../../shared/routes';
 import type {
+  AppPrefs,
   ConnectInput,
   DaemonRequest,
   DaemonResponse,
+  ManagedDaemonStartInput,
+  ManagedDaemonStartResult,
   StreamCancelInput,
   StreamSpec,
 } from '../../../shared/ipc';
@@ -74,6 +77,9 @@ export const connectionApi = {
   recent: () => window.paboot.recentList(),
   streamStart: (spec: StreamSpec) => window.paboot.streamStart(spec),
   streamCancel: (input: StreamCancelInput) => window.paboot.streamCancel(input),
+  prefsGet: (): Promise<AppPrefs> => window.paboot.prefsGet(),
+  daemonStart: (input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult> =>
+    window.paboot.daemonStart(input),
 };
 
 export const api = {
@@ -97,7 +103,7 @@ export const api = {
       path: ROUTES.workspaces,
       body: name?.trim() ? { path, name } : { path },
     }),
-  updateWorkspace: (id: string, patch: { name?: string; isDefault?: boolean; enabled?: boolean }) =>
+  updateWorkspace: (id: string, patch: { name?: string; enabled?: boolean }) =>
     request<WorkspaceResponse>({ method: 'PATCH', path: ROUTES.workspace(id), body: patch }),
   deleteWorkspace: (id: string, cascade: boolean) =>
     request<DeleteWorkspaceResponse>({

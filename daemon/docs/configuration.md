@@ -50,6 +50,19 @@
 | `PABOOT_ALLOW_DEPLOY` | 关闭 | 允许 `POST /api/deploy` 触发部署（`1` / `true` 开启） |
 | `PABOOT_DEPLOY_SCRIPT` | `<cwd>/../.claude/skills/deploy/scripts/deploy.sh` | 部署脚本路径 |
 
+### 内置 fallback 工作区
+
+桌面端第一次启动 daemon 时会把 `--workspace` 预填为 `<dataDir>/defaultworkspace`
+（默认即 `~/.paboot/defaultworkspace`）。daemon 按这个路径把该工作区标记为**内置 fallback**：
+
+- 没有启用的真实工作区时，它是默认工作区；`/api/workspaces` 仍会返回它（客户端需要它的 id
+  来拉会话/文件），但客户端渲染列表/切换器时会过滤掉它，用户看到的是「还没有工作区」；
+- 一旦用户添加了真实工作区，它自动让位（默认切到真实工作区），接口也不再返回它；
+  行和它下面的会话仍在库里，删掉最后一个真实工作区后会重新作为默认出现；
+- 它不可删除、不可停用（409 `workspace_is_builtin`），是「永远至少有一个工作区」的兜底。
+
+CLI 不带 `--workspace` 时仍然用 cwd，与内置 fallback 无关。
+
 ### 权限模式
 
 产品模式的来源：

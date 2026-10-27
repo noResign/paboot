@@ -42,8 +42,8 @@ interface Seeded {
 
 /**
  * A **non-default** workspace holding one session with a run, an event, a
- * message and a grant. The startup workspace stays default, since the default
- * one can never be deleted.
+ * message and a grant. The startup workspace stays default, which is what the
+ * delete-the-default test hands over to this one.
  */
 function seedWorkspaceWithSession(db: Db): Seeded {
   const startup = db.seedDefaultWorkspace(process.cwd(), 'ask');
@@ -100,11 +100,10 @@ describe('DELETE /api/workspaces/:id', () => {
     expect(db.listWorkspaceShortcuts(seeded.workspaceId)).toEqual([]);
   });
 
-  // 默认工作区是客户端没指定工作区时的落点，删了新会话就没地方去；这条同时保证
-  // 「最后一个工作区」永远删不掉（它必然是默认的那个）。
-  it('refuses to delete the default workspace, even with cascade', async () => {
+  // 默认工作区可以删：daemon 先把默认标志交给另一个启用的工作区（这里是 target）。
+  it('deletes the default workspace by handing the default flag to another one', async () => {
     const db = openDb();
-    seedWorkspaceWithSession(db);
+    const seeded = seedWorkspaceWithSession(db);
     const startup = db.getDefaultWorkspace();
     if (!startup) throw new Error('expected a default workspace');
     db.createSession({ id: 's-2', runtime: 'claude', workspaceId: startup.id, permissionMode: 'ask', cwd: startup.path });
@@ -112,10 +111,23 @@ describe('DELETE /api/workspaces/:id', () => {
 
     const res = await deleteWorkspace(base, startup.id, true);
 
+    expect(res.status).toBe(200);
+    expect(db.getWorkspace(startup.id)).toBeUndefined();
+    expect(db.getDefaultWorkspace()?.id).toBe(seeded.workspaceId);
+  });
+
+  // 没有别的落点时仍然拒删——这条保证「零工作区」不可达。
+  it('refuses to delete the last remaining workspace', async () => {
+    const db = openDb();
+    const startup = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    if (!startup) throw new Error('expected a seeded workspace');
+    const base = await startApi(db);
+
+    const res = await deleteWorkspace(base, startup.id, true);
+
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('workspace_is_default');
     expect(db.getWorkspace(startup.id)).toBeTruthy();
-    expect(db.listSessions(startup.id)).toHaveLength(1);
   });
 
   it('deletes a non-empty non-default workspace with cascade only', async () => {

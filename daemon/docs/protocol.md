@@ -36,12 +36,12 @@
 | 方法 & 路径 | 鉴权 | 说明 |
 |---|---|---|
 | `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 + `serverId`（见下） |
-| `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置 |
+| `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置；`workspaces` 与 `defaultWorkspaceId` 都只反映可见工作区 |
 | `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
-| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`） |
-| `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区） |
-| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
-| `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`；默认工作区一律 409 `workspace_is_default` |
+| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`）。内置 fallback（`<dataDir>/defaultworkspace`）在存在启用的真实工作区时**不返回**；它是唯一启用的工作区时照常返回（客户端靠它的 id 拉会话/文件，但**不把它渲染成列表行/切换项**） |
+| `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区）。第一条真实工作区自动成为默认 |
+| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认。内置 fallback 不可停用，且在存在真实工作区时不可设为默认（409 `workspace_is_builtin`） |
+| `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`。删除默认工作区时先把默认切给另一个启用的真实工作区，没有就切给内置 fallback；内置 fallback 本身不可删（409 `workspace_is_builtin`），因此「零工作区」不可达 |
 | `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」 |
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
 | `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |

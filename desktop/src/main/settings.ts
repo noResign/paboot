@@ -79,7 +79,7 @@ const EMPTY: SettingsFile = {
   connections: [],
   activeConnectionId: null,
   recent: [],
-  prefs: { closeBehavior: 'ask', desktopNotifications: true, daemonOnQuit: 'ask' },
+  prefs: { closeBehavior: 'ask', desktopNotifications: true, daemonOnQuit: 'ask', autoStartDaemon: true },
   windowBounds: null,
   managedDaemon: null,
 };

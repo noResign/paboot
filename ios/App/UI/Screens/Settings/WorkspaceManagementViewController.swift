@@ -15,6 +15,9 @@ final class WorkspaceManagementViewController: UIViewController {
     private var emptyStateView: EmptyStateView?
 
     private var workspaces: [WorkspaceDto] = []
+    /// The built-in fallback keeps its id for session/file scoping but is never
+    /// listed as a workspace the user manages.
+    private var visibleWorkspaces: [WorkspaceDto] { workspaces.filter { !$0.isBuiltin } }
     private var selectedWorkspaceId: String?
     private var hasLoaded = false
     private var hasPresentedActionError = false
@@ -107,7 +110,7 @@ final class WorkspaceManagementViewController: UIViewController {
         // Keep the table's row count in sync even when switching to the empty state.
         tableView.reloadData()
 
-        if workspaces.isEmpty {
+        if visibleWorkspaces.isEmpty {
             tableView.isHidden = true
             stateContainer.isHidden = false
 
@@ -229,8 +232,6 @@ final class WorkspaceManagementViewController: UIViewController {
     }
 
     private func confirmDelete(_ workspace: WorkspaceDto) {
-        guard !workspace.isDefault else { return }
-
         let name = workspace.name.isEmpty ? workspace.path : workspace.name
         let alert = UIAlertController(
             title: "删除工作区？",
@@ -286,11 +287,11 @@ final class WorkspaceManagementViewController: UIViewController {
 
 extension WorkspaceManagementViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        workspaces.count
+        visibleWorkspaces.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard indexPath.row < workspaces.count else {
+        guard indexPath.row < visibleWorkspaces.count else {
             return UITableViewCell()
         }
 
@@ -298,16 +299,13 @@ extension WorkspaceManagementViewController: UITableViewDataSource {
             withIdentifier: WorkspaceCell.reuseIdentifier,
             for: indexPath
         ) as! WorkspaceCell
-        let workspace = workspaces[indexPath.row]
+        let workspace = visibleWorkspaces[indexPath.row]
 
         cell.configure(
             workspace: workspace,
             selected: workspace.id == selectedWorkspaceId
         )
         cell.onSelect = { [weak self] in self?.viewModel.select(workspace) }
-        cell.onSetDefault = { [weak self] in
-            Task { await self?.viewModel.setDefault(workspace.id) }
-        }
         cell.onToggleEnabled = { [weak self] in
             Task { await self?.viewModel.setEnabled(workspace.id, enabled: !workspace.enabled) }
         }
@@ -331,18 +329,16 @@ extension WorkspaceManagementViewController: UITableViewDataSource {
 
 extension WorkspaceManagementViewController: UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard indexPath.row < workspaces.count else { return }
-        viewModel.select(workspaces[indexPath.row])
+        guard indexPath.row < visibleWorkspaces.count else { return }
+        viewModel.select(visibleWorkspaces[indexPath.row])
     }
 
     func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        guard indexPath.row < workspaces.count else { return nil }
-        let workspace = workspaces[indexPath.row]
-        // The default workspace cannot be deleted, so it gets no swipe action at all.
-        guard !workspace.isDefault else { return nil }
+        guard indexPath.row < visibleWorkspaces.count else { return nil }
+        let workspace = visibleWorkspaces[indexPath.row]
 
         let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, completion in
             self?.confirmDelete(workspace)
@@ -358,7 +354,6 @@ private final class WorkspaceCell: UITableViewCell {
     static let reuseIdentifier = "WorkspaceCell"
 
     var onSelect: (() -> Void)?
-    var onSetDefault: (() -> Void)?
     var onToggleEnabled: (() -> Void)?
     var onRename: (() -> Void)?
     var onAddDir: (() -> Void)?
@@ -369,18 +364,15 @@ private final class WorkspaceCell: UITableViewCell {
     private let selectArea = UIControl()
     private let radioView = UIImageView()
     private let nameLabel = UILabel()
-    private let defaultBadge = UILabel()
     private let disabledBadge = UILabel()
     private let sessionCountLabel = UILabel()
     private let bannerLabel = InsetLabel()
     private let primaryPathButton = UIButton(type: .system)
     private let dirsStack = UIStackView()
     private let actionsStack = UIStackView()
-    private let setDefaultButton = UIButton(type: .system)
     private let toggleEnabledButton = UIButton(type: .system)
     private let renameButton = UIButton(type: .system)
     private let addDirButton = UIButton(type: .system)
-    private let defaultNoteLabel = UILabel()
 
     private var workspace: WorkspaceDto?
     private var expandedPath: String?
@@ -410,7 +402,6 @@ private final class WorkspaceCell: UITableViewCell {
         configurePathButton()
         configureDirsStack()
         configureActionRow()
-        configureDefaultNote()
 
         let mainStack = UIStackView(arrangedSubviews: [
             selectArea,
@@ -418,7 +409,6 @@ private final class WorkspaceCell: UITableViewCell {
             primaryPathButton,
             dirsStack,
             actionsStack,
-            defaultNoteLabel,
         ])
         mainStack.axis = .vertical
         mainStack.spacing = Spacing.xxs
@@ -449,10 +439,9 @@ private final class WorkspaceCell: UITableViewCell {
         nameLabel.textColor = Theme.Colors.textPrimary
         nameLabel.lineBreakMode = .byTruncatingTail
 
-        configureBadge(defaultBadge, color: Theme.Colors.primary)
         configureBadge(disabledBadge, color: Theme.Colors.error)
 
-        let nameRow = UIStackView(arrangedSubviews: [nameLabel, defaultBadge, disabledBadge])
+        let nameRow = UIStackView(arrangedSubviews: [nameLabel, disabledBadge])
         nameRow.axis = .horizontal
         nameRow.alignment = .center
         nameRow.spacing = 6
@@ -527,12 +516,10 @@ private final class WorkspaceCell: UITableViewCell {
     }
 
     private func configureActionRow() {
-        configureSmallButton(setDefaultButton, title: "设为默认")
         configureSmallButton(toggleEnabledButton, title: "禁用")
         configureSmallButton(renameButton, title: "重命名")
         configureSmallButton(addDirButton, title: "+ 附加目录")
 
-        setDefaultButton.addAction(UIAction { [weak self] _ in self?.onSetDefault?() }, for: .touchUpInside)
         toggleEnabledButton.addAction(
             UIAction { [weak self] _ in self?.onToggleEnabled?() },
             for: .touchUpInside
@@ -544,7 +531,7 @@ private final class WorkspaceCell: UITableViewCell {
         actionsStack.distribution = .fillEqually
         actionsStack.alignment = .center
         actionsStack.spacing = 0
-        for button in [setDefaultButton, toggleEnabledButton, renameButton, addDirButton] {
+        for button in [toggleEnabledButton, renameButton, addDirButton] {
             actionsStack.addArrangedSubview(button)
         }
     }
@@ -558,14 +545,6 @@ private final class WorkspaceCell: UITableViewCell {
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
     }
 
-    private func configureDefaultNote() {
-        defaultNoteLabel.text = "默认工作区不能删除，需先把另一个工作区设为默认"
-        defaultNoteLabel.font = Typography.caption
-        defaultNoteLabel.textColor = Theme.Colors.textMuted
-        defaultNoteLabel.numberOfLines = 0
-        defaultNoteLabel.isHidden = true
-    }
-
     func configure(workspace: WorkspaceDto, selected: Bool) {
         self.workspace = workspace
         self.isSelectedRow = selected
@@ -575,17 +554,12 @@ private final class WorkspaceCell: UITableViewCell {
         radioView.image = UIImage(systemName: selected ? "largecircle.fill.circle" : "circle")
         radioView.tintColor = selected ? Theme.Colors.primary : Theme.Colors.textMuted
         nameLabel.text = workspace.name.isEmpty ? workspace.path : workspace.name
-        defaultBadge.text = "默认"
-        defaultBadge.isHidden = !workspace.isDefault
         disabledBadge.text = "已禁用"
         disabledBadge.isHidden = workspace.enabled
         sessionCountLabel.text = "\(workspace.sessionCount) 个会话"
         primaryPathButton.setTitle(workspace.path, for: .normal)
 
-        setDefaultButton.isEnabled = !workspace.isDefault
-        setDefaultButton.alpha = workspace.isDefault ? 0.4 : 1
         toggleEnabledButton.setTitle(workspace.enabled ? "禁用" : "启用", for: .normal)
-        defaultNoteLabel.isHidden = !workspace.isDefault
 
         rebuildDirs(workspace.dirs)
         updateCardAppearance(selected: selected)

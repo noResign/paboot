@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyWorkspacePatch,
   fallbackWorkspaceId,
+  initialWorkspaceId,
   removeWorkspace,
   replaceWorkspace,
   setWorkspaceDirs,
+  visibleWorkspaces,
+  workspaceLabel,
 } from './workspaceList';
 import type { WorkspaceDto } from '../../../shared/contract';
 
@@ -16,6 +18,7 @@ function ws(id: string, overrides: Partial<WorkspaceDto> = {}): WorkspaceDto {
     dirs: [],
     shortcutDirs: [],
     isDefault: false,
+    isBuiltin: false,
     enabled: true,
     sessionCount: 0,
     createdAt: 0,
@@ -52,25 +55,48 @@ describe('setWorkspaceDirs', () => {
   });
 });
 
-describe('applyWorkspacePatch', () => {
-  it('clears the previous default when a new one is set', () => {
-    const list = [ws('a', { isDefault: true }), ws('b')];
-    const next = applyWorkspacePatch(list, ws('b', { isDefault: true }), { isDefault: true });
-    expect(next.map((w) => w.isDefault)).toEqual([false, true]);
-  });
-
-  it('leaves other rows untouched for a plain rename', () => {
-    const list = [ws('a', { isDefault: true }), ws('b')];
-    const next = applyWorkspacePatch(list, ws('b', { name: 'B!' }), {});
-    expect(next[0]?.isDefault).toBe(true);
-    expect(next[1]?.name).toBe('B!');
-  });
-});
-
 describe('fallbackWorkspaceId', () => {
   it('prefers the default, else the first, else null', () => {
     expect(fallbackWorkspaceId([ws('a'), ws('b', { isDefault: true })])).toBe('b');
     expect(fallbackWorkspaceId([ws('a'), ws('b')])).toBe('a');
     expect(fallbackWorkspaceId([])).toBeNull();
+  });
+});
+
+describe('initialWorkspaceId', () => {
+  it('opens the workspace this device used last when it still exists', () => {
+    const list = [ws('a'), ws('b', { isDefault: true })];
+    expect(initialWorkspaceId(list, 'a')).toBe('a');
+  });
+
+  it('falls back when the remembered workspace is gone', () => {
+    const list = [ws('a'), ws('b', { isDefault: true })];
+    expect(initialWorkspaceId(list, 'deleted')).toBe('b');
+    expect(initialWorkspaceId(list, null)).toBe('b');
+  });
+
+  it('returns null for an empty list', () => {
+    expect(initialWorkspaceId([], 'a')).toBeNull();
+  });
+
+  it('can pick the built-in fallback internally', () => {
+    const list = [ws('builtin', { isBuiltin: true, isDefault: true })];
+    expect(initialWorkspaceId(list, null)).toBe('builtin');
+  });
+});
+
+describe('visibleWorkspaces', () => {
+  it('never renders the built-in fallback', () => {
+    const list = [ws('builtin', { isBuiltin: true }), ws('real')];
+    expect(visibleWorkspaces(list).map((w) => w.id)).toEqual(['real']);
+  });
+});
+
+describe('workspaceLabel', () => {
+  it('hides the built-in fallback path behind a generic label', () => {
+    expect(workspaceLabel(ws('builtin', { isBuiltin: true }))).toBe('内置工作区');
+    expect(workspaceLabel(ws('real', { name: '项目' }))).toBe('项目');
+    expect(workspaceLabel(ws('real', { name: '' }))).toBe('/home/real');
+    expect(workspaceLabel(null)).toBeNull();
   });
 });

@@ -310,8 +310,10 @@ final class SessionsViewController: UIViewController {
             )
         }
 
-        pathLabel.text = state.selectedWorkspacePath
-        pathLabel.isHidden = state.selectedWorkspacePath == nil
+        let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID })
+        let selectedLabel = selectedWorkspace?.isBuiltin == true ? "内置工作区" : state.selectedWorkspacePath
+        pathLabel.text = selectedLabel
+        pathLabel.isHidden = selectedLabel == nil
         updateWorkspaceMenu(state)
 
         if state.model.isEmpty {
@@ -458,12 +460,20 @@ final class SessionsViewController: UIViewController {
     }
 
     private func updateWorkspaceMenu(_ state: SessionListViewModel.State) {
-        let signature = state.workspaces.map(\.id).joined(separator: ",")
+        // The built-in fallback still scopes sessions/files, but is not a row the
+        // user can switch to.
+        let shown = state.workspaces.filter { !$0.isBuiltin }
+        let signature = shown.map(\.id).joined(separator: ",")
             + "|" + (state.selectedWorkspaceID ?? "")
         guard signature != workspaceMenuSignature else { return }
         workspaceMenuSignature = signature
 
-        let actions = state.workspaces.map { workspace in
+        guard !shown.isEmpty else {
+            navigationItem.rightBarButtonItem = nil
+            return
+        }
+
+        let actions = shown.map { workspace in
             let name = workspace.name.isEmpty ? workspace.path : workspace.name
             return UIAction(
                 title: "\(name) — \(workspace.path)",
@@ -473,17 +483,11 @@ final class SessionsViewController: UIViewController {
             }
         }
 
-        let menu = UIMenu(
-            title: "切换工作区",
-            children: actions.isEmpty
-                ? [UIAction(title: "暂无工作区", attributes: .disabled) { _ in }]
-                : actions
-        )
         let item = UIBarButtonItem(
             title: nil,
             image: UIImage(systemName: "folder"),
             primaryAction: nil,
-            menu: menu
+            menu: UIMenu(title: "切换工作区", children: actions)
         )
         item.accessibilityLabel = "切换工作区"
         navigationItem.rightBarButtonItem = item

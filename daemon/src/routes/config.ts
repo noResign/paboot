@@ -7,11 +7,14 @@ import {
 } from '../permissions/permission-mode.js';
 
 function configDto(ctx: AppContext) {
-  const defaultWorkspace = ctx.db.getDefaultWorkspace();
+  // Mirror the visible list: a hidden built-in fallback must not be handed to
+  // clients as the default workspace id.
+  const workspaces = ctx.db.listVisibleWorkspaces();
+  const defaultWorkspace = workspaces.find((w) => w.is_default === 1) ?? workspaces[0] ?? null;
   return {
     defaultPermissionMode: getDefaultPermissionMode(ctx.db, ctx.config),
     defaultWorkspaceId: defaultWorkspace?.id ?? null,
-    workspaces: ctx.db.listWorkspaces().map((w) => ({
+    workspaces: workspaces.map((w) => ({
       id: w.id,
       name: w.name,
       path: w.path,
@@ -58,6 +61,10 @@ export function registerConfigRoutes(app: Express, ctx: AppContext): void {
       const ws = ctx.db.getWorkspace(body.defaultWorkspaceId);
       if (!ws || ws.enabled !== 1) {
         res.status(404).json({ error: 'workspace not found or disabled', code: 'workspace_not_found' });
+        return;
+      }
+      if (ws.is_builtin === 1 && ctx.db.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1)) {
+        res.status(409).json({ error: 'built-in workspace cannot be default while a real workspace exists', code: 'workspace_is_builtin' });
         return;
       }
       ctx.db.setDefaultWorkspace(ws.id);

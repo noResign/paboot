@@ -7,6 +7,7 @@ import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { maskAddress } from '../../../../shared/net';
+import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
@@ -82,8 +83,6 @@ export function SettingsPage({
   const [daemonBusy, setDaemonBusy] = useState(false);
   /** Why the last start/stop attempt failed — a dead-looking button otherwise. */
   const [daemonError, setDaemonError] = useState<string | null>(null);
-  /** Working directory for「启动」— becomes the daemon's default workspace. */
-  const [startDir, setStartDir] = useState('');
   const [tokenInput, setTokenInput] = useState('');
   const [tokenBusy, setTokenBusy] = useState(false);
   const [tokenConfirm, setTokenConfirm] = useState(false);
@@ -130,7 +129,7 @@ export function SettingsPage({
   async function startManaged(): Promise<void> {
     setDaemonBusy(true);
     setDaemonError(null);
-    const res = await window.paboot.daemonStart({ workspace: startDir.trim(), port: 0 });
+    const res = await window.paboot.daemonStart({ workspace: DEFAULT_WORKSPACE_PATH, port: 0 });
     setDaemonBusy(false);
     if (!res.ok) setDaemonError(res.message);
     await refreshManaged();
@@ -334,29 +333,45 @@ export function SettingsPage({
                 </div>
                 {!daemon?.running && (
                   <div className="field">
-                    <label htmlFor="daemon-workspace">工作目录（启动时用）</label>
-                    <input
-                      id="daemon-workspace"
-                      className="mono"
-                      placeholder="~/Projects"
-                      value={startDir}
-                      onChange={(event) => setStartDir(event.target.value)}
-                      autoComplete="off"
-                    />
                     <div className="settings-actions">
                       <button className="btn primary" disabled={daemonBusy} onClick={() => void startManaged()}>
-                        {daemonBusy ? '启动中…' : '启动'}
+                        {daemonBusy ? '启动中…' : '启动本机 daemon'}
                       </button>
                     </div>
                     <div className="hint">
-                      这个目录会成为<b>默认工作区</b>（之后不可删除），agent 的写入被限制在它里面；支持
-                      <span className="mono"> ~</span>，目录不存在会自动创建。端口在 4780–4789 里自动挑空闲的，
-                      绑 <span className="mono">0.0.0.0</span>，同一局域网可连（仍需 token；明文 HTTP，请勿暴露到公网）。
+                      使用内置目录 <span className="mono">~/.paboot/defaultworkspace</span>，启动后可在「工作区」里
+                      添加自己的项目目录。端口在 4780–4789 里自动挑空闲的，绑
+                      <span className="mono"> 0.0.0.0</span>，同一局域网可连（仍需 token；明文 HTTP，请勿暴露到公网）。
                       {daemon?.systemd &&
                         ' 这台机器装了 systemd 单元 paboot.service——从这里启动的归本应用管（可重启/改 token），不会去动那个单元。'}
                     </div>
                   </div>
                 )}
+                <div className="field">
+                  <label>启动应用时，本机 daemon</label>
+                  <div className="mode-picker">
+                    {(
+                      [
+                        { value: true, title: '自动启动', desc: '没有运行中的本机 daemon 时自动拉起' },
+                        { value: false, title: '只连接已有的', desc: '不自动启动；没有就停在连接页' },
+                      ] as const
+                    ).map((option) => (
+                      <button
+                        key={String(option.value)}
+                        className={`mode-option${option.value === (prefs?.autoStartDaemon ?? true) ? ' active' : ''}`}
+                        disabled={!prefs}
+                        onClick={() => void updatePrefs({ autoStartDaemon: option.value })}
+                      >
+                        <b>{option.title}</b>
+                        <span>{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint">
+                    已保存 / 已在运行的连接总是优先；这个开关只决定「本机没有 daemon 时」是否自动拉起，
+                    不会覆盖上次选中的远程主机。
+                  </div>
+                </div>
                 <div className="field">
                   <label>退出应用时，本机 daemon</label>
                   <div className="mode-picker">

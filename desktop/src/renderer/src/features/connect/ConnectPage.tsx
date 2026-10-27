@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { displayHost, isInsecure, maskAddress } from '../../../../shared/net';
+import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import { parseAddress } from './address';
 import { BrandMark } from '../../ui/BrandMark';
 import type {
@@ -32,7 +33,6 @@ export function ConnectPage() {
   const [spawnOpen, setSpawnOpen] = useState(false);
   /** A systemd unit is installed — worth saying, since we deliberately do not use it. */
   const [hasSystemdUnit, setHasSystemdUnit] = useState(false);
-  const [spawnDir, setSpawnDir] = useState('');
   const [spawnBusy, setSpawnBusy] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const [spawnLogPath, setSpawnLogPath] = useState<string | null>(null);
@@ -99,17 +99,13 @@ export function ConnectPage() {
    * main, so nothing has to be typed or re-read from disk.
    */
   async function spawnLocal(): Promise<void> {
-    const workspace = spawnDir.trim();
-    if (!workspace) {
-      setSpawnError('请填写工作目录');
-      return;
-    }
     setSpawnBusy(true);
     setSpawnError(null);
     // `port: 0` = pick the first free one in the daemon's usual range: the user
-    // very often already has something on 4780.
+    // very often already has something on 4780. The workspace is the built-in
+    // fallback; real projects are added after connecting.
     const res = await window.paboot.daemonStart({
-      workspace,
+      workspace: DEFAULT_WORKSPACE_PATH,
       port: 0,
     });
     setSpawnBusy(false);
@@ -266,22 +262,10 @@ export function ConnectPage() {
         {spawnOpen && (
           <div className="local-block" style={{ marginTop: 10 }}>
             <div className="local-title">启动一个本机 daemon</div>
-            <div className="field">
-              <label htmlFor="spawn-dir">工作目录</label>
-              <input
-                id="spawn-dir"
-                className="mono"
-                placeholder="~/Projects"
-                value={spawnDir}
-                onChange={(event) => setSpawnDir(event.target.value)}
-                autoComplete="off"
-              />
-            </div>
             <div className="hint" style={{ marginTop: 0 }}>
-              这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
-              路径支持 <span className="mono">~</span>（展开成运行 daemon 的用户主目录），目录不存在会自动创建。
-              数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份
-              ——手机连任意一个，看到的会话与工作区都一样。
+              会用内置目录 <span className="mono">~/.paboot/defaultworkspace</span>（不存在会自动创建）；
+              启动后可在「工作区」里添加自己的项目目录。
+              数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份。
               端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
               启动后绑 <span className="mono">0.0.0.0</span>，同一局域网的手机/电脑可直接连接
               （仍需 token；明文 HTTP，请勿把端口暴露到公网）。

@@ -87,8 +87,9 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；跨网络访问建议用组网工具放进加密内网（见 README
   「手机电脑不在同一个局域网」），内网穿透只适合自用。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见「权限审批」）。
-- **工作目录**：`--workspace` 只在**工作区表为空时**注册一次（首次安装），之后不再自动重建——
-  用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时客户端可随时新增。
+- **工作目录**：显式 `--workspace` 每次启动都生效（权威值）；`PABOOT_WORKSPACE` / 无参（cwd）
+  只在**工作区表为空时**注册一次（首次安装），之后不再自动重建——用户删掉的工作区不会在重启后
+  自己回来，目录不存在也不会让启动抛错；缺工作区时客户端可随时新增。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
   否则 400 `cwd_not_allowed`。**注意**：这条校验针对工作区**主目录**（新 Session 的 cwd 就取自主目录）；
   工作区还可能有附加目录（[protocol.md](protocol.md) 的「附加目录」），它们不参与 cwd 校验，只扩大 agent 的可达范围。
@@ -96,9 +97,13 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   有 Session 时 409 `workspace_not_empty`，`?cascade=1` 才会连 Session（含聊天记录、run、事件、
   会话级授权）一起删。级联会先取消这些 Session 在跑的 run。**级联不删**
   `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的会话记录，删了会破坏电脑上的续接。
-- **默认工作区不可删**（409 `workspace_is_default`）：它是客户端没指定工作区时的落点，删了新会话
-  无处落地。要删就先把另一个设为默认。这条顺带保证了「永远删不掉最后一个工作区」——最后一个必然
-  是默认的那个，所以「零工作区」这个状态不可达，`resolveWorkspaceForRequest` 不会拿到 null。
+- **默认工作区可以删**：删除时 daemon 先把默认切给另一个启用的真实工作区，没有就切给内置
+  fallback（`<dataDir>/defaultworkspace`）；两者都没有才 409 `workspace_is_default`。内置 fallback
+  本身不可删、不可停用（409 `workspace_is_builtin`），因此「零工作区」这个状态仍然不可达，
+  `resolveWorkspaceForRequest` 不会拿到 null。
+- **内置 fallback 工作区**：桌面端首次启动预填 `<dataDir>/defaultworkspace`，daemon 按路径把它标记
+  为内置。没有启用的真实工作区时它是默认并出现在列表里；一旦有真实工作区，它自动让位并隐藏
+  （行与其中的会话仍在库里，只是客户端列表不再返回）。
 - **Workspace 嵌套**：允许父子包含关系（典型场景：daemon `--workspace` 指向根目录，之后把其下的
   子目录注册成独立 Workspace）。Session 的归属靠自身 `workspace_id`，不从路径前缀推导；前缀只用于
   校验 cwd 位于所属 Workspace 内，因此嵌套不影响归属正确性。唯一的语义放宽：查询外层 Workspace 的

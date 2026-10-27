@@ -183,8 +183,10 @@ final class NewSessionViewController: UIViewController {
 
     private func updateButtons() {
         if let workspace = selectedWorkspace {
-            let name = workspace.name.isEmpty ? workspace.path : workspace.name
-            workspaceButton.setTitle("\(name) — \(workspace.path)", for: .normal)
+            let title = workspace.isBuiltin
+                ? "内置工作区"
+                : "\(workspace.name.isEmpty ? workspace.path : workspace.name) — \(workspace.path)"
+            workspaceButton.setTitle(title, for: .normal)
             workspaceButton.setTitleColor(Theme.Colors.textPrimary, for: .normal)
         }
         workspaceButton.menu = makeWorkspaceMenu()
@@ -201,7 +203,10 @@ final class NewSessionViewController: UIViewController {
     }
 
     private func makeWorkspaceMenu() -> UIMenu {
-        let actions = workspaces.map { workspace in
+        // The built-in fallback is the implicit target when nothing else exists;
+        // it is not offered as a choice.
+        let shown = workspaces.filter { !$0.isBuiltin }
+        let actions = shown.map { workspace in
             let name = workspace.name.isEmpty ? workspace.path : workspace.name
             return UIAction(
                 title: "\(name) — \(workspace.path)",
@@ -214,7 +219,7 @@ final class NewSessionViewController: UIViewController {
         return UIMenu(
             title: "选择工作区",
             children: actions.isEmpty
-                ? [UIAction(title: "暂无工作区", attributes: .disabled) { _ in }]
+                ? [UIAction(title: "内置工作区", attributes: .disabled) { _ in }]
                 : actions
         )
     }

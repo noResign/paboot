@@ -22,7 +22,9 @@ export function friendlyMessage(
     case 'workspace_not_empty':
       return '该工作区还有会话，请勾选「同时删除会话」后再删';
     case 'workspace_is_default':
-      return '默认工作区不能删除，请先把另一个工作区设为默认';
+      return '最后一个工作区不能删除，请先添加另一个工作区';
+    case 'workspace_is_builtin':
+      return '这是内置的默认工作区，不能删除或停用';
     case 'workspace_disabled':
       return '该工作区已停用';
     case 'directory_not_found':

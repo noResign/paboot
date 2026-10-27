@@ -100,7 +100,14 @@ async function main(): Promise<void> {
   // (and don't print Node's experimental-sqlite warning on stderr).
   const { Db } = await import('./db/db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
-  db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode), config.workspaceSource);
+  db.seedDefaultWorkspace(
+    config.workspace,
+    fromLegacyPermissionMode(config.permissionMode),
+    config.workspaceSource,
+    // The desktop offers this as the first-run fallback; the same path is what
+    // marks the workspace as built-in instead of a real user choice.
+    path.join(config.dataDir, 'defaultworkspace'),
+  );
   // Runs are only ever `running` while a process is live. After a restart the
   // active-run registry is empty, so anything still `running` is a run the
   // previous process left behind — reconcile it before serving requests.

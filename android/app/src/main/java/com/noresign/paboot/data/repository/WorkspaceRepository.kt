@@ -58,14 +58,6 @@ class WorkspaceRepository(
         }
     }
 
-    suspend fun setDefault(workspaceId: String): NetworkResult<Unit> {
-        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return when (val r = safeApiCall { api.updateWorkspace(workspaceId, UpdateWorkspaceRequest(isDefault = true)) }) {
-            is NetworkResult.Success -> NetworkResult.Success(Unit)
-            is NetworkResult.Error -> r
-        }
-    }
-
     suspend fun updateWorkspace(
         workspaceId: String,
         name: String? = null,

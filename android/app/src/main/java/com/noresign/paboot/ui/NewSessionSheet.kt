@@ -77,7 +77,13 @@ fun NewSessionSheet(
                         // 会话归属的工作区由「工作区管理」里的当前选择决定，此处只读展示。
                         item {
                             val workspace = state.workspaces.find { it.id == selectedWorkspaceId }
-                            val workspaceLabel = workspace?.let { if (it.name.isBlank()) it.path else it.name }
+                            val workspaceLabel = workspace?.let {
+                                when {
+                                    it.isBuiltin -> "内置工作区"
+                                    it.name.isBlank() -> it.path
+                                    else -> it.name
+                                }
+                            }
                             Text(
                                 text = "工作区：${workspaceLabel ?: "-"}",
                                 style = MaterialTheme.typography.labelSmall,

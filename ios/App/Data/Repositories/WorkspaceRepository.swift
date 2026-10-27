@@ -88,14 +88,13 @@ final class WorkspaceRepository {
     func updateWorkspace(
         id: String,
         name: String? = nil,
-        isDefault: Bool? = nil,
         enabled: Bool? = nil
     ) async throws {
         let client = try clientOrThrow()
         do {
             _ = try await client.api.updateWorkspace(
                 id: id,
-                body: UpdateWorkspaceRequest(name: name, isDefault: isDefault, enabled: enabled)
+                body: UpdateWorkspaceRequest(name: name, enabled: enabled)
             )
         } catch {
             throw map(error)
@@ -187,11 +186,13 @@ final class WorkspaceRepository {
         case "workspace_not_found":
             return "工作区不存在，可能已经被删除"
         case "workspace_is_default":
-            return "默认工作区不能删除，请先把另一个工作区设为默认"
+            return "最后一个工作区不能删除，请先添加另一个工作区"
+        case "workspace_is_builtin":
+            return "这是内置的默认工作区，不能删除或停用"
         case "workspace_not_empty":
             return "工作区里还有会话，需要选择同时删除会话"
         case "workspace_disabled":
-            return "默认工作区不能禁用"
+            return "该工作区已停用"
         case "directory_not_found", "invalid_directory":
             return "目录不存在或不可访问"
         case "primary_dir":

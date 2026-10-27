@@ -112,46 +112,57 @@ fun WorkspaceManagementScreen(
                 OutlinedButton(onClick = viewModel::load) { Text("重试") }
             }
             is SettingsUiState.Ready -> {
-                val listState = rememberLazyListState()
-                // 同时只允许一张卡滑开；列表一滚就收起，免得半开的卡片跟着跑。
-                var openedId by remember { mutableStateOf<String?>(null) }
-                LaunchedEffect(listState.isScrollInProgress) {
-                    if (listState.isScrollInProgress) openedId = null
-                }
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(innerPadding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(state.workspaces, key = { it.id }) { workspace ->
-                        val revealed = openedId == workspace.id
-                        SwipeRevealCard(
-                            revealed = revealed,
-                            onRevealChange = { openedId = if (it) workspace.id else null },
-                            // 默认工作区删不得（客户端没指定工作区时用的就是它），所以干脆不让滑。
-                            swipeEnabled = !workspace.isDefault,
-                            onDelete = {
-                                openedId = null
-                                deleteTarget = workspace
-                            },
-                        ) {
-                            WorkspaceCard(
-                                workspace = workspace,
-                                selected = workspace.id == selectedWorkspaceId,
-                                // 滑开时点卡片是「收起」，不是切换当前工作区。
-                                onSelect = {
-                                    if (revealed) openedId = null else viewModel.selectWorkspace(workspace.id)
+                // 内置 fallback 仍参与会话/文件的 id 解析，但不是用户可管理的工作区。
+                val shownWorkspaces = state.workspaces.filter { !it.isBuiltin }
+                if (shownWorkspaces.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(innerPadding).padding(20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "还没有添加工作区，点右上角「+ 新增」添加一个。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    val listState = rememberLazyListState()
+                    // 同时只允许一张卡滑开；列表一滚就收起，免得半开的卡片跟着跑。
+                    var openedId by remember { mutableStateOf<String?>(null) }
+                    LaunchedEffect(listState.isScrollInProgress) {
+                        if (listState.isScrollInProgress) openedId = null
+                    }
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(shownWorkspaces, key = { it.id }) { workspace ->
+                            val revealed = openedId == workspace.id
+                            SwipeRevealCard(
+                                revealed = revealed,
+                                onRevealChange = { openedId = if (it) workspace.id else null },
+                                onDelete = {
+                                    openedId = null
+                                    deleteTarget = workspace
                                 },
-                                onSetDefault = { viewModel.setDefaultWorkspace(workspace.id) },
-                                onToggleEnabled = { viewModel.setWorkspaceEnabled(workspace.id, !workspace.enabled) },
-                                onRename = {
-                                    renameTarget = workspace
-                                    renameText = workspace.name
-                                },
-                                onAddDir = { viewModel.openDirectoryPicker(workspace.id) },
-                                onRemoveDir = { path -> viewModel.removeWorkspaceDir(workspace.id, path) },
-                            )
+                            ) {
+                                WorkspaceCard(
+                                    workspace = workspace,
+                                    selected = workspace.id == selectedWorkspaceId,
+                                    // 滑开时点卡片是「收起」，不是切换当前工作区。
+                                    onSelect = {
+                                        if (revealed) openedId = null else viewModel.selectWorkspace(workspace.id)
+                                    },
+                                    onToggleEnabled = { viewModel.setWorkspaceEnabled(workspace.id, !workspace.enabled) },
+                                    onRename = {
+                                        renameTarget = workspace
+                                        renameText = workspace.name
+                                    },
+                                    onAddDir = { viewModel.openDirectoryPicker(workspace.id) },
+                                    onRemoveDir = { path -> viewModel.removeWorkspaceDir(workspace.id, path) },
+                                )
+                            }
                         }
                     }
                 }
@@ -310,7 +321,6 @@ private fun ExpandablePath(
 private fun SwipeRevealCard(
     revealed: Boolean,
     onRevealChange: (Boolean) -> Unit,
-    swipeEnabled: Boolean,
     onDelete: () -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -321,7 +331,7 @@ private fun SwipeRevealCard(
     var settle by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(revealed, settle, actionPx) {
-        val target = if (revealed && swipeEnabled) -actionPx else 0f
+        val target = if (revealed) -actionPx else 0f
         animate(initialValue = offsetX, targetValue = target, animationSpec = tween(180)) { value, _ ->
             offsetX = value
         }
@@ -351,7 +361,6 @@ private fun SwipeRevealCard(
                 .offset { IntOffset(offsetX.roundToInt(), 0) }
                 .draggable(
                     orientation = Orientation.Horizontal,
-                    enabled = swipeEnabled,
                     state = rememberDraggableState { delta ->
                         offsetX = (offsetX + delta).coerceIn(-actionPx, 0f)
                     },
@@ -369,7 +378,6 @@ private fun WorkspaceCard(
     workspace: WorkspaceDto,
     selected: Boolean,
     onSelect: () -> Unit,
-    onSetDefault: () -> Unit,
     onToggleEnabled: () -> Unit,
     onRename: () -> Unit,
     onAddDir: () -> Unit,
@@ -397,14 +405,6 @@ private fun WorkspaceCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (workspace.isDefault) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "默认",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
                         if (!workspace.enabled) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
@@ -441,16 +441,13 @@ private fun WorkspaceCard(
                     }
                 }
             }
-            // 固定四个按钮、不横向滚动：左右内边距压到 4dp，这样 320dp 宽的屏也放得下；
+            // 固定三个按钮、不横向滚动：左右内边距压到 4dp，这样 320dp 宽的屏也放得下；
             // 「删除」挪到左滑卡片里（见 SwipeRevealCard），不占这一行。
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 val tight = PaddingValues(horizontal = 4.dp)
-                TextButton(onClick = onSetDefault, enabled = !workspace.isDefault, contentPadding = tight) {
-                    Text("设为默认", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
                 TextButton(onClick = onToggleEnabled, contentPadding = tight) {
                     Text(if (workspace.enabled) "禁用" else "启用", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -460,14 +457,6 @@ private fun WorkspaceCard(
                 TextButton(onClick = onAddDir, contentPadding = tight) {
                     Text("+ 附加目录", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            }
-            if (workspace.isDefault) {
-                Text(
-                    "默认工作区不能删除，需先把另一个工作区设为默认",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
             }
         }
     }

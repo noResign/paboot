@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, type WorkspaceMutation } from '../../store/sessions';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
+import { visibleWorkspaces } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
 import type { WorkspaceDto } from '../../../../shared/contract';
 
@@ -35,6 +36,9 @@ export function WorkspaceSection() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const workspacePaths = useMemo(() => scope.workspaces.map((item) => item.path), [scope.workspaces]);
+  // The built-in fallback is usable (it holds the session/file id) but is not a
+  // workspace the user manages, so it never gets a card here.
+  const managedWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
 
   useEffect(() => {
     if (!notice) return;
@@ -112,12 +116,6 @@ export function WorkspaceSection() {
   function menuFor(workspace: WorkspaceDto): MenuItem[] {
     return [
       {
-        id: 'default',
-        label: '设为默认',
-        disabled: workspace.isDefault || !workspace.enabled,
-        run: () => mutate(workspace.id, (cid) => updateWorkspace(cid, workspace.id, { isDefault: true }), '已设为默认'),
-      },
-      {
         id: 'toggle',
         label: workspace.enabled ? '禁用' : '启用',
         run: () =>
@@ -133,7 +131,6 @@ export function WorkspaceSection() {
         id: 'delete',
         label: '删除',
         danger: true,
-        disabled: workspace.isDefault,
         run: () => {
           setCascade(false);
           setRemoving(workspace);
@@ -157,14 +154,14 @@ export function WorkspaceSection() {
         </div>
       </div>
 
-      {scope.workspaces.length === 0 ? (
+      {managedWorkspaces.length === 0 ? (
         <div className="settings-section">
           <div className="hint" style={{ marginTop: 0 }}>
-            还没有工作区，点「＋ 新增工作区」添加一个。
+            还没有添加工作区，点「＋ 新增工作区」添加一个。
           </div>
         </div>
       ) : (
-        scope.workspaces.map((workspace) => (
+        managedWorkspaces.map((workspace) => (
           <div
             key={workspace.id}
             className="settings-section ws-card"
@@ -173,20 +170,17 @@ export function WorkspaceSection() {
             <div className="ws-card-head">
               <div className="ws-card-title">
                 <b>{workspace.name || workspace.path}</b>
-                {workspace.isDefault && <span className="badge">默认</span>}
                 {!workspace.enabled && <span className="badge warn">已禁用</span>}
               </div>
-              {!workspace.isDefault && (
-                <button
-                  className="btn ghost tiny ws-delete"
-                  onClick={() => {
-                    setCascade(false);
-                    setRemoving(workspace);
-                  }}
-                >
-                  删除
-                </button>
-              )}
+              <button
+                className="btn ghost tiny ws-delete"
+                onClick={() => {
+                  setCascade(false);
+                  setRemoving(workspace);
+                }}
+              >
+                删除
+              </button>
             </div>
 
             <div className="mono ws-card-path" title={workspace.path}>
@@ -216,16 +210,6 @@ export function WorkspaceSection() {
             <div className="ws-card-actions">
               <button
                 className="btn tiny"
-                disabled={workspace.isDefault || !workspace.enabled || busyId === workspace.id}
-                title={!workspace.enabled ? '已停用的工作区不能设为默认' : undefined}
-                onClick={() =>
-                  mutate(workspace.id, (cid) => updateWorkspace(cid, workspace.id, { isDefault: true }), '已设为默认')
-                }
-              >
-                设为默认
-              </button>
-              <button
-                className="btn tiny"
                 disabled={busyId === workspace.id}
                 onClick={() =>
                   mutate(
@@ -250,10 +234,6 @@ export function WorkspaceSection() {
                 ＋ 附加目录
               </button>
             </div>
-
-            {workspace.isDefault && (
-              <div className="hint">默认工作区不能删除；要删它，先把另一个工作区设为默认。</div>
-            )}
           </div>
         ))
       )}

@@ -60,19 +60,6 @@ final class WorkspaceManagementViewModel {
         WorkspaceSelection.shared.select(id: workspace.id, path: workspace.path)
     }
 
-    func setDefault(_ workspaceId: String) async {
-        state.actionError = nil
-        do {
-            try await repository.updateWorkspace(id: workspaceId, isDefault: true)
-            if let workspace = state.workspaces.first(where: { $0.id == workspaceId }) {
-                select(workspace)
-            }
-            await load(showLoading: false)
-        } catch {
-            state.actionError = message(error)
-        }
-    }
-
     func setEnabled(_ workspaceId: String, enabled: Bool) async {
         state.actionError = nil
         do {

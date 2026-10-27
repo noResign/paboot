@@ -37,6 +37,12 @@ export interface WorkspaceRow {
   name: string;
   path: string;
   is_default: number;
+  /**
+   * The built-in fallback (`<dataDir>/defaultworkspace`), not a user choice.
+   * It is shown only while it is the only enabled workspace; once a real one
+   * exists it is hidden and must not hold the default flag.
+   */
+  is_builtin: number;
   enabled: number;
   created_at: number;
   last_used_at: number;
@@ -240,6 +246,7 @@ export class Db {
         name TEXT NOT NULL,
         path TEXT NOT NULL UNIQUE,
         is_default INTEGER NOT NULL DEFAULT 0,
+        is_builtin INTEGER NOT NULL DEFAULT 0,
         enabled INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL,
         last_used_at INTEGER NOT NULL
@@ -329,6 +336,7 @@ export class Db {
       `CREATE INDEX IF NOT EXISTS idx_runs_task ON runs (task_id, started_at DESC);`,
     );
     this.ensureColumn('runs', 'model_parameters', 'TEXT');
+    this.ensureColumn('workspaces', 'is_builtin', 'INTEGER NOT NULL DEFAULT 0');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
     // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
@@ -493,14 +501,19 @@ export class Db {
    * to wherever it happened to launch from. `env` / `default` (cwd) keep the old
    * one-time-seed semantics: a workspace the user deleted is not resurrected on
    * the next start (nor can a directory that no longer exists make startup throw).
+   *
+   * `builtinPath` marks the fallback root the desktop offers a first-time user.
+   * It never takes the default flag away from a real workspace, and it is hidden
+   * from clients once one exists (see {@link listVisibleWorkspaces}).
    */
   seedDefaultWorkspace(
     rawPath: string,
     defaultPermissionMode: string,
     source: WorkspaceSource = 'default',
+    builtinPath?: string,
   ): WorkspaceRow | null {
     if (source === 'flag') {
-      this.ensureWorkspaceDefault(rawPath);
+      this.ensureWorkspaceDefault(rawPath, builtinPath);
     } else if (!this.getSetting(SEEDED_WORKSPACE_KEY)) {
       if (this.listWorkspaces().length === 0) {
         const realPath = fs.realpathSync(path.resolve(rawPath));
@@ -508,6 +521,7 @@ export class Db {
           name: path.basename(realPath) || realPath,
           path: realPath,
           isDefault: true,
+          isBuiltin: this.isBuiltinPath(realPath, builtinPath),
         });
       }
       this.setSetting(SEEDED_WORKSPACE_KEY, '1');
@@ -537,27 +551,77 @@ export class Db {
    * it if it had been disabled. The directory itself is created by `loadConfig`
    * before this runs, so `realpathSync` sees it.
    */
-  private ensureWorkspaceDefault(rawPath: string): void {
+  private ensureWorkspaceDefault(rawPath: string, builtinPath?: string): void {
     const realPath = fs.realpathSync(path.resolve(rawPath));
+    const isBuiltin = this.isBuiltinPath(realPath, builtinPath);
     const existing = this.getWorkspaceByPath(realPath);
     if (!existing) {
-      this.createWorkspace({ name: path.basename(realPath) || realPath, path: realPath, isDefault: true });
+      this.createWorkspace({
+        name: path.basename(realPath) || realPath,
+        path: realPath,
+        isDefault: isBuiltin ? !this.hasUserWorkspaces() : true,
+        isBuiltin,
+      });
       return;
     }
     if (existing.enabled !== 1) this.updateWorkspace(existing.id, { enabled: true });
-    if (existing.is_default !== 1) this.setDefaultWorkspace(existing.id);
+    if (isBuiltin && existing.is_builtin !== 1) {
+      this.db.prepare(`UPDATE workspaces SET is_builtin = 1 WHERE id = ?`).run(existing.id);
+      existing.is_builtin = 1;
+    }
+
+    if (isBuiltin) {
+      // The fallback may hold the default only while nothing real exists; if a
+      // real workspace does, the desktop restarting with the fallback path must
+      // not yank the default back to it.
+      if (this.hasUserWorkspaces()) {
+        if (existing.is_default === 1) {
+          const user = this.listWorkspaces().find((w) => w.is_builtin !== 1 && w.enabled === 1);
+          if (user) this.setDefaultWorkspace(user.id);
+        }
+      } else if (existing.is_default !== 1) {
+        this.setDefaultWorkspace(existing.id);
+      }
+    } else if (existing.is_default !== 1) {
+      this.setDefaultWorkspace(existing.id);
+    }
   }
 
-  createWorkspace(input: { id?: string; name: string; path: string; isDefault?: boolean }): WorkspaceRow {
+  /** Whether `realPath` is the fallback root for this data dir. */
+  private isBuiltinPath(realPath: string, builtinPath?: string): boolean {
+    if (!builtinPath) return false;
+    const abs = path.resolve(builtinPath);
+    let canonical = abs;
+    try {
+      canonical = fs.realpathSync(abs);
+    } catch {
+      // The fallback dir need not exist yet; compare what we were given.
+    }
+    return realPath === canonical;
+  }
+
+  /** A real (non-built-in) workspace the user can actually work in. */
+  private hasUserWorkspaces(): boolean {
+    return this.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1);
+  }
+
+  createWorkspace(input: {
+    id?: string;
+    name: string;
+    path: string;
+    isDefault?: boolean;
+    isBuiltin?: boolean;
+  }): WorkspaceRow {
     const now = Date.now();
     const id = input.id ?? randomUUID();
     const isDefault = input.isDefault ? 1 : 0;
+    const isBuiltin = input.isBuiltin ? 1 : 0;
     this.db
       .prepare(
-        `INSERT INTO workspaces (id, name, path, is_default, enabled, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        `INSERT INTO workspaces (id, name, path, is_default, is_builtin, enabled, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
       )
-      .run(id, input.name, input.path, isDefault, now, now);
+      .run(id, input.name, input.path, isDefault, isBuiltin, now, now);
     if (isDefault) this.setDefaultWorkspace(id);
     return this.getWorkspace(id) as WorkspaceRow;
   }
@@ -574,6 +638,19 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM workspaces ORDER BY is_default DESC, last_used_at DESC`)
       .all() as unknown as WorkspaceRow[];
+  }
+
+  /**
+   * What clients may see. The built-in fallback is a first-run scratch root,
+   * not a workspace the user manages: once a real one is enabled it disappears
+   * from the list (its sessions stay in the DB). While it is the only enabled
+   * workspace it *is* the list — clients need an id to scope sessions and the
+   * file browser.
+   */
+  listVisibleWorkspaces(): WorkspaceRow[] {
+    const all = this.listWorkspaces();
+    const users = all.filter((w) => w.is_builtin !== 1);
+    return users.some((w) => w.enabled === 1) ? users : all;
   }
 
   getDefaultWorkspace(): WorkspaceRow | undefined {
@@ -603,7 +680,8 @@ export class Db {
     if (update.enabled !== undefined) {
       this.db.prepare(`UPDATE workspaces SET enabled = ? WHERE id = ?`).run(update.enabled ? 1 : 0, id);
       if (!update.enabled && current.is_default === 1) {
-        const next = this.listWorkspaces().find((w) => w.id !== id && w.enabled === 1);
+        const enabled = this.listWorkspaces().filter((w) => w.id !== id && w.enabled === 1);
+        const next = enabled.find((w) => w.is_builtin !== 1) ?? enabled[0];
         if (next) this.setDefaultWorkspace(next.id);
       }
     }

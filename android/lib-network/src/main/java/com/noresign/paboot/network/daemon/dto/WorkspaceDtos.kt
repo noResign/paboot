@@ -18,6 +18,8 @@ data class WorkspaceDto(
      */
     val shortcutDirs: List<String> = emptyList(),
     val isDefault: Boolean = false,
+    /** daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。 */
+    val isBuiltin: Boolean = false,
     val enabled: Boolean = true,
     val sessionCount: Int = 0,
     val createdAt: Long = 0,

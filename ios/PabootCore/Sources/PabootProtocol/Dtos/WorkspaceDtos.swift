@@ -9,6 +9,8 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
     /// 文件 Tab 的浏览书签。**不授予 agent 任何权限**。
     public let shortcutDirs: [String]
     public let isDefault: Bool
+    /// daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。
+    public let isBuiltin: Bool
     public let enabled: Bool
     public let sessionCount: Int
     public let createdAt: Int64
@@ -22,6 +24,7 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
         dirs = try container.decodeIfPresent([String].self, forKey: .dirs) ?? []
         shortcutDirs = try container.decodeIfPresent([String].self, forKey: .shortcutDirs) ?? []
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        isBuiltin = try container.decodeIfPresent(Bool.self, forKey: .isBuiltin) ?? false
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         sessionCount = try container.decodeIfPresent(Int.self, forKey: .sessionCount) ?? 0
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
@@ -29,7 +32,7 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, dirs, shortcutDirs, isDefault, enabled
+        case id, name, path, dirs, shortcutDirs, isDefault, isBuiltin, enabled
         case sessionCount, createdAt, lastUsedAt
     }
 }
