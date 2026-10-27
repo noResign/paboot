@@ -279,4 +279,36 @@ describe('scheduler', () => {
     expect(h.db.listRuns(h.sessionId)[0].trigger).toBe('run_now');
     h.db.close();
   });
+
+  it('leaves a running task untouched when a manual re-run is refused as busy', async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = harness({
+      id: 'claude',
+      start(req) {
+        h.starts.push(req);
+        return {
+          id: req.runId,
+          promise: pending.then(() => ({ status: 'succeeded' as const, exitCode: 0, error: null })),
+          cancel: () => {},
+        };
+      },
+    });
+    const task = h.task({ nextRunAt: Date.now() + 60_000 });
+
+    const first = await fireScheduledTask(h.ctx, task.id, 'run_now', Date.now());
+    expect(first.ok).toBe(true);
+    expect(h.db.getScheduledTask(task.id)!.last_status).toBe('running');
+
+    const second = await fireScheduledTask(h.ctx, task.id, 'run_now', Date.now());
+    expect(second).toMatchObject({ ok: false, code: 'busy' });
+    expect(h.db.getScheduledTask(task.id)).toMatchObject({ last_status: 'running', last_error: null });
+
+    release();
+    await settle();
+    expect(h.db.getScheduledTask(task.id)!.last_status).toBe('succeeded');
+    h.db.close();
+  });
 });

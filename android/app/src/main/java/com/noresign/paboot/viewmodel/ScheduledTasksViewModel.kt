@@ -39,6 +39,10 @@ class ScheduledTasksViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
+    /** Task ids whose run-now request is still in flight. */
+    private val _startingTaskIds = MutableStateFlow<Set<String>>(emptySet())
+    val startingTaskIds = _startingTaskIds.asStateFlow()
+
     private val _refreshing = MutableStateFlow(false)
     val refreshing = _refreshing.asStateFlow()
 
@@ -109,16 +113,24 @@ class ScheduledTasksViewModel(
         }
     }
 
+    /** Bumped on every open/close so a late detail response cannot reopen a dismissed sheet. */
+    private var detailGeneration = 0
+
     fun openDetail(id: String) {
-        viewModelScope.launch {
-            when (val r = repository.detail(id)) {
-                is NetworkResult.Success -> _detail.value = r.data
-                is NetworkResult.Error -> _message.value = friendlyError(r)
-            }
+        detailGeneration += 1
+        val generation = detailGeneration
+        viewModelScope.launch { fetchDetail(id, generation) }
+    }
+
+    private suspend fun fetchDetail(id: String, generation: Int) {
+        when (val r = repository.detail(id)) {
+            is NetworkResult.Success -> if (generation == detailGeneration) _detail.value = r.data
+            is NetworkResult.Error -> if (generation == detailGeneration) _message.value = friendlyError(r)
         }
     }
 
     fun closeDetail() {
+        detailGeneration += 1
         _detail.value = null
     }
 
@@ -192,14 +204,25 @@ class ScheduledTasksViewModel(
     }
 
     fun runNow(task: ScheduledTaskDto) {
+        if (_startingTaskIds.value.contains(task.id) || task.lastStatus == "running") return
+        _startingTaskIds.value = _startingTaskIds.value + task.id
         viewModelScope.launch {
-            when (val r = repository.runNow(task.id)) {
-                is NetworkResult.Success -> {
-                    _message.value = "已开始运行"
-                    refetchQuietly()
-                    _detail.value?.let { if (it.task.id == task.id) openDetail(task.id) }
+            try {
+                when (val r = repository.runNow(task.id)) {
+                    is NetworkResult.Success -> {
+                        _message.value = "已开始运行"
+                        refetchQuietly()
+                        // Keep the button in "启动中…" until the detail reflects
+                        // the new running status, so it cannot be tapped again.
+                        if (_detail.value?.task?.id == task.id) {
+                            detailGeneration += 1
+                            fetchDetail(task.id, detailGeneration)
+                        }
+                    }
+                    is NetworkResult.Error -> _message.value = friendlyError(r)
                 }
-                is NetworkResult.Error -> _message.value = friendlyError(r)
+            } finally {
+                _startingTaskIds.value = _startingTaskIds.value - task.id
             }
         }
     }

@@ -2,9 +2,9 @@
 /**
  * Minimal stdio MCP server exposed to every agent runtime as `paboot_tasks`.
  *
- * The agent can create a scheduled task bound to its *current* session, list
- * the session's tasks, and cancel one. The daemon resolves the session from
- * `PABOOT_RUN_ID`; the agent never supplies a session id.
+ * The agent can create a scheduled task bound to its *current* session, and
+ * list/cancel tasks across its *current workspace*. The daemon resolves the
+ * session and workspace from `PABOOT_RUN_ID`; the agent never supplies either.
  *
  * Only JSON-RPC frames go to stdout. Diagnostics go to stderr, and any
  * daemon/transport failure is returned as an MCP tool error (fail closed).
@@ -101,12 +101,13 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_scheduled_tasks',
-    description: "List the scheduled tasks bound to the current session.",
+    description:
+      'List the scheduled tasks in the current workspace, across sessions. The result includes currentSessionId so tasks bound to this session can be identified.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'cancel_scheduled_task',
-    description: 'Delete a scheduled task bound to the current session.',
+    description: 'Delete a scheduled task in the current workspace.',
     inputSchema: {
       type: 'object',
       properties: { taskId: { type: 'string' } },

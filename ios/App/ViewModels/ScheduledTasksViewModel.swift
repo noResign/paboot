@@ -28,6 +28,8 @@ final class ScheduledTasksViewModel {
         var loadError: String?
         var actionError: String?
         var detail: ScheduledTaskDetailResponse?
+        /// Task ids whose run-now request is still in flight.
+        var startingTaskIds: Set<String> = []
     }
 
     @Published private(set) var state = State()
@@ -99,8 +101,12 @@ final class ScheduledTasksViewModel {
     }
 
     func runNow(_ task: ScheduledTaskDto) async {
+        guard !state.startingTaskIds.contains(task.id), task.lastStatus != "running" else { return }
+        state.startingTaskIds.insert(task.id)
+        defer { state.startingTaskIds.remove(task.id) }
         do {
             try await repository.runNow(id: task.id)
+            state.actionError = nil
             await load(showLoading: false)
             if state.detail?.task.id == task.id {
                 await loadDetail(id: task.id)

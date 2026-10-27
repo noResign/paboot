@@ -15,7 +15,8 @@ import { workspaceContains } from '../workspace-service.js';
 /**
  * Agent-facing endpoints behind the `paboot_tasks` MCP server. The agent only
  * ever sends its run id; session/workspace are resolved server-side, so a
- * prompt-injected agent cannot create tasks on someone else's session.
+ * prompt-injected agent cannot reach another workspace. Task listing/cancel are
+ * workspace-scoped, matching what the client shows in its tasks tab.
  */
 
 function sendError(res: Response, status: number, code: string, message: string): void {
@@ -160,9 +161,9 @@ export function registerMcpTaskRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const tasks = ctx.db
-      .listScheduledTasks({ sessionId: scope.session.id })
+      .listScheduledTasks({ workspaceId: scope.workspace.id })
       .map((task) => scheduledTaskDto(ctx, task));
-    res.json({ tasks });
+    res.json({ currentSessionId: scope.session.id, tasks });
   });
 
   app.post('/api/internal/mcp/scheduled-tasks/:id/cancel', (req, res) => {
@@ -173,7 +174,7 @@ export function registerMcpTaskRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const task = ctx.db.getScheduledTask(req.params.id);
-    if (!task || task.session_id !== scope.session.id) {
+    if (!task || task.workspace_id !== scope.workspace.id) {
       sendError(res, 404, 'task_not_found', 'scheduled task not found');
       return;
     }

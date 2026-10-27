@@ -311,6 +311,7 @@ final class TaskDetailViewController: UIViewController {
     private let editButton = TaskDetailViewController.makeButton(title: "编辑", filled: false)
     private let deleteButton = TaskDetailViewController.makeButton(title: "删除", filled: false)
     private var cancellables = Set<AnyCancellable>()
+    private var pollTask: Task<Void, Never>?
 
     init(taskId: String, viewModel: ScheduledTasksViewModel) {
         self.taskId = taskId
@@ -404,6 +405,11 @@ final class TaskDetailViewController: UIViewController {
         Task { await viewModel.loadDetail(id: taskId) }
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopPolling()
+    }
+
     private var currentTask: ScheduledTaskDto? {
         guard let detail = viewModel.state.detail, detail.task.id == taskId else { return nil }
         return detail.task
@@ -425,6 +431,12 @@ final class TaskDetailViewController: UIViewController {
         stateLabel.isHidden = stateText.isEmpty
         contentLabel.text = task.type == "command" ? task.command : task.prompt
         toggleButton.configuration?.title = task.enabled ? "停用" : "启用"
+
+        let isRunning = task.lastStatus == "running"
+        let isStarting = viewModel.state.startingTaskIds.contains(task.id)
+        runButton.configuration?.title = isRunning ? "运行中…" : isStarting ? "启动中…" : "立即运行"
+        runButton.isEnabled = !isRunning && !isStarting
+        updatePolling(running: isRunning)
 
         runsStack.arrangedSubviews.forEach {
             runsStack.removeArrangedSubview($0)
@@ -455,6 +467,28 @@ final class TaskDetailViewController: UIViewController {
                 runsStack.addArrangedSubview(outputLabel)
             }
         }
+    }
+
+    /// While the task runs, refresh the detail so the button leaves "运行中…"
+    /// once the run finishes. Stops as soon as the status changes.
+    private func updatePolling(running: Bool) {
+        guard running else {
+            stopPolling()
+            return
+        }
+        guard pollTask == nil else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.viewModel.loadDetail(id: self.taskId)
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     private func presentEditor() {

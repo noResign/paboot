@@ -80,6 +80,7 @@ export function TasksPage({
   const [editingTask, setEditingTask] = useState<ScheduledTaskDto | null>(null);
   const [confirmNewTask, setConfirmNewTask] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const tasks = scope?.tasks ?? [];
   const detail = scope?.detail && scope.detail.task.id === selectedId ? scope.detail : null;
   const filterId = taskFilter?.id;
@@ -102,6 +103,13 @@ export function TasksPage({
     void loadDetail(connectionId, selectedId);
   }, [connectionId, selectedId, loadDetail]);
 
+  const detailStatus = detail?.task.lastStatus;
+  useEffect(() => {
+    if (!connectionId || !selectedId || detailStatus !== 'running') return;
+    const timer = setInterval(() => void loadDetail(connectionId, selectedId), 5_000);
+    return () => clearInterval(timer);
+  }, [connectionId, selectedId, detailStatus, loadDetail]);
+
   useEffect(() => {
     if (selectedId && tasks.some((task) => task.id === selectedId)) return;
     setSelectedId(tasks[0]?.id ?? null);
@@ -121,10 +129,15 @@ export function TasksPage({
   }
 
   async function run(task: ScheduledTaskDto): Promise<void> {
-    if (!connectionId) return;
-    const result = await runNow(connectionId, task.id);
-    setMessage(result.ok ? '已开始运行' : result.error);
-    if (result.ok) await refreshDetail();
+    if (!connectionId || startingTaskId === task.id || task.lastStatus === 'running') return;
+    setStartingTaskId(task.id);
+    try {
+      const result = await runNow(connectionId, task.id);
+      setMessage(result.ok ? '已开始运行' : result.error);
+      if (result.ok) await refreshDetail();
+    } finally {
+      setStartingTaskId(null);
+    }
   }
 
   async function removeTask(task: ScheduledTaskDto): Promise<void> {
@@ -225,6 +238,7 @@ export function TasksPage({
             <TaskDetail
               task={detail.task}
               runs={detail.runs}
+              starting={startingTaskId === detail.task.id}
               onOpenSession={onOpenSession}
               onToggle={() => void toggle(detail.task)}
               onRun={() => void run(detail.task)}
@@ -288,6 +302,7 @@ export function TasksPage({
 function TaskDetail({
   task,
   runs,
+  starting,
   onOpenSession,
   onToggle,
   onRun,
@@ -296,12 +311,14 @@ function TaskDetail({
 }: {
   task: ScheduledTaskDto;
   runs: RunDto[];
+  starting: boolean;
   onOpenSession: (sessionId: string) => void;
   onToggle: () => void;
   onRun: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }) {
+  const running = task.lastStatus === 'running';
   return (
     <div className="task-detail">
       <div className="task-detail-head">
@@ -313,8 +330,8 @@ function TaskDetail({
           </div>
         </div>
         <div className="settings-actions">
-          <button className="btn" onClick={onRun}>
-            立即运行
+          <button className="btn" onClick={onRun} disabled={running || starting}>
+            {running ? '运行中…' : starting ? '启动中…' : '立即运行'}
           </button>
           <button className="btn" onClick={onToggle}>
             {task.enabled ? '停用' : '启用'}

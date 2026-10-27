@@ -245,9 +245,9 @@ async function fireInner(ctx: AppContext, taskId: string, mode: FireMode, now: n
         lastStatus: 'skipped_busy',
         lastError: 'session already has a running run',
       });
-    } else {
-      ctx.db.recordScheduledTaskResult(task.id, 'failed', 'session already has a running run');
     }
+    // A refused manual run must not touch last_status: the in-flight run still
+    // owns that field, and reporting failed here would misstate a healthy run.
     return fail('busy', `session already has a running run: ${stillRunning}`);
   }
 

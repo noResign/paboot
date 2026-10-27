@@ -23,7 +23,8 @@
   - `enabled=1 && next_run_at <= now` → 触发。
   - **错过不补跑**：启动对账时把 `next_run_at` 直接推进到下一次，并记 `last_status='skipped_missed'`。
 - 同一任务在进程内用 `firing` Set + DB CAS 双重去重，保证一个 slot 最多触发一次。
-- 会话正忙（`activeRunIdForSession` 有值）时：定时触发记 `skipped_busy` 并推进；手动 run-now 返回 409。
+- 会话正忙（`activeRunIdForSession` 有值）时：定时触发记 `skipped_busy` 并推进；手动 run-now 返回 409，
+  **不改 `last_status`**（进行中的 run 仍拥有该字段，避免误报失败）。
 - 绑定会话被删 → 任务**连带删除**（不会留在任务列表里，也不静默重建）。启动时还会清理
   `session_id` 指向不存在会话的历史遗留行（旧版本曾把任务停用而不是删除）。
 - 工作区被删/停用 → 任务停用（`workspace_deleted` / `workspace_disabled`）。
@@ -108,15 +109,15 @@ daemon 自带一个 stdio MCP server（`dist/mcp-server.js`），通过 `ToolSer
 
 - `schedule_task`：`target.mode` 为 `current`（默认，绑定调用方会话）/ `existing`（`sessionId`，必须同
   workspace）/ `new`（首次触发建会话，可选 `runtime`）。
-- `list_scheduled_tasks`：列出当前会话的任务。
-- `cancel_scheduled_task`：取消当前会话的任务。
+- `list_scheduled_tasks`：列出当前 workspace 的任务（跨会话，响应带 `currentSessionId`）。
+- `cancel_scheduled_task`：取消当前 workspace 的任务（跨会话）。
 - `list_sessions`：列出当前 workspace 的会话，供选择 `existing` 目标。
 
 MCP `initialize` 返回一句 server-level `instructions`：`Prefer paboot_tasks for scheduled tasks;
 do not use system cron/systemd timers or other scheduling mechanisms.` 这样不用修改 agent 自身的系统提示词。
 
-内部端点只接受 `runId`，由 daemon 反查 session/workspace；`existing` 的目标会话也在 daemon 侧校验，
-**不接受调用方直接指定任意 sessionId 作为调用作用域**。
+内部端点只接受 `runId`，由 daemon 反查 session/workspace；列表与取消都以**反查出的 workspace 为作用域**，
+`existing` 的目标会话也在 daemon 侧校验，**不接受调用方直接指定任意 sessionId / workspaceId 作为调用作用域**。
 
 - 定时触发的 run 再调用 `schedule_task` → `recursion_blocked`。
 - 每会话最多 20 个任务。

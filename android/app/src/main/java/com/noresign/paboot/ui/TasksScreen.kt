@@ -68,6 +68,7 @@ import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.ScheduledTasksViewModel
 import com.noresign.paboot.viewmodel.SessionTasksViewModel
 import com.noresign.paboot.viewmodel.TasksUiState
+import kotlinx.coroutines.delay
 
 private val WEEKDAYS = listOf("日", "一", "二", "三", "四", "五", "六")
 private val PRESETS = linkedMapOf(
@@ -93,6 +94,7 @@ fun TasksScreen(
     val startingConfig by viewModel.startingConfig.collectAsState()
     val editorError by viewModel.editorError.collectAsState()
     val targetSessions by viewModel.targetSessions.collectAsState()
+    val startingTaskIds by viewModel.startingTaskIds.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingTask by remember { mutableStateOf<ScheduledTaskDto?>(null) }
@@ -249,8 +251,10 @@ fun TasksScreen(
     detail?.let {
         TaskDetailSheet(
             detail = it,
+            starting = startingTaskIds.contains(it.task.id),
             onDismiss = viewModel::closeDetail,
             onRun = { viewModel.runNow(it.task) },
+            onRefresh = { viewModel.openDetail(it.task.id) },
             onToggle = { viewModel.toggle(it.task) },
             onDelete = { viewModel.delete(it.task) },
             onEdit = {
@@ -313,14 +317,26 @@ private fun TaskCard(task: ScheduledTaskDto, onOpen: () -> Unit, onToggle: () ->
 @Composable
 private fun TaskDetailSheet(
     detail: ScheduledTaskDetailResponse,
+    starting: Boolean,
     onDismiss: () -> Unit,
     onRun: () -> Unit,
+    onRefresh: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
 ) {
     val task = detail.task
+    val running = task.lastStatus == "running"
     var confirmDelete by remember { mutableStateOf(false) }
+
+    // Keep the run button honest while a run is active: poll until it finishes.
+    LaunchedEffect(task.id, task.lastStatus) {
+        if (!running) return@LaunchedEffect
+        while (true) {
+            delay(5_000)
+            onRefresh()
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(
@@ -364,7 +380,9 @@ private fun TaskDetailSheet(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onRun) { Text("立即运行") }
+                        Button(onClick = onRun, enabled = !running && !starting) {
+                            Text(if (running) "运行中…" else if (starting) "启动中…" else "立即运行")
+                        }
                         OutlinedButton(onClick = onToggle) { Text(if (task.enabled) "停用" else "启用") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

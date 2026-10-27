@@ -114,7 +114,7 @@ describe('agent-facing scheduled task routes', () => {
     expect(await response.json()).toMatchObject({ code: 'recursion_blocked' });
   });
 
-  it('lists only the calling session tasks', async () => {
+  it('lists all tasks in the calling workspace', async () => {
     const h = await setup();
     h.db.createScheduledTask({
       id: 'mine',
@@ -144,14 +144,30 @@ describe('agent-facing scheduled task routes', () => {
       nextRunAt: Date.now() + 60_000,
       createdBy: 'user',
     });
+    const otherWorkspace = h.db.createWorkspace({ name: 'other', path: '/tmp/paboot-mcp-other' });
+    h.db.createScheduledTask({
+      id: 'foreign',
+      name: 'foreign',
+      taskType: 'ai',
+      sessionMode: 'new',
+      sessionId: null,
+      workspaceId: otherWorkspace.id,
+      runtime: 'claude',
+      prompt: 'x',
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      nextRunAt: Date.now() + 60_000,
+      createdBy: 'user',
+    });
 
     const body = await (
       await fetch(`${h.base}/api/internal/mcp/scheduled-tasks?runId=run-1`)
     ).json();
-    expect(body.tasks.map((task: { id: string }) => task.id)).toEqual(['mine']);
+    expect(body.currentSessionId).toBe(h.sessionId);
+    expect(body.tasks.map((task: { id: string }) => task.id).sort()).toEqual(['mine', 'other']);
   });
 
-  it('refuses to cancel another session task', async () => {
+  it('cancels another session task in the same workspace', async () => {
     const h = await setup();
     h.db.createScheduledTask({
       id: 'other',
@@ -173,8 +189,35 @@ describe('agent-facing scheduled task routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runId: 'run-1' }),
     });
+    expect(response.status).toBe(200);
+    expect(h.db.getScheduledTask('other')).toBeUndefined();
+  });
+
+  it('refuses to cancel a task from another workspace', async () => {
+    const h = await setup();
+    const otherWorkspace = h.db.createWorkspace({ name: 'other', path: '/tmp/paboot-mcp-other' });
+    h.db.createScheduledTask({
+      id: 'foreign',
+      name: 'foreign',
+      taskType: 'ai',
+      sessionMode: 'new',
+      sessionId: null,
+      workspaceId: otherWorkspace.id,
+      runtime: 'claude',
+      prompt: 'x',
+      cronExpr: '0 9 * * *',
+      timezone: 'Asia/Shanghai',
+      nextRunAt: Date.now() + 60_000,
+      createdBy: 'user',
+    });
+
+    const response = await fetch(`${h.base}/api/internal/mcp/scheduled-tasks/foreign/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: 'run-1' }),
+    });
     expect(response.status).toBe(404);
-    expect(h.db.getScheduledTask('other')).toBeDefined();
+    expect(h.db.getScheduledTask('foreign')).toBeDefined();
   });
 
   it('rejects an unknown run and invalid input', async () => {
