@@ -5,8 +5,6 @@ import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
-import { ChangesFeed } from './ChangesFeed';
-import type { DiffView } from './DiffViewer';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 import type {
   ChangedFileDto,
@@ -48,8 +46,13 @@ interface Props {
   onModeChange(mode: FileMode): void;
   selectedPath: string | null;
   onSelect(selection: FileSelection): void;
-  /** Diff layout for the inline 改动 feed; the list view ignores it. */
-  diffView?: DiffView;
+  /** All-files navigation changed directory; the open viewer is now stale. */
+  onDirectoryChange?: () => void;
+  /**
+   * Narrow column beside the viewer: keep only the mode/root/refresh controls,
+   * and always render 改动 as the file tree (the diff lives in the viewer).
+   */
+  compact?: boolean;
 }
 
 /**
@@ -65,19 +68,14 @@ export function FileBrowser({
   onModeChange,
   selectedPath,
   onSelect,
-  diffView = 'unified',
+  onDirectoryChange,
+  compact = false,
 }: Props) {
   const [dir, setDir] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   /** Bumped by 刷新 to re-run the fetch. */
   const [reload, setReload] = useState(0);
-  /**
-   * 改动 as GitHub's "Files changed": every file's diff stacked into one scroll
-   * (the default). The list is kept as the alternative — handy for jumping to one
-   * file in a large change set.
-   */
-  const [changesLayout, setChangesLayout] = useState<'list' | 'diffs'>('diffs');
 
   // The change list lives in a renderer-side cache keyed by (connection,
   // workspace, root): this panel unmounts on navigation, and re-running git on
@@ -137,6 +135,12 @@ export function FileBrowser({
       live = false;
     };
   }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges]);
+
+  /** All-files navigation; the viewer must not keep a file from the old dir. */
+  function navigate(next: string): void {
+    setDir(next);
+    onDirectoryChange?.();
+  }
 
   /** Second click collapses; the listing is refetched on the next expand. */
   async function toggleDir(path: string): Promise<void> {
@@ -213,7 +217,7 @@ export function FileBrowser({
   }
 
   return (
-    <div className="ftree">
+    <div className={`ftree${compact ? ' compact' : ''}`}>
       <div className="fseg">
         <button className={mode === 'changes' ? 'active' : ''} onClick={() => onModeChange('changes')}>
           改动{mode === 'changes' && changes ? ` (${changeCount})` : ''}
@@ -237,41 +241,36 @@ export function FileBrowser({
           ))}
         </select>
         <div className="ftree-buttons">
-          {mode === 'changes' && (
-            <button
-              className="btn tiny"
-              title={changesLayout === 'diffs' ? '改为逐文件列表' : '把所有文件的改动排在一起，直接上下滑'}
-              onClick={() => setChangesLayout((value) => (value === 'list' ? 'diffs' : 'list'))}
-            >
-              {changesLayout === 'diffs' ? '列表' : '全部 diff'}
-            </button>
-          )}
-          <button className="btn tiny" onClick={() => setShowHidden((value) => !value)}>
-            {showHidden ? '隐藏隐藏项' : '显示隐藏项'}
-          </button>
-          {mode === 'all' && (
-            <button className="btn tiny" onClick={() => setShowIgnored((value) => !value)}>
-              {showIgnored ? '隐藏忽略项' : '显示忽略项'}
-            </button>
-          )}
-          <button
-            className="btn tiny"
-            disabled={!workspaceId}
-            onClick={() => {
-              setBookmarkError(null);
-              setPickerOpen(true);
-            }}
-            title="浏览并固定一个工作区之外的目录"
-          >
-            ＋ 添加目录
-          </button>
-          {activeIsShortcut && (
-            <button className="btn tiny" onClick={() => void removeActiveBookmark()} title="从书签中移除这个目录">
-              移除书签
-            </button>
+          {!compact && (
+            <>
+              <button className="btn tiny" onClick={() => setShowHidden((value) => !value)}>
+                {showHidden ? '隐藏隐藏项' : '显示隐藏项'}
+              </button>
+              {mode === 'all' && (
+                <button className="btn tiny" onClick={() => setShowIgnored((value) => !value)}>
+                  {showIgnored ? '隐藏忽略项' : '显示忽略项'}
+                </button>
+              )}
+              <button
+                className="btn tiny"
+                disabled={!workspaceId}
+                onClick={() => {
+                  setBookmarkError(null);
+                  setPickerOpen(true);
+                }}
+                title="浏览并固定一个工作区之外的目录"
+              >
+                ＋ 添加目录
+              </button>
+              {activeIsShortcut && (
+                <button className="btn tiny" onClick={() => void removeActiveBookmark()} title="从书签中移除这个目录">
+                  移除书签
+                </button>
+              )}
+            </>
           )}
           <button className="btn tiny" onClick={() => setReload((value) => value + 1)} title="刷新">
-            刷新
+            {compact ? '⟳' : '刷新'}
           </button>
         </div>
       </div>
@@ -280,7 +279,7 @@ export function FileBrowser({
 
       {mode === 'all' && (
         <div className="fbreadcrumb mono">
-          <button className="fbreadcrumb-root" onClick={() => setDir('')} title={activeRoot}>
+          <button className="fbreadcrumb-root" onClick={() => navigate('')} title={activeRoot}>
             /
           </button>
           {dir
@@ -290,7 +289,7 @@ export function FileBrowser({
               <button
                 key={index}
                 className="fbreadcrumb-seg"
-                onClick={() => setDir(all.slice(0, index + 1).join('/'))}
+                onClick={() => navigate(all.slice(0, index + 1).join('/'))}
               >
                 {segment}
               </button>
@@ -304,28 +303,18 @@ export function FileBrowser({
         ) : loading && !(mode === 'changes' ? changes : listing) ? (
           <div className="fnotice">正在读取…</div>
         ) : mode === 'changes' ? (
-          changesLayout === 'diffs' ? (
-            <ChangesFeed
-              revision={changes}
-              files={changes?.files ?? []}
-              workspaceId={workspaceId}
-              root={root}
-              view={diffView}
-            />
-          ) : (
-            <ChangesList
-              changes={changes}
-              selected={selectedPath}
-              expanded={expanded}
-              onToggleDir={(path) => void toggleDir(path)}
-              onPick={(path, kind) => onSelect({ path, kind })}
-            />
-          )
+          <ChangesList
+            changes={changes}
+            selected={selectedPath}
+            expanded={expanded}
+            onToggleDir={(path) => void toggleDir(path)}
+            onPick={(path, kind) => onSelect({ path, kind })}
+          />
         ) : (
           <AllFilesList
             listing={listing}
             selected={selectedPath}
-            onOpenDir={setDir}
+            onOpenDir={navigate}
             onPick={(path) => onSelect({ path, kind: 'content' })}
             onLoadMore={() => void loadMore()}
           />

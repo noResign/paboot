@@ -29,6 +29,8 @@ interface AppearanceState {
   chatVisible: boolean;
   /** The chat's right panel (changed files / files), §6.8. Defaults to collapsed. */
   asideVisible: boolean;
+  /** The panel's directory column while a file is open. */
+  asideTreeVisible: boolean;
   asideWidth: number;
   setTheme(theme: ThemePreference): void;
   setSkin(skin: SkinId): void;
@@ -37,6 +39,7 @@ interface AppearanceState {
   toggleRail(): void;
   toggleChat(): void;
   toggleAside(): void;
+  toggleAsideTree(): void;
   setAsideWidth(width: number): void;
 }
 
@@ -50,6 +53,7 @@ interface Stored {
   railVisible: boolean;
   chatVisible: boolean;
   asideVisible: boolean;
+  asideTreeVisible: boolean;
   asideWidth: number;
 }
 
@@ -71,6 +75,7 @@ function load(): Stored {
     railVisible: true,
     chatVisible: true,
     asideVisible: false,
+    asideTreeVisible: true,
     asideWidth: 320,
   };
   try {
@@ -89,6 +94,7 @@ function load(): Stored {
       chatVisible: parsed.chatVisible !== false,
       // ...except the right panel, which the user asked to start collapsed.
       asideVisible: parsed.asideVisible === true,
+      asideTreeVisible: parsed.asideTreeVisible !== false,
       asideWidth: clamp(Number(parsed.asideWidth) || 320, ASIDE_MIN, ASIDE_MAX),
     };
   } catch {
@@ -130,6 +136,10 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
     set({ asideVisible: !get().asideVisible });
     persist(get());
   },
+  toggleAsideTree() {
+    set({ asideTreeVisible: !get().asideTreeVisible });
+    persist(get());
+  },
   setAsideWidth(asideWidth) {
     set({ asideWidth: clamp(asideWidth, ASIDE_MIN, ASIDE_MAX) });
     persist(get());
@@ -148,6 +158,7 @@ function persist(state: Stored): void {
         railVisible: state.railVisible,
         chatVisible: state.chatVisible,
         asideVisible: state.asideVisible,
+        asideTreeVisible: state.asideTreeVisible,
         asideWidth: state.asideWidth,
       }),
     );

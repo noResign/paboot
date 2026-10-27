@@ -2387,6 +2387,13 @@ a.btn {
   overflow: auto;
   white-space: pre;
 }
+/* File content in the viewer gets the same viewport-pinned horizontal scroll
+   as diffs: the box grows with the longest line and the pane body scrolls. */
+.fpane-body > .fcode {
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}
 
 .fdiff {
   font-family: var(--font-mono);
@@ -2395,10 +2402,12 @@ a.btn {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  /* Long lines are not wrapped (that would lie about the code); the panel scrolls
-     horizontally instead so the whole line is reachable. */
-  overflow-x: auto;
-  overflow-y: hidden;
+  /* Long lines are not wrapped (that would lie about the code). The box grows
+     with the code and the *pane body* scrolls: its horizontal bar stays pinned
+     to the bottom of the viewport instead of the end of a long diff. */
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
 }
 /* 统一: a row is as wide as its content, at least the container. */
 .fdiff:not(.split) .fdiff-ln {
@@ -2583,6 +2592,60 @@ a.btn {
   min-height: 0;
   background: var(--page-bg);
 }
+/* Browsing: the tree is the body. Viewing a file: tree column + viewer, so the
+   list stays available for quick switching. */
+.aside-tree-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aside-body.split {
+  flex-direction: row;
+}
+.aside-body.split .aside-tree-col {
+  flex: 0 0 200px;
+  border-right: 1px solid var(--border);
+}
+.aside-tree-col.hidden {
+  display: none;
+}
+.aside-pane-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aside-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ftree.compact .fseg {
+  padding: 6px 6px 0;
+  gap: 4px;
+}
+.ftree.compact .fseg button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.ftree.compact .ftree-toolbar {
+  padding: 6px 6px 0;
+  gap: 4px;
+}
+.ftree.compact .ftree-body {
+  padding: 4px;
+}
+.ftree.compact .fbreadcrumb {
+  padding: 4px 6px 0;
+}
 .ftree-buttons {
   display: flex;
   gap: 4px;
@@ -2669,46 +2732,6 @@ a.btn {
 }
 .btn.danger {
   color: var(--danger, #e06c75);
-}
-
-/* 全部 diff: every changed file's patch stacked into one continuous scroll. */
-.fdiff-feed {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 8px;
-}
-.fdiff-file {
-  border: 1px solid var(--border, #2a2a2a);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.fdiff-file-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 6px 10px;
-  background: var(--surface-2, #222);
-}
-.fdiff-file-status {
-  flex: none;
-  font-family: monospace;
-  font-weight: 600;
-}
-.fdiff-file-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fdiff-file-stat {
-  flex: none;
-  font-size: 11px;
-  color: var(--muted, #888);
 }
 
 /* ---------- scheduled tasks ---------- */
