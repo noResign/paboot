@@ -48,8 +48,6 @@ interface Props {
   onModeChange(mode: FileMode): void;
   selectedPath: string | null;
   onSelect(selection: FileSelection): void;
-  /** Scope 改动 to one run's checkpoint (`?runId=`); live dirty state when unset. */
-  runId?: string;
   /** Diff layout for the inline 改动 feed; the list view ignores it. */
   diffView?: DiffView;
 }
@@ -67,7 +65,6 @@ export function FileBrowser({
   onModeChange,
   selectedPath,
   onSelect,
-  runId,
   diffView = 'unified',
 }: Props) {
   const [dir, setDir] = useState('');
@@ -87,7 +84,7 @@ export function FileBrowser({
   // every open is slow exactly when it hurts — while a run rewrites the tree.
   // A cold key still falls back to `null`, which is what shows「正在读取…」.
   const connectionId = useConnection((state) => state.activeId);
-  const cacheKey = connectionId && workspaceId ? changesKey(connectionId, workspaceId, root, runId) : null;
+  const cacheKey = connectionId && workspaceId ? changesKey(connectionId, workspaceId, root) : null;
   const changes = useFilesCache((state) => (cacheKey ? state.changes[cacheKey] : undefined)) ?? null;
   const putChanges = useFilesCache((state) => state.putChanges);
 
@@ -122,7 +119,7 @@ export function FileBrowser({
     const hasCached = mode === 'changes' && useFilesCache.getState().changes[cacheKey] !== undefined;
     if (!hasCached) setLoading(true);
     setError(null);
-    const query = { workspaceId, root: root ?? undefined, runId };
+    const query = { workspaceId, root: root ?? undefined };
     void (mode === 'changes' ? api.changes(query) : api.files({ ...query, path: dir, showHidden, showIgnored })).then(
       (res) => {
         if (!live) return;
@@ -139,7 +136,7 @@ export function FileBrowser({
     return () => {
       live = false;
     };
-  }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges, runId]);
+  }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges]);
 
   /** Second click collapses; the listing is refetched on the next expand. */
   async function toggleDir(path: string): Promise<void> {
@@ -313,7 +310,6 @@ export function FileBrowser({
               files={changes?.files ?? []}
               workspaceId={workspaceId}
               root={root}
-              runId={runId}
               view={diffView}
             />
           ) : (

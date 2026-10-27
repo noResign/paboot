@@ -20,22 +20,46 @@ function session(id: string, over: Partial<SessionDto> = {}): SessionDto {
   };
 }
 
+const DAY = 24 * 60 * 60 * 1000;
+
 describe('bucketSessions', () => {
   it('keeps a fixed bucket order and sorts within a bucket by recency', () => {
+    const now = 100 * DAY;
     const buckets = bucketSessions({
       sessions: [
-        session('old-run', { running: true, lastActiveAt: 10 }),
-        session('new-run', { running: true, lastActiveAt: 30 }),
-        session('done'),
+        session('old-run', { running: true, lastActiveAt: now - 10 * DAY }),
+        session('new-run', { running: true, lastActiveAt: now - 60_000 }),
+        session('done', { lastActiveAt: now - 10 * DAY }),
       ],
       needsInput: new Set(),
       failed: new Set(),
+      now,
     });
-    expect(buckets.map((b) => b.id)).toEqual(['needsInput', 'failed', 'rest']);
+    expect(buckets.map((b) => b.id)).toEqual(['needsInput', 'failed', 'rest', 'older']);
     // Running and finished share one list — a running row is marked on the row
-    // itself, so it does not need a list of its own. Order is purely recency:
-    // 30, 10, then the fixture's default 0.
-    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['new-run', 'old-run', 'done']);
+    // itself, so it does not need a list of its own. A long-running session is
+    // never folded into「更早」, so old-run stays here while done does not.
+    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['new-run', 'old-run']);
+    expect(buckets[3]?.sessions.map((s) => s.id)).toEqual(['done']);
+  });
+
+  it('folds non-actionable sessions older than 3 days into「更早」', () => {
+    const now = 100 * DAY;
+    const buckets = bucketSessions({
+      sessions: [
+        session('recent', { lastActiveAt: now - 2 * DAY }),
+        session('old', { lastActiveAt: now - 3 * DAY - 1 }),
+        session('old-waiting', { lastActiveAt: now - 10 * DAY }),
+        session('old-running', { running: true, lastActiveAt: now - 10 * DAY }),
+      ],
+      needsInput: new Set(['old-waiting']),
+      failed: new Set(),
+      now,
+    });
+    // Work that needs the user stays visible regardless of age.
+    expect(buckets[0]?.sessions.map((s) => s.id)).toEqual(['old-waiting']);
+    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['recent', 'old-running']);
+    expect(buckets[3]?.sessions.map((s) => s.id)).toEqual(['old']);
   });
 
   it('lets "waiting on me" beat "running" for the same session', () => {

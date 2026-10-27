@@ -23,8 +23,6 @@ interface AppearanceState {
   skin: SkinId;
   zoom: number;
   railWidth: number;
-  /** The files page's left column (tree / changes list). */
-  fileTreeVisible: boolean;
   /** The session rail. Collapsed leaves a thin strip so it can always be reopened. */
   railVisible: boolean;
   /** The conversation column itself — collapsing hands its width to the right panel. */
@@ -36,7 +34,6 @@ interface AppearanceState {
   setSkin(skin: SkinId): void;
   setZoom(zoom: number): void;
   setRailWidth(width: number): void;
-  toggleFileTree(): void;
   toggleRail(): void;
   toggleChat(): void;
   toggleAside(): void;
@@ -50,7 +47,6 @@ interface Stored {
   skin: SkinId;
   zoom: number;
   railWidth: number;
-  fileTreeVisible: boolean;
   railVisible: boolean;
   chatVisible: boolean;
   asideVisible: boolean;
@@ -72,7 +68,6 @@ function load(): Stored {
     skin: DEFAULT_SKIN_ID,
     zoom: 100,
     railWidth: 300,
-    fileTreeVisible: true,
     railVisible: true,
     chatVisible: true,
     asideVisible: false,
@@ -90,7 +85,6 @@ function load(): Stored {
       zoom: clamp(Number(parsed.zoom) || 100, ZOOM_MIN, ZOOM_MAX),
       railWidth: clamp(Number(parsed.railWidth) || 300, RAIL_MIN, RAIL_MAX),
       // These default to open: an absent field means "written before this existed".
-      fileTreeVisible: parsed.fileTreeVisible !== false,
       railVisible: parsed.railVisible !== false,
       chatVisible: parsed.chatVisible !== false,
       // ...except the right panel, which the user asked to start collapsed.
@@ -124,10 +118,6 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
     set({ railWidth: clamp(railWidth, RAIL_MIN, RAIL_MAX) });
     persist(get());
   },
-  toggleFileTree() {
-    set({ fileTreeVisible: !get().fileTreeVisible });
-    persist(get());
-  },
   toggleRail() {
     set({ railVisible: !get().railVisible });
     persist(get());
@@ -155,7 +145,6 @@ function persist(state: Stored): void {
         skin: state.skin,
         zoom: state.zoom,
         railWidth: state.railWidth,
-        fileTreeVisible: state.fileTreeVisible,
         railVisible: state.railVisible,
         chatVisible: state.chatVisible,
         asideVisible: state.asideVisible,

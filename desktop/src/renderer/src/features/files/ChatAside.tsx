@@ -1,45 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
-import { isBusy, useChat } from '../../store/chat';
-import { RunList } from '../chat/RunList';
-import { canDiffRun } from '../chat/runActions';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
 import { SPLIT_MIN_PX, type DiffView } from './DiffViewer';
 
-type AsideTab = 'files' | 'runs';
-
 /**
- * 右栏面板 (`desktop_ui_design.md` §2 / §6.8): the changed-files browser and the
- * run history beside the conversation. The files half can be scoped to a single
- * run's checkpoint diff; the run half lists every run with per-run actions.
+ * 右栏面板 (`desktop_ui_design.md` §6.8): the changed-files browser beside the
+ * conversation. It always shows the live working-tree state; per-run diffs and
+ * rollback are reached from the message bubbles, not from here.
  */
 export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | null; onCollapse(): void }) {
   const width = useAppearance((state) => state.asideWidth);
   const setWidth = useAppearance((state) => state.setAsideWidth);
   const chatVisible = useAppearance((state) => state.chatVisible);
-  const [tab, setTab] = useState<AsideTab>('files');
   const [mode, setMode] = useState<FileMode>('changes');
   const [root, setRoot] = useState<string | null>(null);
   const [selection, setSelection] = useState<FileSelection | null>(null);
-  // Files scope: an explicitly picked run (from the run list) or the latest
-  // settled run (the 本轮 button). `null` = live dirty state.
-  const [runId, setRunId] = useState<string | null>(null);
   // 并排 only when the panel is wide enough; the panel defaults narrow, so the
-  // fallback is unified (same rule as the full files page).
+  // fallback is unified.
   const [view, setView] = useState<DiffView>('unified');
   const canSplit = width >= SPLIT_MIN_PX;
   const effectiveView: DiffView = canSplit ? view : 'unified';
-  const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
-  const latestRun = chat?.runs.at(-1);
-  const latestRunId = chat && !isBusy(chat.phase) && canDiffRun(latestRun) ? latestRun!.id : null;
 
-  // Root, scope and open file are per-workspace; clear them when it changes so
-  // the panel never shows another workspace's (or host's) state.
+  // Root and open file are per-workspace; clear them when it changes so the
+  // panel never shows another workspace's (or host's) state.
   useEffect(() => {
     setRoot(null);
     setSelection(null);
-    setRunId(null);
   }, [workspaceId]);
 
   /** Drag the left edge; the panel is anchored right, so width is the remainder. */
@@ -70,48 +57,12 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             </span>
           </>
         ) : (
-          <>
-            <button
-              className={`btn ghost tiny${tab === 'files' ? ' active' : ''}`}
-              onClick={() => setTab('files')}
-            >
-              文件
-            </button>
-            <button
-              className={`btn ghost tiny${tab === 'runs' ? ' active' : ''}`}
-              onClick={() => {
-                setTab('runs');
-                setSelection(null);
-              }}
-            >
-              运行
-            </button>
-            {tab === 'files' &&
-              (runId ? (
-                <button
-                  className="btn ghost tiny active"
-                  title="当前只显示该轮运行的改动；点击恢复工作区实时改动"
-                  onClick={() => setRunId(null)}
-                >
-                  仅该轮 ✕
-                </button>
-              ) : (
-                latestRunId && (
-                  <button
-                    className="btn ghost tiny"
-                    title="只看最近一轮运行的改动"
-                    onClick={() => setRunId(latestRunId)}
-                  >
-                    本轮
-                  </button>
-                )
-              ))}
-          </>
+          <span className="title">文件</span>
         )}
         {/* 并排/统一 stays reachable whether browsing the list or looking at one
             file, so a diff can be switched without going back first. Hidden for
             plain file content, which has no diff layout to choose. */}
-        {tab === 'files' && (!selection || selection.kind === 'diff') && (
+        {(!selection || selection.kind === 'diff') && (
           <span className="seg3">
             <button
               className={effectiveView === 'split' ? 'active' : ''}
@@ -135,18 +86,7 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
       </div>
 
       <div className="aside-body">
-        {tab === 'runs' ? (
-          <RunList
-            runs={chat?.runs ?? []}
-            connectionId={chat?.connectionId ?? ''}
-            sessionId={chat?.sessionId ?? null}
-            onViewChanges={(picked) => {
-              setRunId(picked);
-              setSelection(null);
-              setTab('files');
-            }}
-          />
-        ) : selection ? (
+        {selection ? (
           <FilePane
             workspaceId={workspaceId}
             root={root}
@@ -154,7 +94,6 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             view={effectiveView}
             narrowHint={!canSplit}
             emptyText=""
-            runId={runId ?? undefined}
           />
         ) : (
           <FileBrowser
@@ -165,7 +104,6 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
             onModeChange={setMode}
             selectedPath={null}
             onSelect={setSelection}
-            runId={runId ?? undefined}
             diffView={effectiveView}
           />
         )}

@@ -40,7 +40,9 @@ export function SessionList({
   onRefresh,
   onOpenWindow,
 }: Props) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // 「更早」(>3 days) starts collapsed, like the mobile clients; every other
+  // bucket follows the "first two non-empty open" rule below.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ older: true });
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [taskCollapsed, setTaskCollapsed] = useState(false);

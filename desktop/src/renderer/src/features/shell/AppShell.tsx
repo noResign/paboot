@@ -12,7 +12,6 @@ import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
 import { SettingsPage, type SettingsSection } from '../settings/SettingsPage';
-import { FilesPage } from '../files/FilesPage';
 import { TasksPage } from '../tasks/TasksPage';
 import { ChatAside } from '../files/ChatAside';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -28,7 +27,7 @@ import type { SessionDto } from '../../../../shared/contract';
 /** One per renderer process — see `windowFocus.ts` for why it is memoized. */
 const windowFocus = createWindowFocus(() => window.paboot.focusSession());
 
-type Page = 'chat' | 'settings' | 'files' | 'tasks';
+type Page = 'chat' | 'settings' | 'tasks';
 
 /**
  * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
@@ -431,7 +430,6 @@ export function AppShell() {
         keywords: 'workspace 工作区',
         run: () => openSettings('workspaces'),
       },
-      { id: 'action:files', section: '动作', label: '浏览文件与改动', keywords: 'files diff 文件', run: () => setPage('files') },
       {
         id: 'action:tasks',
         section: '动作',
@@ -524,13 +522,6 @@ export function AppShell() {
 
           <div className="rail-foot">
             <button
-              className={`link-btn icon-only${page === 'files' ? ' active' : ''}`}
-              title="文件与 Diff"
-              onClick={() => setPage('files')}
-            >
-              📁
-            </button>
-            <button
               className={`link-btn icon-only${page === 'tasks' ? ' active' : ''}`}
               title="定时任务"
               onClick={() => {
@@ -565,12 +556,6 @@ export function AppShell() {
       <main className="main">
         {page === 'settings' ? (
           <SettingsPage onBack={goBack} section={settingsSection} onSectionChange={setSettingsSection} />
-        ) : page === 'files' ? (
-          <FilesPage
-            key={connectionId ?? 'none'}
-            workspaceId={workspaceId || null}
-            workspaceName={selectedWorkspaceLabel}
-          />
         ) : page === 'tasks' ? (
           <TasksPage
             connectionId={connectionId}

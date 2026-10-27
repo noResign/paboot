@@ -11,7 +11,7 @@ import type { SessionDto } from '../../../shared/contract';
  * marker (pulse dot + left bar), so promoting it added no information — it just
  * split "sessions that want nothing from me" into two lists.
  */
-export type BucketId = 'needsInput' | 'failed' | 'rest';
+export type BucketId = 'needsInput' | 'failed' | 'rest' | 'older';
 
 export interface Bucket {
   id: BucketId;
@@ -23,9 +23,13 @@ export const BUCKET_LABELS: Record<BucketId, string> = {
   needsInput: '⚠ 等待我处理',
   failed: '✗ 失败',
   rest: '会话',
+  older: '更早',
 };
 
-const ORDER: BucketId[] = ['needsInput', 'failed', 'rest'];
+/** Root sessions older than this move into「更早」, collapsed by default. */
+export const RECENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+const ORDER: BucketId[] = ['needsInput', 'failed', 'rest', 'older'];
 
 export interface BucketInput {
   sessions: SessionDto[];
@@ -33,18 +37,24 @@ export interface BucketInput {
   needsInput: ReadonlySet<string>;
   /** Session ids whose most recent run failed. */
   failed: ReadonlySet<string>;
+  /** Injectable clock so the 3-day split is testable. */
+  now?: number;
 }
 
-export function bucketSessions({ sessions, needsInput, failed }: BucketInput): Bucket[] {
+export function bucketSessions({ sessions, needsInput, failed, now = Date.now() }: BucketInput): Bucket[] {
+  const cutoff = now - RECENT_WINDOW_MS;
   const byBucket = new Map<BucketId, SessionDto[]>(ORDER.map((id) => [id, []]));
   for (const session of sessions) {
     // A session can be running *and* waiting on an approval; "waiting on me"
-    // wins, because that is the one the user has to act on.
+    // wins, because that is the one the user has to act on. Actionable rows
+    // (waiting / failed) never move into「更早」— hiding them would hide work.
     const target: BucketId = needsInput.has(session.id)
       ? 'needsInput'
       : failed.has(session.id)
         ? 'failed'
-        : 'rest';
+        : !session.running && session.lastActiveAt < cutoff
+          ? 'older'
+          : 'rest';
     byBucket.get(target)?.push(session);
   }
   return ORDER.map((id) => ({
