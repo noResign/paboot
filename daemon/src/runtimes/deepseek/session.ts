@@ -1,9 +1,9 @@
 import { registerActiveRun } from '../active-runs.js';
-import { grantKeyCandidates } from '../../tool-grants.js';
-import { log } from '../../log.js';
-import type { ProductPermissionMode } from '../../permission-mode.js';
-import type { PermissionManager } from '../../permissions.js';
-import type { RunNotifier } from '../../run-notifier.js';
+import { grantKeyCandidates } from '../../permissions/tool-grants.js';
+import { log } from '../../platform/log.js';
+import type { ProductPermissionMode } from '../../permissions/permission-mode.js';
+import type { PermissionManager } from '../../permissions/permissions.js';
+import type { RunNotifier } from '../../runs/run-notifier.js';
 import type { NormalizedEvent } from '../../types/api.js';
 import type { ToolServerSpec } from '../types.js';
 import { asRecord, createDeepSeekStreamMapper, mapToolName, readString } from './map.js';

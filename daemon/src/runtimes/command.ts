@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { log } from '../log.js';
+import { log } from '../platform/log.js';
 import { registerActiveRun, type ManagedRun } from './active-runs.js';
 import type { RunOutcome } from './engine.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';

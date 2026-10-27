@@ -5,16 +5,16 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AppContext } from '../src/context';
+import type { AppContext } from '../src/app/context';
 import type { NormalizedEvent } from '../src/types/api';
-import { Db } from '../src/db';
+import { Db } from '../src/db/db';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerSessionRoutes } from '../src/routes/sessions';
 import { listActiveRuns, registerActiveRun } from '../src/runtimes/active-runs';
-import { RunNotifier } from '../src/run-notifier';
-import { PermissionManager } from '../src/permissions';
+import { RunNotifier } from '../src/runs/run-notifier';
+import { PermissionManager } from '../src/permissions/permissions';
 
-vi.mock('../src/checkpoints', () => ({
+vi.mock('../src/workspaces/checkpoints', () => ({
   captureCheckpoint: vi.fn(async () => null),
   repoRootFor: vi.fn(async () => null),
 }));

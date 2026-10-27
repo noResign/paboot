@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { AppContext } from './context.js';
-import type { ScheduledTaskRow, SessionRow, WorkspaceRow } from './db.js';
-import type { ProductPermissionMode } from './permission-mode.js';
-import { isProductPermissionMode } from './permission-mode.js';
-import { parseStoredModelParameters } from './model-selection.js';
+import type { AppContext } from '../app/context.js';
+import type { ScheduledTaskRow, SessionRow, WorkspaceRow } from '../db/db.js';
+import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import { isProductPermissionMode } from '../permissions/permission-mode.js';
+import { parseStoredModelParameters } from '../db/model-selection.js';
 import { nextRunAt } from './schedule.js';
-import { startSessionRun, type RunSink } from './run-service.js';
-import { activeRunIdForSession } from './session-runs.js';
-import { workspaceContains } from './workspace-service.js';
-import { log } from './log.js';
+import { startSessionRun, type RunSink } from '../runs/run-service.js';
+import { activeRunIdForSession } from '../runs/session-runs.js';
+import { workspaceContains } from '../workspaces/workspace-service.js';
+import { log } from '../platform/log.js';
 
 /**
  * In-daemon scheduler. It owns no transport: every fire starts a normal run

@@ -1,5 +1,5 @@
-import type { AppContext } from './context.js';
-import { listActiveRuns } from './runtimes/active-runs.js';
+import type { AppContext } from '../app/context.js';
+import { listActiveRuns } from '../runtimes/active-runs.js';
 
 /**
  * Map each in-flight run's session id → run id, including checkpoint work.

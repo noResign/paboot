@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Express, Response } from 'express';
-import type { AppContext } from '../context.js';
-import type { ScheduledTaskRow, SessionRow, WorkspaceRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { ScheduledTaskRow, SessionRow, WorkspaceRow } from '../db/db.js';
 import type {
   CreateScheduledTaskRequest,
   ScheduleDto,
@@ -13,15 +13,15 @@ import type {
   ScheduledTaskType,
   UpdateScheduledTaskRequest,
 } from '../types/api.js';
-import { runDto } from '../dto.js';
-import { normalizeModel, parseStoredModelParameters } from '../model-selection.js';
-import { ScheduleError, nextRunAt, normalizeSchedule, scheduleLabel, type NormalizedSchedule } from '../schedule.js';
-import { fireScheduledTask } from '../scheduler.js';
-import { workspaceContains } from '../workspace-service.js';
-import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
-import { TASK_CONFIG_PROMPT } from '../task-config.js';
-import { activeRunIdForSession } from '../session-runs.js';
-import { startSessionRun } from '../run-service.js';
+import { runDto } from '../db/dto.js';
+import { normalizeModel, parseStoredModelParameters } from '../db/model-selection.js';
+import { ScheduleError, nextRunAt, normalizeSchedule, scheduleLabel, type NormalizedSchedule } from '../scheduling/schedule.js';
+import { fireScheduledTask } from '../scheduling/scheduler.js';
+import { workspaceContains } from '../workspaces/workspace-service.js';
+import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
+import { TASK_CONFIG_PROMPT } from '../scheduling/task-config.js';
+import { activeRunIdForSession } from '../runs/session-runs.js';
+import { startSessionRun } from '../runs/run-service.js';
 
 const MAX_TASKS_PER_SESSION = 20;
 const MAX_TASKS_PER_WORKSPACE = 20;

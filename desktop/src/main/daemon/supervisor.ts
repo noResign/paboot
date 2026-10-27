@@ -277,7 +277,7 @@ export class DaemonSupervisor {
       this.log(`login shell env failed, falling back to the app environment: ${describe(err)}`);
       env = { ...process.env, ...command.env } as Record<string, string>;
     }
-    // The daemon reads `$PABOOT_TOKEN` *before* `<dataDir>/token` (daemon/src/config.ts),
+    // The daemon reads `$PABOOT_TOKEN` *before* `<dataDir>/token` (daemon/src/app/config.ts),
     // but we authenticate with the file. An inherited variable would make those two
     // disagree and every client hit 401, so the child never sees it (§2).
     delete env.PABOOT_TOKEN;

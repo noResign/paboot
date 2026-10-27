@@ -1,5 +1,5 @@
 import { CronExpressionParser } from 'cron-parser';
-import type { ScheduleInput, SchedulePresetInput } from './types/api.js';
+import type { ScheduleInput, SchedulePresetInput } from '../types/api.js';
 
 /**
  * Schedule parsing and next-occurrence math.

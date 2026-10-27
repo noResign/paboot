@@ -1,6 +1,6 @@
 import type { RunCheckpointRow, RunRow } from './db.js';
 import { parseStoredModelParameters } from './model-selection.js';
-import type { RunDto } from './types/api.js';
+import type { RunDto } from '../types/api.js';
 
 /** Shared run mapping so session and scheduled-task responses agree. */
 export function runDto(

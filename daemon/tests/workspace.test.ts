@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveWorkspaceCwd } from '../src/workspace';
+import { resolveWorkspaceCwd } from '../src/workspaces/workspace';
 
 describe('resolveWorkspaceCwd', () => {
   const root = '/home/user/projects';

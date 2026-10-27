@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http';
-import type { NormalizedEvent, SseFrame } from './types/api.js';
+import type { NormalizedEvent, SseFrame } from '../types/api.js';
 
 /** Shared SSE response headers for the live `/api/chat` and replay streams. */
 export function sseHeaders(): Record<string, string> {

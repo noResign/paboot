@@ -47,12 +47,12 @@ hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|
 语义，静默放行会留下绕过审批的口子。只有 `bypass` 模式不审批。
 
 ```
-claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permissions/create
+claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/permissions/create
   → daemon 广播 permission_request（SSE）→ 客户端决定 → POST .../decision
   → hook 轮询 status → permissionDecision allow/deny → claude 放行/阻止
 ```
 
-审批策略（`routes/permissions.ts` + `command-safety.ts`）：
+审批策略（`routes/permissions.ts` + `permissions/command-safety.ts`）：
 
 1. **Session grant**（用户点过「允许全部 Bash」）→ 直接放行，不再广播；
 2. **只读 Bash 白名单**（`ls`/`cat`/`grep`/`node --version`/`git status`…，且命令里不含

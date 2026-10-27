@@ -1,4 +1,4 @@
-import type { NormalizedEvent, SseFrame } from './types/api.js';
+import type { NormalizedEvent, SseFrame } from '../types/api.js';
 
 /** A run's primary event emitter (assigned by the `/api/chat` handler). */
 export type SseSender = (ev: NormalizedEvent) => void;

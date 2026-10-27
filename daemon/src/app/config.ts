@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expandHome } from './paths.js';
+import { expandHome } from '../platform/paths.js';
 
 export interface TlsConfig {
   cert: string;

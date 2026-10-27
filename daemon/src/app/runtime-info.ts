@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Config } from './config.js';
-import { log } from './log.js';
-import { VERSION } from './version.js';
+import { log } from '../platform/log.js';
+import { VERSION } from '../version.js';
 
 /**
  * Where this daemon says where it is. Written once the server is accepting

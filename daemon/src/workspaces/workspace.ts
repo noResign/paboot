@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { expandHome } from './paths.js';
+import { expandHome } from '../platform/paths.js';
 
 /**
  * Resolve `raw` to an absolute path and check it is inside a given workspace

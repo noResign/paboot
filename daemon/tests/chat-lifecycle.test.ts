@@ -5,18 +5,18 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppContext } from '../src/context';
+import type { AppContext } from '../src/app/context';
 import type { NormalizedEvent } from '../src/types/api';
-import { Db } from '../src/db';
-import { captureCheckpoint, repoRootFor } from '../src/checkpoints';
+import { Db } from '../src/db/db';
+import { captureCheckpoint, repoRootFor } from '../src/workspaces/checkpoints';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerRunRoutes } from '../src/routes/runs';
-import { RunNotifier } from '../src/run-notifier';
-import { PermissionManager } from '../src/permissions';
+import { RunNotifier } from '../src/runs/run-notifier';
+import { PermissionManager } from '../src/permissions/permissions';
 import { registerActiveRun } from '../src/runtimes/active-runs';
 
 // Control the git boundary to exercise requests arriving during each snapshot.
-vi.mock('../src/checkpoints', () => ({ captureCheckpoint: vi.fn(), repoRootFor: vi.fn() }));
+vi.mock('../src/workspaces/checkpoints', () => ({ captureCheckpoint: vi.fn(), repoRootFor: vi.fn() }));
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });

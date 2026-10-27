@@ -3,7 +3,7 @@ import type { HealthDto } from '../../shared/contract';
 
 /**
  * Where the daemon says where it is. Mirror of the daemon's `RuntimeInfo`
- * (`daemon/src/runtime-info.ts`) — kept as a local shape because the
+ * (`daemon/src/app/runtime-info.ts`) — kept as a local shape because the
  * daemon's copy is not exported over `./protocol` (it is a Node-only module).
  */
 export interface RuntimeInfoFile {

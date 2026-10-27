@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from '../types/api.js';
-import type { ProductPermissionMode } from '../permission-mode.js';
+import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import type { ManagedRun } from './active-runs.js';
 import type { RunOutcome } from './engine.js';
 

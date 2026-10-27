@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Db } from '../src/db';
+import { Db } from '../src/db/db';
 
 const dbs: Db[] = [];
 const tempDirs: string[] = [];

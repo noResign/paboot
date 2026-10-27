@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Db } from '../src/db';
-import { existingDirs, workspaceContains, workspaceContainsAny, workspaceRoots } from '../src/workspace-service';
+import { Db } from '../src/db/db';
+import { existingDirs, workspaceContains, workspaceContainsAny, workspaceRoots } from '../src/workspaces/workspace-service';
 
 const dbs: Db[] = [];
 const tmpDirs: string[] = [];

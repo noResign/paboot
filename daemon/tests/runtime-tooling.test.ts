@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { claudeAdapter } from '../src/runtimes/claude/adapter';
 import { defaultCapabilities, type SpawnContext, type ToolServerSpec } from '../src/runtimes/types';
-import { codexToolServerArgs } from '../src/tool-server';
+import { codexToolServerArgs } from '../src/mcp/tool-server';
 
 const server: ToolServerSpec = {
   name: 'paboot_tasks',

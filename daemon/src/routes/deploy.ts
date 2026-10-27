@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { DeployJobRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { DeployJobRow } from '../db/db.js';
 import type { DeployChannel, DeployJobDto, DeployJobStatus, DeployTarget } from '../types/api.js';
 
 const execFileAsync = promisify(execFile);

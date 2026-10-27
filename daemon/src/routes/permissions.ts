@@ -1,9 +1,9 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { PermissionDecision, PermissionRequest } from '../permissions.js';
+import type { AppContext } from '../app/context.js';
+import type { PermissionDecision, PermissionRequest } from '../permissions/permissions.js';
 import type { PermissionDto } from '../types/api.js';
-import { isReadOnlyBash } from '../command-safety.js';
-import { grantKeyCandidates, toGrantKey } from '../tool-grants.js';
+import { isReadOnlyBash } from '../permissions/command-safety.js';
+import { grantKeyCandidates, toGrantKey } from '../permissions/tool-grants.js';
 
 function toDto(p: PermissionRequest): PermissionDto {
   return {

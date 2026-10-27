@@ -1,5 +1,5 @@
-import type { AppContext } from './context.js';
-import type { ToolServerSpec } from './runtimes/types.js';
+import type { AppContext } from '../app/context.js';
+import type { ToolServerSpec } from '../runtimes/types.js';
 
 /**
  * The one MCP server every runtime shares. Each driver translates the spec into

@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
+import type { AppContext } from '../app/context.js';
 
 export function registerAgentRoutes(app: Express, ctx: AppContext): void {
   // Primary runtime detection (Claude Code today).

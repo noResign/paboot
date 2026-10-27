@@ -1,5 +1,5 @@
-import type { Config } from './config.js';
-import type { Db } from './db.js';
+import type { Config } from '../app/config.js';
+import type { Db } from '../db/db.js';
 
 export const PRODUCT_PERMISSION_MODES = ['ask', 'acceptEdits', 'bypass'] as const;
 export type ProductPermissionMode = (typeof PRODUCT_PERMISSION_MODES)[number];

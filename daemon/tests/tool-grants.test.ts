@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grantKeyCandidates, toGrantKey } from '../src/tool-grants';
+import { grantKeyCandidates, toGrantKey } from '../src/permissions/tool-grants';
 
 describe('toGrantKey', () => {
   it('keeps non-MCP tool names exact', () => {

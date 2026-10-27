@@ -1,6 +1,6 @@
 import type { Express, Response } from 'express';
-import type { AppContext } from '../context.js';
-import type { RunRow, SessionRow, WorkspaceRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { RunRow, SessionRow, WorkspaceRow } from '../db/db.js';
 import {
   MAX_NAME_CHARS,
   MAX_PROMPT_CHARS,
@@ -9,8 +9,8 @@ import {
   parseSchedule,
   scheduledTaskDto,
 } from './scheduled-tasks.js';
-import { normalizeModel } from '../model-selection.js';
-import { workspaceContains } from '../workspace-service.js';
+import { normalizeModel } from '../db/model-selection.js';
+import { workspaceContains } from '../workspaces/workspace-service.js';
 
 /**
  * Agent-facing endpoints behind the `paboot_tasks` MCP server. The agent only

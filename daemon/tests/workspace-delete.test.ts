@@ -2,8 +2,8 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AppContext } from '../src/context';
-import { Db } from '../src/db';
+import type { AppContext } from '../src/app/context';
+import { Db } from '../src/db/db';
 import { registerWorkspaceRoutes } from '../src/routes/workspaces';
 
 const dbs: Db[] = [];

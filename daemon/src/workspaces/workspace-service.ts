@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Db, WorkspaceRow } from './db.js';
-import { expandHome } from './paths.js';
+import type { Db, WorkspaceRow } from '../db/db.js';
+import { expandHome } from '../platform/paths.js';
 import { resolveWorkspaceCwd } from './workspace.js';
 
 export class WorkspaceValidationError extends Error {

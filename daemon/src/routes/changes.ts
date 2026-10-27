@@ -1,14 +1,14 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { WorkspaceRow } from '../db.js';
-import { ChangesError, getDiff, listChanges } from '../changes.js';
-import { diffRefs, patchRefFile } from '../checkpoints.js';
+import type { AppContext } from '../app/context.js';
+import type { WorkspaceRow } from '../db/db.js';
+import { ChangesError, getDiff, listChanges } from '../workspaces/changes.js';
+import { diffRefs, patchRefFile } from '../workspaces/checkpoints.js';
 import {
   canonicalizeExistingDirectory,
   resolveWorkspaceForRequest,
   workspaceRoots,
   WorkspaceValidationError,
-} from '../workspace-service.js';
+} from '../workspaces/workspace-service.js';
 
 function sendChangesError(res: import('express').Response, err: unknown): void {
   if (err instanceof ChangesError) {

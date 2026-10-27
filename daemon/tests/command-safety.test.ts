@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isReadOnlyBash } from '../src/command-safety';
+import { isReadOnlyBash } from '../src/permissions/command-safety';
 
 describe('isReadOnlyBash', () => {
   it('放行明确只读的命令', () => {

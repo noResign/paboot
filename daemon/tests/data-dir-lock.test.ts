@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { acquireDataDirLock, lockPath } from '../src/data-dir-lock';
+import { acquireDataDirLock, lockPath } from '../src/app/data-dir-lock';
 
 /** A pid that is certainly not running: a child we spawned and then reaped. */
 function deadPid(): number {

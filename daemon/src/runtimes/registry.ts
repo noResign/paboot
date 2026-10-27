@@ -3,7 +3,7 @@ import { detectCodex } from './codex/detect.js';
 import { listCodexModels } from './codex/models.js';
 import { DEEPSEEK_BIN, detectDeepSeek } from './deepseek/detect.js';
 import { listDeepSeekModels } from './deepseek/models.js';
-import { log } from '../log.js';
+import { log } from '../platform/log.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';
 import type { ModelOption, RuntimeAdapter, RuntimeDetection } from './types.js';
 

@@ -1,8 +1,8 @@
 import type { Config } from './config.js';
-import type { Db } from './db.js';
-import type { PermissionManager } from './permissions.js';
-import type { RunNotifier } from './run-notifier.js';
-import type { Registry } from './runtimes/registry.js';
+import type { Db } from '../db/db.js';
+import type { PermissionManager } from '../permissions/permissions.js';
+import type { RunNotifier } from '../runs/run-notifier.js';
+import type { Registry } from '../runtimes/registry.js';
 
 /**
  * Shared dependency object threaded through route registrars. Keep this the

@@ -1,10 +1,10 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
+import type { AppContext } from '../app/context.js';
 import {
   getDefaultPermissionMode,
   isProductPermissionMode,
   SETTING_DEFAULT_PERMISSION_MODE,
-} from '../permission-mode.js';
+} from '../permissions/permission-mode.js';
 
 function configDto(ctx: AppContext) {
   const defaultWorkspace = ctx.db.getDefaultWorkspace();

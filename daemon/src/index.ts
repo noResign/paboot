@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseCliArgs, printHelp, VERSION, type CliOptions } from './cli.js';
-import { loadConfig, type Config } from './config.js';
-import type { AppContext } from './context.js';
-import { acquireDataDirLock, lockPath } from './data-dir-lock.js';
-import { log } from './log.js';
-import { listLocalAddresses } from './network.js';
-import { PermissionManager } from './permissions.js';
-import { fromLegacyPermissionMode } from './permission-mode.js';
-import { RunNotifier } from './run-notifier.js';
+import { parseCliArgs, printHelp, VERSION, type CliOptions } from './app/cli.js';
+import { loadConfig, type Config } from './app/config.js';
+import type { AppContext } from './app/context.js';
+import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
+import { log } from './platform/log.js';
+import { listLocalAddresses } from './platform/network.js';
+import { PermissionManager } from './permissions/permissions.js';
+import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
+import { RunNotifier } from './runs/run-notifier.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
-import { Scheduler } from './scheduler.js';
+import { Scheduler } from './scheduling/scheduler.js';
 import { createRegistry } from './runtimes/registry.js';
-import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './runtime-info.js';
-import { startServer } from './server.js';
-import { resolveServerId } from './server-id.js';
+import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './app/runtime-info.js';
+import { startServer } from './app/server.js';
+import { resolveServerId } from './db/server-id.js';
 
 /**
  * Load a `.env` file into `process.env` (never overrides an already-set env
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
 
   // Lazy-import the DB so `--help` / `--version` don't load node:sqlite
   // (and don't print Node's experimental-sqlite warning on stderr).
-  const { Db } = await import('./db.js');
+  const { Db } = await import('./db/db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
   db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode), config.workspaceSource);
   // Runs are only ever `running` while a process is live. After a restart the

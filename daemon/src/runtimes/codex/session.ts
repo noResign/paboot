@@ -1,11 +1,11 @@
 import { readCodexInput } from './input.js';
 import { registerActiveRun } from '../active-runs.js';
-import { isReadOnlyBash } from '../../command-safety.js';
-import { log } from '../../log.js';
-import type { ProductPermissionMode } from '../../permission-mode.js';
-import { ALLOW_ALL_REASON, type PermissionManager } from '../../permissions.js';
-import type { RunNotifier } from '../../run-notifier.js';
-import { grantKeyCandidates } from '../../tool-grants.js';
+import { isReadOnlyBash } from '../../permissions/command-safety.js';
+import { log } from '../../platform/log.js';
+import type { ProductPermissionMode } from '../../permissions/permission-mode.js';
+import { ALLOW_ALL_REASON, type PermissionManager } from '../../permissions/permissions.js';
+import type { RunNotifier } from '../../runs/run-notifier.js';
+import { grantKeyCandidates } from '../../permissions/tool-grants.js';
 import type { NormalizedEvent } from '../../types/api.js';
 import { VERSION } from '../../version.js';
 import { asRecord, codexApprovalResult, createCodexStreamMapper, readCodexApproval, readString } from './map.js';

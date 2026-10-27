@@ -1,21 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import type { Express, Response } from 'express';
-import type { AppContext } from '../context.js';
+import type { AppContext } from '../app/context.js';
 import type { SseFrame } from '../types/api.js';
-import { log } from '../log.js';
-import { sseHeaders, writeSseFrame } from '../sse.js';
-import { titleFromPrompt } from '../session-title.js';
-import { activeRunIdForSession } from '../session-runs.js';
+import { log } from '../platform/log.js';
+import { sseHeaders, writeSseFrame } from '../http/sse.js';
+import { titleFromPrompt } from '../runs/session-title.js';
+import { activeRunIdForSession } from '../runs/session-runs.js';
 import { streamRunToResponse } from './runs.js';
-import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permission-mode.js';
-import { resolveWorkspaceForRequest, workspaceContains } from '../workspace-service.js';
-import { startSessionRun, type RunSink } from '../run-service.js';
+import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
+import { resolveWorkspaceForRequest, workspaceContains } from '../workspaces/workspace-service.js';
+import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import {
   isValidModelParameters,
   normalizeModel,
   normalizeModelParameters,
   parseStoredModelParameters,
-} from '../model-selection.js';
+} from '../db/model-selection.js';
 
 interface ChatBody {
   sessionId?: string;

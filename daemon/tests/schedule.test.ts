@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ScheduleError, nextRunAt, normalizeSchedule, scheduleLabel, validateCron } from '../src/schedule';
+import { ScheduleError, nextRunAt, normalizeSchedule, scheduleLabel, validateCron } from '../src/scheduling/schedule';
 
 const TZ = 'Asia/Shanghai';
 

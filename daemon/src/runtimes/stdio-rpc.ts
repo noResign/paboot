@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { log } from '../log.js';
+import { log } from '../platform/log.js';
 
 /**
  * Generic newline-delimited JSON-RPC transport over a child process's stdio.

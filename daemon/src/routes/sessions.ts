@@ -1,15 +1,15 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { SessionRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { SessionRow } from '../db/db.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
-import { runningRunBySession } from '../session-runs.js';
-import { runDto } from '../dto.js';
+import { runningRunBySession } from '../runs/session-runs.js';
+import { runDto } from '../db/dto.js';
 import {
   isValidModelParameters,
   normalizeModel,
   normalizeModelParameters,
   parseStoredModelParameters,
-} from '../model-selection.js';
+} from '../db/model-selection.js';
 
 function sessionDto(s: SessionRow, runningRunId: string | null = null, scheduledTaskCount = 0) {
   return {

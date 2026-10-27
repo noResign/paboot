@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Config } from '../src/config';
+import type { Config } from '../src/app/config';
 import {
   HEARTBEAT_INTERVAL_MS,
   RUNTIME_INFO_FILENAME,
@@ -13,7 +13,7 @@ import {
   startHeartbeat,
   touchRuntimeInfo,
   writeRuntimeInfo,
-} from '../src/runtime-info';
+} from '../src/app/runtime-info';
 
 const dirs: string[] = [];
 /** Well before any heartbeat, so a touched mtime is unmistakable. */

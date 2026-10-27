@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { WorkspaceRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { WorkspaceRow } from '../db/db.js';
 import {
   FileBrowserError,
   guessContentType,
@@ -9,13 +9,13 @@ import {
   parseRange,
   readFileContent,
   resolveFile,
-} from '../file-browser.js';
+} from '../workspaces/file-browser.js';
 import {
   canonicalizeExistingDirectory,
   resolveWorkspaceForRequest,
   workspaceRoots,
   WorkspaceValidationError,
-} from '../workspace-service.js';
+} from '../workspaces/workspace-service.js';
 
 function sendFileError(res: import('express').Response, err: unknown): void {
   if (err instanceof FileBrowserError) {

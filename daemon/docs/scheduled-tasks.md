@@ -80,7 +80,7 @@
 - **每个 workspace 复用一个配置会话**：id 存在 `settings` 的
   `task_config_session:<workspaceId>`。会话还在就复用；被删/工作区变化/对应 runtime 不可用才重建。
   标题固定 `配置定时任务`，留在会话列表里。
-- daemon 用 `TASK_CONFIG_PROMPT`（`src/task-config.ts`）作为普通用户消息起一条 run；会话已有 run 时
+- daemon 用 `TASK_CONFIG_PROMPT`（`src/scheduling/task-config.ts`）作为普通用户消息起一条 run；会话已有 run 时
   不重复起，返回 `busy:true`。客户端打开该会话时会自动接上运行中的 run。
 - 配置 run 使用会话自己的权限模式（默认来自 daemon 默认模式，通常是 `ask`），因此 agent 调用
   `schedule_task` 时仍会经过现有 MCP 审批卡，相当于第二道确认。

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import { expandHome } from '../paths.js';
-import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspace-service.js';
+import type { AppContext } from '../app/context.js';
+import { expandHome } from '../platform/paths.js';
+import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 
 function listDirectories(dir: string): { name: string; path: string }[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });

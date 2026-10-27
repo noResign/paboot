@@ -1,6 +1,6 @@
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import { isProductPermissionMode } from '../permission-mode.js';
+import type { AppContext } from '../app/context.js';
+import { isProductPermissionMode } from '../permissions/permission-mode.js';
 
 export function registerSessionPermissionRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/sessions/:id/permissions', (req, res) => {

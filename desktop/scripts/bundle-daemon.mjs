@@ -69,8 +69,9 @@ await build({
 
 fs.copyFileSync(path.join(repo, 'daemon', 'package.json'), path.join(outRoot, 'package.json'));
 
-const sizes = fs
-  .readdirSync(outDir)
-  .map((f) => `${f} ${(fs.statSync(path.join(outDir, f)).size / 1024).toFixed(0)}K`)
+const sizes = entries
+  .map((entry) => ({ entry, file: path.join(outDir, entry) }))
+  .filter(({ file }) => fs.existsSync(file))
+  .map(({ entry, file }) => `${entry} ${(fs.statSync(file).size / 1024).toFixed(0)}K`)
   .join(', ');
 console.log(`==> daemon bundled → build/daemon/dist (${sizes}) + package.json`);

@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import type { AppContext } from '../src/context';
-import { Db, type ScheduledTaskRow } from '../src/db';
-import { PermissionManager } from '../src/permissions';
-import { RunNotifier } from '../src/run-notifier';
+import type { AppContext } from '../src/app/context';
+import { Db, type ScheduledTaskRow } from '../src/db/db';
+import { PermissionManager } from '../src/permissions/permissions';
+import { RunNotifier } from '../src/runs/run-notifier';
 import { createCommandDriver } from '../src/runtimes/command';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
-import { fireScheduledTask, reconcileScheduledTasks, runDueScheduledTasks } from '../src/scheduler';
+import { fireScheduledTask, reconcileScheduledTasks, runDueScheduledTasks } from '../src/scheduling/scheduler';
 
 // A real, non-git directory: the command runner needs an existing cwd, and we
 // must not snapshot the paboot repo itself.

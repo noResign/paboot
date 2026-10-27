@@ -2,7 +2,7 @@ import { registerActiveRun } from './active-runs.js';
 export { getActiveRun, listActiveRuns } from './active-runs.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { NormalizedEvent } from '../types/api.js';
-import { log } from '../log.js';
+import { log } from '../platform/log.js';
 import type { RuntimeAdapter, RuntimeCapabilities, StreamParser, SpawnContext, ToolServerSpec } from './types.js';
 
 export type RunStatus = 'succeeded' | 'failed' | 'cancelled';

@@ -6,9 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AppContext } from '../src/context';
-import { captureCheckpoint } from '../src/checkpoints';
-import { Db } from '../src/db';
+import type { AppContext } from '../src/app/context';
+import { captureCheckpoint } from '../src/workspaces/checkpoints';
+import { Db } from '../src/db/db';
 import { registerChangesRoutes } from '../src/routes/changes';
 import { registerRunRoutes } from '../src/routes/runs';
 

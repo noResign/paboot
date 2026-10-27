@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Db } from '../src/db';
+import { Db } from '../src/db/db';
 
 /** A default workspace plus one session, so runs have an owner. */
 function seed(db: Db, sessionId: string): void {

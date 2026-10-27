@@ -1,13 +1,13 @@
 import type { ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { Express } from 'express';
-import type { AppContext } from '../context.js';
-import type { RunRow } from '../db.js';
+import type { AppContext } from '../app/context.js';
+import type { RunRow } from '../db/db.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
-import { ChangesError } from '../changes.js';
-import { captureCheckpoint, restoreToRef } from '../checkpoints.js';
+import { ChangesError } from '../workspaces/changes.js';
+import { captureCheckpoint, restoreToRef } from '../workspaces/checkpoints.js';
 import { getActiveRun, listActiveRuns } from '../runtimes/active-runs.js';
-import { isTerminalEvent, sseHeaders, writeSseFrame } from '../sse.js';
+import { isTerminalEvent, sseHeaders, writeSseFrame } from '../http/sse.js';
 
 function parseAfter(raw: unknown): number | null {
   if (raw === undefined) return 0;

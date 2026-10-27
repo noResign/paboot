@@ -2,7 +2,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AppContext } from '../src/context';
+import type { AppContext } from '../src/app/context';
 import { registerAgentRoutes } from '../src/routes/agent';
 import { CLAUDE_MODELS } from '../src/runtimes/claude/models';
 import { createRegistry } from '../src/runtimes/registry';

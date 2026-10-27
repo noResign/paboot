@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PermissionManager } from '../src/permissions';
-import { RunNotifier } from '../src/run-notifier';
+import { PermissionManager } from '../src/permissions/permissions';
+import { RunNotifier } from '../src/runs/run-notifier';
 
 describe('PermissionManager', () => {
   afterEach(() => vi.useRealTimers());

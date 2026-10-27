@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { VERSION } from './version.js';
+import { VERSION } from '../version.js';
 
 export { VERSION };
 

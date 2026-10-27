@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { AppContext } from '../context.js';
-import { toClaudePermissionMode } from '../permission-mode.js';
+import type { AppContext } from '../app/context.js';
+import { toClaudePermissionMode } from '../permissions/permission-mode.js';
 import { startRun } from './engine.js';
 import { startCodexRun } from './codex/session.js';
 import { DEEPSEEK_BIN } from './deepseek/detect.js';
 import { startDeepSeekRun } from './deepseek/session.js';
 import { createCommandDriver } from './command.js';
-import { codexToolServerArgs, taskToolServer } from '../tool-server.js';
+import { codexToolServerArgs, taskToolServer } from '../mcp/tool-server.js';
 import { defaultCapabilities, type RuntimeAdapter, type RuntimeCapabilities } from './types.js';
 import type { Registry } from './registry.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';

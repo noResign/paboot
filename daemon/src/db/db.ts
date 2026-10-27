@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { WorkspaceSource } from './config.js';
+import type { WorkspaceSource } from '../app/config.js';
 import { serializeModelParameters } from './model-selection.js';
 
 /** Setting key: the `env` / `cwd` startup workspace has already been seeded once. */

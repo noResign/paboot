@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NormalizedEvent } from '../src/types/api';
-import { PermissionManager } from '../src/permissions';
+import { PermissionManager } from '../src/permissions/permissions';
 
 const rpc = vi.hoisted(() => ({
   notify: null as ((method: string, params: unknown) => void) | null,

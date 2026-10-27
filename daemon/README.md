@@ -25,7 +25,7 @@ paboot # 运行
 
 ```bash
 pnpm install
-pnpm build            # tsc → dist/index.js（含 permission-hook.js）
+pnpm build            # tsc → dist/index.js（含 permission-hook.js / mcp-server.js）
 pnpm dev --workspace ~/code/my-project (或者 node dist/index.js)
 
 pnpm typecheck        # check

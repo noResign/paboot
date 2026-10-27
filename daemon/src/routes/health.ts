@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import { VERSION } from '../version.js';
-import type { AppContext } from '../context.js';
-import { resolveServerId } from '../server-id.js';
+import type { AppContext } from '../app/context.js';
+import { resolveServerId } from '../db/server-id.js';
 import type { HealthDto } from '../types/api.js';
 
 export function registerHealthRoutes(app: Express, ctx: AppContext): void {

@@ -2,11 +2,11 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AppContext } from '../src/context';
-import { Db } from '../src/db';
-import { PermissionManager } from '../src/permissions';
+import type { AppContext } from '../src/app/context';
+import { Db } from '../src/db/db';
+import { PermissionManager } from '../src/permissions/permissions';
 import { registerScheduledTaskRoutes } from '../src/routes/scheduled-tasks';
-import { RunNotifier } from '../src/run-notifier';
+import { RunNotifier } from '../src/runs/run-notifier';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
 
 const servers: Server[] = [];

@@ -92,8 +92,16 @@ paboot/
   `RuntimeDetector` 登记并自写会话驱动（`runtimes/codex/session.ts` /
   `runtimes/deepseek/session.ts`），再在 `runtimes/drivers.ts` 注册 `RuntimeDriver`；
   chat 路由只按 id 取 driver，不写分支。两种 RPC 运行时共用 `runtimes/stdio-rpc.ts`。
+- **目录分层**：`src/` 按层/领域组织——`app/`（组合根与进程生命周期）、`http/` `platform/`
+  `db/`、业务领域 `workspaces/` `runs/` `permissions/` `scheduling/` `mcp/`、插件层
+  `runtimes/`、协议 `types/`。根目录只放进程入口与路径敏感文件（`index.ts`、
+  `permission-hook.ts`、`mcp-server.ts`、`version.ts`）。新增领域直接加 `src/<domain>/`，
+  不要往根目录平铺；`mcp/` 预留给后续 MCP server。
+- **分层规则**：只有 `app/` 可以全量依赖；其他层对 `app/` 只允许 `import type`；`db/`、
+  `runtimes/`、业务领域都不依赖 `routes/`。边界由 `tests/architecture.test.ts` 扫描 import
+  守护，改目录后先跑它。
 - **路由归属**：daemon 域端点放 `src/routes/<domain>.ts`，只有进程级元数据（health）留在
-  `server.ts`。
+  `app/server.ts`。
 - **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录、
   默认拒绝都属安全边界，改动必须保持 deny-by-default。
 - **Claude Code API 不稳**：CLI flag 随版本变，能力必须先 `--help` 探测再传参

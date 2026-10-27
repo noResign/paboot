@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { log } from './log.js';
+import { log } from '../platform/log.js';
 import { toGrantKey } from './tool-grants.js';
-import type { PermissionStatus } from './types/api.js';
+import type { PermissionStatus } from '../types/api.js';
 
 export type PermissionDecision = 'allow' | 'deny';
 

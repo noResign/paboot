@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { titleFromPrompt } from '../src/session-title';
+import { titleFromPrompt } from '../src/runs/session-title';
 
 describe('titleFromPrompt', () => {
   it('uses the first non-empty line', () => {

@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { AppContext } from './context.js';
-import type { SessionRow, WorkspaceRow } from './db.js';
-import type { NormalizedEvent, SseFrame } from './types/api.js';
-import type { ProductPermissionMode } from './permission-mode.js';
-import type { RuntimeDriver } from './runtimes/RuntimeDriver.js';
-import type { RunOutcome } from './runtimes/engine.js';
-import { captureCheckpoint, repoRootFor } from './checkpoints.js';
-import { log } from './log.js';
-import { existingDirs, workspaceRoots } from './workspace-service.js';
+import type { AppContext } from '../app/context.js';
+import type { SessionRow, WorkspaceRow } from '../db/db.js';
+import type { NormalizedEvent, SseFrame } from '../types/api.js';
+import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import type { RuntimeDriver } from '../runtimes/RuntimeDriver.js';
+import type { RunOutcome } from '../runtimes/engine.js';
+import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
+import { log } from '../platform/log.js';
+import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
 
 /**
  * The transport side of a run. The chat route writes SSE frames; the scheduler
