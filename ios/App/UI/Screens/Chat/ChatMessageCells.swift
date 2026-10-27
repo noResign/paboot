@@ -65,6 +65,8 @@ final class AssistantMessageCell: UITableViewCell {
     private let stack = UIStackView()
     private let blockStack = UIStackView()
     private let loadingLabel = UILabel()
+    private let loadingSpinner = UIActivityIndicatorView(style: .medium)
+    private let loadingRow = UIStackView()
     private let footerLabel = UILabel()
 
     private var itemViews: [ChatBlockView] = []
@@ -84,7 +86,16 @@ final class AssistantMessageCell: UITableViewCell {
         loadingLabel.text = "正在生成…"
         loadingLabel.font = Typography.caption
         loadingLabel.textColor = Theme.Colors.textMuted
-        loadingLabel.isHidden = true
+        // DeepSeek Harness emits its reasoning only after the server-side turn
+        // finishes; this spinner is the only "working" signal during that wait.
+        loadingSpinner.transform = CGAffineTransform(scaleX: 0.65, y: 0.65)
+        loadingSpinner.color = Theme.Colors.thinking
+        loadingRow.axis = .horizontal
+        loadingRow.alignment = .center
+        loadingRow.spacing = 6
+        loadingRow.addArrangedSubview(loadingSpinner)
+        loadingRow.addArrangedSubview(loadingLabel)
+        loadingRow.isHidden = true
 
         footerLabel.font = Typography.caption
         footerLabel.numberOfLines = 0
@@ -94,7 +105,7 @@ final class AssistantMessageCell: UITableViewCell {
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(blockStack)
-        stack.addArrangedSubview(loadingLabel)
+        stack.addArrangedSubview(loadingRow)
         stack.addArrangedSubview(footerLabel)
         contentView.addSubview(stack)
 
@@ -116,7 +127,8 @@ final class AssistantMessageCell: UITableViewCell {
         blockStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         itemViews = []
         itemKinds = []
-        loadingLabel.isHidden = true
+        loadingRow.isHidden = true
+        loadingSpinner.stopAnimating()
         footerLabel.isHidden = true
     }
 
@@ -138,9 +150,15 @@ final class AssistantMessageCell: UITableViewCell {
             view.updateItem(item, streaming: streaming)
         }
 
-        let wasLoading = !loadingLabel.isHidden
-        loadingLabel.isHidden = !(message.blocks.isEmpty && !message.done)
-        let loadingChanged = wasLoading != !loadingLabel.isHidden
+        let wasLoading = !loadingRow.isHidden
+        let showsLoading = message.blocks.isEmpty && !message.done
+        loadingRow.isHidden = !showsLoading
+        if showsLoading {
+            loadingSpinner.startAnimating()
+        } else {
+            loadingSpinner.stopAnimating()
+        }
+        let loadingChanged = wasLoading != !loadingRow.isHidden
 
         let wasFooterHidden = footerLabel.isHidden
         if let error = message.error, !error.isEmpty {

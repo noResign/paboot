@@ -198,6 +198,13 @@ internal fun AssistantBlock(
                 is AssistantSegment.Question -> QuestionCard(segment.block, streaming, onAnswer)
             }
         }
+        // DeepSeek Harness only reports its reasoning after the server-side turn
+        // finishes, so between run start and the first block there is no
+        // thinking_start to spin. Show a transient thinking card while the run
+        // is live and this reply hasn't produced anything yet.
+        if (streaming && !message.done && message.blocks.isEmpty() && message.error == null) {
+            ThinkingBlock(active = true)
+        }
         if (message.error != null) {
             Text(
                 text = message.error,
