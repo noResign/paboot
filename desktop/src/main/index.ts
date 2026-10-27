@@ -247,7 +247,6 @@ const daemonApi = {
     if (outcome.ok) manager.markLocalDown();
     return outcome;
   },
-  logs: (lines?: number) => managedDaemon.tail(lines ?? 200),
   // 「改 token」: the running daemon only reads <data-dir>/token at startup, so we
   // stop it, swap the file, and start it again — leaving it down would make the
   // change look like it "didn't take".

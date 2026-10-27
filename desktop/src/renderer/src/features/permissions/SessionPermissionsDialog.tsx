@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon } from '../../ui/Icon';
 import { api } from '../../ipc/client';
 import { friendlyMessage, apiErrorOf } from '../../../../shared/errors';
 import { permissionModeOptions, PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
@@ -78,9 +79,9 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
       <div className="modal session-perms-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span>会话权限</span>
-          <button className="btn ghost" onClick={onClose}>
-            ✕
-          </button>
+          <button className="btn ghost" title="关闭" onClick={onClose}>
+                <Icon name="x" size={15} />
+              </button>
         </div>
 
         <div className="field">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { displayHost, isInsecure, maskAddress } from '../../../../shared/net';
+import { Icon } from '../../ui/Icon';
 import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import { parseAddress } from './address';
 import { BrandMark } from '../../ui/BrandMark';
@@ -164,8 +165,9 @@ export function ConnectPage() {
     <div className="gate">
       <div className="gate-card">
         {returnView && (
-          <button className="btn ghost" style={{ marginBottom: 12 }} onClick={cancelAddHost} title="返回上一台主机">
-            ← 返回 {displayHost(returnView.name, returnView.host)}
+          <button className="btn ghost gate-back" onClick={cancelAddHost} title="返回上一台主机">
+            <Icon name="arrow-left" size={15} />
+            返回 {displayHost(returnView.name, returnView.host)}
           </button>
         )}
         <div className="gate-brand">
@@ -174,9 +176,7 @@ export function ConnectPage() {
         </div>
         <div className="gate-slogan">一个客户端，操纵你所有的 agent</div>
 
-        <div className="section-label" style={{ textAlign: 'center' }}>
-          ── 连接 daemon ──
-        </div>
+        <div className="section-label">连接 daemon</div>
 
         {/* A real form so Enter submits: filling the address and reaching for the
             mouse every time is a pointless interruption. */}
@@ -197,28 +197,6 @@ export function ConnectPage() {
             autoComplete="off"
           />
         </div>
-        {recent.length > 0 && (
-          <div className="section-label recent-label">最近连接</div>
-        )}
-        {recent.length > 0 && (
-          <div className="recent">
-            {recent.map((entry) => (
-              <button
-                key={entry.baseUrl}
-                type="button"
-                className="recent-item"
-                title={maskAddress(entry.baseUrl)}
-                onClick={() => {
-                  setAddress(entry.baseUrl);
-                  setName(entry.name ?? '');
-                }}
-              >
-                <span className="recent-name">{displayHost(entry.name, entry.baseUrl)}</span>
-                {entry.name && <span className="recent-url mono">{maskAddress(entry.baseUrl)}</span>}
-              </button>
-            ))}
-          </div>
-        )}
         <div className="field">
           <label htmlFor="token">Token</label>
           <input
@@ -246,6 +224,31 @@ export function ConnectPage() {
           {connecting ? '连接中…' : '连接'}
         </button>
         </form>
+
+        {/* Below the primary action, as a horizontal strip: it is a shortcut
+            back into an old host, not a field of the form. */}
+        {recent.length > 0 && (
+          <div className="recent-block">
+            <div className="section-label recent-label">最近连接</div>
+            <div className="recent">
+              {recent.map((entry) => (
+                <button
+                  key={entry.baseUrl}
+                  type="button"
+                  className="recent-item"
+                  title={entry.baseUrl}
+                  onClick={() => {
+                    setAddress(entry.baseUrl);
+                    setName(entry.name ?? '');
+                  }}
+                >
+                  <span className="recent-name">{displayHost(entry.name, entry.baseUrl)}</span>
+                  <span className="recent-url mono">{entry.baseUrl}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="section-label">本机 daemon</div>
         <LocalDaemonBlock
@@ -363,7 +366,9 @@ function LocalDaemonBlock(props: LocalBlockProps) {
     return (
       <button className="local-block found local-pick" onClick={() => onPick(found)} title="直接连接这台 daemon">
         <div className="local-title">
-          <span className="dot ok" /> 本机 daemon · v{found.version}
+          <span className="dot ok" />
+          本机 daemon · v{found.version}
+          <Icon name="chevron-right" size={16} className="local-pick-arrow" />
         </div>
         <div className="local-meta mono">
           {found.listen}
@@ -371,10 +376,9 @@ function LocalDaemonBlock(props: LocalBlockProps) {
         </div>
         <div className="local-meta">
           来源：{SOURCE_LABEL[found.source]}
-          {found.source !== 'managed' && '（本应用没启动它——但它是本机唯一那台，仍可在设置页停/启）'}
+          {found.source !== 'managed' && ' · 可在设置页停/启'}
         </div>
-        {tokenHint && <div className="hint">已从 {tokenHint.source} 读到 token，点一下就能连上</div>}
-        <div className="hint">点这里直接连接本机 daemon，不用再输 token</div>
+        {tokenHint && <div className="hint">已自动读取 token，点一下即可连接</div>}
       </button>
     );
   }

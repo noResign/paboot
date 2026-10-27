@@ -4,10 +4,10 @@ import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import { fallbackWorkspaceId, initialWorkspaceId, visibleWorkspaces, workspaceLabel } from '../../store/workspaceList';
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
 import { useChat, type NewSessionOptions } from '../../store/chat';
-import { useAppearance, type ThemePreference } from '../../store/appearance';
+import { ASIDE_MIN, useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
 import { api } from '../../ipc/client';
-import { RefreshIcon } from '../../ui/RefreshIcon';
+import { Icon } from '../../ui/Icon';
 import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
@@ -22,6 +22,7 @@ import { comboLabel, isEditableTarget, isModifierless, matchShortcut } from '../
 import { IS_MAC } from '../../ui/platform';
 import { createWindowFocus } from './windowFocus';
 import type { PaletteItem } from '../../commands/palette';
+import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import type { SessionDto } from '../../../../shared/contract';
 
 /** One per renderer process — see `windowFocus.ts` for why it is memoized. */
@@ -38,6 +39,8 @@ type Page = 'chat' | 'settings' | 'tasks';
 
 /** How often the rail re-asks the daemon what is running (sessions.md §6.2). */
 const SESSION_POLL_MS = 5000;
+/** The narrowest conversation column that still fits its header/action row. */
+const CHAT_FLOOR = 560;
 
 /**
  * Left rail + main area. Desktop shows the list and the content side by side
@@ -74,6 +77,7 @@ export function AppShell() {
   const setTheme = useAppearance((state) => state.setTheme);
   const toggleToolGroups = useToolGroups((state) => state.toggleAll);
   const asideVisible = useAppearance((state) => state.asideVisible);
+  const asideWidth = useAppearance((state) => state.asideWidth);
   const toggleAside = useAppearance((state) => state.toggleAside);
   const railVisible = useAppearance((state) => state.railVisible);
   const toggleRail = useAppearance((state) => state.toggleRail);
@@ -113,6 +117,10 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // The window width decides whether the rail can stay beside the file panel.
+  // Tracked here (not in CSS) because the decision changes *which* column is
+  // rendered, and the rail's collapse state is persisted while this is not.
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   // The palette searches every workspace, not just the one the rail shows.
   // Fetched fresh each time it opens; until then it falls back to the rail's list.
   const [paletteSessions, setPaletteSessions] = useState<SessionDto[] | null>(null);
@@ -198,6 +206,12 @@ export function AppShell() {
   }, [activeChat?.sessionId, selectedId]);
 
   useEffect(() => {
+    const onResize = (): void => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 2400);
     return () => clearTimeout(timer);
@@ -264,6 +278,40 @@ export function AppShell() {
   // row/menu entry. It is the only entry only until the first real workspace.
   const shownWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
   const runningCount = sessions.filter((session) => session.running).length;
+  /*
+   * Four columns are more than a 1280–1440 window can hold. The panel's width
+   * is capped so the chat keeps CHAT_FLOOR even at the aside's maximum; the
+   * rail only starves when even ASIDE_MIN cannot leave the floor (small
+   * windows), and never when the conversation column is collapsed — there is
+   * nothing to protect then.
+   */
+  const railSpace = railVisible ? railWidth : 44;
+  const maxAsideWidth = Math.max(ASIDE_MIN, viewportWidth - railSpace - CHAT_FLOOR);
+  const effectiveAsideWidth = Math.min(asideWidth, maxAsideWidth);
+  const starveIfRailShown =
+    asideVisible &&
+    chatVisible &&
+    page === 'chat' &&
+    viewportWidth - railWidth - effectiveAsideWidth < CHAT_FLOOR;
+  const railStarved = railVisible && starveIfRailShown;
+
+  /**
+   * ⌘B / the strip. Asking for the rail when the file panel is what is in the
+   * way closes the panel instead of toggling a flag that cannot change the
+   * screen; asking from the collapsed state does both.
+   */
+  function toggleRailOrMakeRoom(): void {
+    if (railVisible && !railStarved) {
+      toggleRail();
+      return;
+    }
+    if (!railVisible && !starveIfRailShown) {
+      toggleRail();
+      return;
+    }
+    toggleAside();
+    if (!railVisible) toggleRail();
+  }
   const overlayOpen = paletteOpen || helpOpen || newSessionOpen;
 
   function openSettings(section: SettingsSection = 'connection'): void {
@@ -354,7 +402,7 @@ export function AppShell() {
   const actions: Record<string, () => void> = {
     'command-palette': () => setPaletteOpen((open) => !open),
     'new-session': () => setNewSessionOpen(true),
-    'toggle-rail': toggleRail,
+    'toggle-rail': toggleRailOrMakeRoom,
     'go-sessions': () => setPage('chat'),
     'go-settings': () => openSettings(),
     back: goBack,
@@ -394,7 +442,7 @@ export function AppShell() {
         label: session.title ?? '未命名会话',
         hint: [
           workspaceLabel(scope.workspaces.find((workspace) => workspace.id === session.workspaceId)),
-          session.runtime,
+          runtimeIdentity(session.runtime).displayName,
           session.running ? '运行中' : null,
         ]
           .filter(Boolean)
@@ -470,17 +518,30 @@ export function AppShell() {
 
   return (
     <div className={`shell${IS_MAC ? ' darwin' : ''}`}>
-      {!railVisible && (
+      {(!railVisible || railStarved) && (
         // Collapsed leaves a strip rather than nothing: without it the only way
         // back is ⌘B or the palette, both invisible (matches the right panel's
-        // collapse-to-44px in the design preview).
+        // collapse-to-44px in the design preview). The same strip covers the
+        // case where the rail is open but starved: its button closes the panel
+        // that is taking the room, because toggling railVisible there would
+        // change nothing on screen.
         <div className="rail-strip">
-          <button className="link-btn" title={`展开会话栏 ${comboLabel('toggle-rail', IS_MAC)}`} onClick={toggleRail}>
-            ⇥
+          <button
+            className="icon-btn"
+            title={
+              railStarved
+                ? '关闭文件栏，恢复会话栏'
+                : starveIfRailShown
+                  ? '关闭文件栏并展开会话栏'
+                  : `展开会话栏 ${comboLabel('toggle-rail', IS_MAC)}`
+            }
+            onClick={toggleRailOrMakeRoom}
+          >
+            <Icon name={railStarved || starveIfRailShown ? 'panel-left' : 'chevron-right'} size={16} />
           </button>
         </div>
       )}
-      {railVisible && (
+      {railVisible && !railStarved && (
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
             <ConnectionSwitcher />
@@ -493,8 +554,13 @@ export function AppShell() {
                 ))}
               </select>
             )}
-            <button className="btn primary" onClick={() => setNewSessionOpen(true)} title={`新建会话 ${comboLabel('new-session', IS_MAC)}`}>
-              ＋ 新建会话
+            <button
+              className="btn soft"
+              onClick={() => setNewSessionOpen(true)}
+              title={`新建会话 ${comboLabel('new-session', IS_MAC)}`}
+            >
+              <Icon name="plus" size={15} />
+              新建会话
             </button>
           </div>
 
@@ -522,32 +588,51 @@ export function AppShell() {
 
           <div className="rail-foot">
             <button
-              className={`link-btn icon-only${page === 'tasks' ? ' active' : ''}`}
+              className={`rail-foot-row${page === 'tasks' ? ' active' : ''}`}
               title="定时任务"
               onClick={() => {
                 setTaskFilter(null);
                 setPage('tasks');
               }}
             >
-              ⏰
+              <Icon name="clock" size={15} />
+              <span className="rail-foot-label">定时任务</span>
             </button>
             <button
-              className={`link-btn icon-only${page === 'settings' ? ' active' : ''}`}
+              className={`rail-foot-row${page === 'settings' ? ' active' : ''}`}
               title="设置"
               onClick={() => openSettings()}
             >
-              ⚙
+              <Icon name="settings" size={15} />
+              <span className="rail-foot-label">设置</span>
             </button>
-            <button className="link-btn" title={`刷新 ${comboLabel('refresh', IS_MAC)}`} onClick={refresh}>
-              <RefreshIcon />
-            </button>
-            <button className="link-btn" title={`命令面板 ${comboLabel('command-palette', IS_MAC)}`} onClick={() => setPaletteOpen(true)}>
-              {comboLabel('command-palette', IS_MAC)}
-            </button>
-            <button className="link-btn" title={`收起会话栏 ${comboLabel('toggle-rail', IS_MAC)}`} onClick={toggleRail}>
-              ⇤
-            </button>
-            <span className="rail-running">{runningCount > 0 ? `● ${runningCount}` : ''}</span>
+            {runningCount > 0 && (
+              <div className="rail-running-row" title={`${runningCount} 个任务正在本机 daemon 上运行`}>
+                <span className="live-dot" />
+                {runningCount} 个任务运行中
+              </div>
+            )}
+            <div className="rail-foot-utils">
+              <button
+                className="rail-palette"
+                title={`命令面板 ${comboLabel('command-palette', IS_MAC)}`}
+                onClick={() => setPaletteOpen(true)}
+              >
+                <Icon name="search" size={14} />
+                <span>搜索</span>
+                <kbd>{comboLabel('command-palette', IS_MAC)}</kbd>
+              </button>
+              <button className="icon-btn" title={`刷新 ${comboLabel('refresh', IS_MAC)}`} onClick={refresh}>
+                <Icon name="refresh" size={15} />
+              </button>
+              <button
+                className="icon-btn"
+                title={`收起会话栏 ${comboLabel('toggle-rail', IS_MAC)}`}
+                onClick={toggleRail}
+              >
+                <Icon name="panel-left" size={15} />
+              </button>
+            </div>
           </div>
           <div className="rail-resize" onMouseDown={startResize} title="拖拽调整宽度" />
         </aside>
@@ -584,15 +669,20 @@ export function AppShell() {
             ) : (
               // Same treatment as the rail: a strip, so there is always a way back.
               <div className="chat-strip">
-                <button className="link-btn" title="展开会话" onClick={toggleChat}>
-                  ⇥
+                <button className="icon-btn" title="展开会话" onClick={toggleChat}>
+                  <Icon name="chevron-right" size={16} />
                 </button>
               </div>
             )}
             {asideVisible && (
               // Remount per connection: the browser's tree, root and open file
               // are all host-specific state that must not survive a host switch.
-              <ChatAside key={connectionId ?? 'none'} workspaceId={workspaceId || null} onCollapse={toggleAside} />
+              <ChatAside
+                key={connectionId ?? 'none'}
+                workspaceId={workspaceId || null}
+                onCollapse={toggleAside}
+                maxWidth={maxAsideWidth}
+              />
             )}
           </div>
         )}

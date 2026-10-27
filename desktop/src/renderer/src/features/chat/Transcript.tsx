@@ -4,6 +4,7 @@ import { Markdown } from './Markdown';
 import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
 import { ToolIcon } from '../../ui/ToolIcon';
+import { Icon } from '../../ui/Icon';
 import { formatTokens } from '../../../../shared/format';
 import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
@@ -125,7 +126,7 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
         void navigator.clipboard.writeText(text).then(() => setCopied(true));
       }}
     >
-      {copied ? '✓' : '⧉'}
+      <Icon name={copied ? 'check' : 'copy'} size={14} />
     </button>
   );
 }
@@ -198,7 +199,6 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
 
       {message.usage && <UsageRow usage={message.usage} />}
       {message.error && <div className="msg-error">{message.error}</div>}
-      {!message.done && <div className="msg-pending">● 正在执行…</div>}
     </div>
   );
 }
@@ -222,7 +222,9 @@ function FoldRow({
   return (
     <>
       <button className="fold-head" aria-expanded={open} onClick={onToggle}>
-        <span className="chevron">▶</span>
+        <span className="chevron">
+          <Icon name="chevron-right" size={12} />
+        </span>
         {label}
       </button>
       {children}
@@ -231,16 +233,22 @@ function FoldRow({
 }
 
 /**
- * Thinking content is never sent, so the card carries only its live state: the
- * spinner is the proof the model is working. Nothing to expand, so no chevron.
+ * Thinking content is never sent, so there is nothing to show but its state. It
+ * used to render a full bordered card with an empty body — four of those in a
+ * row read as four broken panels. A single quiet line says the same thing and
+ * costs one row instead of a card.
  */
 function ThinkingBlock({ active }: { active: boolean }) {
   return (
-    <div className="block-thinking">
-      <div className="thinking-head">
-        {active && <span className="thinking-spinner" aria-hidden="true" />}
-        <span>{active ? '思考中' : '思考'}</span>
-      </div>
+    <div className={`think-line${active ? ' active' : ''}`}>
+      {active && (
+        <span className="think-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+      )}
+      <span>{active ? '思考中' : '思考'}</span>
     </div>
   );
 }

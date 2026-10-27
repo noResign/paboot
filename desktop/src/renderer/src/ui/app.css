@@ -14,9 +14,21 @@
   padding: 24px;
   background: var(--page-bg);
 }
+/* A very light brand halo behind the card — enough that the window does not
+   read as an empty sheet, weak enough to stay a background. Skipped when a
+   skin effect layer is active, because the gate must stay transparent there. */
+:root[data-fx='none'] .gate {
+  background:
+    radial-gradient(
+      680px 440px at 50% 38%,
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      transparent 72%
+    ),
+    var(--page-bg);
+}
 
 .gate-card {
-  width: 420px;
+  width: 460px;
   max-height: 100%;
   overflow: auto;
   padding: 24px;
@@ -26,6 +38,12 @@
   box-shadow: var(--elevation-2);
 }
 
+.gate-back {
+  align-self: flex-start;
+  padding-left: 0;
+  padding-right: 10px;
+  margin-bottom: 12px;
+}
 .gate-brand {
   display: flex;
   align-items: center;
@@ -76,6 +94,11 @@
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+.local-pick-arrow {
+  margin-left: auto;
+  flex: none;
+  color: var(--primary);
 }
 
 .dot {
@@ -167,14 +190,24 @@ input.mono {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   height: var(--ctl-h);
-  padding: 0 14px;
-  border-radius: 8px;
+  padding: 0 12px;
+  border-radius: 7px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .btn:hover:not(:disabled) {
@@ -182,10 +215,35 @@ input.mono {
 }
 
 .btn.primary {
-  background: var(--grad);
-  border-color: transparent;
-  color: #06231a;
+  background: var(--primary-deep);
+  border-color: var(--primary-deep);
+  color: #ffffff;
   font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary-deep) 86%, #000000);
+  border-color: color-mix(in srgb, var(--primary-deep) 86%, #000000);
+}
+/*
+ * The rail's create button is the one full-width control in the window; a solid
+ * dark slab there pulled more attention than the conversation. Tinted fill,
+ * same accent text: still the primary action, one step quieter.
+ */
+.btn.soft {
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+.btn.soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 21%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+}
+.btn.soft:disabled {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
 }
 
 .btn.full {
@@ -193,8 +251,21 @@ input.mono {
 }
 
 .btn:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+}
+/* A disabled primary is a neutral slot, not a washed-out green one: the send
+   button used to read as a dirty pale-mint pill whenever the composer was empty. */
+.btn.primary:disabled {
+  opacity: 1;
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+.btn.ghost.active {
+  background: var(--primary-subtle);
+  color: var(--primary-deep);
+  border-color: transparent;
 }
 
 .error-text {
@@ -211,31 +282,40 @@ input.mono {
 }
 
 .recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 6px;
+  margin-bottom: 4px;
+}
+.recent-block {
+  margin-top: 2px;
 }
 
 /* Sits directly under the address field it fills, so it keeps the small-caps
    heading look but not the section spacing. */
 .recent-label {
-  margin: 12px 0 2px;
+  margin: 14px 0 6px;
 }
 
 .recent-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12.5px;
-  /* These rows are buttons (clicking fills the address field): keep the row
-     look and drop the browser's button chrome. */
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: inherit;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-primary);
   font-family: inherit;
+  font-size: 12px;
   text-align: left;
+  cursor: pointer;
+}
+.recent-item:hover {
+  border-color: var(--primary);
+  background: var(--surface-2);
 }
 
 .recent-item:hover {
@@ -250,10 +330,13 @@ input.mono {
 }
 
 .recent-url {
-  margin-left: auto;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .badge {
@@ -305,8 +388,11 @@ input.mono {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 12px;
-  gap: 12px;
+  padding-top: 10px;
+  gap: 10px;
+}
+.rail-strip {
+  background: var(--page-bg);
 }
 .rail {
   position: relative;
@@ -331,12 +417,117 @@ input.mono {
 
 .rail-foot {
   border-top: 1px solid var(--border);
-  padding: 8px 10px;
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+/*
+ * Labelled rows, not five unlabelled micro-glyphs. 定时任务/设置 are the rail's
+ * two destinations; the utilities below them are icons with tooltips and a
+ * visible ⌘K hint, because an icon-only "Ctrl+K" button was neither a button
+ * nor a shortcut.
+ */
+.rail-foot-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: 9px;
+  height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail-foot-row:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.rail-foot-row.active {
+  background: var(--surface-2);
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+.rail-foot-row svg {
+  flex: none;
+  color: var(--text-muted);
+}
+.rail-foot-row.active svg {
+  color: var(--primary);
+}
+.rail-foot-label {
+  flex: 1;
+  min-width: 0;
+}
+.rail-running-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex: none;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.rail-foot-utils {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+/* Keep the two icon buttons anchored right, with the short search button left. */
+.rail-palette + .icon-btn {
+  margin-left: auto;
+}
+.rail-palette {
+  /* Content width: it used to stretch across the whole foot and read as a
+     search field, competing with the two icons beside it. */
+  flex: 0 0 auto;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.rail-palette:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.rail-palette span {
+  text-align: left;
+  white-space: nowrap;
+}
+.rail-palette kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
 }
 
 .pulse {
@@ -363,6 +554,7 @@ input.mono {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* The conversation is the canvas the white chrome frames, not another sheet. */
   background: var(--page-bg);
 }
 
@@ -439,8 +631,9 @@ kbd {
 .chat-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex: none;
@@ -448,35 +641,72 @@ kbd {
 .chat-head-main {
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
+/*
+ * One line, always. A long session title used to wrap and grow the header to
+ * two or three lines — the single most visible "this header is not designed"
+ * detail in a chat-first app.
+ */
 .chat-title {
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.35;
   cursor: text;
-  display: inline-block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .title-input {
   font-weight: 600;
-  height: 26px;
+  font-size: 14px;
+  height: 24px;
 }
 .chat-sub {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-size: 11.5px;
   color: var(--text-muted);
-  margin-top: 3px;
+  margin-top: 2px;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .chat-sub .cwd {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 40ch;
+  max-width: 34ch;
+}
+.chat-sub .runtime-badge {
+  flex: none;
+}
+/* Permission mode is a control, not a label: it opens the session's settings. */
+.badge-btn {
+  flex: none;
+  height: 19px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+.badge-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary-deep);
 }
 .chat-head-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex: none;
 }
 
@@ -485,22 +715,57 @@ kbd {
   flex: none;
   width: auto;
   max-width: 180px;
-  height: 26px;
-  padding: 0 6px;
-  font-size: 12px;
-}
-.run-status {
-  font-size: 12px;
+  height: 24px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 11.5px;
 }
-.run-status.ok {
+.model-select:hover {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+/* Run state is a pill, not a sentence: it sits beside buttons and must not read
+   like one. The dot carries the state colour, the text stays quiet. */
+.run-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.run-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.run-pill.live {
+  color: var(--primary-deep);
+  background: var(--primary-subtle);
+}
+.run-pill.live::before {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.run-pill.ok {
   color: var(--success);
+  background: color-mix(in srgb, var(--success) 11%, transparent);
 }
-.run-status.warn {
+.run-pill.warn {
   color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
-.run-status.error {
+.run-pill.error {
   color: var(--error);
+  background: color-mix(in srgb, var(--error) 11%, transparent);
 }
 .ctx-ring {
   display: inline-flex;
@@ -533,8 +798,10 @@ kbd {
   line-height: 1.65;
 }
 .chevron {
-  width: 10px;
-  display: inline-block;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: none;
 }
 
 .block-question {
@@ -619,7 +886,7 @@ kbd {
 .composer {
   flex: none;
   background: var(--page-bg);
-  padding: 10px 22px 14px;
+  padding: 8px 22px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -635,24 +902,24 @@ kbd {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
-  padding: 9px 10px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
+  box-shadow: var(--elevation-1);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .composer .box:focus-within {
   border-color: var(--primary);
-}
-.composer .notice {
-  width: 100%;
-  max-width: 760px;
-  margin-bottom: 8px;
-  font-size: 11.5px;
-  color: var(--text-muted);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 .composer textarea {
   width: 100%;
-  min-height: 42px;
+  /* Two rows when empty: one row read as a single-line search box, not a
+     composer. The box still starts compact (~94px including the action row). */
+  min-height: 44px;
   /* 8 rows × the 22px line-height Composer.tsx grows to. */
   max-height: 176px;
   resize: none;
@@ -668,7 +935,12 @@ kbd {
 .composer-foot {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+.composer .send {
+  height: 28px;
+  padding: 0 16px;
+  border-radius: 7px;
 }
 .composer-foot .hint {
   margin: 0;
@@ -942,8 +1214,29 @@ kbd {
 .md h2,
 .md h3,
 .md h4 {
-  font-size: 14.5px;
-  margin: 16px 0 8px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+/* The four levels used to be one size (14.5px), so a document read as a flat
+   wall of paragraphs with random bold lines in it. */
+.md h1 {
+  font-size: 18px;
+  margin: 22px 0 10px;
+}
+.md h2 {
+  font-size: 16px;
+  margin: 20px 0 9px;
+}
+.md h3 {
+  font-size: 15px;
+  margin: 18px 0 8px;
+}
+.md h4 {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+.md strong {
+  font-weight: 650;
 }
 .md ul,
 .md ol {
@@ -1098,12 +1391,21 @@ kbd {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
+  min-height: 48px;
+  /* The back button's own padding would otherwise push the arrow 28px in; the
+     header carries the inset instead, so it sits at the same 16px as the app's
+     other toolbars. */
+  padding: 8px 16px 8px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   flex: none;
 }
+.settings-head > .btn.ghost {
+  padding-left: 6px;
+  padding-right: 10px;
+}
 .settings-head .title {
+  font-size: 16px;
   font-weight: 600;
 }
 /* 左栏小节导航 + 右栏内容 (pages/settings.md §6.7) */
@@ -1142,8 +1444,9 @@ kbd {
   color: var(--text-primary);
 }
 .snav-item.active {
-  background: var(--primary-subtle);
-  color: var(--primary-deep);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .pane {
@@ -1167,8 +1470,9 @@ kbd {
   padding: 14px 16px;
 }
 .settings-section h3 {
-  font-size: 13.5px;
-  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 10px;
   color: var(--text-primary);
 }
 .section-head {
@@ -1449,17 +1753,32 @@ a.btn {
   box-shadow: var(--elevation-3);
   overflow: hidden;
 }
+.palette-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.palette-search-icon {
+  flex: none;
+  color: var(--text-muted);
+}
 .palette-input {
+  flex: 1;
+  min-width: 0;
   height: 44px;
   border: none;
-  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   font-size: 14px;
-  padding: 0 14px;
+  padding: 0;
 }
-.palette-input:focus {
-  border-color: var(--border);
+.palette-input:focus,
+.palette-input:focus-visible {
+  border: none;
+  outline: none;
 }
 .palette-list {
   overflow: auto;
@@ -1488,7 +1807,11 @@ a.btn {
   cursor: pointer;
 }
 .palette-item.active {
-  background: var(--primary-subtle);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
+}
+.palette-item.active .palette-label {
+  font-weight: 600;
 }
 .palette-label {
   flex: 1;
@@ -1548,11 +1871,11 @@ a.btn {
    ========================================================================== */
 
 .rail-head {
-  padding: 10px;
+  padding: 8px;
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .conn-switch {
@@ -1563,17 +1886,18 @@ a.btn {
   align-items: center;
   gap: 7px;
   width: 100%;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--text-primary);
-  font-size: 12px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
   cursor: pointer;
 }
 .conn-pill:hover {
-  border-color: var(--primary);
+  background: var(--surface-2);
+  color: var(--text-primary);
 }
 .conn-name {
   flex: 1;
@@ -1585,9 +1909,9 @@ a.btn {
 }
 .conn-pill .chevron {
   flex: none;
-  width: auto;
+  width: 12px;
+  height: 12px;
   color: var(--text-muted);
-  font-size: 10px;
 }
 .conn-menu {
   position: absolute;
@@ -1620,11 +1944,13 @@ a.btn {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 7px 8px 5px;
+  padding: 8px 8px 4px;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   cursor: pointer;
   text-align: left;
 }
@@ -1632,7 +1958,10 @@ a.btn {
   color: var(--text-secondary);
 }
 .bucket-head .chevron {
-  width: 10px;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: none;
 }
 /* These selectors are the bucket ids (SessionList applies `bucket-label ${id}`);
    they used to be named warning/error/running and so never matched. */
@@ -1644,22 +1973,26 @@ a.btn {
 }
 .bucket-count {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text-muted);
-  background: var(--surface-2);
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 1px 6px;
+  padding: 0 5px;
+  line-height: 15px;
 }
 
 .session-row {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 46px;
-  padding: 6px 8px 6px 6px;
-  border-radius: 8px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 6px 4px 4px;
+  border-radius: 7px;
   cursor: pointer;
+  transition: background-color 0.1s ease;
 }
 .session-row .row-marker {
   flex: none;
@@ -1675,13 +2008,19 @@ a.btn {
   background: var(--warning);
 }
 .session-row:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
 }
+/*
+ * Selection is a raised row with a 2px accent, not a fully-tinted block: the
+ * mint fill read as a pressed button and made every other row look disabled.
+ */
 .session-row.selected {
-  background: var(--primary-subtle);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
 }
 .session-row.selected .session-title {
-  color: var(--primary-deep);
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .session-info {
@@ -1690,6 +2029,7 @@ a.btn {
 }
 .session-title {
   font-size: 13px;
+  line-height: 1.4;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1699,9 +2039,15 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-top: 2px;
-  font-size: 11px;
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.session-time {
+  margin-left: auto;
+  flex: none;
 }
 .session-meta .agent {
   display: inline-flex;
@@ -1743,10 +2089,12 @@ a.btn {
 }
 
 .icon-btn {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -1754,9 +2102,12 @@ a.btn {
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 .icon-btn:hover {
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text-primary);
 }
 .icon-btn.danger:hover {
@@ -1781,11 +2132,7 @@ a.btn {
   color: var(--text-secondary);
 }
 
-.rail-running {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--primary);
-}
+
 
 /* ==========================================================================
    Chat: transcript surface, messages, tool groups
@@ -1886,64 +2233,78 @@ a.btn {
   font-size: 12.5px;
   white-space: pre-wrap;
 }
-.msg-pending {
-  margin-top: 6px;
-  color: var(--text-muted);
-  font-size: 11.5px;
-}
-/*
- * Thinking and tool groups are the same card with the same 34px header, so a
- * turn that alternates between them keeps one column rhythm (docs/local/pages/
- * chat.md §6.3). Thinking content is never sent, so its card only carries the
- * live spinner and an empty body.
- */
-.block-thinking,
-.tool-group {
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  background: var(--surface);
-}
-.thinking-head {
+.think-line {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
-  padding: 0 11px;
-  color: var(--thinking);
-  font-size: 12.5px;
+  height: 22px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
-.thinking-spinner {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid currentColor;
-  border-right-color: transparent;
+.think-line.active {
+  color: var(--text-secondary);
+}
+.think-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.think-dots i {
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  animation: thinking-spin 0.8s linear infinite;
+  background: currentColor;
+  animation: think-pulse 1.2s ease-in-out infinite;
 }
-@keyframes thinking-spin {
-  to {
-    transform: rotate(360deg);
+.think-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.think-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes think-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
   }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+/*
+ * A tool group is a section of an answer, not a form control: a 2px left rule
+ * plus a hover header. The old bordered card stacked with the (also bordered)
+ * thinking card, which turned one turn into a column of empty boxes.
+ */
+.tool-group {
+  border-left: 2px solid var(--border);
+  padding-left: 2px;
 }
 .fold-head {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 34px;
-  padding: 0 11px;
+  height: 30px;
+  padding: 0 8px;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: pointer;
   text-align: left;
 }
+.fold-head:hover {
+  background: var(--surface-2);
+}
 .fold-head .chevron {
   flex: none;
-  width: 10px;
-  font-size: 9px;
+  width: 12px;
+  height: 12px;
   color: var(--text-muted);
   transition: transform 0.15s;
 }
@@ -1970,11 +2331,10 @@ a.btn {
   color: var(--text-muted);
 }
 .tool-list {
-  border-top: 1px solid var(--border);
-  padding: 9px;
+  padding: 6px 0 6px 10px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
 }
 .tool-card {
   border: 1px solid var(--border);
@@ -2203,13 +2563,13 @@ a.btn {
   overflow: hidden;
 }
 .seg3 button {
-  height: 24px;
-  padding: 0 12px;
+  height: 22px;
+  padding: 0 9px;
   border: 0;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -2217,7 +2577,7 @@ a.btn {
   border-left: 1px solid var(--border);
 }
 .seg3 button.active {
-  background: var(--primary-subtle);
+  background: var(--surface-2);
   color: var(--primary-deep);
 }
 .seg3 button:disabled {
@@ -2242,26 +2602,46 @@ a.btn {
 }
 .fseg {
   display: flex;
-  gap: 4px;
-  padding: 9px;
+  align-items: center;
+  gap: 2px;
+  padding: 9px 8px;
   border-bottom: 1px solid var(--border);
 }
-.fseg button {
-  flex: 1;
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+.fseg-tab {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
-.fseg button.active {
-  background: var(--primary-subtle);
-  border-color: var(--primary);
-  color: var(--primary-deep);
+.fseg-tab:hover {
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+  color: var(--text-primary);
+}
+.fseg-tab.active {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+.fseg-count {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fseg-spacer {
+  flex: 1;
+}
+.fseg .icon-btn {
+  width: 24px;
+  height: 24px;
 }
 .ftree-toolbar {
   padding: 8px 9px 0;
@@ -2314,11 +2694,12 @@ a.btn {
   cursor: pointer;
 }
 .fnode:hover {
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
 }
 .fnode.active {
-  background: var(--primary-subtle);
-  color: var(--primary-deep);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .fname {
@@ -2347,28 +2728,93 @@ a.btn {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--page-bg);
+  background: var(--surface);
 }
 .fpane-head {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: 7px;
+  padding: 0 8px 0 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   min-height: 44px;
 }
-.fpane-path {
-  font-size: 12px;
+.fpane-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+.fpane-dir {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  max-width: 13ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.fpane-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fpane-counts {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+}
+.fpane-counts i {
+  font-style: normal;
+}
+.fpane-counts .add {
+  color: var(--success);
+}
+.fpane-counts .del {
+  color: var(--error);
+}
+.fpane-size {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.fpane-spacer {
+  flex: 1;
+}
+.fw-badge {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.fw-badge.added,
+.fw-badge.untracked {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+}
+.fw-badge.deleted,
+.fw-badge.conflicted {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+}
+.fw-badge.modified {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+}
 .fpane-body {
   flex: 1;
   overflow: auto;
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 .fnotice {
   font-size: 12px;
@@ -2478,7 +2924,9 @@ a.btn {
 .fdiff.split .fdiff-ln.full { grid-column: 1 / -1; }
 .fdiff-ln.empty { background: var(--surface-2); }
 .fchev {
-  width: 10px;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
   flex: none;
   color: var(--text-muted);
 }
@@ -2549,30 +2997,6 @@ a.btn {
 .aside-resize:hover {
   background: var(--primary-subtle);
 }
-.aside-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--border);
-}
-.aside-head .title {
-  font-weight: 600;
-}
-.aside-path {
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.aside-close {
-  margin-left: auto;
-}
 .aside-body {
   flex: 1;
   min-height: 0;
@@ -2586,11 +3010,13 @@ a.btn {
   flex: 1;
   min-height: 0;
   border-right: 0;
+  /* The list sits on the panel's tint; only the viewer is paper-white. */
+  background: transparent;
 }
 .chat-aside .fpane {
   flex: 1;
   min-height: 0;
-  background: var(--page-bg);
+  background: var(--surface);
 }
 /* Browsing: the tree is the body. Viewing a file: tree column + viewer, so the
    list stays available for quick switching. */
@@ -2605,7 +3031,8 @@ a.btn {
   flex-direction: row;
 }
 .aside-body.split .aside-tree-col {
-  flex: 0 0 200px;
+  /* Width comes from TREE_COL_PX in ChatAside, the same constant the pane's
+     threshold math uses — no second copy of 200 here. */
   border-right: 1px solid var(--border);
 }
 .aside-tree-col.hidden {
@@ -2618,22 +3045,13 @@ a.btn {
   display: flex;
   flex-direction: column;
 }
-.aside-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-}
 .ftree.compact .fseg {
-  padding: 6px 6px 0;
-  gap: 4px;
+  padding: 9px 6px;
+  gap: 2px;
 }
-.ftree.compact .fseg button {
-  padding: 3px 7px;
+.ftree.compact .fseg-tab {
+  height: 24px;
+  padding: 0 7px;
   font-size: 11px;
 }
 .ftree.compact .ftree-toolbar {
@@ -2712,15 +3130,6 @@ a.btn {
 .local-pick:hover {
   border-color: var(--primary);
 }
-/* The managed daemon's log tail: monospace, bounded, scrollable. */
-.daemon-log {
-  margin-top: 8px;
-  max-height: 240px;
-  overflow: auto;
-  font-size: 11px;
-  line-height: 1.55;
-}
-
 .rollback-confirm {
   display: flex;
   flex-wrap: wrap;
@@ -2753,12 +3162,31 @@ a.btn {
   flex: none;
 }
 .tasks-head .title {
+  font-size: 16px;
   font-weight: 600;
 }
 .tasks-head .sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
   font-size: 11.5px;
   color: var(--text-muted);
   margin-top: 2px;
+}
+/* Bypass is a safety-relevant state, not a footnote in the subtitle. */
+.perm-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .tasks-head-actions {
   display: flex;
@@ -2783,26 +3211,32 @@ a.btn {
   border-right: 1px solid var(--border);
   background: var(--surface);
   overflow: auto;
+  padding: 6px;
 }
 .task-row {
   display: flex;
   flex-direction: column;
   gap: 3px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 9px 10px;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-radius: 7px;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.task-row:hover {
-  background: var(--surface-2);
+.task-row + .task-row {
+  margin-top: 2px;
 }
+.task-row:hover {
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+}
+/* Same selected treatment as the session rail: a raised row + 2px accent. */
 .task-row.active {
-  background: var(--primary-subtle);
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
 }
 .task-row.off {
   opacity: 0.62;
@@ -2822,14 +3256,29 @@ a.btn {
 }
 .task-status {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
+  white-space: nowrap;
   color: var(--text-muted);
+}
+.task-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .status-running { color: var(--primary); }
 .status-failed { color: var(--error); }
 .status-succeeded { color: var(--success); }
 .status-skipped_busy,
-.status-skipped_missed { color: var(--warning); }
+.status-skipped_missed,
+.status-interrupted { color: var(--warning); }
+.status-off,
+.status-cancelled,
+.status-never { color: var(--text-muted); }
 .task-row-sub {
   font-size: 11.5px;
   color: var(--text-muted);
@@ -2844,26 +3293,75 @@ a.btn {
   padding: 18px 22px;
 }
 .task-detail {
-  max-width: 840px;
+  max-width: 960px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 .task-detail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .task-detail-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 20px;
+  line-height: 1.3;
 }
 .task-meta {
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+.task-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-actions-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+.task-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-section + .task-section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.task-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.task-section-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.task-section-spacer {
+  flex: 1;
+}
+.task-grid .task-status {
+  font-size: 12.5px;
 }
 .task-grid {
   display: grid;
@@ -2883,21 +3381,72 @@ a.btn {
   border: 1px solid var(--border);
   font: inherit;
   font-size: 12px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 260px;
+  max-height: 60vh;
   overflow: auto;
 }
+/* Long prompts are reference material, not the page's main content: collapse
+   them to ~10 lines and let the reader opt in. */
+.task-prompt.collapsed {
+  max-height: 180px;
+  overflow: hidden;
+}
 .task-run {
-  padding: 6px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--border);
+}
+.task-run-head {
+  display: grid;
+  grid-template-columns: 150px 110px 80px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 4px;
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 .task-run-row {
   display: grid;
-  grid-template-columns: 150px 100px 70px auto;
+  grid-template-columns: 150px 110px 80px 1fr;
   align-items: center;
   gap: 10px;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.task-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.task-run-state::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.task-run-state.ok { color: var(--success); }
+.task-run-state.error { color: var(--error); }
+.task-run-state.warn { color: var(--warning); }
+.task-run-state.live { color: var(--primary); }
+.task-run-state.muted { color: var(--text-muted); }
+.task-run-trigger {
+  color: var(--text-muted);
+}
+.task-run-link {
+  justify-self: end;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.task-run-link:hover {
+  text-decoration: underline;
 }
 .task-run-output {
   margin: 6px 0 0;
@@ -2920,6 +3469,22 @@ a.btn {
   font-size: 12px;
   line-height: 1.55;
 }
+/* Informational note (when a change takes effect) — the error styling made a
+   benign sentence look like a failed save. */
+.task-note {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.task-note.warn {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+  color: var(--text-primary);
+}
 .task-ack {
   display: flex;
   align-items: center;
@@ -2932,13 +3497,17 @@ a.btn {
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 60px);
   overflow: auto;
+  /* The padding belongs to the dialog, not to its form: the header used to sit
+     flush against the border while the fields were inset 18px. */
+  padding: 18px 20px;
 }
 .task-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 4px 18px 18px;
+  padding: 0;
 }
+
 .task-form textarea {
   resize: vertical;
 }
@@ -2961,4 +3530,60 @@ a.btn {
   gap: 4px;
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* ==========================================================================
+   Interaction polish
+   ========================================================================== */
+
+/*
+ * Keyboard focus needs to be visible on every control, not just the composer
+ * (which lights its whole box). Buttons that relied on the browser default got
+ * a barely-there ring on a white surface.
+ */
+:where(button, a, [role='button'], select, input, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  outline-offset: 1px;
+}
+.composer textarea:focus-visible {
+  outline: none;
+}
+::selection {
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+}
+/* Folder / row glyphs inside the file lists. */
+.ficon {
+  flex: none;
+  color: var(--text-muted);
+}
+.fname {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.fname-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Numbers line up when they change (times, tokens, counts). */
+.chat-sub,
+.session-meta,
+.usage,
+.fpane-counts,
+.fpane-head,
+.fdiff {
+  font-variant-numeric: tabular-nums;
+}
+.todo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-muted);
+}
+.todo-item.completed .todo-dot {
+  background: var(--success);
+  border-color: var(--success);
 }

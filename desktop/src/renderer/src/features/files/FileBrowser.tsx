@@ -5,6 +5,7 @@ import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
+import { Icon } from '../../ui/Icon';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 import type {
   ChangedFileDto,
@@ -53,6 +54,8 @@ interface Props {
    * and always render 改动 as the file tree (the diff lives in the viewer).
    */
   compact?: boolean;
+  /** Rendered at the head of the column when this is the whole panel. */
+  onClose?: () => void;
 }
 
 /**
@@ -70,6 +73,7 @@ export function FileBrowser({
   onSelect,
   onDirectoryChange,
   compact = false,
+  onClose,
 }: Props) {
   const [dir, setDir] = useState('');
   const [showHidden, setShowHidden] = useState(false);
@@ -184,6 +188,11 @@ export function FileBrowser({
   const activeRoot = root ?? changes?.root ?? listing?.root ?? '';
   const changeCount = changes?.files.length ?? 0;
   const activeIsShortcut = activeRoot !== '' && shortcuts.includes(activeRoot);
+  // A single root needs no picker; the file-manipulation extras belong to 全部文件,
+  // where they actually apply. (The full files page was removed, so this panel is
+  // the only consumer — its 420px list cannot afford a permanent 4-button row.)
+  const showRootSelect = roots.length > 1 || shortcuts.length > 0;
+  const showToolbar = showRootSelect || (!compact && mode === 'all');
 
   /** Add a bookmark and switch to it — the point of adding one is to look inside. */
   async function addBookmark(path: string): Promise<void> {
@@ -219,38 +228,48 @@ export function FileBrowser({
   return (
     <div className={`ftree${compact ? ' compact' : ''}`}>
       <div className="fseg">
-        <button className={mode === 'changes' ? 'active' : ''} onClick={() => onModeChange('changes')}>
-          改动{mode === 'changes' && changes ? ` (${changeCount})` : ''}
+        <button className={`fseg-tab${mode === 'changes' ? ' active' : ''}`} onClick={() => onModeChange('changes')}>
+          改动
+          {mode === 'changes' && changes ? <span className="fseg-count">{changeCount}</span> : null}
         </button>
-        <button className={mode === 'all' ? 'active' : ''} onClick={() => onModeChange('all')}>
+        <button className={`fseg-tab${mode === 'all' ? ' active' : ''}`} onClick={() => onModeChange('all')}>
           全部文件
         </button>
+        <span className="fseg-spacer" />
+        <button className="icon-btn" title="刷新" onClick={() => setReload((value) => value + 1)}>
+          <Icon name="refresh" size={14} />
+        </button>
+        {onClose && (
+          <button className="icon-btn" title="收起文件栏" onClick={onClose}>
+            <Icon name="x" size={15} />
+          </button>
+        )}
       </div>
 
-      <div className="ftree-toolbar">
-        <select className="ws-select" value={activeRoot} onChange={(event) => onRootChange(event.target.value)}>
-          {roots.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-          {shortcuts.map((item) => (
-            <option key={item} value={item}>
-              ★ {item}
-            </option>
-          ))}
-        </select>
-        <div className="ftree-buttons">
-          {!compact && (
-            <>
+      {showToolbar && (
+        <div className="ftree-toolbar">
+          {showRootSelect && (
+            <select className="ws-select" value={activeRoot} onChange={(event) => onRootChange(event.target.value)}>
+              {roots.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+              {shortcuts.map((item) => (
+                <option key={item} value={item}>
+                  ★ {item}
+                </option>
+              ))}
+            </select>
+          )}
+          {!compact && mode === 'all' && (
+            <div className="ftree-buttons">
               <button className="btn tiny" onClick={() => setShowHidden((value) => !value)}>
                 {showHidden ? '隐藏隐藏项' : '显示隐藏项'}
               </button>
-              {mode === 'all' && (
-                <button className="btn tiny" onClick={() => setShowIgnored((value) => !value)}>
-                  {showIgnored ? '隐藏忽略项' : '显示忽略项'}
-                </button>
-              )}
+              <button className="btn tiny" onClick={() => setShowIgnored((value) => !value)}>
+                {showIgnored ? '隐藏忽略项' : '显示忽略项'}
+              </button>
               <button
                 className="btn tiny"
                 disabled={!workspaceId}
@@ -267,13 +286,10 @@ export function FileBrowser({
                   移除书签
                 </button>
               )}
-            </>
+            </div>
           )}
-          <button className="btn tiny" onClick={() => setReload((value) => value + 1)} title="刷新">
-            {compact ? '⟳' : '刷新'}
-          </button>
         </div>
-      </div>
+      )}
 
       {bookmarkError && !pickerOpen && <div className="fnotice">{bookmarkError}</div>}
 
@@ -305,6 +321,7 @@ export function FileBrowser({
         ) : mode === 'changes' ? (
           <ChangesList
             changes={changes}
+            compact={compact}
             selected={selectedPath}
             expanded={expanded}
             onToggleDir={(path) => void toggleDir(path)}
@@ -372,20 +389,23 @@ const childRow = (entry: FileEntryDto): Row => ({
 });
 
 /** Second line of a changed row: shortened directory, plus counts when reported. */
-function rowSubline(row: Row): string | null {
+function rowSubline(row: Row, compact: boolean): string | null {
   const counts = row.additions != null || row.deletions != null ? `+${row.additions ?? 0} −${row.deletions ?? 0}` : '';
-  const joined = [directoryLabel(row.path), counts].filter(Boolean).join('  ');
+  // In the 200px column the directory line is truncated noise; the counts are not.
+  const joined = [compact ? '' : directoryLabel(row.path), counts].filter(Boolean).join('  ');
   return joined || null;
 }
 
 function ChangesList({
   changes,
+  compact,
   selected,
   expanded,
   onToggleDir,
   onPick,
 }: {
   changes: ChangesResponse | null;
+  compact: boolean;
   selected: string | null;
   expanded: Record<string, DirExpansion>;
   onToggleDir(path: string): void;
@@ -405,6 +425,7 @@ function ChangesList({
           key={item.path}
           row={changedRow(item)}
           depth={0}
+          compact={compact}
           selected={selected}
           expanded={expanded}
           onToggleDir={onToggleDir}
@@ -425,6 +446,7 @@ function ChangesList({
 function ChangeNode({
   row,
   depth,
+  compact,
   selected,
   expanded,
   onToggleDir,
@@ -432,6 +454,7 @@ function ChangeNode({
 }: {
   row: Row;
   depth: number;
+  compact: boolean;
   selected: string | null;
   expanded: Record<string, DirExpansion>;
   onToggleDir(path: string): void;
@@ -439,7 +462,7 @@ function ChangeNode({
 }) {
   const indent = { paddingLeft: 8 + depth * 12 };
   const state = expanded[row.path];
-  const sub = rowSubline(row);
+  const sub = rowSubline(row, compact);
 
   if (!row.isDirectory) {
     return (
@@ -450,7 +473,9 @@ function ChangeNode({
         onClick={() => onPick(row.path, depth === 0 ? 'diff' : 'content')}
       >
         <span className="frow-main">
-          <span className="fname">{fileName(row.path)}</span>
+          <span className="fname">
+            <span className="fname-label">{fileName(row.path)}</span>
+          </span>
           {row.badge && <span className={`st ${row.badgeClass}`}>{row.badge}</span>}
         </span>
         {sub && <span className="frow-sub">{sub}</span>}
@@ -462,8 +487,13 @@ function ChangeNode({
     <>
       <button className="fnode fnode-rich" style={indent} title={row.path} onClick={() => onToggleDir(row.path)}>
         <span className="frow-main">
-          <span className="fchev">{state ? '▾' : '▸'}</span>
-          <span className="fname">📁 {fileName(row.path)}</span>
+          <span className="fchev">
+            <Icon name={state ? 'chevron-down' : 'chevron-right'} size={12} />
+          </span>
+          <span className="fname">
+            <Icon name="folder" size={13} className="ficon" />
+            <span className="fname-label">{fileName(row.path)}</span>
+          </span>
           {row.badge && <span className={`st ${row.badgeClass}`}>{row.badge}</span>}
         </span>
         {sub && <span className="frow-sub frow-sub-indent">{sub}</span>}
@@ -483,6 +513,7 @@ function ChangeNode({
           key={entry.path}
           row={childRow(entry)}
           depth={depth + 1}
+          compact={compact}
           selected={selected}
           expanded={expanded}
           onToggleDir={onToggleDir}
@@ -523,8 +554,8 @@ function AllFilesList({
           onClick={() => (entry.type === 'directory' ? onOpenDir(entry.path) : onPick(entry.path))}
         >
           <span className="fname">
-            {entry.type === 'directory' ? '📁 ' : ''}
-            {entry.name}
+            {entry.type === 'directory' && <Icon name="folder" size={13} className="ficon" />}
+            <span className="fname-label">{entry.name}</span>
           </span>
           {entry.type === 'file' && entry.size !== null && <span className="fsize">{formatBytes(entry.size)}</span>}
         </button>

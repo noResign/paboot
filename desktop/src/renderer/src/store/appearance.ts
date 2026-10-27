@@ -9,19 +9,28 @@ import { DEFAULT_SKIN_ID, SKINS, skinById, type SkinId } from '../ui/skins';
  */
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+/**
+ * How a diff is rendered. Persisted (unlike the panel's open file, which is
+ * session state): closing the file panel and opening it again must not silently
+ * put the reader back on 统一.
+ */
+export type DiffViewPreference = 'unified' | 'split';
+
 export const ZOOM_MIN = 90;
 export const ZOOM_MAX = 150;
 export const RAIL_MIN = 240;
 export const RAIL_MAX = 400;
-export const ASIDE_MIN = 240;
-/** Wide enough to actually read code in — the list alone only needs ~320. */
-export const ASIDE_MAX = 800;
+export const ASIDE_MIN = 320;
+/** Wide enough for a directory column plus two readable diff columns. */
+export const ASIDE_MAX = 880;
 
 interface AppearanceState {
   theme: ThemePreference;
   /** Effect-layer skin — a second axis on top of light/dark (see `ui/skins`). */
   skin: SkinId;
   zoom: number;
+  /** Diff rendering mode for the file panel — a display preference, not file state. */
+  diffView: DiffViewPreference;
   railWidth: number;
   /** The session rail. Collapsed leaves a thin strip so it can always be reopened. */
   railVisible: boolean;
@@ -29,17 +38,15 @@ interface AppearanceState {
   chatVisible: boolean;
   /** The chat's right panel (changed files / files), §6.8. Defaults to collapsed. */
   asideVisible: boolean;
-  /** The panel's directory column while a file is open. */
-  asideTreeVisible: boolean;
   asideWidth: number;
   setTheme(theme: ThemePreference): void;
   setSkin(skin: SkinId): void;
   setZoom(zoom: number): void;
+  setDiffView(view: DiffViewPreference): void;
   setRailWidth(width: number): void;
   toggleRail(): void;
   toggleChat(): void;
   toggleAside(): void;
-  toggleAsideTree(): void;
   setAsideWidth(width: number): void;
 }
 
@@ -49,11 +56,12 @@ interface Stored {
   theme: ThemePreference;
   skin: SkinId;
   zoom: number;
+  /** Diff rendering mode for the file panel — a display preference, not file state. */
+  diffView: DiffViewPreference;
   railWidth: number;
   railVisible: boolean;
   chatVisible: boolean;
   asideVisible: boolean;
-  asideTreeVisible: boolean;
   asideWidth: number;
 }
 
@@ -71,12 +79,12 @@ function load(): Stored {
     theme: 'system',
     skin: DEFAULT_SKIN_ID,
     zoom: 100,
+    diffView: 'unified',
     railWidth: 300,
     railVisible: true,
     chatVisible: true,
     asideVisible: false,
-    asideTreeVisible: true,
-    asideWidth: 320,
+    asideWidth: 420,
   };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -88,14 +96,15 @@ function load(): Stored {
       // than leaving `data-skin` pointing at nothing.
       skin: SKINS.some((skin) => skin.id === parsed.skin) ? (parsed.skin as SkinId) : DEFAULT_SKIN_ID,
       zoom: clamp(Number(parsed.zoom) || 100, ZOOM_MIN, ZOOM_MAX),
+      // Written before this field existed → unified, the documented default.
+      diffView: parsed.diffView === 'split' ? 'split' : 'unified',
       railWidth: clamp(Number(parsed.railWidth) || 300, RAIL_MIN, RAIL_MAX),
       // These default to open: an absent field means "written before this existed".
       railVisible: parsed.railVisible !== false,
       chatVisible: parsed.chatVisible !== false,
       // ...except the right panel, which the user asked to start collapsed.
       asideVisible: parsed.asideVisible === true,
-      asideTreeVisible: parsed.asideTreeVisible !== false,
-      asideWidth: clamp(Number(parsed.asideWidth) || 320, ASIDE_MIN, ASIDE_MAX),
+      asideWidth: clamp(Number(parsed.asideWidth) || 420, ASIDE_MIN, ASIDE_MAX),
     };
   } catch {
     return fallback;
@@ -120,6 +129,10 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
     persist(get());
     applyAppearance(get());
   },
+  setDiffView(diffView) {
+    set({ diffView });
+    persist(get());
+  },
   setRailWidth(railWidth) {
     set({ railWidth: clamp(railWidth, RAIL_MIN, RAIL_MAX) });
     persist(get());
@@ -136,10 +149,6 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
     set({ asideVisible: !get().asideVisible });
     persist(get());
   },
-  toggleAsideTree() {
-    set({ asideTreeVisible: !get().asideTreeVisible });
-    persist(get());
-  },
   setAsideWidth(asideWidth) {
     set({ asideWidth: clamp(asideWidth, ASIDE_MIN, ASIDE_MAX) });
     persist(get());
@@ -154,11 +163,11 @@ function persist(state: Stored): void {
         theme: state.theme,
         skin: state.skin,
         zoom: state.zoom,
+        diffView: state.diffView,
         railWidth: state.railWidth,
         railVisible: state.railVisible,
         chatVisible: state.chatVisible,
         asideVisible: state.asideVisible,
-        asideTreeVisible: state.asideTreeVisible,
         asideWidth: state.asideWidth,
       }),
     );

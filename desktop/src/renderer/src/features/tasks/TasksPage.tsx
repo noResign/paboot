@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../ipc/client';
 import { useScheduledTasks } from '../../store/scheduledTasks';
+import { Icon } from '../../ui/Icon';
+import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import type {
   RunDto,
   ScheduleInput,
@@ -49,6 +51,32 @@ function statusLabel(task: ScheduledTaskDto): string {
     default:
       return '未运行';
   }
+}
+
+const RUN_STATUS: Record<string, { label: string; tone: string }> = {
+  succeeded: { label: '成功', tone: 'ok' },
+  failed: { label: '失败', tone: 'error' },
+  running: { label: '运行中', tone: 'live' },
+  interrupted: { label: '已中断', tone: 'warn' },
+  cancelled: { label: '已取消', tone: 'muted' },
+  canceled: { label: '已取消', tone: 'muted' },
+};
+
+/** Run history used to print the daemon's raw status (`succeeded`) next to Chinese copy. */
+function runState(status: string): { label: string; tone: string } {
+  return RUN_STATUS[status] ?? { label: status, tone: 'muted' };
+}
+
+/** `10-27 11:09` — the seconds in `toLocaleString()` are noise in a history list. */
+function runTime(at: number): string {
+  const date = new Date(at);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function statusTone(task: ScheduledTaskDto): string {
+  if (!task.enabled) return 'off';
+  return task.lastStatus || 'never';
 }
 
 interface Props {
@@ -164,12 +192,17 @@ export function TasksPage({
         <div>
           <div className="title">定时任务</div>
           <div className="sub">
-            {taskFilter
-              ? `会话：${taskFilter.title ?? taskFilter.id}`
-              : workspaceName
-                ? `工作区：${workspaceName}`
-                : '所有工作区'}{' '}
-            · 无人值守，完全权限
+            <span>
+              {taskFilter
+                ? `会话：${taskFilter.title ?? taskFilter.id}`
+                : workspaceName
+                  ? `工作区：${workspaceName}`
+                  : '所有工作区'}{' '}
+              · 无人值守
+            </span>
+            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
+              完全权限
+            </span>
           </div>
         </div>
         <div className="tasks-head-actions">
@@ -189,7 +222,7 @@ export function TasksPage({
           >
             刷新
           </button>
-          <button className="btn primary" onClick={() => setConfirmNewTask(true)}>
+          <button className="btn soft" onClick={() => setConfirmNewTask(true)}>
             新建任务
           </button>
         </div>
@@ -219,7 +252,7 @@ export function TasksPage({
             >
               <div className="task-row-top">
                 <span className="task-name">{task.name}</span>
-                <span className={`task-status status-${task.lastStatus}`}>{statusLabel(task)}</span>
+                <span className={`task-status status-${statusTone(task)}`}>{statusLabel(task)}</span>
               </div>
               <div className="task-row-sub">
                 {task.schedule.label} · 下次 {relativeTime(task.nextRunAt)}
@@ -236,6 +269,7 @@ export function TasksPage({
           {!detail && <div className="empty">选择一个任务查看详情</div>}
           {detail && (
             <TaskDetail
+              key={detail.task.id}
               task={detail.task}
               runs={detail.runs}
               starting={startingTaskId === detail.task.id}
@@ -319,18 +353,41 @@ function TaskDetail({
   onEdit: () => void;
 }) {
   const running = task.lastStatus === 'running';
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const promptText = (task.type === 'command' ? task.command : task.prompt) ?? '';
+  const promptLines = promptText ? promptText.split('\n').length : 0;
+  const canCollapse = promptLines > 8;
+
+  function copyPrompt(): void {
+    void navigator.clipboard.writeText(promptText).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   return (
     <div className="task-detail">
       <div className="task-detail-head">
         <div>
           <h2>{task.name}</h2>
           <div className="task-meta">
-            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · {task.schedule.label} · 完全权限
-            {task.createdBy === 'mcp' ? ' · AI 创建' : ''}
+            <span>{task.type === 'command' ? '命令任务' : 'AI 会话任务'}</span>
+            <span>·</span>
+            <span>{task.schedule.label}</span>
+            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
+              完全权限
+            </span>
+            {task.createdBy === 'mcp' && (
+              <>
+                <span>·</span>
+                <span>AI 创建</span>
+              </>
+            )}
           </div>
         </div>
-        <div className="settings-actions">
-          <button className="btn" onClick={onRun} disabled={running || starting}>
+        <div className="task-detail-actions">
+          <button className="btn soft" onClick={onRun} disabled={running || starting}>
             {running ? '运行中…' : starting ? '启动中…' : '立即运行'}
           </button>
           <button className="btn" onClick={onToggle}>
@@ -339,6 +396,7 @@ function TaskDetail({
           <button className="btn" onClick={onEdit}>
             编辑
           </button>
+          <span className="task-actions-sep" aria-hidden="true" />
           <button className="btn danger" onClick={onDelete}>
             删除
           </button>
@@ -350,14 +408,14 @@ function TaskDetail({
       )}
       {task.lastError && <div className="task-warning">最近错误：{task.lastError}</div>}
 
-      <div className="scard">
+      <section className="task-section">
         <div className="task-grid">
           <span>下次运行</span>
           <b>{relativeTime(task.nextRunAt)}</b>
           <span>上次运行</span>
           <b>{relativeTime(task.lastRunAt)}</b>
           <span>状态</span>
-          <b>{statusLabel(task)}</b>
+          <b className={`task-status status-${statusTone(task)}`}>{statusLabel(task)}</b>
           <span>执行次数</span>
           <b>{task.runCount}</b>
           <span>目标</span>
@@ -372,28 +430,70 @@ function TaskDetail({
             )}
           </b>
         </div>
-        <pre className="task-prompt">{task.type === 'command' ? task.command : task.prompt}</pre>
-      </div>
+      </section>
 
-      <div className="scard">
-        <h3>执行历史</h3>
-        {runs.length === 0 && <div className="empty">还没有执行记录</div>}
-        {runs.map((run) => (
-          <div key={run.id} className="task-run">
-            <div className="task-run-row">
-              <span>{new Date(run.startedAt).toLocaleString()}</span>
-              <span>{run.status}</span>
-              <span>{run.trigger === 'scheduled' ? '定时' : run.trigger === 'run_now' ? '手动' : '交互'}</span>
-              {task.type === 'ai' && (
-                <button className="btn tiny" onClick={() => onOpenSession(run.sessionId)}>
-                  查看会话
-                </button>
-              )}
+      <section className="task-section">
+        <div className="task-section-head">
+          <h3>执行指令</h3>
+          {promptLines > 0 && <span className="task-section-meta">{promptLines} 行</span>}
+          <span className="task-section-spacer" />
+          {promptText && (
+            <button className="btn tiny ghost" onClick={copyPrompt} title="复制执行指令">
+              <Icon name={copied ? 'check' : 'copy'} size={13} />
+              {copied ? '已复制' : '复制'}
+            </button>
+          )}
+          {canCollapse && (
+            <button className="btn tiny ghost" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? '收起' : '展开'}
+            </button>
+          )}
+        </div>
+        {promptText && (
+          <pre className={`task-prompt${canCollapse && !expanded ? ' collapsed' : ''}`}>{promptText}</pre>
+        )}
+      </section>
+
+      <section className="task-section">
+        <div className="task-section-head">
+          <h3>执行历史</h3>
+          <span className="task-section-meta">{runs.length} 次</span>
+        </div>
+        {runs.length === 0 ? (
+          <div className="empty">还没有执行记录</div>
+        ) : (
+          <>
+            <div className="task-run-head">
+              <span>时间</span>
+              <span>结果</span>
+              <span>触发</span>
+              <span />
             </div>
-            {run.output && <pre className="task-run-output">{run.output}</pre>}
-          </div>
-        ))}
-      </div>
+            {runs.map((run) => {
+              const state = runState(run.status);
+              return (
+                <div key={run.id} className="task-run">
+                  <div className="task-run-row">
+                    <span title={new Date(run.startedAt).toLocaleString()}>{runTime(run.startedAt)}</span>
+                    <span className={`task-run-state ${state.tone}`}>{state.label}</span>
+                    <span className="task-run-trigger">
+                      {run.trigger === 'scheduled' ? '定时' : run.trigger === 'run_now' ? '手动' : '交互'}
+                    </span>
+                    {task.type === 'ai' ? (
+                      <button className="task-run-link" onClick={() => onOpenSession(run.sessionId)}>
+                        查看会话
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                  {run.output && <pre className="task-run-output">{run.output}</pre>}
+                </div>
+              );
+            })}
+          </>
+        )}
+      </section>
     </div>
   );
 }
@@ -455,7 +555,7 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
       return;
     }
     if (task.type === 'ai' && !prompt.trim()) {
-      setError('请填写 prompt');
+      setError('请填写执行指令');
       return;
     }
     if (task.type === 'command' && !command.trim()) {
@@ -490,14 +590,17 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
       <div className="modal task-editor" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div className="title">编辑定时任务</div>
-          <button className="btn ghost" onClick={onClose}>
-            关闭
+          <button className="btn ghost" title="关闭" onClick={onClose}>
+            <Icon name="x" size={15} />
           </button>
         </div>
 
         <div className="task-form">
           <div className="task-meta">
-            {task.type === 'command' ? '命令任务' : 'AI 会话任务'} · 完全权限
+            <span>{task.type === 'command' ? '命令任务' : 'AI 会话任务'}</span>
+            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
+              完全权限
+            </span>
           </div>
 
           <div className="field">
@@ -518,7 +621,9 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
                 )}
                 {(targetSessions ?? []).map((session) => (
                   <option key={session.id} value={session.id}>
-                    {(session.title?.trim() || session.cwd) + ' · ' + session.runtime}
+                    {(session.title?.trim() || session.cwd) +
+                      ' · ' +
+                      runtimeIdentity(session.runtime).displayName}
                   </option>
                 ))}
               </select>
@@ -527,11 +632,11 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
           )}
 
           <div className="field">
-            <label>{task.type === 'command' ? '命令（在工作区根目录执行）' : 'Prompt'}</label>
+            <label>{task.type === 'command' ? '命令（在工作区根目录执行）' : '执行指令'}</label>
             {task.type === 'command' ? (
-              <textarea rows={4} value={command} onChange={(event) => setCommand(event.target.value)} />
+              <textarea rows={6} value={command} onChange={(event) => setCommand(event.target.value)} />
             ) : (
-              <textarea rows={5} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+              <textarea rows={8} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
             )}
           </div>
 
@@ -580,13 +685,13 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
               )}
             </div>
           ) : (
-            <div className="task-warning">
+            <div className="task-note warn">
               该任务使用自定义 cron（{task.schedule.cron}），当前只能编辑名称和内容。
             </div>
           )}
 
-          <div className="task-warning">
-            修改（含目标会话）从下一次触发开始生效；正在运行的 run 不受影响。
+          <div className="task-note">
+            修改（含目标会话）从下一次触发开始生效；正在运行的任务不受影响。
           </div>
 
           {error && <div className="task-warning">{error}</div>}

@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { bucketSessions, BUCKET_LABELS, type BucketId } from '../../store/sessionBuckets';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
+import { Icon } from '../../ui/Icon';
 import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import { SessionListSkeleton } from '../../ui/Skeleton';
 import type { SessionDto } from '../../../../shared/contract';
@@ -136,14 +137,13 @@ export function SessionList({
               <RuntimeIcon id={session.runtime} size={11} />
               {identity.displayName}
             </span>
-            <span className="sep">·</span>
-            <span>{relativeTime(session.lastActiveAt)}</span>
             {(taskCount > 0 || session.purpose === 'task_config') && (
               <>
                 <span className="sep">·</span>
-                <span>⏰ {taskCount > 0 ? `${taskCount} 个定时任务` : '定时任务配置'}</span>
+                <span>{taskCount > 0 ? `${taskCount} 个定时任务` : '定时任务配置'}</span>
               </>
             )}
+            <span className="session-time">{relativeTime(session.lastActiveAt)}</span>
           </div>
         </div>
 
@@ -157,23 +157,13 @@ export function SessionList({
         <div className="row-actions">
           <button
             className="icon-btn"
-            title="重命名"
+            title="更多操作"
             onClick={(event) => {
               event.stopPropagation();
-              setRenamingId(session.id);
+              open(event, menuFor(session));
             }}
           >
-            ✎
-          </button>
-          <button
-            className="icon-btn danger"
-            title="删除"
-            onClick={(event) => {
-              event.stopPropagation();
-              setConfirmingId(session.id);
-            }}
-          >
-            🗑
+            <Icon name="more" size={15} />
           </button>
         </div>
 
@@ -209,7 +199,9 @@ export function SessionList({
               onClick={() => setCollapsed((state) => ({ ...state, [bucket.id]: open_ }))}
               title={open_ ? '折叠' : '展开'}
             >
-              <span className="chevron">{open_ ? '▾' : '▸'}</span>
+              <span className="chevron">
+                <Icon name={open_ ? 'chevron-down' : 'chevron-right'} size={12} />
+              </span>
               <span className={`bucket-label ${bucket.id}`}>{BUCKET_LABELS[bucket.id]}</span>
               <span className="bucket-count">{bucket.sessions.length}</span>
             </button>
@@ -226,7 +218,9 @@ export function SessionList({
             onClick={() => setTaskCollapsed((value) => !value)}
             title={taskCollapsed ? '展开' : '折叠'}
           >
-            <span className="chevron">{taskCollapsed ? '▸' : '▾'}</span>
+            <span className="chevron">
+              <Icon name={taskCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+            </span>
             <span className="bucket-label">定时任务</span>
             <span className="bucket-count">{taskSessions.length}</span>
           </button>

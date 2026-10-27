@@ -5,13 +5,23 @@
  * colour block — see desktop_ui_design.md §4.
  */
 :root {
-  --bg: #f6f8f7;
+  /*
+   * Three fills: `--surface` is the white chrome (rail, file panel, toolbar,
+   * composer box), `--bg` is the canvas the conversation sits on — one step
+   * darker, so the white columns frame it — and `--surface-2` is the
+   * "inside a white surface" tone: hover, selected row, nested card.
+   *
+   * `--surface` and `--surface-2` must never hold the same value. They were both
+   * #ffffff for a while, which silently deleted every hover and selected state
+   * in the light theme.
+   */
+  --bg: #f4f7f5;
   --surface: #ffffff;
-  --surface-2: #ffffff;
+  --surface-2: #edf2ef;
   /* Opaque twins of the two above. Skin mode blanks the originals out; subtrees
      that must stay filled (overlays) re-point at these instead — see app.css. */
   --surface-solid: #ffffff;
-  --surface-2-solid: #ffffff;
+  --surface-2-solid: #edf2ef;
   --border: #e3eae6;
   --text-primary: #16211d;
   --text-secondary: #5a6b64;
@@ -19,6 +29,9 @@
   --primary: #0e9f86;
   --primary-deep: #0a7d6b;
   --primary-subtle: #e2f3ee;
+  /* The 2px bar on a selected row: the accent mixed into the row tone, so it
+     reads as a marker instead of a hard green edge. */
+  --accent-bar: color-mix(in srgb, var(--primary) 55%, var(--surface-2));
   --success: #18a058;
   --warning: #b7791f;
   --error: #d6423e;
@@ -31,10 +44,10 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #0e1512;
-  --surface: #17201c;
+  --bg: #0b110f;
+  --surface: #161f1b;
   --surface-2: #1e2823;
-  --surface-solid: #17201c;
+  --surface-solid: #161f1b;
   --surface-2-solid: #1e2823;
   --border: #293430;
   --text-primary: #e7efeb;
@@ -141,14 +154,22 @@ body {
   font-family: var(--font-mono);
 }
 
+/* Thin overlay scrollbars; the track stays transparent so a long diff does not
+   grow a second column of chrome. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
   border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+  background-clip: content-box;
 }

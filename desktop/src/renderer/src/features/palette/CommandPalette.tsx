@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { filterPalette, type PaletteItem } from '../../commands/palette';
+import { Icon } from '../../ui/Icon';
 
 interface Props {
   items: PaletteItem[];
@@ -11,8 +12,15 @@ interface Props {
  * rather than on their own shortcuts — a command palette is the established
  * convention, and a second convention would just have to be learned.
  */
-/** How many sessions the empty list shows before「加载更多」. */
-const SESSION_PAGE = 20;
+/**
+ * How many recent sessions the empty list shows before「加载更多」. Deliberately
+ * small: 20 session rows filled the whole list and pushed 工作区/动作 below the
+ * fold — the sections the cap was supposed to keep visible. Typing still
+ * searches every session.
+ */
+const SESSION_PAGE = 6;
+/** How many more an explicit「加载更多」adds (the user asked for them). */
+const SESSION_STEP = 20;
 
 export function CommandPalette({ items, onClose }: Props) {
   const [query, setQuery] = useState('');
@@ -40,7 +48,7 @@ export function CommandPalette({ items, onClose }: Props) {
       section: '会话',
       label: `加载更多会话（还有 ${total - shown} 个）`,
       keepOpen: true,
-      run: () => setSessionLimit((count) => count + SESSION_PAGE),
+      run: () => setSessionLimit((count) => count + SESSION_STEP),
     };
     return [...filtered.slice(0, last + 1), more, ...filtered.slice(last + 1)];
   }, [filtered, items, query]);
@@ -60,28 +68,31 @@ export function CommandPalette({ items, onClose }: Props) {
   return (
     <div className="modal-scrim pal-scrim" onClick={onClose}>
       <div className="palette" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <input
-          className="palette-input"
-          autoFocus
-          placeholder="搜索会话、工作区，或执行动作…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setCursor((value) => Math.min(value + 1, Math.max(rows.length - 1, 0)));
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setCursor((value) => Math.max(value - 1, 0));
-            } else if (event.key === 'Enter') {
-              event.preventDefault();
-              run(rows[cursor]);
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              onClose();
-            }
-          }}
-        />
+        <div className="palette-search">
+          <Icon name="search" size={16} className="palette-search-icon" />
+          <input
+            className="palette-input"
+            autoFocus
+            placeholder="搜索会话、工作区，或执行动作…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setCursor((value) => Math.min(value + 1, Math.max(rows.length - 1, 0)));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setCursor((value) => Math.max(value - 1, 0));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                run(rows[cursor]);
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                onClose();
+              }
+            }}
+          />
+        </div>
 
         <div className="palette-list">
           {rows.length === 0 ? (

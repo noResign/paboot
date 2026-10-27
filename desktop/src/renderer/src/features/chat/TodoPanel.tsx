@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { TodoItem } from '../../store/chat/types';
+import { Icon } from '../../ui/Icon';
 
-const GLYPH: Record<string, string> = {
-  completed: '✓',
-  in_progress: '◐',
-  pending: '○',
-};
+/** Completed rows keep their tick; the rest are plain status dots. */
+function todoGlyph(status: string): React.ReactNode {
+  if (status === 'completed') return <Icon name="check" size={12} />;
+  return <span className="todo-dot" aria-hidden="true" />;
+}
 
 /** The agent's own task list (TodoWrite), kept out of the transcript. */
 export function TodoPanel({ todos }: { todos: TodoItem[] }) {
@@ -18,7 +19,9 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
   return (
     <div className="todo-panel">
       <button className="fold-head" onClick={() => setOpen((value) => !value)}>
-        <span className="chevron">{open ? '▾' : '▸'}</span>
+        <span className="chevron">
+          <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
+        </span>
         <span>待办</span>
         <span className="badge">
           {done}/{todos.length}
@@ -28,7 +31,7 @@ export function TodoPanel({ todos }: { todos: TodoItem[] }) {
         <ul className="todo-list">
           {todos.map((todo, index) => (
             <li key={`${index}-${todo.content}`} className={`todo-item ${todo.status}`}>
-              <span className="todo-glyph">{GLYPH[todo.status] ?? '○'}</span>
+              <span className="todo-glyph">{todoGlyph(todo.status)}</span>
               <span>{todo.content}</span>
             </li>
           ))}

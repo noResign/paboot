@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon } from '../../ui/Icon';
 import { api } from '../../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import type { DirectoriesResponse } from '../../../../shared/contract';
@@ -75,9 +76,9 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
       <div className="modal dir-picker" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <span>{title}</span>
-          <button className="btn ghost" onClick={onClose}>
-            ✕
-          </button>
+          <button className="btn ghost" title="关闭" onClick={onClose}>
+                <Icon name="x" size={15} />
+              </button>
         </div>
 
         <div className="dir-path-row">

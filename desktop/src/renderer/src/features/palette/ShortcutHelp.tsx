@@ -1,4 +1,5 @@
 import { formatCombo, modLabel, SHORTCUTS } from '../../shortcuts/shortcuts';
+import { Icon } from '../../ui/Icon';
 import { IS_MAC } from '../../ui/platform';
 
 /** `?` — generated from the shortcut table, so it can never drift from it. */
@@ -8,9 +9,9 @@ export function ShortcutHelp({ onClose }: { onClose(): void }) {
       <div className="modal help-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <span>快捷键</span>
-          <button className="btn ghost" onClick={onClose}>
-            ✕
-          </button>
+          <button className="btn ghost" title="关闭" onClick={onClose}>
+                <Icon name="x" size={15} />
+              </button>
         </div>
         <ul className="help-list">
           {SHORTCUTS.map((shortcut) => (

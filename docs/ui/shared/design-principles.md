@@ -168,6 +168,11 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 > 运行态主色用 `primary`（青绿）；成功/失败分别用 `success`（翡翠绿）/`error`；审批弹窗的「拒绝」用 `error`。
 > 强调色与成功色同为绿色系，需靠**色相区分**：`primary` 偏青（teal），`success` 偏绿（emerald），避免同屏混淆。
 
+> **桌面浅色例外**：desktop 在浅色下把 `bg` 用 `#F4F7F5`、`surface-2` 用 `#EDF2EF`（白色只留给
+> `surface` 的栏面），并新增 `--accent-bar = color-mix(primary 55%, surface-2)` 作为选中行左边条；
+> **桌面选中不用整块 `primary-subtle`**。移动端仍用本表原值。三层面模型见
+> [desktop/design.md](../desktop/design.md) §4。
+
 ### 4.1.1 质感与层次（"高级感"的关键）
 
 浅色主题的高级感**不靠黑底，靠层次与留白**：
@@ -203,21 +208,23 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 ### 4.4 图标（语义名，跨平台映射）
 
 - 设计交付物里只写**语义名**；实现侧映射：Android → Material Symbols（Rounded），iOS → SF Symbols（同义）。
+- **桌面**不映射系统图标库，改用本地 stroke icon set（`desktop/src/renderer/src/ui/Icon.tsx`）：
+  24 网格 / 1.75 描边 / 15–16px / `currentColor`；**不要用 emoji 或字符字形**（⏰ ⚙ ◧ ⇤ 之类）。
 - 关键语义名：会话=`chat_bubble`、文件=`folder`、设置=`settings`、发送=`arrow_upward`、
   语音输入=`microphone`、停止语音=`mic_off`、运行中=`spinner`/动画、复制=`content_copy`、
   重连=`sync`、审批=`shield`/`gavel`。
 
 ### 4.5 跨平台实现映射（给开发，设计无需关心）
 
-| 关注点 | Android | iOS |
-|---|---|---|
-| UI 框架 | Jetpack Compose + Material 3 | UIKit（+ 对应 HIG） |
-| 颜色 | 直接复用 §4.1 的 hex token | 同 token（`UIColor` / Asset Catalog） |
-| 字号 | sp | pt（按 §4.2 语义角色对齐，走 Dynamic Type） |
-| 图标 | Material Symbols（Rounded） | SF Symbols（`UIImage(systemName:)`） |
-| 导航容器 | NavigationBar / BottomAppBar | `UITabBarController` / `UINavigationController` |
-| 底部 Sheet | ModalBottomSheet | `UISheetPresentationController` |
-| 等宽字体 | JetBrains Mono / Roboto Mono | SF Mono / Menlo |
+| 关注点 | Android | iOS | Desktop |
+|---|---|---|---|
+| UI 框架 | Jetpack Compose + Material 3 | UIKit（+ 对应 HIG） | Electron + React |
+| 颜色 | 直接复用 §4.1 的 hex token | 同 token（`UIColor` / Asset Catalog） | 同 token；浅色 surface 例外见 §4.1 注记 |
+| 字号 | sp | pt（按 §4.2 语义角色对齐，走 Dynamic Type） | px（不跟随系统字号） |
+| 图标 | Material Symbols（Rounded） | SF Symbols（`UIImage(systemName:)`） | `ui/Icon` 本地 stroke set |
+| 导航容器 | NavigationBar / BottomAppBar | `UITabBarController` / `UINavigationController` | 左栏 + 主区 + 可选右栏 |
+| 底部 Sheet | ModalBottomSheet | `UISheetPresentationController` | 居中模态 |
+| 等宽字体 | JetBrains Mono / Roboto Mono | SF Mono / Menlo | JetBrains Mono / SF Mono / Cascadia Code |
 
 > 两者共享同一套语义设计，不追求像素级一致，但**信息架构、组件、状态、交互必须完全一致**。
 > iOS 侧是命令式的 UIKit：token 落到 `UIColor` / `UIFont` / Auto Layout，页面结构照 §6 的逐页
@@ -234,7 +241,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | **消息气泡** | 用户/助手 | 用户右对齐主色底；助手左对齐 surface 底 |
 | **工具卡片** | running / done / error / interrupted | 核心组件，见 5.1 |
 | **工具组** | 折叠 / 展开 | 连续工具调用折成一行摘要，见 5.1.1 |
-| **思考卡片** | 思考中 / 完成 | 置灰、不可展开；思考中标题行转圈（正文不下发） |
+| **思考卡片** | 思考中 / 完成 | 置灰、不可展开；思考中标题行转圈（正文不下发）；**桌面为一行状态（思考中 + 三点），不画卡片** |
 | **运行状态条** | 进行中 / 完成 / 失败 / 取消 | 聊天页顶部横幅，见 6.3 |
 | **Runtime 身份** | 徽章 / 图标 / 主题色 | 每个 agent 一套可扩展身份，见 5.2 |
 | **权限模式徽章** | — | 显示 **Session 级**权限模式，危险模式用 error 色 |

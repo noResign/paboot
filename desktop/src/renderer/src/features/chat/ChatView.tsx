@@ -5,6 +5,8 @@ import { useSessions } from '../../store/sessions';
 import { formatContextUsage, contextPercent } from '../../../../shared/format';
 import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
+import { Icon } from '../../ui/Icon';
+import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { comboLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { requiresModal } from '../../store/chat/permissions';
@@ -55,6 +57,7 @@ export function ChatView({
   const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOptionDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
   // per session is cheap after the first call.
@@ -93,6 +96,32 @@ export function ChatView({
 
   const pending = chat.permissions.active;
   const busy = chat.phase === 'connecting' || chat.phase === 'live' || chat.phase === 'reconnecting';
+
+  /** Secondary session actions, so the header keeps two or three visible controls. */
+  function overflowMenu(current: ChatSessionState): MenuItem[] {
+    const items: MenuItem[] = [
+      {
+        id: 'rename',
+        label: '重命名会话',
+        run: () => {
+          setDraft(current.title ?? '');
+          setRenaming(true);
+        },
+      },
+    ];
+    if (current.sessionId) {
+      items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
+      if (onOpenTasks) {
+        items.push({
+          id: 'tasks',
+          label: '本会话的定时任务',
+          run: () => onOpenTasks(current.sessionId as string, current.title ?? null),
+        });
+      }
+    }
+    items.push({ id: 'collapse-chat', label: '收起会话列', run: onCollapseChat });
+    return items;
+  }
 
   async function commitRename(): Promise<void> {
     const title = draft.trim();
@@ -147,7 +176,7 @@ export function ChatView({
           ) : (
             <div
               className="chat-title"
-              title={chat.sessionId ? '点击重命名' : '新会话'}
+              title={`${chat.title ?? '未命名会话'}（点击重命名）`}
               onClick={() => {
                 setDraft(chat.title ?? '');
                 setRenaming(true);
@@ -158,48 +187,47 @@ export function ChatView({
           )}
           <div className="chat-sub">
             {chat.runtime && <RuntimeBadge id={chat.runtime} />}
-            {workspaceName && <span>{workspaceName}</span>}
-            <span className="mono cwd" title={chat.cwd ?? ''}>
-              {chat.cwd ?? ''}
-            </span>
-            {chat.permissionMode && <span className="badge">{PERMISSION_MODE_LABEL[chat.permissionMode as 'ask'] ?? chat.permissionMode}</span>}
+            {chat.cwd ? (
+              <span className="mono cwd" title={chat.cwd}>
+                {shortCwd(chat.cwd)}
+              </span>
+            ) : (
+              workspaceName && <span>{workspaceName}</span>
+            )}
+            {chat.permissionMode && (
+              <button className="badge-btn" title="会话权限设置" onClick={() => setShowPerms(true)}>
+                {PERMISSION_MODE_LABEL[chat.permissionMode as 'ask'] ?? chat.permissionMode}
+              </button>
+            )}
           </div>
         </div>
 
         <div className="chat-head-actions">
-          <button className="btn ghost" title="收起会话，把宽度让给右侧文件栏" onClick={onCollapseChat}>
-            ⇤
-          </button>
           {chat.sessionId && (
             <button
               className={`btn ghost${asideVisible ? ' active' : ''}`}
-              title={asideVisible ? '收起文件右栏' : '在右侧显示文件改动 / 全部文件'}
+              title={asideVisible ? '收起文件栏' : '在右侧显示文件改动 / 全部文件'}
               onClick={onToggleAside}
             >
-              ◧ 文件
+              <Icon name="panel-right" size={15} />
+              文件
             </button>
           )}
           {chat.contextUsage && <ContextRing usage={chat.contextUsage} />}
           <RunStatus chat={chat} />
           {busy && (
-            <button className="btn" onClick={stop} title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}>
+            <button className="btn ghost" onClick={stop} title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}>
+              <Icon name="stop" size={13} />
               停止
             </button>
           )}
-          {chat.sessionId && onOpenTasks && (
-            <button
-              className="btn ghost"
-              title="本会话的定时任务"
-              onClick={() => onOpenTasks(chat.sessionId as string, chat.title ?? null)}
-            >
-              ⏰
-            </button>
-          )}
-          {chat.sessionId && (
-            <button className="btn ghost" title="会话权限设置" onClick={() => setShowPerms(true)}>
-              ⚙
-            </button>
-          )}
+          <button
+            className="icon-btn"
+            title="更多操作"
+            onClick={(event) => openMenu(event, overflowMenu(chat))}
+          >
+            <Icon name="more" size={16} />
+          </button>
         </div>
       </div>
 
@@ -222,7 +250,7 @@ export function ChatView({
         </div>
       )}
       {rollbackNotice && <div className="chat-banner">{rollbackNotice}</div>}
-      {chat.phase === 'reconnecting' && <div className="chat-banner">● 连接中断，正在重连…</div>}
+      {chat.phase === 'reconnecting' && <div className="chat-banner">连接中断，正在重连…</div>}
       {chat.phase === 'settled' && (
         <div className="chat-banner">该运行已结束（daemon 侧已不在运行），以上为已收到的事件。</div>
       )}
@@ -262,11 +290,6 @@ export function ChatView({
       <Composer
         disabled={busy || chat.historyLoading}
         busy={busy}
-        notice={
-          busy
-            ? '该会话正在运行，输入暂时禁用 —— 运行中的任务在 daemon 上执行，切换会话不受影响。'
-            : null
-        }
         placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
         showModel={Boolean(chat.sessionId)}
         model={chat.model}
@@ -297,6 +320,8 @@ export function ChatView({
         onSend={(text) => void send(text)}
       />
 
+      <ContextMenu menu={menu} onClose={closeMenu} />
+
       {showPerms && chat.sessionId && (
         <SessionPermissionsDialog
           sessionId={chat.sessionId}
@@ -323,20 +348,20 @@ export function ChatView({
 function RunStatus({ chat }: { chat: ChatSessionState }) {
   switch (chat.phase) {
     case 'connecting':
-      return <span className="run-status">● 正在连接…</span>;
+      return <span className="run-pill live">连接中…</span>;
     case 'live':
-      return <span className="run-status">● 正在执行…</span>;
+      return <span className="run-pill live">执行中…</span>;
     case 'reconnecting':
-      return <span className="run-status warn">⟳ 重连中…</span>;
+      return <span className="run-pill warn">重连中…</span>;
     case 'gaveup':
-      return <span className="run-status error">✗ 连接已断开</span>;
+      return <span className="run-pill error">已断开</span>;
     case 'settled':
-      return <span className="run-status">✓ 已结束</span>;
+      return <span className="run-pill">已结束</span>;
     default: {
       const last = chat.messages[chat.messages.length - 1];
       if (!last || last.kind !== 'assistant') return null;
-      if (last.error) return <span className="run-status error">✗ 失败</span>;
-      return last.done ? <span className="run-status ok">✓ 完成</span> : null;
+      if (last.error) return <span className="run-pill error">失败</span>;
+      return last.done ? <span className="run-pill ok">完成</span> : null;
     }
   }
 }
@@ -377,4 +402,11 @@ function ContextRing({ usage }: { usage: NonNullable<ChatSessionState['contextUs
       </svg>
     </span>
   );
+}
+
+/** `…/OpenProject/paboot`: the tail identifies the directory, the prefix does not. */
+function shortCwd(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length <= 3) return path;
+  return `…/${parts.slice(-3).join('/')}`;
 }

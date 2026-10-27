@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { comboLabel } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 import type { ModelOptionDto, ModelParameterDto } from '../../../../shared/contract';
 
 interface Props {
   disabled: boolean;
   busy: boolean;
-  /** Quiet line above the input box; null hides it. */
-  notice: string | null;
   placeholder: string;
   /** Bottom-left model picker; hidden until the session exists. */
   showModel: boolean;
@@ -27,7 +27,6 @@ const LINE_HEIGHT = 22;
 export function Composer({
   disabled,
   busy,
-  notice,
   placeholder,
   showModel,
   model,
@@ -57,12 +56,23 @@ export function Composer({
   }
 
   return (
-    <div className="composer">
-      {notice && <div className="notice">{notice}</div>}
+    <div
+      className="composer"
+      title={
+        busy
+          ? '该会话正在运行，输入暂时禁用 —— 运行中的任务在 daemon 上执行，切换会话不受影响。'
+          : undefined
+      }
+    >
+      {/*
+        The run state already has two honest homes — the header pill and this
+        disabled input. The old notice line above the box said it a third time,
+        every time, in a full sentence; the explanation now lives in the tooltip.
+      */}
       <div className="box">
         <textarea
           ref={ref}
-          rows={1}
+          rows={2}
           value={text}
           disabled={disabled}
           placeholder={placeholder}
@@ -84,7 +94,7 @@ export function Composer({
               onChange={(event) => onModelChange(event.target.value || null)}
             >
               <option value="">
-                {modelsError ? '模型列表加载失败（默认）' : '默认模型（电脑端配置）'}
+                {modelsError ? '模型加载失败' : '默认模型'}
               </option>
               {models.map((option) => (
                 <option key={option.id} value={option.id}>
@@ -110,8 +120,10 @@ export function Composer({
                 ))}
               </select>
             ))}
-          <span className="hint">{busy ? '任务正在运行…' : 'Enter 发送 · Shift+Enter 换行'}</span>
-          <button className="btn primary" disabled={disabled || !text.trim()} onClick={submit}>
+          <span className="hint">
+            {busy ? `${comboLabel('stop-run', IS_MAC)} 停止运行` : 'Enter 发送 · Shift+Enter 换行'}
+          </span>
+          <button className="btn primary send" disabled={disabled || !text.trim()} onClick={submit}>
             发送
           </button>
         </div>

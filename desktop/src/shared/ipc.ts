@@ -27,7 +27,6 @@ export const IPC = {
   daemonStatus: 'daemon:status',
   daemonStart: 'daemon:start',
   daemonStop: 'daemon:stop',
-  daemonLogs: 'daemon:logs',
   daemonSetToken: 'daemon:set-token',
   openSessionWindow: 'app:open-session-window',
   focusSession: 'app:focus-session',
@@ -384,8 +383,6 @@ export interface PabootBridge {
   /** Start one we own. Every failure is a `{ ok: false, code }`, never a rejection. */
   daemonStart(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
   daemonStop(): Promise<ManagedDaemonStopResult>;
-  /** Recent lines of the managed daemon's log. */
-  daemonLogs(lines?: number): Promise<string[]>;
   /**
    * Replace the managed daemon's token. Omit `token` (or pass an empty string)
    * to generate a random one; a running daemon is restarted so it takes effect.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { displayHost, maskAddress } from '../../../../shared/net';
+import { Icon } from '../../ui/Icon';
 
 /**
  * The rail-top connection pill, now a real switcher (`▾ 我的笔记本（本机） /
@@ -46,7 +47,7 @@ export function ConnectionSwitcher() {
       >
         <span className={`dot ${active?.connected ? 'ok' : 'warn'}`} />
         <span className="conn-name">{label}</span>
-        <span className="chevron">▾</span>
+        <Icon name="chevron-down" size={12} className="chevron" />
       </button>
 
       {open && (
@@ -70,7 +71,7 @@ export function ConnectionSwitcher() {
                 )}
               </button>
               <button className="icon-btn danger" title="移除这台主机" onClick={() => void removeHost(view.id)}>
-                ✕
+                <Icon name="x" size={13} />
               </button>
             </div>
           ))}

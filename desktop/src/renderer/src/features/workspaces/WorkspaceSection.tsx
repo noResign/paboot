@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Icon } from '../../ui/Icon';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, type WorkspaceMutation } from '../../store/sessions';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
@@ -256,8 +257,8 @@ export function WorkspaceSection() {
           <div className="modal ws-rename" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <span>重命名工作区</span>
-              <button className="btn ghost" onClick={() => setRename(null)}>
-                ✕
+              <button className="btn ghost" title="关闭" onClick={() => setRename(null)}>
+                <Icon name="x" size={15} />
               </button>
             </div>
             <div className="field">
@@ -289,8 +290,8 @@ export function WorkspaceSection() {
           <div className="modal ws-delete-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <span>删除工作区</span>
-              <button className="btn ghost" onClick={() => setRemoving(null)}>
-                ✕
+              <button className="btn ghost" title="关闭" onClick={() => setRemoving(null)}>
+                <Icon name="x" size={15} />
               </button>
             </div>
             <div>

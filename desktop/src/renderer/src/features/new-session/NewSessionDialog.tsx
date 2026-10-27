@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon } from '../../ui/Icon';
 import { api } from '../../ipc/client';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
 import { defaultAgentId, permissionModeOptions, PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
@@ -68,9 +69,9 @@ export function NewSessionDialog({ workspaceName, onCancel, onCreate }: Props) {
       <div className="modal new-session-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <span>新建会话</span>
-          <button className="btn ghost" onClick={onCancel}>
-            ✕
-          </button>
+          <button className="btn ghost" title="关闭" onClick={onCancel}>
+                <Icon name="x" size={15} />
+              </button>
         </div>
 
         <div className="field">

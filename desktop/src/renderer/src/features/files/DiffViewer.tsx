@@ -4,12 +4,6 @@ import type { DiffResponse } from '../../../../shared/contract';
 
 export type DiffView = 'split' | 'unified';
 
-/**
- * Below this pane width the side-by-side view degrades to unified. Shared by the
- * full files page and the chat's right panel so both switch at the same width.
- */
-export const SPLIT_MIN_PX = 640;
-
 interface Props {
   diff: DiffResponse;
   view: DiffView;
@@ -26,8 +20,8 @@ const SPLIT_CELL_CHROME = 34 + 10 + 20;
 /**
  * Rendered from the daemon's raw patch rather than a diff library: the rows are
  * already paired by `toSplitRows`, and both views have to agree on what a row
- * is (docs/local/pages/files.md §6.8 — 并排 is the desktop default, 统一 the
- * fallback when the pane is too narrow).
+ * is. Which view is shown is the user's choice in the pane header; a narrow
+ * pane does not force one (the two columns scroll horizontally instead).
  */
 export function DiffViewer({ diff, view }: Props) {
   const ref = useRef<HTMLDivElement>(null);

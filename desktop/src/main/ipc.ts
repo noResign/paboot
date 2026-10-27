@@ -34,7 +34,6 @@ export interface ShellDeps {
     status(): ManagedDaemonStatus;
     start(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
     stop(): Promise<ManagedDaemonStopResult>;
-    logs(lines?: number): string[];
     setToken(token?: string): Promise<ManagedDaemonTokenResult>;
   };
 }
@@ -145,9 +144,6 @@ export function registerIpc(
     return shell.daemon.start({ ...input, port, workspace: input.workspace.trim() });
   });
   ipcMain.handle(IPC.daemonStop, () => shell.daemon.stop());
-  ipcMain.handle(IPC.daemonLogs, (_event, lines: unknown) =>
-    shell.daemon.logs(typeof lines === 'number' ? lines : undefined),
-  );
   ipcMain.handle(IPC.daemonSetToken, (_event, token: unknown) => {
     // The renderer is untrusted, and this value ends up in an Authorization
     // header — accept only a printable, space-free string, or nothing at all

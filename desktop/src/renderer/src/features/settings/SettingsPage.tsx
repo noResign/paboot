@@ -7,6 +7,7 @@ import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { maskAddress } from '../../../../shared/net';
+import { Icon } from '../../ui/Icon';
 import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
@@ -79,7 +80,6 @@ export function SettingsPage({
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [prefs, setPrefs] = useState<AppPrefs | null>(null);
   const [daemon, setDaemon] = useState<ManagedDaemonStatus | null>(null);
-  const [daemonLogs, setDaemonLogs] = useState<string[]>([]);
   const [daemonBusy, setDaemonBusy] = useState(false);
   /** Why the last start/stop attempt failed — a dead-looking button otherwise. */
   const [daemonError, setDaemonError] = useState<string | null>(null);
@@ -100,7 +100,6 @@ export function SettingsPage({
 
   async function refreshManaged(): Promise<void> {
     setDaemon(await window.paboot.daemonStatus());
-    setDaemonLogs(await window.paboot.daemonLogs(200));
     // Starting/stopping the local daemon flips our own connection with it, so the
     // shell has to re-read whether it still has a host to show.
     void refreshViews();
@@ -165,7 +164,8 @@ export function SettingsPage({
     <div className="settings">
       <div className="settings-head">
         <button className="btn ghost" onClick={onBack} title="返回（Esc）">
-          ← 返回
+          <Icon name="arrow-left" size={15} />
+          返回
         </button>
         <span className="title">设置</span>
       </div>
@@ -287,8 +287,6 @@ export function SettingsPage({
                       : '○ 未运行'}
                     {daemonError && <div className="error-text">{daemonError}</div>}
                   </dd>
-                  <dt>日志</dt>
-                  <dd className="mono">{daemon?.logPath ?? '—'}</dd>
                 </dl>
                 <div className="field">
                   <label htmlFor="daemon-token">访问 token</label>
@@ -397,11 +395,6 @@ export function SettingsPage({
                     只管<b>本应用启动的</b> daemon；附着来的（systemd、手动起的）一律不碰。
                   </div>
                 </div>
-                {daemonLogs.length > 0 && (
-                  <pre className="fcode daemon-log" title="最近 200 行">
-                    {daemonLogs.slice(-40).join('\n')}
-                  </pre>
-                )}
               </section>
             )}
 
