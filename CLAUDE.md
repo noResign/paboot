@@ -95,8 +95,8 @@ paboot/
 - **目录分层**：`src/` 按层/领域组织——`app/`（组合根与进程生命周期）、`http/` `platform/`
   `db/`、业务领域 `workspaces/` `runs/` `permissions/` `scheduling/` `mcp/`、插件层
   `runtimes/`、协议 `types/`。根目录只放进程入口与路径敏感文件（`index.ts`、
-  `permission-hook.ts`、`mcp-server.ts`、`version.ts`）。新增领域直接加 `src/<domain>/`，
-  不要往根目录平铺；`mcp/` 预留给后续 MCP server。
+  `permission-hook.ts`、`version.ts`）。新增领域直接加 `src/<domain>/`，不要往根目录平铺。
+  `mcp/servers/<server-name>/` 按 MCP server 的真实名称建目录，工具放它的 `tools/` 下。
 - **分层规则**：只有 `app/` 可以全量依赖；其他层对 `app/` 只允许 `import type`；`db/`、
   `runtimes/`、业务领域都不依赖 `routes/`。边界由 `tests/architecture.test.ts` 扫描 import
   守护，改目录后先跑它。

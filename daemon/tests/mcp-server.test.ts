@@ -7,7 +7,7 @@ import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const mcpPath = path.join(here, '../src/mcp-server.ts');
+const mcpPath = path.join(here, '../src/mcp/servers/paboot_tasks/server.ts');
 const tsxBin = path.join(here, '../node_modules/.bin/tsx');
 
 interface JsonRpcResponse {
@@ -117,7 +117,7 @@ describe('paboot_tasks MCP server', () => {
     expect(init.result).toMatchObject({
       protocolVersion: '2025-06-18',
       capabilities: { tools: {} },
-      serverInfo: { name: 'paboot-tasks' },
+      serverInfo: { name: 'paboot_tasks' },
     });
     expect(init.result.instructions).toContain('Prefer paboot_tasks');
 

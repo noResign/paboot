@@ -150,7 +150,13 @@ async function main(): Promise<void> {
     ),
     notifier,
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
-    mcpServerPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'mcp-server.js'),
+    mcpServerPath: path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'mcp',
+      'servers',
+      'paboot_tasks',
+      'server.js',
+    ),
   };
 
   // Register the execution driver for each runtime (argv and RPC alike) now

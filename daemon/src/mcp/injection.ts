@@ -2,10 +2,11 @@ import type { AppContext } from '../app/context.js';
 import type { ToolServerSpec } from '../runtimes/types.js';
 
 /**
- * The one MCP server every runtime shares. Each driver translates the spec into
- * its own configuration mechanism (Claude `--mcp-config`, Codex `-c
- * mcp_servers.*`), so adding a runtime means implementing that translation, not
- * another tool implementation.
+ * Runtime injection for MCP servers. This module does not implement tools; it
+ * turns a server's launch spec into each runtime's configuration mechanism
+ * (Claude `--mcp-config`, Codex `-c mcp_servers.*`, DeepSeek ACP
+ * `session/new.mcpServers`). Adding a runtime means implementing that
+ * translation, not another tool implementation.
  */
 export const TASK_TOOL_SERVER = 'paboot_tasks';
 

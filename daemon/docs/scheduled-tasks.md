@@ -98,7 +98,7 @@
 
 ## 5. AI 自建任务（通用 MCP 工具桥）
 
-daemon 自带一个 stdio MCP server（`dist/mcp-server.js`），通过 `ToolServerSpec` 注入每个 runtime：
+daemon 自带一个 stdio MCP server（`dist/mcp/servers/paboot_tasks/server.js`），通过 `ToolServerSpec` 注入每个 runtime：
 
 - **Claude**：能力探测 `--mcp-config`，注入内联 JSON（server 名 `paboot_tasks`）。
 - **Codex**：`codex app-server -c mcp_servers.paboot_tasks.*`，并设

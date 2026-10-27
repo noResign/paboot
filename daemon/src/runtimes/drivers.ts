@@ -6,7 +6,7 @@ import { startCodexRun } from './codex/session.js';
 import { DEEPSEEK_BIN } from './deepseek/detect.js';
 import { startDeepSeekRun } from './deepseek/session.js';
 import { createCommandDriver } from './command.js';
-import { codexToolServerArgs, taskToolServer } from '../mcp/tool-server.js';
+import { codexToolServerArgs, taskToolServer } from '../mcp/injection.js';
 import { defaultCapabilities, type RuntimeAdapter, type RuntimeCapabilities } from './types.js';
 import type { Registry } from './registry.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';

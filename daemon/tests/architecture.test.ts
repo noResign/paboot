@@ -140,7 +140,7 @@ describe('daemon source layout', () => {
       .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
       .map((entry) => entry.name)
       .sort();
-    expect(rootFiles).toEqual(['index.ts', 'mcp-server.ts', 'permission-hook.ts', 'version.ts']);
+    expect(rootFiles).toEqual(['index.ts', 'permission-hook.ts', 'version.ts']);
   });
 
   it('respects the layer dependency rules', () => {

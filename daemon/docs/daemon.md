@@ -57,7 +57,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 |---|---|
 | `index.ts` | 入口：加载 .env → 解析 CLI → loadConfig → 建 Db/registry → 探测运行时 → startServer |
 | `version.ts` | 版本号（package.json 唯一来源）；**必须留在 src 根**，见下方说明 |
-| `permission-hook.ts` / `mcp-server.ts` | 独立可执行入口：PreToolUse hook / stdio MCP server（被按路径 spawn） |
+| `permission-hook.ts` | 独立可执行入口：PreToolUse hook（被按路径 spawn） |
 | `app/` | 组合根与进程生命周期：`cli`（参数解析）、`config`（env+CLI 合并、token）、`context`（`AppContext`）、`data-dir-lock`、`runtime-info`、`server`（Express 组合根） |
 | `http/` | HTTP/SSE 传输原语：`auth`（Bearer 鉴权）、`cors`、`sse`（帧写入 + 终态判断） |
 | `platform/` | 无领域依赖的共享原语：`log`、`network`（监听地址翻译）、`paths` |
@@ -66,7 +66,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |
-| `mcp/` | MCP 工具规格与各 runtime 注入参数：`tool-server.ts`；后续新增 MCP server 也放这里 |
+| `mcp/` | MCP 模块：`injection.ts`（各 runtime 注入参数）、`context.ts` / `types.ts`、`servers/paboot_tasks/`（stdio server + 工具定义）；后续 MCP server 按真实名称建同名目录 |
 | `routes/*.ts` | HTTP/SSE 边界，按域拆分（完整清单见 [protocol.md](protocol.md) 的端点表） |
 | `runtimes/` | runtime 插件层：`engine`（argv 通用生命周期）、`registry`、`drivers`（driver 装配点）、`active-runs`、`stdio-rpc`、`claude/`、`codex/`、`deepseek/`、`command` |
 | `types/api.ts` | 传输契约：`NormalizedEvent` 事件 union + DTO |
@@ -78,7 +78,6 @@ daemon/
 ├─ src/
 │  ├─ index.ts            入口（.env → CLI → config → server），bin 指向 dist/index.js
 │  ├─ permission-hook.ts  PreToolUse hook（→ dist/permission-hook.js）
-│  ├─ mcp-server.ts       stdio MCP server（→ dist/mcp-server.js）
 │  ├─ version.ts          版本号（package.json 唯一来源）；路径敏感，必须留在 src 根
 │  ├─ app/                组合根 + 进程生命周期（唯一允许认识所有模块的层）
 │  │  ├─ cli.ts / config.ts / context.ts
@@ -91,7 +90,12 @@ daemon/
 │  ├─ runs/               run-service / run-notifier / session-runs / session-title
 │  ├─ permissions/        permissions / permission-mode / tool-grants / command-safety
 │  ├─ scheduling/         scheduler / schedule / task-config
-│  ├─ mcp/                tool-server（MCP 规格与 runtime 注入；后续 MCP 也放这里）
+│  ├─ mcp/                MCP 模块
+│  │  ├─ injection.ts     各 runtime 的 MCP 注入参数（Claude / Codex / DeepSeek）
+│  │  ├─ context.ts / types.ts
+│  │  └─ servers/paboot_tasks/
+│  │     ├─ server.ts     stdio MCP server（→ dist/mcp/servers/paboot_tasks/server.js）
+│  │     └─ tools/        schedule-task / list-scheduled-tasks / cancel-scheduled-task / list-sessions
 │  ├─ routes/             HTTP/SSE 边界（按域拆）
 │  ├─ runtimes/           engine / registry / drivers / active-runs / stdio-rpc + claude/ · codex/ · deepseek/ · command
 │  └─ types/api.ts        传输契约
@@ -112,7 +116,7 @@ daemon/
 - `db/` 不依赖 `routes/`、`runtimes/` 和业务领域。
 - `runtimes/`、业务领域不依赖 `routes/`。
 - `types/`、`platform/` 是叶子；`http/` 只依赖 `http/`、`platform/`、`types/`。
-- `index.ts`、`permission-hook.ts`、`mcp-server.ts` 只做进程装配，不承载业务逻辑。
+- `index.ts`、`permission-hook.ts` 只做进程装配，不承载业务逻辑。
 - `tests/architecture.test.ts` 会扫描 import 并强制以上规则。
 
 ### 扩展落点
@@ -122,8 +126,10 @@ daemon/
   路由/引擎/持久化不动。
 - **新可执行进程**：`src/<name>.ts`（与 `index.ts` 同级），同步更新 `ctx` 路径与桌面端
   `bundle-daemon.mjs` 的 entries 列表。
-- **新 MCP server**：实现放 `src/mcp/`，stdio 可执行入口放 `src/` 根，并在 `mcp/tool-server.ts`
-  注册各 runtime 的注入参数。
+- **新 MCP 工具**：在 `mcp/servers/<server-name>/tools/` 加一个文件，并在同目录 `tools/index.ts`
+  注册；`server.ts` / `injection.ts` 不动。
+- **新 MCP server**：`src/mcp/servers/<server-name>/server.ts` + `tools/`，在 `mcp/injection.ts`
+  注册启动 spec；同步 `ctx` 中的 server 路径（当前只有 `paboot_tasks`）与桌面打包 entries。
 - **新共享原语**：`src/platform/`（必须保持无领域依赖）。
 
 ## 安装使用（本机已装并配置 Claude Code / Codex / DeepSeek Harness 至少一种）：

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { claudeAdapter } from '../src/runtimes/claude/adapter';
 import { defaultCapabilities, type SpawnContext, type ToolServerSpec } from '../src/runtimes/types';
-import { codexToolServerArgs } from '../src/mcp/tool-server';
+import { codexToolServerArgs } from '../src/mcp/injection';
 
 const server: ToolServerSpec = {
   name: 'paboot_tasks',
   command: '/usr/bin/node',
-  args: ['/opt/paboot/mcp-server.js'],
+  args: ['/opt/paboot/mcp/servers/paboot_tasks/server.js'],
   env: { PABOOT_DAEMON_URL: 'http://127.0.0.1:4780', PABOOT_TOKEN: 'secret', PABOOT_RUN_ID: 'run-1' },
 };
 
@@ -45,7 +45,7 @@ describe('Codex MCP overrides', () => {
   it('emits -c mcp_servers.* overrides with approval', () => {
     const args = codexToolServerArgs([server]);
     expect(args).toContain('mcp_servers.paboot_tasks.command="/usr/bin/node"');
-    expect(args).toContain('mcp_servers.paboot_tasks.args=["/opt/paboot/mcp-server.js"]');
+    expect(args).toContain('mcp_servers.paboot_tasks.args=["/opt/paboot/mcp/servers/paboot_tasks/server.js"]');
     expect(args).toContain(
       'mcp_servers.paboot_tasks.env={PABOOT_DAEMON_URL="http://127.0.0.1:4780",PABOOT_TOKEN="secret",PABOOT_RUN_ID="run-1"}',
     );

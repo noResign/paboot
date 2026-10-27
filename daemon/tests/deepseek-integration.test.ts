@@ -40,7 +40,7 @@ import { startDeepSeekRun } from '../src/runtimes/deepseek/session';
 const toolServer = {
   name: 'paboot_tasks',
   command: '/usr/bin/node',
-  args: ['/opt/paboot/mcp-server.js'],
+  args: ['/opt/paboot/mcp/servers/paboot_tasks/server.js'],
   env: { PABOOT_DAEMON_URL: 'http://127.0.0.1:4780', PABOOT_TOKEN: 'secret', PABOOT_RUN_ID: 'run-1' },
 };
 
@@ -137,7 +137,7 @@ describe('startDeepSeekRun', () => {
         {
           name: 'paboot_tasks',
           command: '/usr/bin/node',
-          args: ['/opt/paboot/mcp-server.js'],
+          args: ['/opt/paboot/mcp/servers/paboot_tasks/server.js'],
           env: [
             { name: 'PABOOT_DAEMON_URL', value: 'http://127.0.0.1:4780' },
             { name: 'PABOOT_TOKEN', value: 'secret' },
