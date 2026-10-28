@@ -455,6 +455,16 @@ private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
         }
     }
 
+    /// `cardView` covers the row so taps cannot reach the hidden swipe actions.
+    /// Route taps on it back to the control, otherwise `.touchUpInside` never fires.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        if hit === cardView || hit?.isDescendant(of: cardView) == true {
+            return self
+        }
+        return hit
+    }
+
     private func handleTap() {
         if isOpen {
             setOpen(false, animated: true)
