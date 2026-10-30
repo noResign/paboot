@@ -44,7 +44,7 @@ Electron 客户端。**沿用**共享规范的全部 token、组件语义与交�
 | 文件 | 内容 |
 |---|---|
 | [desktop/design.md](desktop/design.md) | 桌面端规范：与共享规范的关系、桌面设计原则、页面地图与逐页索引 |
-| [desktop/pages/](desktop/pages/) | 逐页规格，每页只写**与移动端的差异**（另有 ⑥ 本机 daemon 管理为桌面独有） |
+| [desktop/pages/](desktop/pages/) | 逐页规格，每页只写**与移动端的差异**（另有 ⑥ 本机 daemon 管理、⑫ 工作区概览 / 目录为桌面独有） |
 | [desktop/preview.html](desktop/preview.html) | 可交互原型 |
 
 ## 图例

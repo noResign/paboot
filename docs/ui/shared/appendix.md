@@ -53,7 +53,7 @@
 2. **高保真页面稿**（浅色为默认，附暗色对照）：
    - 连接页、会话列表、聊天详情、新建会话、设置、**权限审批浮层**；
    - 工作区管理、目录选择器、会话权限设置 —— 各含关键状态。
-3. **组件库**：消息气泡、工具卡片（running/done/error/interrupted）、思考卡片、状态条、运行指示器、Runtime 身份（§5.2）、权限模式徽章、**Workspace 切换器**、空态、**权限审批卡片**。
+3. **组件库**：消息气泡、工具卡片（running/done/error/interrupted）、思考卡片、状态条、运行指示器、Runtime 身份（§5.2）、权限模式徽章、**工作区切换器**、空态、**权限审批卡片**。
 4. **交互说明**：流式追加、工具卡状态流转、**命令审批流**、Workspace 切换刷新流、断线重连、**语音输入流（按住说话→转写→确认发送）** 的动效示意。
 5. **Design Tokens**：最终色板（暗/浅）、语义字体/间距/圆角、语义图标名。
 6. **Runtime 身份映射**：§5.2 的 `id → 图标 + 主题色 + 展示名` 表，含未知 id 兜底。
@@ -80,7 +80,7 @@
 | `/api/sessions/:id` | PATCH | 是 | 重命名，body `{title}` |
 | `/api/sessions/:id` | DELETE | 是 | 删除会话 |
 | `/api/sessions/:id/permissions` | GET | 是 | `{mode, grants:[{toolName,createdAt}]}` |
-| `/api/sessions/:id/permissions` | PATCH | 是 | body `{mode:"ask"|"acceptEdits"|"bypass"}`；仅影响后续 Run |
+| `/api/sessions/:id/permissions` | PATCH | 是 | body `{mode:"ask" \| "acceptEdits" \| "bypass"}`；仅影响后续 Run |
 | `/api/sessions/:id/permissions/grants/:toolName` | DELETE | 是 | 撤销单个工具授权 |
 | `/api/sessions/:id/permissions/grants` | DELETE | 是 | 撤销全部授权 |
 | `/api/chat` | POST | 是 | SSE 流；body `{sessionId?, workspaceId?, prompt, model?, runtime?, permissionMode?}` |
@@ -90,9 +90,9 @@
 | `/api/runs/:id/stream` | GET | 是 | SSE：回放 + 续直播 |
 | `/api/agents` | GET | 是 | `{agents:[{id,name,bin,available}]}` |
 | `/api/agents/:id/models` | GET | 是 | `{models:[{id,label,parameters?:[{id,label,values,defaultId?}]}]}`；未知 runtime → 404 `unknown_runtime` |
-| `/api/sessions/:id/model` | PATCH | 是 | body `{model?: string|null, modelParameters?: object|null}`；至少给一个，`null` = 回到默认。返回 `{ok, effective:"next_run", session}` |
+| `/api/sessions/:id/model` | PATCH | 是 | body `{model?: string \| null, modelParameters?: object \| null}`；至少给一个，`null` = 回到默认。返回 `{ok, effective:"next_run", session}` |
 | `/api/agent` | GET | 是 | 检测信息 |
-| `/api/permissions/:id/decision` | POST | 是 | body `{decision:"allow"|"deny"|"allow_all", reason?}` |
+| `/api/permissions/:id/decision` | POST | 是 | body `{decision:"allow" \| "deny" \| "allow_all", reason?}` |
 
 **流事件补充**：
 
@@ -132,7 +132,7 @@
 | 会话（session / conversation） | 一次持续的对话，绑定 runtime/工作目录 |
 | run | 一次「发消息 → 跑完」的执行单元；一个会话可包含多次 run |
 | 工作区（workspace） | agent 干活的根目录；daemon 启动时把 `--workspace` 注册为第一个 Workspace，之后可在手机上切换 |
-| Session Cwd | Session 实际启动目录，必须位于所属 Workspace 内 |
+| Session Cwd | Session 实际启动目录；v1 必须位于所属工作区主目录内（子目录允许），附加目录只扩大可达范围 |
 | 权限模式（permission mode） | **Session 级**配置：`ask` / `acceptEdits` / `bypass` |
 | Permission Grant | Session 级“允许全部”授权，按 toolName 持久化，可撤销 |
 | token | 连接鉴权密钥（64 位 hex），**不是** LLM 计费的 token |
