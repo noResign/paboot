@@ -31,7 +31,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
    ▼
 ┌────────────────────────────────────────────────────────┐
 │ daemon (Node 24 + Express + node:sqlite，零原生依赖)      │
-│  ├─ auth.ts           Bearer token（常量时间比较）        │
+│  ├─ auth.ts           Bearer token（常量时间比较 + 失败冷却）│
 │  ├─ db.ts             SQLite（会话/消息/运行/事件/审计）   │
 │  ├─ permissions.ts    工具审批 + auto-allow + 超时拒绝    │
 │  ├─ run-notifier.ts   runId → 多个 SSE 订阅者（fan-out）  │
@@ -59,7 +59,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `version.ts` | 版本号（package.json 唯一来源）；**必须留在 src 根**，见下方说明 |
 | `permission-hook.ts` | 独立可执行入口：PreToolUse hook（被按路径 spawn） |
 | `app/` | 组合根与进程生命周期：`cli`（参数解析）、`config`（env+CLI 合并、token）、`context`（`AppContext`）、`data-dir-lock`、`runtime-info`、`server`（Express 组合根） |
-| `http/` | HTTP/SSE 传输原语：`auth`（Bearer 鉴权）、`cors`、`sse`（帧写入 + 终态判断） |
+| `http/` | HTTP/SSE 传输原语：`auth`（Bearer 鉴权 + 按来源失败冷却）、`cors`、`sse`（帧写入 + 终态判断） |
 | `platform/` | 无领域依赖的共享原语：`log`、`network`（监听地址翻译）、`paths` |
 | `db/` | 持久化：`db.ts`（`node:sqlite`）、`dto.ts`（run DTO 映射）、`model-selection.ts`、`server-id.ts` |
 | `workspaces/` | 工作区领域：`workspace` / `workspace-service`（路径校验、目录选择）、`changes`（git 改动/diff）、`checkpoints`（run 前后快照）、`file-browser`（目录懒加载与文件读取） |

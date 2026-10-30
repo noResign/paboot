@@ -93,7 +93,8 @@ tool_result | usage | turn_end | error | permission_request | question
 ## 安全
 
 从客户端驱动一个带 shell 权限的 agent 本质等于远程代码执行。所有非 `/api/health` 路由都要
-Bearer token；默认权限模式为 `ask`，审批超时未处理默认拒绝，手机断线不立即取消任务或拒绝审批；**`workspace` 只是 spawn cwd，
+Bearer token（同一来源连续 5 次认证失败会冷却 60 秒，再犯翻倍；可用 `PABOOT_AUTH_MAX_FAILURES` /
+`PABOOT_AUTH_LOCKOUT_SECONDS` 调整，`0` 关闭）；默认权限模式为 `ask`，审批超时未处理默认拒绝，手机断线不立即取消任务或拒绝审批；**`workspace` 只是 spawn cwd，
 不是沙箱**。跨网络访问请先用组网工具（Tailscale / ZeroTier / WireGuard）把设备放进加密内网；
 内网穿透只适合自用（详见根 README「手机电脑不在同一个局域网」）。详见
 [docs/permissions.md](docs/permissions.md) 的「安全模型」。

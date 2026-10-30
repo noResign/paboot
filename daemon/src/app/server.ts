@@ -31,7 +31,13 @@ export function createApp(ctx: AppContext): Express {
   registerHealthRoutes(app, ctx);
 
   // Everything else under /api requires a bearer token.
-  app.use('/api', requireAuth(ctx.config.token));
+  app.use(
+    '/api',
+    requireAuth(ctx.config.token, {
+      maxFailures: ctx.config.authMaxFailures,
+      lockoutMs: ctx.config.authLockoutMs,
+    }),
+  );
   registerAgentRoutes(app, ctx);
   registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);

@@ -88,6 +88,9 @@
 | `POST /api/internal/permissions/create` | 是 | 内部：hook 注册审批请求 |
 | `GET /api/internal/permissions/:id/status` | 是 | 内部：hook 轮询决定 |
 
+鉴权失败返回 `401 unauthorized`；同一来源连续失败触发冷却时返回 `429 too_many_attempts`，
+并带 `Retry-After`（秒）。触发条件与时长见 [configuration.md](configuration.md) 的「登录失败冷却」。
+
 **附加目录（`workspace_dirs`）与 `--add-dir`**：一个工作区 = 主目录 + N 个附加目录。
 附加目录现在只有**一个来源**：手机在「工作区管理」里手动增删（早期版本还会在批准越界读取时
 自动写入，该机制已随读取门控一并移除，见 [permissions.md](permissions.md) 的「读取不门控」）。

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expandHome } from '../platform/paths.js';
+import { DEFAULT_LOCKOUT_MS, DEFAULT_MAX_FAILURES } from '../http/auth.js';
 
 export interface TlsConfig {
   cert: string;
@@ -34,6 +35,10 @@ export interface Config {
    */
   tokenSource: 'env' | 'flag' | 'file';
   permissionMode: string;
+  /** 同一来源连续认证失败多少次后进入冷却；0 = 关闭冷却。 */
+  authMaxFailures: number;
+  /** 首次冷却时长（ms）；再次触发翻倍，上限 15 分钟。 */
+  authLockoutMs: number;
   /** 工具审批决策窗口（ms），超时自动拒绝。 */
   permissionTimeoutMs: number;
   /** 空闲看门狗：run 多久无事件则自动取消（ms，0 = 禁用）。 */
@@ -83,6 +88,23 @@ function resolvePermissionMode(env: NodeJS.ProcessEnv): string {
   const allowed = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
   if (mode && allowed.has(mode)) return mode;
   return 'default';
+}
+
+/** `PABOOT_AUTH_MAX_FAILURES`，默认 5；0 关闭冷却；负数/非法值回退默认。 */
+function resolveAuthMaxFailures(env: NodeJS.ProcessEnv): number {
+  const raw = env.PABOOT_AUTH_MAX_FAILURES?.trim();
+  if (!raw) return DEFAULT_MAX_FAILURES;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : DEFAULT_MAX_FAILURES;
+}
+
+/** `PABOOT_AUTH_LOCKOUT_SECONDS`，默认 60；非法值回退默认。 */
+function resolveAuthLockoutMs(env: NodeJS.ProcessEnv): number {
+  const raw = env.PABOOT_AUTH_LOCKOUT_SECONDS?.trim();
+  if (!raw) return DEFAULT_LOCKOUT_MS;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 1) return DEFAULT_LOCKOUT_MS;
+  return seconds * 1000;
 }
 
 /** `PABOOT_PERMISSION_TIMEOUT_SECONDS`，默认 120；0 或非法值回退 120。 */
@@ -148,6 +170,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     tokenGenerated: overrides.token ? false : generated,
     tokenSource: overrides.token ? 'flag' : source,
     permissionMode: overrides.permissionMode ?? resolvePermissionMode(env),
+    authMaxFailures: resolveAuthMaxFailures(env),
+    authLockoutMs: resolveAuthLockoutMs(env),
     permissionTimeoutMs: resolvePermissionTimeoutMs(env),
     runIdleTimeoutMs: resolveRunIdleTimeoutMs(env),
     tls: resolveTls(env),

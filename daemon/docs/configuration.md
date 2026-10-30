@@ -40,6 +40,8 @@
 | `PABOOT_PORT` | `4780` | 端口 |
 | `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
 | `PABOOT_TOKEN` | 自动生成 | 鉴权密钥 |
+| `PABOOT_AUTH_MAX_FAILURES` | `5` | 同一来源连续认证失败多少次后进入冷却；`0` = 关闭冷却 |
+| `PABOOT_AUTH_LOCKOUT_SECONDS` | `60` | 首次冷却时长（秒）；同一来源再次触发翻倍，上限 15 分钟 |
 | `PABOOT_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |
 | `PABOOT_PERMISSION_TIMEOUT_SECONDS` | `120` | 工具审批决策窗口（秒，超时自动拒绝；`0`/非法值回退 `120`） |
 | `PABOOT_RUN_IDLE_TIMEOUT_SECONDS` | `900` | 空闲看门狗（无事件多少秒自动取消；`0` = 禁用） |
@@ -96,6 +98,20 @@ env 未设且文件不存在时，第 3 步照样会写入一个本次新生成�
 才可读该文件；`env` / `flag` 时读到的是旧值或本次新生成的值，拿去用必然 401。
 
 删掉 `<data-dir>/token` 即轮换（下次启动重新生成，前提是没被 env / flag 覆盖）。
+
+### 登录失败冷却
+
+token 本身就是 256 位随机值，在线穷举不可行；冷却的作用是挡住扫描器、让反复猜测付出代价：
+
+- 计数按**来源地址**（socket 对端 IP，**不信任 `X-Forwarded-For`**）分别统计；`/api/health` 不参与。
+- 只有**带了非空 token 但校验失败**的请求才计数；完全没带 `Authorization` 的探测只回 401，不计。
+- 同一来源**连续**失败达到 `PABOOT_AUTH_MAX_FAILURES`（默认 5）次后进入冷却，返回 `429`
+  + `Retry-After`（JSON：`{error, code:"too_many_attempts", retryAfterSeconds}`），冷却期间即使
+  带正确 token 也拒绝。
+- 首次冷却 `PABOOT_AUTH_LOCKOUT_SECONDS`（默认 60 秒）；同一来源再次触发翻倍，上限 15 分钟。
+  一次成功认证会清空该来源的计数与升级等级。
+- 状态只在内存里，daemon 重启即清空；空闲 1 小时自动遗忘。正常客户端不会被误伤——成功请求
+  不断重置计数；若确实连续输错被锁，等冷却结束或重启 daemon 即可。
 
 ### `.env` 示例
 
