@@ -33,11 +33,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noresign.paboot.model.chat.AssistantSegment
 import com.noresign.paboot.model.chat.ChatUiMessage
 import com.noresign.paboot.model.chat.ContentBlock
+import com.noresign.paboot.util.formatMessageTime
 import com.noresign.paboot.model.chat.segmentBlocks
 import kotlinx.coroutines.launch
 
@@ -136,7 +138,7 @@ internal fun MessageList(
                     key = { index -> index },
                 ) { index ->
                     when (val message = messages[index]) {
-                        is ChatUiMessage.User -> UserBubble(message.text)
+                        is ChatUiMessage.User -> UserBubble(message)
                         is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
                     }
                 }
@@ -163,21 +165,37 @@ internal fun MessageList(
 }
 
 @Composable
-internal fun UserBubble(text: String) {
+internal fun UserBubble(message: ChatUiMessage.User) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
         // Compact phones need more room per line; keep wider layouts at 70%.
         val maxBubbleWidth = maxWidth * if (maxWidth < 480.dp) 0.85f else 0.7f
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primary,
+        val bubbleColor = lerp(
+            MaterialTheme.colorScheme.surface,
+            MaterialTheme.colorScheme.primary,
+            0.24f,
+        )
+        Column(
             modifier = Modifier.widthIn(max = maxBubbleWidth),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = text,
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+            Surface(shape = RoundedCornerShape(16.dp), color = bubbleColor) {
+                Text(
+                    text = message.text,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+            val sentAt = formatMessageTime(message.at)
+            if (sentAt.isNotEmpty()) {
+                Text(
+                    text = sentAt,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(end = 3.dp),
+                )
+            }
         }
     }
 }

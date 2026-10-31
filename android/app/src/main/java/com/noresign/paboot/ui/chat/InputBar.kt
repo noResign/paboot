@@ -14,12 +14,14 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
@@ -60,6 +62,15 @@ internal fun InputBar(
         FilledIconButton(
             onClick = if (streaming) onStop else onSend,
             enabled = streaming || input.isNotBlank(),
+            // Softer than the full accent: the button sits beside the text all day.
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = lerp(
+                    MaterialTheme.colorScheme.surface,
+                    MaterialTheme.colorScheme.primary,
+                    0.6f,
+                ),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
             modifier = Modifier.size(40.dp),
         ) {
             Icon(

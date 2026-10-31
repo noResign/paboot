@@ -42,6 +42,35 @@ export function formatContextUsage(usage: ContextUsage): string {
   return `${formatTokens(usage.tokens)} / ${formatTokens(usage.window as number)} · ${percent}%`;
 }
 
+/**
+ * Sent-at stamp for a user message: time only today, a short date before that.
+ * Deliberately not relative ("3 天前") — once a transcript spans days, the
+ * exact send time is what the reader is looking for.
+ */
+export function formatMessageTime(ts: number, now: number = Date.now()): string {
+  if (!Number.isFinite(ts) || ts <= 0) return '';
+  const at = new Date(ts);
+  const today = new Date(now);
+  const time = `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+  if (sameDay(at, today)) return time;
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (sameDay(at, yesterday)) return `昨天 ${time}`;
+  if (at.getFullYear() === today.getFullYear()) {
+    return `${at.getMonth() + 1}月${at.getDate()}日 ${time}`;
+  }
+  return `${at.getFullYear()}/${at.getMonth() + 1}/${at.getDate()} ${time}`;
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  );
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
 /** File sizes for the file tree and the "not previewed" notices. */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';

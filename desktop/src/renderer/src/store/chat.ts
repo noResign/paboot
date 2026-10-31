@@ -186,7 +186,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         error: null,
         messages: [
           ...current.messages,
-          { kind: 'user', id: nextId('u'), text: prompt },
+          { kind: 'user', id: nextId('u'), text: prompt, at: Date.now() },
           newAssistant(nextId('a')),
         ],
       })),
@@ -622,7 +622,7 @@ async function rebuildHistory(
   let todos: TodoItem[] = [];
 
   runs.forEach((run, index) => {
-    messages.push({ kind: 'user', id: nextId('u'), text: run.prompt, runId: run.id });
+    messages.push({ kind: 'user', id: nextId('u'), text: run.prompt, runId: run.id, at: run.startedAt });
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.
@@ -640,10 +640,11 @@ async function rebuildHistory(
   // These are raw snake_case DB rows — the one place the contract lies.
   if (messages.length === 0) {
     for (const raw of rawMessages) {
-      const row = raw as { role?: unknown; content?: unknown };
+      const row = raw as { role?: unknown; content?: unknown; created_at?: unknown };
       if (typeof row?.content !== 'string') continue;
+      const at = typeof row.created_at === 'number' ? row.created_at : undefined;
       if (row.role === 'user') {
-        messages.push({ kind: 'user', id: nextId('u'), text: row.content });
+        messages.push({ kind: 'user', id: nextId('u'), text: row.content, at });
       } else {
         messages.push({
           kind: 'assistant',

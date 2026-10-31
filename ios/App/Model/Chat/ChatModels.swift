@@ -11,6 +11,8 @@ struct ChatUiMessage: Equatable, Identifiable {
     let id: String
     let role: Role
     var text: String = ""
+    /// Send time (epoch ms) for a user row; 0 when an old history has none.
+    var sentAt: Int64 = 0
     var blocks: [ContentBlock] = []
     var usage: UsageInfo?
     var error: String?

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { comboLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
+import { Icon } from '../../ui/Icon';
 import type { ModelOptionDto, ModelParameterDto } from '../../../../shared/contract';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
   onModelChange(model: string | null): void;
   onParameterChange(parameterId: string, valueId: string | null): void;
   onSend(text: string): void;
+  onStop(): void;
 }
 
 const MAX_ROWS = 8;
@@ -37,6 +39,7 @@ export function Composer({
   onModelChange,
   onParameterChange,
   onSend,
+  onStop,
 }: Props) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -123,9 +126,20 @@ export function Composer({
           <span className="hint">
             {busy ? `${comboLabel('stop-run', IS_MAC)} 停止运行` : 'Enter 发送 · Shift+Enter 换行'}
           </span>
-          <button className="btn primary send" disabled={disabled || !text.trim()} onClick={submit}>
-            发送
-          </button>
+          {busy ? (
+            <button
+              className="btn primary send stop"
+              onClick={onStop}
+              title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}
+            >
+              <Icon name="stop" size={13} />
+              停止
+            </button>
+          ) : (
+            <button className="btn primary send" disabled={disabled || !text.trim()} onClick={submit}>
+              发送
+            </button>
+          )}
         </div>
       </div>
     </div>

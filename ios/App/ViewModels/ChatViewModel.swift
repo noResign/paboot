@@ -114,7 +114,9 @@ final class ChatViewModel {
             var runningRunId: String?
 
             for run in detail.runs {
-                messages.append(ChatUiMessage(id: "u-\(run.id)", role: .user, text: run.prompt))
+                messages.append(
+                    ChatUiMessage(id: "u-\(run.id)", role: .user, text: run.prompt, sentAt: run.startedAt)
+                )
 
                 if run.id == session.runningRunId {
                     messages.append(
@@ -152,7 +154,12 @@ final class ChatViewModel {
             if messages.isEmpty && !detail.messages.isEmpty {
                 messages = detail.messages.enumerated().map { index, message in
                     if message.role == "user" {
-                        return ChatUiMessage(id: "m-\(index)", role: .user, text: message.content)
+                        return ChatUiMessage(
+                            id: "m-\(index)",
+                            role: .user,
+                            text: message.content,
+                            sentAt: message.createdAt
+                        )
                     }
                     return ChatUiMessage(
                         id: "m-\(index)",
@@ -207,7 +214,12 @@ final class ChatViewModel {
         }
 
         state.messages.append(
-            ChatUiMessage(id: "u-\(UUID().uuidString)", role: .user, text: prompt)
+            ChatUiMessage(
+                id: "u-\(UUID().uuidString)",
+                role: .user,
+                text: prompt,
+                sentAt: Int64(Date().timeIntervalSince1970 * 1000)
+            )
         )
         state.messages.append(
             ChatUiMessage(id: "a-\(UUID().uuidString)", role: .assistant, done: false)

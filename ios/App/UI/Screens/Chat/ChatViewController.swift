@@ -299,7 +299,7 @@ final class ChatViewController: UIViewController {
                     withIdentifier: UserMessageCell.reuseIdentifier,
                     for: indexPath
                 ) as! UserMessageCell
-                cell.configure(text: message.text)
+                cell.configure(text: message.text, sentAt: message.sentAt)
                 return cell
 
             case .assistant:

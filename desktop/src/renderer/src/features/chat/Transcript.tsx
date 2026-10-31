@@ -5,7 +5,7 @@ import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
 import { ToolIcon } from '../../ui/ToolIcon';
 import { Icon } from '../../ui/Icon';
-import { formatTokens } from '../../../../shared/format';
+import { formatMessageTime, formatTokens } from '../../../../shared/format';
 import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
 import { canRollbackRun } from './runActions';
@@ -97,6 +97,7 @@ export function Transcript({
             key={message.id}
             id={message.id}
             text={message.text}
+            at={message.at}
             run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
             onRollback={onRollback}
           />
@@ -134,17 +135,30 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
 function UserRow({
   id,
   text,
+  at,
   run,
   onRollback,
 }: {
   id: string;
   text: string;
+  at: number | undefined;
   run: RunDto | undefined;
   onRollback(runId: string): void;
 }) {
+  const sentAt =
+    at === undefined || !Number.isFinite(at) || at <= 0
+      ? null
+      : { label: formatMessageTime(at), iso: new Date(at).toISOString() };
   return (
     <div className="msg user" data-msg-id={id}>
-      <div className="bubble">{text}</div>
+      <div className="user-stack">
+        <div className="bubble">{text}</div>
+        {sentAt && (
+          <time className="msg-time" dateTime={sentAt.iso}>
+            {sentAt.label}
+          </time>
+        )}
+      </div>
       <div className="msg-actions">
         <CopyButton text={text} />
         {run && canRollbackRun(run) && (

@@ -230,7 +230,7 @@ class ChatViewModel(
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         for (run in runs) {
-            list += ChatUiMessage.User(run.prompt)
+            list += ChatUiMessage.User(run.prompt, run.startedAt)
             if (run.id == runningRunId) {
                 // 运行中：attach() 会追加并续流
                 list += ChatUiMessage.Assistant()
@@ -244,7 +244,7 @@ class ChatViewModel(
         // 兜底：没有任何 run（历史遗留数据）时，退回聚合 messages
         if (list.isEmpty() && messages.isNotEmpty()) {
             list += messages.map { m ->
-                if (m.role == "user") ChatUiMessage.User(m.content)
+                if (m.role == "user") ChatUiMessage.User(m.content, m.createdAt)
                 else ChatUiMessage.Assistant(blocks = listOf(ContentBlock.Text(m.content)), done = true)
             }
         }
@@ -274,7 +274,9 @@ class ChatViewModel(
         if (sessionId == null && _sessionTitle.value == null) {
             _sessionTitle.value = prompt.take(60)
         }
-        _messages.update { it + ChatUiMessage.User(prompt) + ChatUiMessage.Assistant() }
+        _messages.update {
+            it + ChatUiMessage.User(prompt, System.currentTimeMillis()) + ChatUiMessage.Assistant()
+        }
         _error.value = null
         // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
         val sessionIdAtSend = sessionId

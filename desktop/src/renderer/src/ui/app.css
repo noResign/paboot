@@ -941,6 +941,15 @@ kbd {
   height: 28px;
   padding: 0 16px;
   border-radius: 7px;
+  /* Softer than the global primary button: the send affordance sits next to the
+     text all day, a full-strength accent read as a warning light. */
+  background: color-mix(in srgb, var(--primary) 60%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--surface));
+  color: #06231a;
+}
+.composer .send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 76%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 76%, var(--surface));
 }
 .composer-foot .hint {
   margin: 0;
@@ -2139,6 +2148,14 @@ a.btn {
    (docs/local/pages/chat.md §6.3)
    ========================================================================== */
 
+/* The jump affordance is positioned against this wrapper, so it always sits
+ * above the composer instead of guessing the composer's current height. */
+.chat-scroll-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
 .chat-scroll {
   flex: 1;
   overflow: auto;
@@ -2178,10 +2195,19 @@ a.btn {
   display: flex;
   justify-content: flex-end;
 }
-.msg.user .bubble {
+.msg.user .user-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   max-width: 76%;
-  background: var(--primary);
-  color: #06231a;
+}
+.msg.user .bubble {
+  max-width: 100%;
+  /* Tinted fill instead of the full accent: at 100% green every second bubble
+     pulled the eye away from the assistant's answer. */
+  background: color-mix(in srgb, var(--primary) 24%, var(--surface));
+  color: var(--text-primary);
   padding: 9px 13px;
   /* Asymmetric corner marks the speaker, as on mobile (§5 消息气泡). */
   border-radius: 12px 12px 4px 12px;
@@ -2190,11 +2216,15 @@ a.btn {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.msg.user .msg-time {
+  padding-right: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
 /*
- * The user bubble is the one surface painted with the accent colour, so it can't
- * ride on the token swap above (--primary must stay opaque for buttons/links).
- * It also has no border of its own, and its dark text was picked to sit on the
- * fill — both need an explicit replacement once the fill goes away.
+ * The user bubble is the one tinted surface in the transcript, so it can't ride
+ * on the token swap above (--primary must stay opaque for buttons/links). It has
+ * no border of its own; skin mode swaps the tint for a hairline outline.
  */
 :root[data-fx]:not([data-fx='none']) .msg.user .bubble {
   background: transparent;
@@ -2408,7 +2438,7 @@ a.btn {
 .jump-latest {
   position: absolute;
   left: 50%;
-  bottom: 104px;
+  bottom: 12px;
   transform: translateX(-50%);
   z-index: 12;
   height: 30px;

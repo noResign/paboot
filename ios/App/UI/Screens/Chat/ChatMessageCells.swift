@@ -10,6 +10,7 @@ final class UserMessageCell: UITableViewCell {
 
     private let bubble = UIView()
     private let label = UILabel()
+    private let timeLabel = UILabel()
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -18,16 +19,25 @@ final class UserMessageCell: UITableViewCell {
         backgroundColor = .clear
         contentView.backgroundColor = .clear
 
-        bubble.backgroundColor = Theme.Colors.primary
+        // Tinted, not full accent: a strong green bubble every other message
+        // pulled the eye away from the assistant's answer.
+        bubble.backgroundColor = Theme.Colors.primary.withAlphaComponent(0.24)
         bubble.layer.cornerRadius = Radius.bubble
         bubble.translatesAutoresizingMaskIntoConstraints = false
 
         label.numberOfLines = 0
         label.font = Typography.body
-        label.textColor = Theme.Colors.onPrimary
+        label.textColor = Theme.Colors.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         bubble.addSubview(label)
+
+        timeLabel.font = Typography.caption
+        timeLabel.textColor = Theme.Colors.textMuted
+        timeLabel.textAlignment = .right
+        timeLabel.translatesAutoresizingMaskIntoConstraints = false
+
         contentView.addSubview(bubble)
+        contentView.addSubview(timeLabel)
 
         NSLayoutConstraint.activate([
             label.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 9),
@@ -38,7 +48,11 @@ final class UserMessageCell: UITableViewCell {
             bubble.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 56),
             bubble.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Spacing.xs),
-            bubble.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Spacing.xs),
+
+            timeLabel.topAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 4),
+            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
+            timeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 56),
+            timeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Spacing.xs),
         ])
     }
 
@@ -47,8 +61,11 @@ final class UserMessageCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(text: String) {
+    func configure(text: String, sentAt: Int64) {
         label.text = text
+        let time = Formatters.messageTime(fromMilliseconds: sentAt)
+        timeLabel.text = time
+        timeLabel.isHidden = time.isEmpty
     }
 }
 

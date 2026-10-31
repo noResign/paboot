@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatContextUsage, formatTokens } from './format';
+import { formatBytes, formatContextUsage, formatMessageTime, formatTokens } from './format';
+
+/** Local-time fixture: 2026-11-01 15:30. */
+const now = new Date(2026, 10, 1, 15, 30).getTime();
+
+describe('formatMessageTime', () => {
+  it('shows only the clock time for today', () => {
+    expect(formatMessageTime(new Date(2026, 10, 1, 9, 5).getTime(), now)).toBe('09:05');
+  });
+
+  it('prefixes yesterday', () => {
+    expect(formatMessageTime(new Date(2026, 9, 31, 23, 59).getTime(), now)).toBe('昨天 23:59');
+  });
+
+  it('shows month/day within the same year', () => {
+    expect(formatMessageTime(new Date(2026, 0, 2, 8, 0).getTime(), now)).toBe('1月2日 08:00');
+  });
+
+  it('shows the full date across years', () => {
+    expect(formatMessageTime(new Date(2025, 11, 31, 8, 0).getTime(), now)).toBe('2025/12/31 08:00');
+  });
+
+  it('returns an empty string for missing timestamps', () => {
+    expect(formatMessageTime(0, now)).toBe('');
+    expect(formatMessageTime(Number.NaN, now)).toBe('');
+  });
+});
 
 describe('formatTokens', () => {
   it('matches the mobile formatting', () => {

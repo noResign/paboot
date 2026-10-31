@@ -7,8 +7,6 @@ import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
 import { Icon } from '../../ui/Icon';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
-import { comboLabel } from '../../shortcuts/shortcuts';
-import { IS_MAC } from '../../ui/platform';
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { Composer } from './Composer';
@@ -215,12 +213,6 @@ export function ChatView({
           )}
           {chat.contextUsage && <ContextRing usage={chat.contextUsage} />}
           <RunStatus chat={chat} />
-          {busy && (
-            <button className="btn ghost" onClick={stop} title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}>
-              <Icon name="stop" size={13} />
-              停止
-            </button>
-          )}
           <button
             className="icon-btn"
             title="更多操作"
@@ -266,26 +258,28 @@ export function ChatView({
         />
       )}
 
-      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        {chat.historyLoading ? (
-          <TranscriptSkeleton />
-        ) : chat.messages.length === 0 ? (
-          <div className="main-body">发送一条消息开始对话</div>
-        ) : (
-          <Transcript
-            messages={chat.messages}
-            scrollRef={scrollRef}
-            runs={chat.runs}
-            onRollback={(runId) => setRollback({ runId, needForce: false })}
-          />
+      <div className="chat-scroll-wrap">
+        <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
+          {chat.historyLoading ? (
+            <TranscriptSkeleton />
+          ) : chat.messages.length === 0 ? (
+            <div className="main-body">发送一条消息开始对话</div>
+          ) : (
+            <Transcript
+              messages={chat.messages}
+              scrollRef={scrollRef}
+              runs={chat.runs}
+              onRollback={(runId) => setRollback({ runId, needForce: false })}
+            />
+          )}
+        </div>
+
+        {showJump && (
+          <button className="jump-latest" onClick={jumpToBottom} title="有新内容，跳到最新">
+            ↓ 跳到最新
+          </button>
         )}
       </div>
-
-      {showJump && (
-        <button className="jump-latest" onClick={jumpToBottom} title="有新内容，跳到最新">
-          ↓ 跳到最新
-        </button>
-      )}
 
       <Composer
         disabled={busy || chat.historyLoading}
@@ -318,6 +312,7 @@ export function ChatView({
           void setSessionSelection(chat.model, next);
         }}
         onSend={(text) => void send(text)}
+        onStop={stop}
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />

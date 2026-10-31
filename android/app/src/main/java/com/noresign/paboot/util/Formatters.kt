@@ -1,5 +1,6 @@
 package com.noresign.paboot.util
 
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 /** 把 epoch 毫秒格式化成相对时间（"刚刚 / n 分钟前 / n 小时前 / n 天前"）。 */
@@ -15,6 +16,31 @@ fun relativeTime(epochMs: Long): String {
     val days = TimeUnit.HOURS.toDays(hours)
     return "${days} 天前"
 }
+
+/**
+ * 用户消息的发送时间：今天只给 `HH:mm`，更早补日期。
+ *
+ * 和 [relativeTime] 不同——对话跨天后，「3 天前」已答不了「几点发的」。
+ */
+fun formatMessageTime(epochMs: Long, now: Long = System.currentTimeMillis()): String {
+    if (epochMs <= 0) return ""
+    val at = Calendar.getInstance().apply { timeInMillis = epochMs }
+    val today = Calendar.getInstance().apply { timeInMillis = now }
+    val hour = at.get(Calendar.HOUR_OF_DAY).toString().padStart(2, '0')
+    val minute = at.get(Calendar.MINUTE).toString().padStart(2, '0')
+    val time = "$hour:$minute"
+    if (sameDay(at, today)) return time
+    val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -1) }
+    if (sameDay(at, yesterday)) return "昨天 $time"
+    if (at.get(Calendar.YEAR) == today.get(Calendar.YEAR)) {
+        return "${at.get(Calendar.MONTH) + 1}月${at.get(Calendar.DAY_OF_MONTH)}日 $time"
+    }
+    return "${at.get(Calendar.YEAR)}/${at.get(Calendar.MONTH) + 1}/${at.get(Calendar.DAY_OF_MONTH)} $time"
+}
+
+private fun sameDay(a: Calendar, b: Calendar): Boolean =
+    a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+        a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 
 /**
  * token 数的缩写形式：`999` / `45.2k` / `168k` / `1.2M`。
