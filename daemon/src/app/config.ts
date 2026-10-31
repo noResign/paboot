@@ -142,10 +142,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
   const dataDir = path.join(os.homedir(), '.paboot');
   fs.mkdirSync(dataDir, { recursive: true });
 
-  // The workspace is the directory Claude Code (and future runtimes) operate
-  // in directly. It defaults to the daemon's own cwd, so `cd <project> &&
-  // paboot` makes that project the workspace.
-  const workspace = path.resolve(expandHome(overrides.workspace ?? env.PABOOT_WORKSPACE ?? process.cwd()));
+  // The workspace is the directory agent runtimes operate in directly. With no
+  // flag or env it defaults to the built-in fallback under the data dir, next
+  // to SQLite/token — so a bare `paboot` never registers wherever it happened
+  // to be launched from (and the path is marked built-in, see seedDefaultWorkspace).
+  const workspace = path.resolve(
+    expandHome(overrides.workspace ?? env.PABOOT_WORKSPACE ?? path.join(dataDir, 'defaultworkspace')),
+  );
   const workspaceSource: WorkspaceSource =
     overrides.workspace !== undefined ? 'flag' : env.PABOOT_WORKSPACE?.trim() ? 'env' : 'default';
   fs.mkdirSync(workspace, { recursive: true });

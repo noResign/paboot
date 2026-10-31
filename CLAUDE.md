@@ -40,7 +40,7 @@ paboot/
 │  │  ├─ mobile/          移动端（Android/iOS 共用）：pages/ 逐页规格 · platforms/{android,ios}.md · preview.html
 │  │  └─ desktop/         桌面端：design.md · pages/ 逐页差异 · preview.html
 │  └─ local/              本机私有方案笔记（gitignore，不入库：权限/工作区、Files Tab、分页 …）
-├─ daemon/                daemon 子项目（Node 24 + Express + SQLite）
+├─ daemon/                daemon 子项目（Node >=24.9 + Express + SQLite）
 │  ├─ src/                daemon 源码
 │  ├─ tests/              Vitest 单测
 │  └─ docs/               daemon 技术方案（daemon.md 为索引 + protocol / permissions / runtimes / scheduled-tasks / configuration）
@@ -58,7 +58,7 @@ paboot/
 
 ## 技术栈
 
-- **daemon**：Node `~24`（ESM）、TypeScript（strict）、运行时依赖 `express` + `cron-parser`、存储用
+- **daemon**：Node `>=24.9`（ESM）、TypeScript（strict）、运行时依赖 `express` + `cron-parser`、存储用
   `node:sqlite`（零原生依赖）、测试 Vitest、dev 用 `tsx`。
 - **Android**：Kotlin、Jetpack Compose + Material 3、Retrofit + kotlinx-serialization、
   OkHttp（SSE 手写解析）、MMKV、Navigation Compose、MVVM；多模块（`:app` 业务 + `:lib-network` 通用网络层）。
@@ -160,13 +160,14 @@ paboot/
   持久化 grant，默认拒绝、超时自动拒绝。**读（`Read`/`Grep`）不门控**——读工作区外不审批、
   不加目录；工作区边界只约束写入。
 - **工作空间**：显式 `--workspace` 是**权威值**——每次启动都确保该目录存在并设为默认 Workspace
-  （桌面端从连接页启动 daemon 走的就是这条）；`PABOOT_WORKSPACE` / 无参（cwd）只在工作区表为空时
-  注册一次（首次安装），删掉的工作区不会在重启后回来。客户端可新增/切换 Workspace。
+  （桌面端从连接页启动 daemon 走的就是这条）；`PABOOT_WORKSPACE` / 无参默认
+  `<dataDir>/defaultworkspace`（与 SQLite/token 同根），只在工作区表为空时注册一次（首次安装），
+  删掉的工作区不会在重启后回来。客户端可新增/切换 Workspace。
   删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；**默认工作区可删**——先把默认切给
   另一个启用的真实工作区，没有就切给内置 fallback，内置 fallback 本身不可删/不可停用，
   顺带保证最后一个工作区删不掉。Session 绑定 `workspace_id + cwd`，cwd 必须位于所属 Workspace 内。
-  **内置 fallback 工作区**：桌面端首次启动预填 `<dataDir>/defaultworkspace`（`~/.paboot/defaultworkspace`），
-  daemon 按该路径标记为内置——没有真实工作区时它是默认，API 仍返回它（客户端需要 id 拉会话/文件），
+  **内置 fallback 工作区**：无显式 `--workspace` 时 daemon 默认用它
+  （`<dataDir>/defaultworkspace`，桌面端首次启动也预填同一路径），daemon 按该路径标记为内置——没有真实工作区时它是默认，API 仍返回它（客户端需要 id 拉会话/文件），
   但客户端列表/切换器**永不渲染**它；添加真实工作区后自动让位且接口也不再返回（行与会话仍在库里），
   删掉最后一个真实工作区后重新作为默认出现。
   客户端**不再展示「设为默认」**：打开时按本机上次选择的工作区（Android/iOS/桌面都本地持久化，

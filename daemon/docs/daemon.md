@@ -9,6 +9,7 @@
 | [protocol.md](protocol.md) | 数据模型 · HTTP/SSE 协议 · 会话与跨端续接 · 运行信息文件 |
 | [permissions.md](permissions.md) | 权限审批 · 安全模型 |
 | [configuration.md](configuration.md) | 配置参数参考 |
+| [docker.md](docker.md) | Docker 部署（镜像只含 daemon；默认工作区隔离，可选挂宿主机项目） |
 
 ## 概述
 
@@ -30,7 +31,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
    │  GET  /api/runs/:id/stream   (重连：回放 + 续直播)
    ▼
 ┌────────────────────────────────────────────────────────┐
-│ daemon (Node 24 + Express + node:sqlite，零原生依赖)      │
+│ daemon (Node >=24.9 + Express + node:sqlite，零原生依赖)  │
 │  ├─ auth.ts           Bearer token（常量时间比较 + 失败冷却）│
 │  ├─ db.ts             SQLite（会话/消息/运行/事件/审计）   │
 │  ├─ permissions.ts    工具审批 + auto-allow + 超时拒绝    │

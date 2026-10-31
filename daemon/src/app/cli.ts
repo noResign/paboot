@@ -24,7 +24,7 @@ Usage:
 Options:
   --host <host>             Bind address. Default 0.0.0.0 (all interfaces; 127.0.0.1 = localhost only)
   --port <port>             Port. Default 4780
-  --workspace <path>        Working dir root (default: current directory)
+  --workspace <path>        Working dir root (default: ~/.paboot/defaultworkspace)
   --token <token>           Bearer auth token (default: env PABOOT_TOKEN or generated)
   --permission-mode <mode>  Initial Claude Code permission mode (default: default/ask)
   --env-file <path>         Load config from a .env file (default: ./.env if present)

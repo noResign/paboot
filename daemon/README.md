@@ -20,7 +20,7 @@ paboot # 运行
 
 ## 源码构建与运行
 
-- Node `~24`、pnpm 10
+- Node `>=24.9`、pnpm 10
 - 本机已装并登录 `claude` CLI（`claude auth login`）
 
 ```bash
@@ -40,7 +40,7 @@ pnpm test             # Vitest
 |---|---|---|---|
 | `--host` | `PABOOT_HOST` | `0.0.0.0` | 监听地址（`127.0.0.1` = 仅本机） |
 | `--port` | `PABOOT_PORT` | `4780` | 端口 |
-| `--workspace` | `PABOOT_WORKSPACE` | 当前目录 | 初始 Workspace 根目录 |
+| `--workspace` | `PABOOT_WORKSPACE` | `~/.paboot/defaultworkspace` | 初始 Workspace 根目录 |
 | `--token` | `PABOOT_TOKEN` | 自动生成 | Bearer 鉴权密钥 |
 | `--permission-mode` | `PABOOT_PERMISSION_MODE` | `default`(=ask) | 新 Session 权限模式 seed |
 | `--env-file` | `PABOOT_ENV_FILE` | `./.env` | `.env` 路径 |
@@ -101,7 +101,7 @@ Bearer token（同一来源连续 5 次认证失败会冷却 60 秒，再犯翻�
 
 ## 安装
 
-需 Node `~24` + 本机已装并配置至少一种 agent：Claude Code（`claude auth login`）、
+需 Node `>=24.9` + 本机已装并配置至少一种 agent：Claude Code（`claude auth login`）、
 Codex（`codex login`），或 DeepSeek Harness（Node `>=24.9`，`npm install -g @deepseek-ai/dsh`，
 `DEEPSEEK_API_KEY` 或 `dsh web` 的模型设置）：
 
@@ -110,6 +110,24 @@ npx @noresign/paboot --help           # 免安装试用
 npm install -g @noresign/paboot       # 装成全局命令（命令名仍是 paboot）
 paboot --workspace /path/to/project
 ```
+
+### Docker
+
+镜像只含 daemon（不含 agent CLI），默认不挂宿主机目录、用命名卷存数据，CLI 在容器里自行安装：
+
+```bash
+cd daemon
+PABOOT_UID=$(id -u) PABOOT_GID=$(id -g) docker compose up -d --build
+docker compose exec daemon npm i -g @anthropic-ai/claude-code
+docker exec -it paboot claude auth login   # 凭据存命名卷；也可改用 API key
+docker compose restart daemon
+```
+
+要改宿主机项目时，取消 `docker-compose.yml` 里 `command: ["--workspace", "/workspace"]`
+和 `/workspace` 挂载那两行的注释（换成你的项目路径），再 `docker compose up -d --build`。
+
+只用发布镜像（不 clone 仓库）的部署方式见 docs/docker.md 的「用发布镜像部署（推荐）」；
+安装方式、挂载表、API key 认证、限制说明见 [docs/docker.md](docs/docker.md)。
 
 ## License
 

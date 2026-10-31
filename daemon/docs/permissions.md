@@ -87,9 +87,10 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；跨网络访问建议用组网工具放进加密内网（见 README
   「手机电脑不在同一个局域网」），内网穿透只适合自用。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见「权限审批」）。
-- **工作目录**：显式 `--workspace` 每次启动都生效（权威值）；`PABOOT_WORKSPACE` / 无参（cwd）
-  只在**工作区表为空时**注册一次（首次安装），之后不再自动重建——用户删掉的工作区不会在重启后
-  自己回来，目录不存在也不会让启动抛错；缺工作区时客户端可随时新增。
+- **工作目录**：显式 `--workspace` 每次启动都生效（权威值）；`PABOOT_WORKSPACE` / 无参
+  （默认 `~/.paboot/defaultworkspace`）只在**工作区表为空时**注册一次（首次安装），之后不再
+  自动重建——用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时
+  客户端可随时新增。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
   否则 400 `cwd_not_allowed`。**注意**：这条校验针对工作区**主目录**（新 Session 的 cwd 就取自主目录）；
   工作区还可能有附加目录（[protocol.md](protocol.md) 的「附加目录」），它们不参与 cwd 校验，只扩大 agent 的可达范围。

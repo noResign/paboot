@@ -1,0 +1,58 @@
+name: paboot
+
+# 运行身份跟随宿主机用户：PABOOT_UID/PABOOT_GID 未设置时默认 1000。
+# 用 `PABOOT_UID=$(id -u) PABOOT_GID=$(id -g) docker compose up -d --build` 启动。
+# 默认不挂宿主机代码；要改宿主机项目时，取消下面 `command` 和 `/workspace` 挂载的注释，
+# 并保持 UID/GID 跟随当前用户，否则写回宿主机目录的文件会归默认 UID。
+#
+# 凭据二选一：
+#   - 在容器里登录一次（docker exec -it paboot claude auth login），状态存在
+#     paboot-claude / paboot-codex / paboot-dsh 命名卷里，重建容器不丢；
+#   - 或者在 daemon/.env 里填 ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN /
+#     OPENAI_API_KEY / DEEPSEEK_API_KEY（compose 会自动读取同目录 .env）。
+
+services:
+  daemon:
+    build:
+      context: .
+      args:
+        NODE_VERSION: ${NODE_VERSION:-24}
+    image: paboot-daemon:local
+    container_name: paboot
+    restart: unless-stopped
+    # daemon 会 spawn 子进程；init 让 PID 1 负责回收僵尸进程。
+    init: true
+    user: "${PABOOT_UID:-1000}:${PABOOT_GID:-1000}"
+    # 要改宿主机项目时取消注释（路径换成你的项目）：
+    # command: ["--workspace", "/workspace"]
+    ports:
+      - "${PABOOT_PUBLISH_PORT:-4780}:4780"
+    environment:
+      HOME: /home/paboot
+      PABOOT_HOST: 0.0.0.0
+      PABOOT_PORT: "4780"
+      PABOOT_PERMISSION_MODE: ${PABOOT_PERMISSION_MODE:-default}
+      PABOOT_TOKEN: ${PABOOT_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    volumes:
+      # 默认隔离宿主机：只挂数据卷，不 mount 任何工作区目录。
+      # 数据：SQLite / token / serverId / 内置 fallback 工作区（固定落在容器 HOME 下）。
+      - paboot-data:/home/paboot/.paboot
+      # 容器里手动 `npm i -g` 装的 agent CLI 落在这里，重建容器后不丢。
+      - paboot-npm:/home/paboot/.npm-global
+      # CLI 登录态；在容器里认证一次，重建容器不丢。
+      - paboot-claude:/home/paboot/.claude
+      - paboot-codex:/home/paboot/.codex
+      - paboot-dsh:/home/paboot/.dsh
+      # 要改宿主机项目时取消注释（路径换成你的项目）：
+      # - ${HOME}/code/my-project:/workspace
+
+volumes:
+  paboot-data:
+  paboot-npm:
+  paboot-claude:
+  paboot-codex:
+  paboot-dsh:

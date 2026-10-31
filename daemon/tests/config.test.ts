@@ -42,6 +42,23 @@ describe('loadConfig', () => {
     expect(fs.statSync(config.workspace).isDirectory()).toBe(true);
   });
 
+  it('defaults the workspace to the built-in fallback under the data dir', () => {
+    const dir = tempHome();
+    const config = loadConfig({}, { port: 4780 });
+
+    expect(config.workspace).toBe(path.join(dir, '.paboot', 'defaultworkspace'));
+    expect(config.workspaceSource).toBe('default');
+    expect(fs.statSync(config.workspace).isDirectory()).toBe(true);
+  });
+
+  it('still prefers PABOOT_WORKSPACE over the built-in fallback', () => {
+    const dir = tempHome();
+    const config = loadConfig({ PABOOT_WORKSPACE: path.join(dir, 'proj') }, { port: 4780 });
+
+    expect(config.workspace).toBe(path.join(dir, 'proj'));
+    expect(config.workspaceSource).toBe('env');
+  });
+
   it('fixes the data dir at ~/.paboot, and neither the env var nor an override reaches it', () => {
     const dir = tempHome();
     const config = loadConfig({}, { workspace: path.join(dir, 'proj'), port: 4780 });
