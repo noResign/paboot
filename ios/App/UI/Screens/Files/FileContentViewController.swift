@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Combine
 import PabootClient
+import PabootMarkdownUI
 import UIKit
 
 /// Read-only file viewer: text, image, streaming video, or an explicit "not supported" message.
@@ -12,6 +13,11 @@ final class FileContentViewController: UIViewController {
     private let bannerLabel = UILabel()
     private let contentContainer = UIView()
     private let fileTextView = FileTextView()
+    private let markdownScrollView = UIScrollView()
+    private lazy var markdownView = MarkdownUIView(style: AppMarkdownStyle.fileContent())
+    private var markdownWidthConstraint: NSLayoutConstraint!
+    /// Widest source line; only used when wrapping is off.
+    private var markdownNaturalWidth: CGFloat = 0
     private let imageView = UIImageView()
     private let playerController = AVPlayerViewController()
     private var mediaLoader: AuthorizedMediaLoader?
@@ -22,6 +28,11 @@ final class FileContentViewController: UIViewController {
     private let loadingSpinner = UIActivityIndicatorView(style: .medium)
     private let loadingLabel = UILabel()
     private var emptyStateView: EmptyStateView?
+    /// Markdown files are rendered, not shown as source; the wrap toggle does not apply.
+    private var showsMarkdown: Bool {
+        let ext = (viewModel.path as NSString).pathExtension.lowercased()
+        return ext == "md" || ext == "markdown"
+    }
     private var wrapsText = true
     private lazy var wrapItem = UIBarButtonItem(
         title: "不换行", style: .plain, target: self, action: #selector(toggleWrapping)
@@ -54,9 +65,17 @@ final class FileContentViewController: UIViewController {
         Task { await viewModel.load() }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Reading a file is sideways-scroll heavy, and an edge swipe used to pop
+        // the screen mid-read. Going back is the navigation bar's job here.
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         playerController.player?.pause()
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -86,6 +105,21 @@ final class FileContentViewController: UIViewController {
         fileTextView.translatesAutoresizingMaskIntoConstraints = false
         fileTextView.isHidden = true
 
+        markdownScrollView.translatesAutoresizingMaskIntoConstraints = false
+        markdownScrollView.isHidden = true
+        markdownScrollView.alwaysBounceVertical = true
+        markdownScrollView.isDirectionalLockEnabled = true
+        markdownScrollView.contentInsetAdjustmentBehavior = .never
+        markdownScrollView.backgroundColor = Theme.Editor.background
+        markdownScrollView.showsHorizontalScrollIndicator = false
+        markdownView.translatesAutoresizingMaskIntoConstraints = false
+        markdownScrollView.addSubview(markdownView)
+
+        // Width is driven by the toggle (viewport vs. widest source line), not
+        // by the frame guide, so "不换行" can scroll horizontally.
+        markdownWidthConstraint = markdownView.widthAnchor.constraint(equalToConstant: 1)
+        markdownWidthConstraint.isActive = true
+
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.isHidden = true
@@ -97,6 +131,7 @@ final class FileContentViewController: UIViewController {
 
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         contentContainer.addSubview(fileTextView)
+        contentContainer.addSubview(markdownScrollView)
         contentContainer.addSubview(imageView)
         addChild(playerController)
         contentContainer.addSubview(playerController.view)
@@ -137,6 +172,24 @@ final class FileContentViewController: UIViewController {
             fileTextView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
             fileTextView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
 
+            markdownScrollView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            markdownScrollView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
+            markdownScrollView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            markdownScrollView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+
+            markdownView.topAnchor.constraint(
+                equalTo: markdownScrollView.contentLayoutGuide.topAnchor, constant: 16
+            ),
+            markdownView.bottomAnchor.constraint(
+                equalTo: markdownScrollView.contentLayoutGuide.bottomAnchor, constant: -24
+            ),
+            markdownView.leadingAnchor.constraint(
+                equalTo: markdownScrollView.contentLayoutGuide.leadingAnchor, constant: 16
+            ),
+            markdownView.trailingAnchor.constraint(
+                equalTo: markdownScrollView.contentLayoutGuide.trailingAnchor, constant: -16
+            ),
+
             imageView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
             imageView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
@@ -161,6 +214,41 @@ final class FileContentViewController: UIViewController {
         wrapsText.toggle()
         wrapItem.title = wrapsText ? "不换行" : "自动换行"
         fileTextView.setWrapping(wrapsText)
+        markdownScrollView.showsHorizontalScrollIndicator = !wrapsText
+        updateMarkdownWidth()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if !markdownScrollView.isHidden { updateMarkdownWidth() }
+    }
+
+    private func updateMarkdownWidth() {
+        guard markdownWidthConstraint != nil else { return }
+        let viewport = max(markdownScrollView.bounds.width - 32, 1)
+        let target = wrapsText ? viewport : max(viewport, markdownNaturalWidth)
+        if abs(markdownWidthConstraint.constant - target) > 0.5 {
+            markdownWidthConstraint.constant = target
+        }
+    }
+
+    /// Rough natural width of the rendered document: the widest source line,
+    /// measured with both the body and code fonts (whichever is wider).
+    private static func measureMarkdownWidth(_ text: String) -> CGFloat {
+        let fonts = [
+            Typography.body,
+            Typography.code,
+            UIFontMetrics(forTextStyle: .title1)
+                .scaledFont(for: .systemFont(ofSize: 20, weight: .bold)),
+        ]
+        var widest: CGFloat = 0
+        for line in text.components(separatedBy: "\n") where !line.isEmpty {
+            for font in fonts {
+                widest = max(widest, (line as NSString).size(withAttributes: [.font: font]).width)
+            }
+        }
+        // Room for list markers, blockquote bars and code-block padding.
+        return ceil(widest) + 56
     }
 
     private func bind() {
@@ -174,6 +262,8 @@ final class FileContentViewController: UIViewController {
     private func render(_ state: FileContentViewModel.State) {
         navigationItem.rightBarButtonItem = nil
         wrapItem.isEnabled = false
+        // Every non-text state hides it; the markdown branch below re-shows it.
+        markdownScrollView.isHidden = true
         // A re-render that still shows the same video must not restart playback.
         if state.content?.isVideo != true {
             stopPlayback()
@@ -211,8 +301,18 @@ final class FileContentViewController: UIViewController {
             loadingStack.isHidden = true
 
             imageView.isHidden = true
-            fileTextView.isHidden = false
-            fileTextView.setText(file.content)
+            if showsMarkdown {
+                fileTextView.isHidden = true
+                markdownScrollView.isHidden = false
+                markdownView.update(markdown: file.content)
+                markdownNaturalWidth = Self.measureMarkdownWidth(file.content)
+                markdownScrollView.showsHorizontalScrollIndicator = !wrapsText
+                updateMarkdownWidth()
+                markdownScrollView.setContentOffset(.zero, animated: false)
+            } else {
+                fileTextView.isHidden = false
+                fileTextView.setText(file.content)
+            }
             navigationItem.rightBarButtonItem = wrapItem
             wrapItem.isEnabled = true
 

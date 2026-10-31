@@ -1,3 +1,4 @@
+import PabootMarkdownUI
 import UIKit
 
 /// Design tokens from `docs/ui/shared/design-principles.md` §4.1.
@@ -69,6 +70,7 @@ enum Theme {
 
     /// Appearance proxies for bars created later (for example pushed screens).
     static func applyGlobalAppearance() {
+
         let tab = tabBarAppearance()
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
@@ -77,5 +79,63 @@ enum Theme {
         UINavigationBar.appearance().standardAppearance = navigation
         UINavigationBar.appearance().scrollEdgeAppearance = navigation
         UINavigationBar.appearance().compactAppearance = navigation
+    }
+}
+
+/// Shared MarkdownUI styles: the chat transcript (app theme) and the dark file
+/// viewer (editor palette, so a README matches the surrounding code chrome).
+enum AppMarkdownStyle {
+    static func transcript() -> MarkdownUIStyle {
+        MarkdownUIStyle(
+            bodyFont: Typography.body,
+            headingFonts: [
+                UIFontMetrics(forTextStyle: .title1)
+                    .scaledFont(for: .systemFont(ofSize: 20, weight: .bold)),
+                UIFontMetrics(forTextStyle: .title2)
+                    .scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .title3)
+                    .scaledFont(for: .systemFont(ofSize: 15, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .headline)
+                    .scaledFont(for: .systemFont(ofSize: 14, weight: .semibold)),
+            ],
+            codeFont: Typography.code,
+            textColor: Theme.Colors.textPrimary,
+            secondaryTextColor: Theme.Colors.textSecondary,
+            codeBackgroundColor: Theme.Colors.codeBackground,
+            surfaceColor: Theme.Colors.surface2,
+            borderColor: Theme.Colors.border,
+            accentColor: Theme.Colors.primary,
+            codeKeywordColor: Theme.Colors.primary,
+            codeStringColor: Theme.Colors.success,
+            codeNumberColor: Theme.Colors.warning,
+            codeCommentColor: Theme.Colors.textMuted
+        )
+    }
+
+    static func fileContent() -> MarkdownUIStyle {
+        MarkdownUIStyle(
+            bodyFont: Typography.body,
+            headingFonts: [
+                UIFontMetrics(forTextStyle: .title1)
+                    .scaledFont(for: .systemFont(ofSize: 20, weight: .bold)),
+                UIFontMetrics(forTextStyle: .title2)
+                    .scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .title3)
+                    .scaledFont(for: .systemFont(ofSize: 15, weight: .semibold)),
+                UIFontMetrics(forTextStyle: .headline)
+                    .scaledFont(for: .systemFont(ofSize: 14, weight: .semibold)),
+            ],
+            codeFont: Typography.code,
+            textColor: Theme.Editor.text,
+            secondaryTextColor: Theme.Editor.muted,
+            codeBackgroundColor: Theme.Editor.hunkBackground,
+            surfaceColor: Theme.Editor.hunkBackground,
+            borderColor: Theme.Editor.divider,
+            accentColor: Theme.Editor.hunk,
+            codeKeywordColor: Theme.Editor.hunk,
+            codeStringColor: Theme.Editor.added,
+            codeNumberColor: Theme.Editor.deleted,
+            codeCommentColor: Theme.Editor.muted
+        )
     }
 }

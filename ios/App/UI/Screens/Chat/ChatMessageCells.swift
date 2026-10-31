@@ -334,7 +334,7 @@ final class ChatTextBlockView: ChatBlockView {
     private var pendingRender: DispatchWorkItem?
     private var lastRenderTime: TimeInterval = 0
     private lazy var documentView: MarkdownUIView = {
-        let view = MarkdownUIView(style: Self.markdownStyle())
+        let view = MarkdownUIView(style: AppMarkdownStyle.transcript())
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -406,33 +406,6 @@ final class ChatTextBlockView: ChatBlockView {
         // Re-query the row height, but never animate a streamed sample: that height
         // animation on every tick is what makes the transcript shimmer.
         notifyEnclosingTableHeightChanged(animated: false)
-    }
-
-    private static func markdownStyle() -> MarkdownUIStyle {
-        MarkdownUIStyle(
-            bodyFont: Typography.body,
-            headingFonts: [
-                UIFontMetrics(forTextStyle: .title1)
-                    .scaledFont(for: .systemFont(ofSize: 20, weight: .bold)),
-                UIFontMetrics(forTextStyle: .title2)
-                    .scaledFont(for: .systemFont(ofSize: 17, weight: .semibold)),
-                UIFontMetrics(forTextStyle: .title3)
-                    .scaledFont(for: .systemFont(ofSize: 15, weight: .semibold)),
-                UIFontMetrics(forTextStyle: .headline)
-                    .scaledFont(for: .systemFont(ofSize: 14, weight: .semibold)),
-            ],
-            codeFont: Typography.code,
-            textColor: Theme.Colors.textPrimary,
-            secondaryTextColor: Theme.Colors.textSecondary,
-            codeBackgroundColor: Theme.Colors.codeBackground,
-            surfaceColor: Theme.Colors.surface2,
-            borderColor: Theme.Colors.border,
-            accentColor: Theme.Colors.primary,
-            codeKeywordColor: Theme.Colors.primary,
-            codeStringColor: Theme.Colors.success,
-            codeNumberColor: Theme.Colors.warning,
-            codeCommentColor: Theme.Colors.textMuted
-        )
     }
 
     deinit {
