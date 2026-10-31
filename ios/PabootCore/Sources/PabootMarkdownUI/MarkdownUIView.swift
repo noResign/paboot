@@ -197,7 +197,9 @@ public final class MarkdownUIView: UIView {
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        var index = 1
+        // Honor the source's first number: a list that continues from 4 must not
+        // restart at 1. `startIndex` is nil when the source starts at 1.
+        var index = ordered ? ((list as? OrderedList)?.startIndex ?? 1) : 1
         for item in list.children {
             let marker = UILabel()
             marker.font = style.bodyFont
@@ -205,6 +207,9 @@ public final class MarkdownUIView: UIView {
             marker.text = ordered ? "\(index)." : "•"
             marker.translatesAutoresizingMaskIntoConstraints = false
             marker.setContentHuggingPriority(.required, for: .horizontal)
+            // A wide sibling (table / long code line) used to squeeze the marker
+            // below "1." and drop the number glyph.
+            marker.setContentCompressionResistancePriority(.required, for: .horizontal)
 
             let content = MarkdownUIView(style: style)
             content.render(Array(item.children))

@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -51,11 +52,13 @@ import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.mikepenz.markdown.compose.LocalMarkdownColors
 import com.mikepenz.markdown.compose.LocalMarkdownDimens
+import com.mikepenz.markdown.compose.LocalOrderedListHandler
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.BulletHandler
 import com.mikepenz.markdown.model.markdownAnimations
 import com.mikepenz.markdown.utils.buildMarkdownAnnotatedString
 import kotlinx.coroutines.delay
@@ -77,17 +80,31 @@ internal fun TextBlock(text: String, streaming: Boolean) {
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Markdown(
-            content = content,
-            colors = chatMarkdownColors(),
-            typography = chatMarkdownTypography(),
-            // 默认会给内容挂 animateContentSize()，流式下每 200ms 触发一次尺寸动画，看起来一直在闪
-            animations = markdownAnimations(animateTextSize = { this }),
-            components = components,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        )
+        // 库默认把有序列表重新从 1 编号。这里回显源码里的序号，这样从 4. 接着写的
+        // 列表不会变成 1./2.；缺 marker 时再退回自增序号。
+        val orderedListHandler = remember {
+            BulletHandler { _, bullet, index ->
+                val marker = bullet?.toString()?.trim().orEmpty()
+                when {
+                    marker.isEmpty() -> "${index + 1}. "
+                    marker.endsWith(".") || marker.endsWith(")") -> "$marker "
+                    else -> "$marker. "
+                }
+            }
+        }
+        CompositionLocalProvider(LocalOrderedListHandler provides orderedListHandler) {
+            Markdown(
+                content = content,
+                colors = chatMarkdownColors(),
+                typography = chatMarkdownTypography(),
+                // 默认会给内容挂 animateContentSize()，流式下每 200ms 触发一次尺寸动画，看起来一直在闪
+                animations = markdownAnimations(animateTextSize = { this }),
+                components = components,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
     }
 }
 
