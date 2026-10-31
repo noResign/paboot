@@ -9,6 +9,7 @@ final class DiffViewController: UIViewController {
     private var cancellables = Set<AnyCancellable>()
 
     private let bannerLabel = UILabel()
+    private let bannerContainer = UIView()
     private let contentContainer = UIView()
     private let textView = UITextView()
     private let splitView = SplitDiffView()
@@ -70,7 +71,18 @@ final class DiffViewController: UIViewController {
         bannerLabel.font = Typography.caption
         bannerLabel.textColor = Theme.Colors.warning
         bannerLabel.numberOfLines = 0
-        bannerLabel.isHidden = true
+        bannerLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // The diff panel is edge-to-edge; only the note keeps a page margin.
+        bannerContainer.translatesAutoresizingMaskIntoConstraints = false
+        bannerContainer.isHidden = true
+        bannerContainer.addSubview(bannerLabel)
+        NSLayoutConstraint.activate([
+            bannerLabel.topAnchor.constraint(equalTo: bannerContainer.topAnchor),
+            bannerLabel.bottomAnchor.constraint(equalTo: bannerContainer.bottomAnchor),
+            bannerLabel.leadingAnchor.constraint(equalTo: bannerContainer.leadingAnchor, constant: Spacing.md),
+            bannerLabel.trailingAnchor.constraint(equalTo: bannerContainer.trailingAnchor, constant: -Spacing.md),
+        ])
 
         textView.isEditable = false
         textView.isSelectable = true
@@ -80,14 +92,10 @@ final class DiffViewController: UIViewController {
         textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 24, right: 12)
         textView.textContainer.lineFragmentPadding = 0
         textView.font = Typography.code
-        textView.layer.cornerRadius = Radius.card
-        textView.clipsToBounds = true
         textView.adjustsFontForContentSizeCategory = true
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.isHidden = true
 
-        splitView.layer.cornerRadius = Radius.card
-        splitView.clipsToBounds = true
         splitView.translatesAutoresizingMaskIntoConstraints = false
         splitView.isHidden = true
 
@@ -95,7 +103,7 @@ final class DiffViewController: UIViewController {
         contentContainer.addSubview(textView)
         contentContainer.addSubview(splitView)
 
-        let stack = UIStackView(arrangedSubviews: [bannerLabel, contentContainer])
+        let stack = UIStackView(arrangedSubviews: [bannerContainer, contentContainer])
         stack.axis = .vertical
         stack.spacing = Spacing.xs
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -120,13 +128,10 @@ final class DiffViewController: UIViewController {
         view.addSubview(stateContainer)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: Spacing.xs),
-            stack.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -Spacing.xs
-            ),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Spacing.md),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Spacing.md),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
             textView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
             textView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
@@ -217,7 +222,7 @@ final class DiffViewController: UIViewController {
             notes.append("旧路径：\(oldPath)")
         }
         bannerLabel.text = notes.joined(separator: " · ")
-        bannerLabel.isHidden = notes.isEmpty
+        bannerContainer.isHidden = notes.isEmpty
 
         applyModeVisibility()
     }
@@ -225,7 +230,7 @@ final class DiffViewController: UIViewController {
     private func hideDiffContent() {
         textView.isHidden = true
         splitView.isHidden = true
-        bannerLabel.isHidden = true
+        bannerContainer.isHidden = true
     }
 
     private func applyModeVisibility() {
