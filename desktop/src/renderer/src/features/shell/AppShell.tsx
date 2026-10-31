@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import { fallbackWorkspaceId, initialWorkspaceId, visibleWorkspaces, workspaceLabel } from '../../store/workspaceList';
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
+import { lastSessionKey, readLastSession, writeLastSession } from '../../store/lastSession';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { ASIDE_MIN, useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
@@ -187,6 +188,34 @@ export function AppShell() {
   useEffect(() => {
     if (workspaceId) writeLastWorkspace(workspaceIdentity, workspaceId);
   }, [workspaceId, workspaceIdentity]);
+
+  const sessionMemoryKey = lastSessionKey(workspaceIdentity, workspaceId || null);
+  /** Restore at most once per workspace visit — a manual "new session" must not be undone. */
+  const restoredSessionKey = useRef<string | null>(null);
+
+  // Remember the open session per workspace, so switching hosts restores it.
+  useEffect(() => {
+    if (!sessionMemoryKey || !selectedId) return;
+    writeLastSession(sessionMemoryKey, selectedId);
+  }, [sessionMemoryKey, selectedId]);
+
+  // Restore only after the workspace's list actually arrived: opening a stale id
+  // would show an empty chat, and the selection would then be written back.
+  useEffect(() => {
+    if (!connectionId || !sessionMemoryKey || selectedId) return;
+    if (scope.loading || sessions.length === 0) return;
+    if (restoredSessionKey.current === sessionMemoryKey) return;
+    restoredSessionKey.current = sessionMemoryKey;
+    const remembered = readLastSession(sessionMemoryKey);
+    if (!remembered) return;
+    if (!sessions.some((session) => session.id === remembered)) {
+      writeLastSession(sessionMemoryKey, null);
+      return;
+    }
+    setPage('chat');
+    setSelectedId(remembered);
+    void openSession(connectionId, remembered);
+  }, [connectionId, sessionMemoryKey, selectedId, scope.loading, sessions, openSession]);
 
   // The chosen workspace can disappear under us (deleted from the 工作区 page, or
   // by another device) — fall back rather than showing an empty rail forever.
@@ -376,6 +405,9 @@ export function AppShell() {
     }
     if (connectionId) dropSession(connectionId, id);
     if (selectedId === id) setSelectedId(null);
+    if (sessionMemoryKey && readLastSession(sessionMemoryKey) === id) {
+      writeLastSession(sessionMemoryKey, null);
+    }
     setToast('会话已删除');
   }
 

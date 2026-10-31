@@ -10,11 +10,14 @@ interface Options {
 
 export interface StickToBottom {
   ref: React.RefObject<HTMLDivElement | null>;
-  /** True while the user has scrolled away from the bottom. */
+  /** True while the user is scrolling away from the bottom (fades out after a pause). */
   showJump: boolean;
   jumpToBottom(): void;
   onScroll(): void;
 }
+
+/** The affordance is a hint, not a permanent toolbar: hide it once scrolling stops. */
+const JUMP_HIDE_MS = 3000;
 
 /**
  * Keeps the transcript pinned to the bottom while a run streams — unless the
@@ -29,6 +32,16 @@ export function useStickToBottom({ resetKey, signature }: Options): StickToBotto
   const ref = useRef<HTMLDivElement | null>(null);
   const following = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const hideTimer = useRef<number | null>(null);
+
+  const clearHideTimer = useCallback(() => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearHideTimer, [clearHideTimer]);
 
   const scrollToBottom = useCallback(() => {
     const element = ref.current;
@@ -40,8 +53,9 @@ export function useStickToBottom({ resetKey, signature }: Options): StickToBotto
   useEffect(() => {
     following.current = true;
     setShowJump(false);
+    clearHideTimer();
     scrollToBottom();
-  }, [resetKey, scrollToBottom]);
+  }, [resetKey, scrollToBottom, clearHideTimer]);
 
   useEffect(() => {
     if (!following.current) return;
@@ -53,14 +67,26 @@ export function useStickToBottom({ resetKey, signature }: Options): StickToBotto
     if (!element) return;
     const near = isNearBottom(element);
     following.current = near;
-    setShowJump((current) => (current === !near ? current : !near));
-  }, []);
+    clearHideTimer();
+    if (near) {
+      setShowJump(false);
+      return;
+    }
+    setShowJump(true);
+    // Momentum scrolling emits events continuously, so every event restarts the
+    // countdown; only a real pause hides the button.
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null;
+      setShowJump(false);
+    }, JUMP_HIDE_MS);
+  }, [clearHideTimer]);
 
   const jumpToBottom = useCallback(() => {
     following.current = true;
+    clearHideTimer();
     setShowJump(false);
     scrollToBottom();
-  }, [scrollToBottom]);
+  }, [scrollToBottom, clearHideTimer]);
 
   return { ref, showJump, jumpToBottom, onScroll };
 }
