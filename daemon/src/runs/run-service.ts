@@ -54,6 +54,10 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
 
   ctx.db.touchWorkspace(workspace.id);
   ctx.db.addMessage(session.id, 'user', prompt);
+  // Bump recency when the run starts, not only when it ends: the session list
+  // is ordered by last_active_at, so waiting for a long run to finish would
+  // leave the session buried mid-list while it is clearly the active one.
+  ctx.db.touchSession(session.id);
   ctx.db.audit(
     input.trigger === 'user' ? 'chat' : 'scheduled_run',
     JSON.stringify({

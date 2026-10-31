@@ -195,4 +195,25 @@ describe('chat lifecycle serialization', () => {
     expect(text.match(/"terminal":true/g)).toHaveLength(1);
     expect(db.listRuns('s')[0].status).toBe('succeeded');
   });
+
+  it('bumps session recency when the run starts, not only when it ends', async () => {
+    const { post, outcome, db, start } = await setup();
+    const cwd = db.getSession('s')!.cwd;
+    const workspaceId = db.getDefaultWorkspace()!.id;
+
+    // A newer session sits above `s` until `s` actually starts a run.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const other = db.createSession({ id: 'other', runtime: 'claude', workspaceId, permissionMode: 'ask', cwd });
+    expect(other.last_active_at).toBeGreaterThan(db.getSession('s')!.last_active_at);
+
+    const pending = post('recency');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+
+    // Still running (the driver promise has not settled), yet `s` is on top.
+    expect(db.listSessions()[0].id).toBe('s');
+    expect(db.getSession('s')!.last_active_at).toBeGreaterThan(other.last_active_at);
+
+    outcome.resolve(finished);
+    await (await pending).text();
+  });
 });
