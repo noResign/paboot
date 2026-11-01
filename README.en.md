@@ -14,14 +14,14 @@
 </div>
 
 **Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code, Codex and DeepSeek Harness today).**
-**Your data always stays on your computer**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
+**Your data always stays on your own machine**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
 
-- **One client for all your agents** — Claude Code, Codex and DeepSeek Harness today. Adding a new
-  agent does not touch the clients.
+- **One client for all your agents** — Claude Code, Codex and DeepSeek Harness today.
 - **Three clients, one system, each native** — Android, iOS and desktop share one protocol and one
   design system, operate on the same sessions, and are each implemented natively.
-- **Your data stays on your machine** — agents use your environment, tools, configs and skills;
-  everything stays on your computer, and paboot itself needs no account and collects no data.
+- **Your data stays on your own machine** — agents use that machine's environment, tools, configs
+  and skills; everything stays on your computer or the server you deploy, and paboot itself needs
+  no account and collects no data.
 - **Disconnects do not stop runs** — a run is decoupled from its connection: locking the phone,
   switching apps or losing the network does not stop the work, and you pick it up where you left off.
 - **Approval stays in your hands** — per-session `ask` / `acceptEdits` / `bypass`; deny by default,
@@ -33,12 +33,17 @@
 - **See and roll back every change** — Git changes, per-file diffs, the directory tree and
   text / image / video previews without leaving the conversation; every run keeps a checkpoint
   snapshot, and desktop can roll back to any of them.
+- **Front-end / back-end separation, deploy anywhere** — the clients and the daemon are separate.
+  The daemon runs anywhere via npm / Docker — any computer or server — so you can build your own
+  control matrix.
+
 
 ## Quick start
 
 ### 0. Prerequisites
 
-paboot drives Claude Code, Codex and DeepSeek Harness today — install and configure at least one of them:
+paboot drives Claude Code, Codex and DeepSeek Harness today — install and configure at least one of
+them **on the machine that runs the daemon**:
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
@@ -48,12 +53,30 @@ paboot drives Claude Code, Codex and DeepSeek Harness today — install and conf
 > provide model credentials through the `DEEPSEEK_API_KEY` environment variable, or fill them in
 > under **Settings → Models** in `dsh web`.
 
-### 1. Server
+### 1. Desktop (recommended: it can run the daemon itself)
+
+Install an installer from the [releases](https://github.com/noResign/paboot/releases) page and open
+it. The desktop app ships a daemon runtime: if no daemon is running, it starts one automatically
+(auto-start can be turned off in Settings), so **you do not need Node / npm**.
+
+- After connecting, add or switch working directories under **Settings → Workspaces**; a local
+  daemon defaults to the built-in fallback workspace `~/.paboot/defaultworkspace`;
+- Android / iOS on the same network can connect to that daemon too: use the LAN address shown by the
+  desktop app and the token at `~/.paboot/token`.
+
+
+### 2. Standalone daemon (any computer or server)
+
+The daemon is a headless back end exposed over HTTP/SSE, so it can live on any machine and serve any
+client.
+
+**npm**
 
 ```bash
 npm install -g @noresign/paboot      # the global command is `paboot`
 
-paboot  # the working directory defaults to where you launch it
+paboot --workspace /path/to/your/project
+# without --workspace the default workspace is ~/.paboot/defaultworkspace
 ```
 
 - The token is persisted at `~/.paboot/token` (delete the file to rotate); pass
@@ -61,37 +84,24 @@ paboot  # the working directory defaults to where you launch it
 - Full flags, configuration, and the HTTP/SSE API live in
   [daemon/README.md](daemon/README.md)
 
-### 2. Clients
-
-**Installers are available on the [releases](https://github.com/noResign/paboot/releases) page**
-
-**(1) android**
-
-Open `android/` in Android Studio, pick a flavor and Run. The command-line equivalent:
+**Docker**
 
 ```bash
-cd android
-./gradlew :app:assembleAlphaDebug
+cd daemon
+PABOOT_UID=$(id -u) PABOOT_GID=$(id -g) docker compose up -d --build
+
+# the image ships no agent CLI — install the one you use
+docker exec -it paboot npm i -g @anthropic-ai/claude-code
+docker compose restart daemon
 ```
 
-Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
-`android/keystore.properties`. Module layout and signing notes live in
-[android/README.md](android/README.md).
+- Token: `docker exec paboot cat /home/paboot/.paboot/token`
+- Mounting a host project, authentication and publishing the image: see
+  [daemon/docs/docker.md](daemon/docs/docker.md)
 
-**(2) ios**
+### 3. Build clients from source
 
-Requires macOS + Xcode 15+ (iOS 17 SDK). Open `ios/paboot.xcodeproj` in Xcode and Run; the
-command-line equivalent:
-
-```bash
-cd ios
-xcodebuild -project paboot.xcodeproj -scheme paboot \
-  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
-```
-
-Module layout and the pure-logic tests (`ios/PabootCore`) live in [ios/README.md](ios/README.md).
-
-**(3) desktop**
+**(1) desktop**
 
 The desktop build runs the daemon's tsc to generate the protocol types, so install both sides'
 dependencies first:
@@ -112,8 +122,32 @@ pnpm dist:linux      # or dist:mac / dist:windows
 
 Commands and build details live in [desktop/README.md](desktop/README.md).
 
+**(2) android**
 
-### 3. Connecting from outside your LAN (optional)
+Open `android/` in Android Studio, pick a flavor and Run. The command-line equivalent:
+
+```bash
+cd android
+./gradlew :app:assembleAlphaDebug
+```
+
+Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
+`android/keystore.properties`. Module layout and signing notes live in
+[android/README.md](android/README.md).
+
+**(3) ios**
+
+Open `ios/paboot.xcodeproj` in Xcode and Run; the command-line equivalent:
+
+```bash
+cd ios
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
+```
+
+Module layout and the pure-logic tests (`ios/PabootCore`) live in [ios/README.md](ios/README.md).
+
+### 4. Connecting from outside your LAN (optional)
 
 By default the daemon only listens on your LAN. To reach it from the internet, two
 common approaches:

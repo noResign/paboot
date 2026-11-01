@@ -14,24 +14,27 @@
 </div>
 
 **多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code、Codex 与 DeepSeek Harness）**
-**数据始终在电脑上**，手机和桌面可操纵同一份会话，断连不影响任务，重连自动续上。
+**数据始终在你自己的机器上**，手机和桌面端可操纵同一份会话，断连不影响任务，重连自动续上。
 
 - **一个客户端，操纵所有 agent** —— 已接入 Claude Code、Codex 与 DeepSeek Harness。
-  接新的 agent 不用改客户端。
 - **三端同源，原生实现** —— Android / iOS / 桌面共用一份协议和一套设计规范，操作的是同一份会话，且各自原生实现。
-- **数据在你自己电脑上** —— agent 用你本机的环境、工具、配置和技能；数据始终在你电脑上，paboot 自己不要账号，也不收集任何数据。
+- **数据在你自己的机器上** —— agent 用本机的环境、工具、配置和技能；数据始终在你自己的机器上
+  （本机或你部署的服务器），paboot 自己不要账号，也不收集任何数据。
 - **断线不中断** —— run 与连接解耦：锁屏、切后台、断网都不影响电脑上的任务，回来按接着看。
 - **审批权在你手上** —— 每个会话独立 `ask` / `acceptEdits` / `bypass`；默认拒绝，
   Bash、写文件、MCP 调用会转成手机上的审批卡，超时自动拒绝，只读命令自动放行。
 - **并发多任务，完成自动通知** —— 多个会话、多个 run 并行互不阻塞；人不在会话页时需要审批或跑完会推系统通知。
 - **改动可见可回滚** —— 不离开会话就能看 Git 改动、单文件 diff、目录树和文本 / 图片 / 视频；
   每轮 run 都留 checkpoint 快照，桌面端可回滚到任意一轮。
+- **前后端分离，任意部署** —— 客户端和daemon后端分离设计。daemon后端支持 npm / Docker 部署在任何电脑或服务器上，搭建你自己的操纵矩阵。
+
 
 ## 快速开始
 
 ### 0. 前置
 
-目前 paboot 支持 Claude Code / Codex / DeepSeek Harness，请提前安装并配置至少一种 agent：
+目前 paboot 支持 Claude Code / Codex / DeepSeek Harness，请先在**运行 daemon 的那台机器**上
+安装并配置至少一种 agent：
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
@@ -40,47 +43,50 @@
 > [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：`npm install -g @deepseek-ai/dsh`；模型凭据用
 > `DEEPSEEK_API_KEY` 环境变量，或在 `dsh web` 的「设置 → 模型」里填写。
 
-### 1. Server
+### 1. 桌面端（推荐：桌面端可以直接运行 daemon）
+
+从 [releases](https://github.com/noResign/paboot/releases) 下载安装包并打开。桌面端内置 daemon：
+本机没有正在运行的 daemon 时会自动启动一个（设置里可关闭自动启动），**不需要先装 Node / npm**。
+
+- 连上后在「设置 → 工作区」添加或切换工作目录；本机 daemon 默认使用内置 fallback 工作区
+  `~/.paboot/defaultworkspace`；
+- 同一个局域网里的 Android / iOS 也能连这个 daemon：地址用桌面端显示的局域网地址，token 在
+  `~/.paboot/token`。
+
+
+### 2. 独立部署 daemon（任意电脑 / 服务器）
+
+daemon 是无界面的后端，通过 HTTP/SSE 对外，因此可以装在任意一台机器上，供任意客户端连接。
+
+**npm**
 
 ```bash
 npm install -g @noresign/paboot      # 全局命令名是 paboot
 
-paboot  # 工作目录默认取命令启动的目录
+paboot --workspace /path/to/your/project
+# 不传 --workspace 时，默认工作区是 ~/.paboot/defaultworkspace
 ```
 
 - token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 自己指定
 - 完整参数、配置项与 HTTP/SSE 接口见 [daemon/README.md](daemon/README.md)
 
-### 2. 客户端
-
-**[release](https://github.com/noResign/paboot/releases) 页面直接下载安装包**
-
-**(1) android**
-
-用 Android Studio 打开 `android/` 选 flavor 后直接 Run。命令行等价于：
+**Docker**
 
 ```bash
-cd android
-./gradlew :app:assembleAlphaDebug
+cd daemon
+PABOOT_UID=$(id -u) PABOOT_GID=$(id -g) docker compose up -d --build
+
+# 镜像不含 agent CLI，用哪个装哪个
+docker exec -it paboot npm i -g @anthropic-ai/claude-code
+docker compose restart daemon
 ```
 
-两个通道：`alphaDebug`（测试）与 `prodDebug`（正式）；正式签名需要
-`android/keystore.properties`。模块划分与签名说明见
-[android/README.md](android/README.md)。
+- token：`docker exec paboot cat /home/paboot/.paboot/token`
+- 挂载宿主机项目、认证、发布镜像等完整说明见 [daemon/docs/docker.md](daemon/docs/docker.md)
 
-**(2) ios**
+### 3. 从源码构建客户端
 
-需要 macOS + Xcode 15+（iOS 17 SDK）。用 Xcode 打开 `ios/paboot.xcodeproj` 直接 Run；命令行等价于：
-
-```bash
-cd ios
-xcodebuild -project paboot.xcodeproj -scheme paboot \
-  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
-```
-
-模块划分与纯逻辑测试（`ios/PabootCore`）见 [ios/README.md](ios/README.md)。
-
-**(3) desktop**
+**(1) desktop**
 
 desktop 构建会用 daemon 的 tsc 生成协议类型，所以先把两边依赖都装上：
 
@@ -100,8 +106,32 @@ pnpm dist:linux      # 或 dist:mac / dist:windows
 
 命令与构建细节见 [desktop/README.md](desktop/README.md)。
 
+**(2) android**
 
-### 3. 手机电脑不在同一个局域网（可选）
+用 Android Studio 打开 `android/` 选 flavor 后直接 Run。命令行等价于：
+
+```bash
+cd android
+./gradlew :app:assembleAlphaDebug
+```
+
+两个通道：`alphaDebug`（测试）与 `prodDebug`（正式）；正式签名需要
+`android/keystore.properties`。模块划分与签名说明见
+[android/README.md](android/README.md)。
+
+**(3) ios**
+
+用 Xcode 打开 `ios/paboot.xcodeproj` 直接 Run；命令行等价于：
+
+```bash
+cd ios
+xcodebuild -project paboot.xcodeproj -scheme paboot \
+  -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
+```
+
+模块划分与纯逻辑测试（`ios/PabootCore`）见 [ios/README.md](ios/README.md)。
+
+### 4. 手机电脑不在同一个局域网（可选）
 
 daemon 默认监听局域网，公网连接有以下两种方法：
 
