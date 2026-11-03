@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.noresign.paboot.model.chat.ContentBlock
 import com.noresign.paboot.model.chat.UsageInfo
 import com.noresign.paboot.model.chat.describeToolGroup
+import com.noresign.paboot.ui.markdown.rememberSourceOrderedListHandler
 import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.mikepenz.markdown.compose.LocalMarkdownColors
@@ -58,7 +59,6 @@ import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
-import com.mikepenz.markdown.model.BulletHandler
 import com.mikepenz.markdown.model.markdownAnimations
 import com.mikepenz.markdown.utils.buildMarkdownAnnotatedString
 import kotlinx.coroutines.delay
@@ -80,18 +80,8 @@ internal fun TextBlock(text: String, streaming: Boolean) {
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        // 库默认把有序列表重新从 1 编号。这里回显源码里的序号，这样从 4. 接着写的
-        // 列表不会变成 1./2.；缺 marker 时再退回自增序号。
-        val orderedListHandler = remember {
-            BulletHandler { _, bullet, index ->
-                val marker = bullet?.toString()?.trim().orEmpty()
-                when {
-                    marker.isEmpty() -> "${index + 1}. "
-                    marker.endsWith(".") || marker.endsWith(")") -> "$marker "
-                    else -> "$marker. "
-                }
-            }
-        }
+        // 库默认把有序列表重新从 1 编号；这个 handler 回显源码里的序号。
+        val orderedListHandler = rememberSourceOrderedListHandler()
         CompositionLocalProvider(LocalOrderedListHandler provides orderedListHandler) {
             Markdown(
                 content = content,

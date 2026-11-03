@@ -7,12 +7,15 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -75,10 +79,15 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mikepenz.markdown.compose.LocalOrderedListHandler
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.model.diff.SplitDiffKind
 import com.noresign.paboot.model.diff.parseSplitDiff
@@ -86,6 +95,8 @@ import com.noresign.paboot.network.daemon.dto.ChangedFileDto
 import com.noresign.paboot.network.daemon.dto.FileEntryDto
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.TopBarActionButton
+import com.noresign.paboot.ui.markdown.rememberSourceOrderedListHandler
+import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.viewmodel.DiffUiState
 import com.noresign.paboot.viewmodel.FileBrowserUiState
 import com.noresign.paboot.viewmodel.FileContentUiState
@@ -877,6 +888,7 @@ private fun FileContentScreen(
         is FileContentUiState.Error -> state.path
     }
     var wrap by remember(pathKey) { mutableStateOf(true) }
+    val isMarkdown = isMarkdownPath(pathKey)
     Scaffold(
         topBar = {
             TopAppBar(
@@ -918,7 +930,6 @@ private fun FileContentScreen(
                         contentAlignment = Alignment.Center,
                     ) { Text("暂不支持预览二进制文件", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     else -> {
-                        val lines = remember(content.content) { content.content.split('\n') }
                         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                             if (content.truncated) {
                                 Text(
@@ -936,41 +947,10 @@ private fun FileContentScreen(
                                     .weight(1f)
                                     .background(IdeBackground),
                             ) {
-                                if (wrap) {
-                                    LazyColumn(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
-                                    ) {
-                                        items(lines) { line ->
-                                            Text(
-                                                line,
-                                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                                color = IdeText,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                                            )
-                                        }
-                                    }
+                                if (isMarkdown) {
+                                    FileMarkdownContent(content.content, wrap, bottomOverlayPadding)
                                 } else {
-                                    val maxChars = remember(lines) { lines.maxOfOrNull { it.length } ?: 0 }
-                                    val lineWidth = remember(maxChars) { minOf(maxOf(360.dp, (maxChars * 7).dp), 3200.dp) }
-                                    val horizontalState = rememberScrollState()
-                                    LazyColumn(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
-                                    ) {
-                                        items(lines) { line ->
-                                            Row(modifier = Modifier.horizontalScroll(horizontalState)) {
-                                                Text(
-                                                    line,
-                                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                                    color = IdeText,
-                                                    softWrap = false,
-                                                    maxLines = 1,
-                                                    modifier = Modifier.width(lineWidth).padding(horizontal = 12.dp),
-                                                )
-                                            }
-                                        }
-                                    }
+                                    FileTextContent(content.content, wrap, bottomOverlayPadding)
                                 }
                             }
                         }
@@ -980,6 +960,122 @@ private fun FileContentScreen(
         }
     }
 }
+
+/** 纯文本查看器：等宽，可换行或按最长行横向滚动。 */
+@Composable
+private fun FileTextContent(text: String, wrap: Boolean, bottomOverlayPadding: Dp) {
+    val lines = remember(text) { text.split('\n') }
+    if (wrap) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+        ) {
+            items(lines) { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = IdeText,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                )
+            }
+        }
+    } else {
+        val maxChars = remember(lines) { lines.maxOfOrNull { it.length } ?: 0 }
+        val lineWidth = remember(maxChars) { minOf(maxOf(360.dp, (maxChars * 7).dp), 3200.dp) }
+        val horizontalState = rememberScrollState()
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = bottomOverlayPadding),
+        ) {
+            items(lines) { line ->
+                Row(modifier = Modifier.horizontalScroll(horizontalState)) {
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = IdeText,
+                        softWrap = false,
+                        maxLines = 1,
+                        modifier = Modifier.width(lineWidth).padding(horizontal = 12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Markdown 文件按渲染结果展示；配色沿用文件查看器的 IDE 深色配色。
+ *
+ * 不换行时按源码最长行撑开内容宽度并整体横向滚动，与纯文本查看器 / iOS 的行为一致。
+ */
+@Composable
+private fun FileMarkdownContent(markdown: String, wrap: Boolean, bottomOverlayPadding: Dp) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val viewportWidth = maxWidth
+        val maxChars = remember(markdown) { markdown.lineSequence().maxOfOrNull { it.length } ?: 0 }
+        val sourceWidth = remember(maxChars) { minOf(maxOf(360.dp, (maxChars * 7).dp), 3200.dp) }
+        val contentWidth = if (wrap) viewportWidth else maxOf(viewportWidth, sourceWidth)
+
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .horizontalScroll(rememberScrollState()),
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(contentWidth)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .padding(bottom = bottomOverlayPadding),
+            ) {
+                CompositionLocalProvider(LocalOrderedListHandler provides rememberSourceOrderedListHandler()) {
+                    Markdown(
+                        content = markdown,
+                        colors = fileMarkdownColors(),
+                        typography = fileMarkdownTypography(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun fileMarkdownColors() = markdownColor(
+    text = IdeText,
+    codeText = IdeText,
+    linkText = IdeHunk,
+    inlineCodeText = IdeHunk,
+    codeBackground = IdeHunkBackground,
+    inlineCodeBackground = IdeHunkBackground,
+    dividerColor = IdeDivider,
+    tableText = IdeText,
+    tableBackground = IdeHunkBackground,
+)
+
+@Composable
+private fun fileMarkdownTypography() = markdownTypography(
+    h1 = MaterialTheme.typography.titleMedium.copy(color = IdeText, fontWeight = FontWeight.Bold),
+    h2 = MaterialTheme.typography.titleMedium.copy(color = IdeText, fontWeight = FontWeight.Bold),
+    h3 = MaterialTheme.typography.titleSmall.copy(color = IdeText, fontWeight = FontWeight.SemiBold),
+    h4 = MaterialTheme.typography.bodyMedium.copy(color = IdeText, fontWeight = FontWeight.SemiBold),
+    h5 = MaterialTheme.typography.bodyMedium.copy(color = IdeText, fontWeight = FontWeight.SemiBold),
+    h6 = MaterialTheme.typography.bodyMedium.copy(color = IdeText, fontWeight = FontWeight.SemiBold),
+    text = MaterialTheme.typography.bodyMedium.copy(color = IdeText),
+    paragraph = MaterialTheme.typography.bodyMedium.copy(color = IdeText),
+    ordered = MaterialTheme.typography.bodyMedium.copy(color = IdeText),
+    bullet = MaterialTheme.typography.bodyMedium.copy(color = IdeText),
+    list = MaterialTheme.typography.bodyMedium.copy(color = IdeText),
+    code = CodeBody.copy(color = IdeText),
+    inlineCode = CodeBody,
+    quote = MaterialTheme.typography.bodyMedium.copy(color = IdeMuted),
+    link = MaterialTheme.typography.bodyMedium.copy(
+        color = IdeHunk,
+        textDecoration = TextDecoration.Underline,
+    ),
+)
 
 @Composable
 private fun ErrorContent(message: String, onRetry: () -> Unit) {
@@ -1309,6 +1405,11 @@ private fun diffLineColor(line: String): Color = when {
 }
 
 private fun fileName(path: String): String = path.substringAfterLast('/').ifBlank { path }
+
+private fun isMarkdownPath(path: String): Boolean {
+    val ext = path.substringAfterLast('.', "").lowercase()
+    return ext == "md" || ext == "markdown"
+}
 
 /**
  * 改动行的目录前缀：只保留最后 [segments] 级 —— 前面的层级各行都在重复、信息量低，

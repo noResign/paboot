@@ -1,10 +1,15 @@
 import { formatBytes } from '../../../../shared/format';
+import { Markdown } from '../chat/Markdown';
 import type { FileContentDto } from '../../../../shared/contract';
+
+const MARKDOWN_FILE = /\.(md|markdown)$/i;
 
 /**
  * The text viewer. Binary and >1 MiB files are deliberately not previewed —
  * the daemon caps `content` at `MAX_CONTENT_BYTES` and flags both, so the client
  * shows size + path instead of a megabyte of mojibake.
+ *
+ * Markdown is rendered instead of shown as source, matching the mobile clients.
  */
 export function FileContent({ file }: { file: FileContentDto }) {
   if (file.binary) {
@@ -18,7 +23,11 @@ export function FileContent({ file }: { file: FileContentDto }) {
       {file.truncated && (
         <div className="fnotice">文件超过 1 MiB，只显示前面部分（共 {formatBytes(file.size)}）。</div>
       )}
-      <pre className="fcode">{file.content}</pre>
+      {MARKDOWN_FILE.test(file.path) ? (
+        <Markdown text={file.content} />
+      ) : (
+        <pre className="fcode">{file.content}</pre>
+      )}
     </>
   );
 }
