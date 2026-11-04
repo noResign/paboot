@@ -69,6 +69,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）；P0.3 只有契约，尚未接线 |
+| `memory/` | P0.5 的 Memory scope 解析 helper（`sessionId` 或显式 `scope`，未知 400）；完整 Memory 见 P4 |
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |
 | `mcp/` | MCP 模块：`injection.ts`（各 runtime 注入参数）、`context.ts` / `types.ts`、`servers/paboot_tasks/`（stdio server + 工具定义）；后续 MCP server 按真实名称建同名目录 |
@@ -96,6 +97,7 @@ daemon/
 │  ├─ permissions/        permissions / permission-mode / tool-grants / command-safety
 │  ├─ context/            ContextAssembler 契约 + 纯函数（顺序 / 去重 / 预算）
 │  ├─ llm/                共享 LLM 层：types / catalog / credentials / registry（adapter 在 P3.1）
+│  ├─ memory/             Memory scope 解析 helper（P4 路由的前置）
 │  ├─ scheduling/         scheduler / schedule / task-config
 │  ├─ mcp/                MCP 模块
 │  │  ├─ injection.ts     各 runtime 的 MCP 注入参数（Claude / Codex / DeepSeek）

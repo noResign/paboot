@@ -3,7 +3,7 @@ import http from 'node:http';
 import https from 'node:https';
 import express, { type Express } from 'express';
 import type { AppContext } from './context.js';
-import { requireAuth } from '../http/auth.js';
+import { requireAuth, requireRolePolicy } from '../http/auth.js';
 import { corsMiddleware } from '../http/cors.js';
 import { registerHealthRoutes } from '../routes/health.js';
 import { registerAgentRoutes } from '../routes/agent.js';
@@ -36,8 +36,11 @@ export function createApp(ctx: AppContext): Express {
     requireAuth(ctx.config.token, {
       maxFailures: ctx.config.authMaxFailures,
       lockoutMs: ctx.config.authLockoutMs,
+      agentToken: ctx.config.agentToken,
+      serverToken: ctx.config.serverToken,
     }),
   );
+  app.use('/api', requireRolePolicy());
   registerAgentRoutes(app, ctx);
   registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);

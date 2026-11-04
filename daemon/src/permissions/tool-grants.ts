@@ -11,10 +11,11 @@ const MCP_PREFIX = 'mcp__';
 
 /**
  * Servers whose tools must be granted one by one. `paboot_tasks` is
- * privileged (it can create recurring unattended runs), so "allow all" must
- * not leak to tools added to the server later.
+ * privileged (it can create recurring unattended runs); capability / memory
+ * are self-gated and `forget` must always be re-confirmed. "Allow all" must
+ * not leak to tools added to these servers later.
  */
-const EXACT_GRANT_SERVERS = new Set(['paboot_tasks']);
+const EXACT_GRANT_SERVERS = new Set(['paboot_tasks', 'paboot_capability', 'paboot_memory']);
 
 function mcpServer(toolName: string): string | undefined {
   if (!toolName.startsWith(MCP_PREFIX)) return undefined;

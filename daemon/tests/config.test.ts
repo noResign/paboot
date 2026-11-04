@@ -59,6 +59,17 @@ describe('loadConfig', () => {
     expect(config.workspaceSource).toBe('env');
   });
 
+  it('generates distinct ephemeral agent/server tokens (not files)', () => {
+    const dir = tempHome();
+    const config = loadConfig({}, { port: 4780 });
+
+    expect(config.agentToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(config.serverToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(new Set([config.token, config.agentToken, config.serverToken]).size).toBe(3);
+    expect(fs.existsSync(path.join(dir, '.paboot', 'agent_token'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, '.paboot', 'server_token'))).toBe(false);
+  });
+
   it('fixes the data dir at ~/.paboot, and neither the env var nor an override reaches it', () => {
     const dir = tempHome();
     const config = loadConfig({}, { workspace: path.join(dir, 'proj'), port: 4780 });

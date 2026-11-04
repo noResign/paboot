@@ -29,6 +29,18 @@ export interface Config {
   tokenPath: string;
   tokenGenerated: boolean;
   /**
+   * Internal token injected into the agent runtime / permission hook. Not
+   * persisted and never shown to clients: it is read-only for the public API
+   * plus the permission-hook internal endpoints.
+   */
+  agentToken: string;
+  /**
+   * Internal token injected only into MCP server processes (e.g.
+   * paboot_tasks). It can call `/api/internal/*` but nothing public, and is
+   * never present in the agent's own environment.
+   */
+  serverToken: string;
+  /**
    * Where the bearer token came from. Clients read it from `tokenPath`, so they
    * must not do that unless this is `file` — otherwise they would pick up a
    * stale token that a previous run generated (see {@link resolveToken}).
@@ -155,6 +167,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
 
   const { token: resolvedToken, tokenPath, generated, source } = resolveToken(env, dataDir);
   const token = overrides.token ?? resolvedToken;
+  // Internal credentials rotate on every daemon start. They are not files and
+  // not configurable: a long-lived agent token is exactly the leak this split
+  // is meant to avoid. Child processes get the current value at spawn time.
+  const agentToken = randomBytes(32).toString('hex');
+  const serverToken = randomBytes(32).toString('hex');
 
   const host = overrides.host ?? (env.PABOOT_HOST?.trim() || '0.0.0.0');
   const port = overrides.port ?? Number(env.PABOOT_PORT ?? 4780);
@@ -172,6 +189,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,
     tokenSource: overrides.token ? 'flag' : source,
+    agentToken,
+    serverToken,
     permissionMode: overrides.permissionMode ?? resolvePermissionMode(env),
     authMaxFailures: resolveAuthMaxFailures(env),
     authLockoutMs: resolveAuthLockoutMs(env),

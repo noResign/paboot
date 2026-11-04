@@ -26,7 +26,8 @@
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
 | `--workspace <path>` | `~/.paboot/defaultworkspace` | 初始 Workspace 根目录。**显式传入时是权威值**：每次启动都确保该目录存在并设为默认 Workspace |
-| `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
+| `--token <token>` | 自动生成并持久化 | **operator** Bearer token；客户端连接时输入的就是它 |
+| `--print-operator-token` | — | 打印 operator token 后退出；可在 daemon 已运行时使用，不抢数据目录锁 |
 | `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
 | `--env-file <path>` | `./.env` | `.env` 文件路径 |
 | `-h, --help` | — | 帮助 |
@@ -39,7 +40,7 @@
 | `PABOOT_HOST` | `0.0.0.0` | 监听地址 |
 | `PABOOT_PORT` | `4780` | 端口 |
 | `PABOOT_WORKSPACE` | `~/.paboot/defaultworkspace` | 初始 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
-| `PABOOT_TOKEN` | 自动生成 | 鉴权密钥 |
+| `PABOOT_TOKEN` | 自动生成 | operator Bearer token（客户端连接用） |
 | `PABOOT_AUTH_MAX_FAILURES` | `5` | 同一来源连续认证失败多少次后进入冷却；`0` = 关闭冷却 |
 | `PABOOT_AUTH_LOCKOUT_SECONDS` | `60` | 首次冷却时长（秒）；同一来源再次触发翻倍，上限 15 分钟 |
 | `PABOOT_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |
@@ -84,7 +85,22 @@
 | `acceptEdits` | `acceptEdits` | 自动接受文件编辑；Bash 等命令仍询问 |
 | `bypass` | `bypassPermissions` | 完全放开（⚠️ 危险，需用户在手机上明确切换） |
 
-### token 解析顺序
+### token 角色
+
+只有 **operator token** 持久化、展示给用户；另外两个是 daemon 启动时随机生成的内部 token，
+**不落盘、不进日志、不可配置**，每次启动轮换：
+
+| 角色 | 谁用 | 权限 |
+|---|---|---|
+| `operator` | 客户端、本地 CLI、`--print-operator-token` | 全部 `/api/*` |
+| `agent` | agent 运行时 / permission hook（`PABOOT_TOKEN`） | 公共 API 只读（GET/HEAD）+ `/api/internal/permissions/*` |
+| `server` | MCP server 子进程（`PABOOT_TOKEN`） | 仅 `/api/internal/*` |
+
+agent 的 Bash 能读到 agent token，但写公共端点一律 403；server token 只存在 MCP server 的
+环境里，不在 agent 环境里。这不是 OS 沙箱：同用户的进程仍可读数据目录/`providers.json`；
+run-scoped 细粒度 token 留到后续。
+
+### operator token 解析顺序
 
 先由 env 与文件决定「文件里的那个 token」：
 
@@ -99,7 +115,8 @@ env 未设且文件不存在时，第 3 步照样会写入一个本次新生成�
 当前 token 的来源**——`daemon_runtime.json` 的 `tokenSource` 就是给这件事用的：只有 `file`
 才可读该文件；`env` / `flag` 时读到的是旧值或本次新生成的值，拿去用必然 401。
 
-删掉 `<data-dir>/token` 即轮换（下次启动重新生成，前提是没被 env / flag 覆盖）。
+删掉 `<data-dir>/token` 即轮换（下次启动重新生成，前提是没被 env / flag 覆盖）；agent / server
+token 每次启动自动轮换，无需手动处理。
 
 ### 登录失败冷却
 
