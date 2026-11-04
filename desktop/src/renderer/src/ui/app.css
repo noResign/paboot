@@ -3685,9 +3685,6 @@ a.btn {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.rail-dir-row .ws-select {
-  font-size: 11.5px;
-}
 
 .workspace-overview {
   flex: 1;

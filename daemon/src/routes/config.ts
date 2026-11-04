@@ -63,6 +63,10 @@ export function registerConfigRoutes(app: Express, ctx: AppContext): void {
         res.status(404).json({ error: 'workspace not found or disabled', code: 'workspace_not_found' });
         return;
       }
+      if (ws.family === 'life') {
+        res.status(409).json({ error: 'life workspace cannot be the default', code: 'workspace_is_life' });
+        return;
+      }
       if (ws.is_builtin === 1 && ctx.db.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1)) {
         res.status(409).json({ error: 'built-in workspace cannot be default while a real workspace exists', code: 'workspace_is_builtin' });
         return;

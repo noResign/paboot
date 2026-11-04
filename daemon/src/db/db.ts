@@ -28,6 +28,10 @@ export interface SessionRow {
   title: string | null;
   /** `task_config` for the per-workspace AI authoring chat; NULL otherwise. */
   purpose: string | null;
+  /** Primary end; P0 only adds the column, so it stays NULL until S1/S2. */
+  end_id: string | null;
+  /** `normal` | `no_injection` | `off`; P0 only adds the column. */
+  memory_mode: string;
   created_at: number;
   last_active_at: number;
 }
@@ -44,8 +48,27 @@ export interface WorkspaceRow {
    */
   is_builtin: number;
   enabled: number;
+  /** `dev` | `life`; ends must match it (DB trigger in `ends`). */
+  family: string;
+  /** `off` | `portable` | `full`; only meaningful for life, ignored for dev. */
+  profile_mode: string;
+  /** dev only: whether life may read this workspace (default off). */
+  life_readable: number;
   created_at: number;
   last_used_at: number;
+}
+
+/** 工作区里的端；P0 只落表与约束，端 CRUD 留到 S2/S3。 */
+export interface EndRow {
+  id: string;
+  workspace_id: string;
+  family: string;
+  kind: string;
+  name: string;
+  /** draft | active | archived | deleted; the life end is always active. */
+  status: string;
+  created_at: number;
+  archived_at: number | null;
 }
 
 export interface PermissionGrantRow {
@@ -268,6 +291,66 @@ export class Db {
         PRIMARY KEY (workspace_id, path)
       );
 
+      -- 端：family 必须与所属工作区一致；life 工作区只有一个 life 端。
+      -- P0 先把约束落下，端 CRUD 与上下文注入在 S2/S3。
+      CREATE TABLE IF NOT EXISTS ends (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        family TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_at INTEGER NOT NULL,
+        archived_at INTEGER,
+        UNIQUE (workspace_id, name)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_ends_one_life ON ends(workspace_id) WHERE family = 'life';
+      CREATE TRIGGER IF NOT EXISTS ends_family_guard_ins
+      BEFORE INSERT ON ends
+      WHEN NEW.family IS NOT (SELECT family FROM workspaces WHERE id = NEW.workspace_id)
+      BEGIN SELECT RAISE(ABORT, 'end family mismatch'); END;
+      CREATE TRIGGER IF NOT EXISTS ends_family_guard_upd
+      BEFORE UPDATE OF family, workspace_id ON ends
+      WHEN NEW.family IS NOT (SELECT family FROM workspaces WHERE id = NEW.workspace_id)
+      BEGIN SELECT RAISE(ABORT, 'end family mismatch'); END;
+
+      CREATE TABLE IF NOT EXISTS end_roots (
+        end_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (end_id, path)
+      );
+
+      -- 记忆开关按 workspace 一行；端没有独立开关（end 只是标签）。
+      CREATE TABLE IF NOT EXISTS memory_settings (
+        workspace_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        injection_enabled INTEGER NOT NULL DEFAULT 1,
+        provider_override TEXT,
+        updated_at INTEGER NOT NULL
+      );
+
+      -- 提醒 / 删除 outbox（M1/M3 使用；P0 只建表，主库仍是唯一通知链路）。
+      CREATE TABLE IF NOT EXISTS notification_outbox (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        end_id TEXT,
+        loop_id TEXT,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        due_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending',
+        dedup_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        acked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
+        ON notification_outbox (status, due_at);
+      CREATE TABLE IF NOT EXISTS deletion_outbox (
+        workspace_id TEXT PRIMARY KEY,
+        requested_at INTEGER NOT NULL,
+        acked_at INTEGER
+      );
+
       CREATE TABLE IF NOT EXISTS session_permission_grants (
         session_id TEXT NOT NULL,
         tool_name TEXT NOT NULL,
@@ -337,6 +420,11 @@ export class Db {
     );
     this.ensureColumn('runs', 'model_parameters', 'TEXT');
     this.ensureColumn('workspaces', 'is_builtin', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('workspaces', 'family', "TEXT NOT NULL DEFAULT 'dev'");
+    this.ensureColumn('workspaces', 'profile_mode', "TEXT NOT NULL DEFAULT 'portable'");
+    this.ensureColumn('workspaces', 'life_readable', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('sessions', 'end_id', 'TEXT');
+    this.ensureColumn('sessions', 'memory_mode', "TEXT NOT NULL DEFAULT 'normal'");
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
     // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
@@ -527,7 +615,9 @@ export class Db {
       this.setSetting(SEEDED_WORKSPACE_KEY, '1');
     }
 
-    const workspace = this.getDefaultWorkspace() ?? this.listWorkspaces()[0] ?? null;
+    // Never make the builtin life workspace the dev default.
+    const workspace =
+      this.getDefaultWorkspace() ?? this.listWorkspaces().find((w) => w.family === 'dev') ?? null;
     if (workspace && !this.getDefaultWorkspace()) {
       this.setDefaultWorkspace(workspace.id);
     }
@@ -602,7 +692,7 @@ export class Db {
 
   /** A real (non-built-in) workspace the user can actually work in. */
   private hasUserWorkspaces(): boolean {
-    return this.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1);
+    return this.listWorkspaces().some((w) => w.family === 'dev' && w.is_builtin !== 1 && w.enabled === 1);
   }
 
   createWorkspace(input: {
@@ -611,17 +701,26 @@ export class Db {
     path: string;
     isDefault?: boolean;
     isBuiltin?: boolean;
+    family?: 'dev' | 'life';
+    profileMode?: 'off' | 'portable' | 'full';
+    lifeReadable?: boolean;
   }): WorkspaceRow {
     const now = Date.now();
     const id = input.id ?? randomUUID();
     const isDefault = input.isDefault ? 1 : 0;
     const isBuiltin = input.isBuiltin ? 1 : 0;
+    const family = input.family ?? 'dev';
+    if (family === 'life' && isDefault === 1) throw new Error('life workspace cannot be default');
+    // D35: profile_mode defaults to portable and life writes it explicitly; dev ignores it.
+    const profileMode = input.profileMode ?? 'portable';
+    const lifeReadable = input.lifeReadable ? 1 : 0;
     this.db
       .prepare(
-        `INSERT INTO workspaces (id, name, path, is_default, is_builtin, enabled, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+        `INSERT INTO workspaces
+           (id, name, path, is_default, is_builtin, enabled, family, profile_mode, life_readable, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name, input.path, isDefault, isBuiltin, now, now);
+      .run(id, input.name, input.path, isDefault, isBuiltin, family, profileMode, lifeReadable, now, now);
     if (isDefault) this.setDefaultWorkspace(id);
     return this.getWorkspace(id) as WorkspaceRow;
   }
@@ -649,8 +748,11 @@ export class Db {
    */
   listVisibleWorkspaces(): WorkspaceRow[] {
     const all = this.listWorkspaces();
-    const users = all.filter((w) => w.is_builtin !== 1);
-    return users.some((w) => w.enabled === 1) ? users : all;
+    // family=life is a builtin the client must still render (as「生活」); only the
+    // dev fallback disappears once a real dev workspace exists.
+    const devUsers = all.filter((w) => w.family === 'dev' && w.is_builtin !== 1);
+    if (!devUsers.some((w) => w.enabled === 1)) return all;
+    return all.filter((w) => !(w.family === 'dev' && w.is_builtin === 1));
   }
 
   getDefaultWorkspace(): WorkspaceRow | undefined {
@@ -681,7 +783,10 @@ export class Db {
       this.db.prepare(`UPDATE workspaces SET enabled = ? WHERE id = ?`).run(update.enabled ? 1 : 0, id);
       if (!update.enabled && current.is_default === 1) {
         const enabled = this.listWorkspaces().filter((w) => w.id !== id && w.enabled === 1);
-        const next = enabled.find((w) => w.is_builtin !== 1) ?? enabled[0];
+        const next =
+          enabled.find((w) => w.family === 'dev' && w.is_builtin !== 1) ??
+          enabled.find((w) => w.family === 'dev') ??
+          enabled[0];
         if (next) this.setDefaultWorkspace(next.id);
       }
     }
@@ -695,7 +800,94 @@ export class Db {
     this.disableScheduledTasksForWorkspace(id, 'workspace_deleted');
     this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ?`).run(id);
+    // Ends are workspace-owned rows (no FK); clean them up with the workspace.
+    this.db
+      .prepare(`DELETE FROM end_roots WHERE end_id IN (SELECT id FROM ends WHERE workspace_id = ?)`)
+      .run(id);
+    this.db.prepare(`DELETE FROM ends WHERE workspace_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM memory_settings WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
+  }
+
+  // ---- ends (P0: table + constraints; CRUD UI comes with S2/S3) ----
+
+  createEnd(input: {
+    id?: string;
+    workspaceId: string;
+    family: 'dev' | 'life';
+    kind: string;
+    name: string;
+    status?: string;
+  }): EndRow {
+    const id = input.id ?? randomUUID();
+    const now = Date.now();
+    // The family guard trigger raises on a mismatch, so a dev workspace cannot
+    // hold a life end (and vice versa) even from a raw DB write.
+    this.db
+      .prepare(
+        `INSERT INTO ends (id, workspace_id, family, kind, name, status, created_at, archived_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(id, input.workspaceId, input.family, input.kind, input.name, input.status ?? 'draft', now);
+    return this.getEnd(id) as EndRow;
+  }
+
+  getEnd(id: string): EndRow | undefined {
+    return this.db.prepare(`SELECT * FROM ends WHERE id = ?`).get(id) as unknown as EndRow | undefined;
+  }
+
+  listEnds(workspaceId: string): EndRow[] {
+    return this.db
+      .prepare(`SELECT * FROM ends WHERE workspace_id = ? ORDER BY created_at ASC`)
+      .all(workspaceId) as unknown as EndRow[];
+  }
+
+  /**
+   * Register the built-in life workspace and its single `life` end.
+   *
+   * Called once at daemon start. It only creates what is missing, so old
+   * databases need no migration and a second boot is a no-op. `is_builtin=1`
+   * keeps it under the fallback rules, with the client-side exception that
+   * family=life must be rendered as「生活」rather than hidden.
+   */
+  ensureLifeWorkspace(lifePath: string): { workspace: WorkspaceRow; end: EndRow } {
+    fs.mkdirSync(lifePath, { recursive: true });
+    const realPath = fs.realpathSync(path.resolve(lifePath));
+    let workspace = this.db
+      .prepare(`SELECT * FROM workspaces WHERE family = 'life' ORDER BY created_at ASC LIMIT 1`)
+      .get() as unknown as WorkspaceRow | undefined;
+
+    if (!workspace) {
+      workspace = this.createWorkspace({
+        name: '生活',
+        path: realPath,
+        isBuiltin: true,
+        family: 'life',
+        profileMode: 'portable',
+      });
+    } else if (workspace.is_builtin !== 1 || workspace.path !== realPath) {
+      this.db
+        .prepare(`UPDATE workspaces SET is_builtin = 1, path = ? WHERE id = ?`)
+        .run(realPath, workspace.id);
+      workspace = this.getWorkspace(workspace.id) as WorkspaceRow;
+    }
+
+    let end = this.db
+      .prepare(`SELECT * FROM ends WHERE workspace_id = ? AND family = 'life' LIMIT 1`)
+      .get(workspace.id) as unknown as EndRow | undefined;
+    if (!end) {
+      end = this.createEnd({
+        workspaceId: workspace.id,
+        family: 'life',
+        kind: 'life',
+        name: '生活',
+        status: 'active',
+      });
+    } else if (end.status !== 'active') {
+      this.db.prepare(`UPDATE ends SET status = 'active', archived_at = NULL WHERE id = ?`).run(end.id);
+      end = this.getEnd(end.id) as EndRow;
+    }
+    return { workspace, end };
   }
 
   // ---- workspace dirs (额外允许 agent 访问的目录, 工作区级) ----

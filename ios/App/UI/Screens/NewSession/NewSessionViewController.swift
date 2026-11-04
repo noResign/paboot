@@ -189,12 +189,9 @@ final class NewSessionViewController: UIViewController {
 
     private func updateButtons() {
         if let workspace = selectedWorkspace {
-            let title = workspace.isBuiltin
-                ? "内置工作区"
-                : (workspace.name.isEmpty ? workspace.path : workspace.name)
-            workspaceButton.setTitle(title, for: .normal)
+            workspaceButton.setTitle(workspace.displayName, for: .normal)
             workspaceButton.setTitleColor(Theme.Colors.textPrimary, for: .normal)
-            workspaceHintLabel.text = workspace.isBuiltin
+            workspaceHintLabel.text = workspace.isBuiltin && workspace.family != "life"
                 ? "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
                 : "主目录：\(workspace.path)。其他目录会自动作为附加目录。"
             workspaceHintLabel.isHidden = false

@@ -112,8 +112,9 @@ fun WorkspaceManagementScreen(
                 OutlinedButton(onClick = viewModel::load) { Text("重试") }
             }
             is SettingsUiState.Ready -> {
-                // 内置 fallback 仍参与会话/文件的 id 解析，但不是用户可管理的工作区。
-                val shownWorkspaces = state.workspaces.filter { !it.isBuiltin }
+                // 内置 fallback 仍参与会话/文件的 id 解析，但不是用户可管理的工作区；
+                // life 是内置的，但允许改名 / 管目录（不可删 / 停用）。
+                val shownWorkspaces = state.workspaces.filter { it.family == "life" || !it.isBuiltin }
                 if (shownWorkspaces.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize().padding(innerPadding).padding(20.dp),
@@ -146,10 +147,12 @@ fun WorkspaceManagementScreen(
                                     openedId = null
                                     deleteTarget = workspace
                                 },
+                                deletable = workspace.family != "life",
                             ) {
                                 WorkspaceCard(
                                     workspace = workspace,
                                     selected = workspace.id == selectedWorkspaceId,
+                                    canToggleEnabled = workspace.family != "life",
                                     // 滑开时点卡片是「收起」，不是切换当前工作区。
                                     onSelect = {
                                         if (revealed) openedId = null else viewModel.selectWorkspace(workspace.id)
@@ -322,8 +325,13 @@ private fun SwipeRevealCard(
     revealed: Boolean,
     onRevealChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
+    deletable: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    if (!deletable) {
+        content()
+        return
+    }
     val actionWidth = 88.dp
     val actionPx = with(LocalDensity.current) { actionWidth.toPx() }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -377,6 +385,7 @@ private fun SwipeRevealCard(
 private fun WorkspaceCard(
     workspace: WorkspaceDto,
     selected: Boolean,
+    canToggleEnabled: Boolean = true,
     onSelect: () -> Unit,
     onToggleEnabled: () -> Unit,
     onRename: () -> Unit,
@@ -456,8 +465,10 @@ private fun WorkspaceCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 val tight = PaddingValues(horizontal = 4.dp)
-                TextButton(onClick = onToggleEnabled, contentPadding = tight) {
-                    Text(if (workspace.enabled) "禁用" else "启用", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (canToggleEnabled) {
+                    TextButton(onClick = onToggleEnabled, contentPadding = tight) {
+                        Text(if (workspace.enabled) "禁用" else "启用", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 TextButton(onClick = onRename, contentPadding = tight) {
                     Text("重命名", maxLines = 1, overflow = TextOverflow.Ellipsis)

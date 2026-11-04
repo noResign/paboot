@@ -14,8 +14,12 @@
 
 | 表 | 内容 |
 |---|---|
-| `sessions` | 会话：`id`、`runtime`、`kind`（`chat` / `command`，后者是命令任务的隐藏会话）、`native_session_id`、`workspace_id`、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
-| `workspaces` | 工作区**主目录**：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
+| `sessions` | 会话：`id`、`runtime`、`kind`（`chat` / `command`，后者是命令任务的隐藏会话）、`native_session_id`、`workspace_id`、`end_id`（主端，P0 只加列，暂为 `NULL`）、`memory_mode`（默认 `normal`；P0 只加列）、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
+| `workspaces` | 工作区：`id`、`name`、`path`（主目录）、`is_default`、`is_builtin`、`enabled`、`family`（`dev \| life`，默认 `dev`）、`profile_mode`（`off \| portable \| full`，默认 `portable`，仅 life 有意义）、`life_readable`（dev 专用，默认 `0`）、时间戳 |
+| `ends` | 工作区里的端（P0 只落表与约束，CRUD 留到 S2/S3）：`id`、`workspace_id`、`family`（必须等于所属工作区）、`kind`、`name`、`status`、`archived_at`。DB trigger 拒绝 family 不匹配；partial unique index 保证一个工作区只有一个 `family=life` 的端。`end_roots` 存端与目录的绑定 |
+| `end_roots` | 端引用的目录：`(end_id, path)`；life 端不绑定 end_roots（life 工作区的附加目录仍写 `workspace_dirs`，与 dev 同一套授权） |
+| `memory_settings` | 记忆开关按 workspace 一行：`workspace_id`、`enabled`（默认关）、`injection_enabled`、`provider_override`、`updated_at`（M1 使用，P0 建表） |
+| `notification_outbox` / `deletion_outbox` | 提醒 / 删除 outbox（M1/M3 使用，P0 建表；主库仍是唯一通知链路） |
 | `workspace_dirs` | 工作区**附加目录**（agent 可读写、该工作区所有会话继承）：`workspace_id`、`path`、`created_at`；随工作区级联删除 |
 | `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
@@ -37,12 +41,12 @@
 |---|---|---|
 | `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 + `serverId`（见下） |
 | `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置；`workspaces` 与 `defaultWorkspaceId` 都只反映可见工作区 |
-| `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
-| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`）。内置 fallback（`<dataDir>/defaultworkspace`）在存在启用的真实工作区时**不返回**；它是唯一启用的工作区时照常返回（客户端靠它的 id 拉会话/文件，但**不把它渲染成列表行/切换项**） |
+| `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId`（life 工作区不能设为默认，409 `workspace_is_life`） |
+| `GET /api/workspaces` | 是 | 工作区列表（含 `family` / `profileMode` / `lifeReadable`、sessionCount 与附加目录 `dirs`）。dev 内置 fallback（`<dataDir>/defaultworkspace`）在存在启用的真实 dev 工作区时**不返回**；它是唯一启用的 dev 工作区时照常返回（客户端靠它的 id 拉会话/文件，但**不把它渲染成列表行/切换项**）。`family=life` 的内置工作区**始终返回**，客户端必须渲染成「生活」入口（这是 builtin 隐藏规则的唯一例外） |
 | `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区）。第一条真实工作区自动成为默认 |
-| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认。内置 fallback 不可停用，且在存在真实工作区时不可设为默认（409 `workspace_is_builtin`） |
-| `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`。删除默认工作区时先把默认切给另一个启用的真实工作区，没有就切给内置 fallback；内置 fallback 本身不可删（409 `workspace_is_builtin`），因此「零工作区」不可达 |
-| `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」 |
+| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认。dev 内置 fallback 不可停用，且在存在真实工作区时不可设为默认（409 `workspace_is_builtin`）。life 工作区只允许改展示名；停用 / 设为默认 → 409 `workspace_is_life` |
+| `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`。删除默认工作区时先把默认切给另一个启用的真实工作区，没有就切给内置 fallback；内置 fallback 本身不可删（409 `workspace_is_builtin`），因此「零工作区」不可达。life 工作区不可删（409 `workspace_is_life`，只能重置） |
+| `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」。dev / life 都适用 |
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
 | `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |
 | `DELETE /api/workspaces/:id/shortcuts` | 是 | 移除浏览书签，`{path}`；只删书签，不动任何授权 |

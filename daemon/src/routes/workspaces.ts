@@ -14,6 +14,9 @@ function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], sh
     shortcutDirs,
     isDefault: w.is_default === 1,
     isBuiltin: w.is_builtin === 1,
+    family: w.family === 'life' ? 'life' : 'dev',
+    profileMode: w.profile_mode,
+    lifeReadable: w.life_readable === 1,
     enabled: w.enabled === 1,
     sessionCount,
     createdAt: w.created_at,
@@ -82,6 +85,11 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const body = (req.body ?? {}) as { name?: unknown; isDefault?: unknown; enabled?: unknown };
+    // The life workspace is reset-only: allow a display-name change, nothing else.
+    if (workspace.family === 'life' && (body.enabled !== undefined || body.isDefault === true)) {
+      res.status(409).json({ error: 'life workspace is reset-only', code: 'workspace_is_life' });
+      return;
+    }
     // The built-in fallback is not a user choice: keep it enabled, and never let
     // it hold the default while a real workspace exists (clients would be
     // pointed at a workspace they cannot see).
@@ -255,6 +263,10 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     const workspace = ctx.db.getWorkspace(req.params.id);
     if (!workspace) {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    if (workspace.family === 'life') {
+      res.status(409).json({ error: 'life workspace is reset-only', code: 'workspace_is_life' });
       return;
     }
     if (workspace.is_builtin === 1) {

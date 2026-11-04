@@ -9,7 +9,7 @@ import type { NewSessionOptions } from '../../store/chat';
 interface Props {
   workspaceName: string | null;
   workspacePath: string | null;
-  /** No real workspace exists: the built-in fallback is all there is. */
+  /** No real dev workspace exists: the built-in fallback is all there is. */
   onlyFallback: boolean;
   onAddWorkspace(): void;
   onCancel(): void;
@@ -100,7 +100,7 @@ export function NewSessionDialog({
           </div>
           {onlyFallback && (
             <div className="hint">
-              当前只有内置工作区。它只是临时的技术目录，建议先添加一个真实工作区。
+              当前没有自己的开发工作区。内置工作区只是临时的技术目录，建议先添加一个。
               <button className="btn tiny" style={{ marginLeft: 8 }} onClick={onAddWorkspace}>
                 去添加工作区
               </button>

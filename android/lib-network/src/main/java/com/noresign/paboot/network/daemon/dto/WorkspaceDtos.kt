@@ -20,6 +20,12 @@ data class WorkspaceDto(
     val isDefault: Boolean = false,
     /** daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。 */
     val isBuiltin: Boolean = false,
+    /** `dev` | `life`；旧 daemon 不发时按 dev 处理。 */
+    val family: String = "dev",
+    /** `off` | `portable` | `full`；只有 life 有意义。 */
+    val profileMode: String = "portable",
+    /** dev 专用：life 是否可单向读；默认关。 */
+    val lifeReadable: Boolean = false,
     val enabled: Boolean = true,
     val sessionCount: Int = 0,
     val createdAt: Long = 0,

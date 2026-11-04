@@ -11,6 +11,12 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
     public let isDefault: Bool
     /// daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。
     public let isBuiltin: Bool
+    /// `dev` | `life`；旧 daemon 不发时按 dev 处理。
+    public let family: String
+    /// `off` | `portable` | `full`；只有 life 有意义。
+    public let profileMode: String
+    /// dev 专用：life 是否可单向读；默认关。
+    public let lifeReadable: Bool
     public let enabled: Bool
     public let sessionCount: Int
     public let createdAt: Int64
@@ -25,6 +31,9 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
         shortcutDirs = try container.decodeIfPresent([String].self, forKey: .shortcutDirs) ?? []
         isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         isBuiltin = try container.decodeIfPresent(Bool.self, forKey: .isBuiltin) ?? false
+        family = try container.decodeIfPresent(String.self, forKey: .family) ?? "dev"
+        profileMode = try container.decodeIfPresent(String.self, forKey: .profileMode) ?? "portable"
+        lifeReadable = try container.decodeIfPresent(Bool.self, forKey: .lifeReadable) ?? false
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         sessionCount = try container.decodeIfPresent(Int.self, forKey: .sessionCount) ?? 0
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
@@ -33,6 +42,7 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, path, dirs, shortcutDirs, isDefault, isBuiltin, enabled
+        case family, profileMode, lifeReadable
         case sessionCount, createdAt, lastUsedAt
     }
 }

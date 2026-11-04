@@ -30,6 +30,16 @@ struct SessionListModel: Equatable {
     }
 }
 
+extension WorkspaceDto {
+    /// User-facing name: life is always「生活」; the dev fallback hides its
+    /// technical path. Real dev workspaces use their name, then the directory.
+    var displayName: String {
+        if family == "life" { return name.isEmpty ? "生活" : name }
+        if isBuiltin { return "内置工作区" }
+        return name.isEmpty ? path : name
+    }
+}
+
 enum SessionGrouping {
     /// Root sessions older than this move into the "更早" segment.
     static let recentWindowMs: Int64 = 3 * 24 * 60 * 60 * 1000
