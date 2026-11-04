@@ -14,6 +14,9 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
  */
 object PabootClient {
 
+    /** The daemon's default port; kept in step with `parseAddress` on desktop. */
+    private const val DEFAULT_DAEMON_PORT = 4780
+
     private val json = Json { ignoreUnknownKeys = true }
 
     private val baseOkHttpClient: OkHttpClient by lazy {
@@ -24,14 +27,39 @@ object PabootClient {
             .build()
     }
 
-    /** Normalizes user input like `192.168.1.5:4780` into `http://192.168.1.5:4780/`. */
+    /** Normalizes user input like `192.168.1.5` into `http://192.168.1.5:4780/`. */
     fun normalizeBaseUrl(input: String): String {
         var url = input.trim()
-        if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "http://$url"
+        if (url.isNotEmpty()) {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                url = "http://$url"
+            }
+            url = withDefaultPort(url)
+            if (!url.endsWith("/")) url += "/"
         }
-        if (!url.endsWith("/")) url += "/"
         return url
+    }
+
+    /** The daemon's port applies whenever the user did not type one ([v6]:port counts). */
+    private fun withDefaultPort(url: String): String {
+        val authorityStart = url.indexOf("://") + 3
+        if (authorityStart < 3) return url
+        var authorityEnd = url.length
+        for (index in authorityStart until url.length) {
+            if (url[index] == '/' || url[index] == '?' || url[index] == '#') {
+                authorityEnd = index
+                break
+            }
+        }
+        val hostPort = url.substring(authorityStart, authorityEnd).substringAfterLast('@')
+        val hasPort = if (hostPort.startsWith("[")) {
+            val close = hostPort.indexOf(']')
+            close >= 0 && close + 1 < hostPort.length && hostPort[close + 1] == ':'
+        } else {
+            hostPort.contains(':')
+        }
+        if (hasPort) return url
+        return url.substring(0, authorityEnd) + ":$DEFAULT_DAEMON_PORT" + url.substring(authorityEnd)
     }
 
     private val apiCache = mutableMapOf<String, PabootApi>()
