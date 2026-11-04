@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useConnection } from '../../store/connection';
 import { useAppearance } from '../../store/appearance';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
@@ -14,6 +15,21 @@ const TREE_COL_PX = 200;
  * tree takes.)
  */
 const SPLIT_ASIDE_PX = 680;
+
+interface AsideSnapshot {
+  /** Host + workspace: another host/workspace must not inherit paths. */
+  key: string;
+  mode: FileMode;
+  root: string | null;
+  selection: FileSelection | null;
+}
+
+/**
+ * The panel unmounts when it is closed, so its last state lives here. Reopening
+ * restores the mode, root and open file; a different host or workspace has a
+ * different key and starts at 改动 again.
+ */
+let lastAside: AsideSnapshot | null = null;
 
 /**
  * The chat's right panel (`desktop_ui_design.md` §6.8).
@@ -42,9 +58,12 @@ export function ChatAside({
   const width = useAppearance((state) => state.asideWidth);
   const setWidth = useAppearance((state) => state.setAsideWidth);
   const chatVisible = useAppearance((state) => state.chatVisible);
-  const [mode, setMode] = useState<FileMode>('changes');
-  const [root, setRoot] = useState<string | null>(null);
-  const [selection, setSelection] = useState<FileSelection | null>(null);
+  const connectionId = useConnection((state) => state.activeId);
+  const panelKey = `${connectionId ?? ''}:${workspaceId ?? ''}`;
+  const restored = lastAside?.key === panelKey ? lastAside : null;
+  const [mode, setMode] = useState<FileMode>(restored?.mode ?? 'changes');
+  const [root, setRoot] = useState<string | null>(restored?.root ?? null);
+  const [selection, setSelection] = useState<FileSelection | null>(restored?.selection ?? null);
   // Persisted display preference (appearance store), not panel state: closing
   // and reopening the panel keeps the diff mode the reader picked.
   const view = useAppearance((state) => state.diffView);
@@ -71,12 +90,22 @@ export function ChatAside({
   const renderedWidth = Math.min(width, maxWidth);
   const split = selection !== null && actualWidth >= SPLIT_ASIDE_PX;
 
-  // Root and open file are scoped to the workspace/listing; clearing them keeps
-  // the panel from showing another workspace's directory or file.
+  // A workspace switch resets the panel (mode included); the mount itself must
+  // not, or reopening would wipe the state restored from `lastAside`.
+  const mountedWorkspace = useRef(workspaceId);
   useEffect(() => {
+    if (mountedWorkspace.current === workspaceId) return;
+    mountedWorkspace.current = workspaceId;
+    setMode('changes');
     setRoot(null);
     setSelection(null);
   }, [workspaceId]);
+
+  // Write-through for the next mount. Closing the panel does not run a cleanup,
+  // so this has to mirror every committed state.
+  useEffect(() => {
+    lastAside = { key: panelKey, mode, root, selection };
+  }, [panelKey, mode, root, selection]);
 
   function openFile(next: FileSelection): void {
     setSelection(next);
