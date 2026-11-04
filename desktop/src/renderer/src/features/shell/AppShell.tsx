@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, visibleSessions } from '../../store/sessions';
-import { fallbackWorkspaceId, initialWorkspaceId, visibleWorkspaces, workspaceLabel } from '../../store/workspaceList';
+import {
+  directoryName,
+  fallbackWorkspaceId,
+  initialWorkspaceId,
+  sessionMatchesDir,
+  visibleWorkspaces,
+  workspaceDirectories,
+  workspaceLabel,
+} from '../../store/workspaceList';
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
 import { lastSessionKey, readLastSession, writeLastSession } from '../../store/lastSession';
 import { useChat, type NewSessionOptions } from '../../store/chat';
@@ -14,6 +22,7 @@ import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
 import { SettingsPage, type SettingsSection } from '../settings/SettingsPage';
 import { TasksPage } from '../tasks/TasksPage';
+import { WorkspaceOverview } from '../workspaces/WorkspaceOverview';
 import { ChatAside } from '../files/ChatAside';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
@@ -105,10 +114,17 @@ export function AppShell() {
     [connectionId],
   );
   const workspaceIdentity = lastWorkspaceIdentity(connectionId, serverId);
-  useEffect(() => {
-    setTaskFilter(null);
-  }, [connectionId, workspaceId]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Page/session to return to when the workspace overview was opened from somewhere. */
+  const [overviewReturn, setOverviewReturn] = useState<{ page: Page; sessionId: string | null } | null>(null);
+  /**
+   * The overview is a *view* over the live chat, not a reason to tear it down.
+   * `leave()` here would make returning re-fetch the session and replay its run —
+   * a full skeleton flash for a navigation that never left the session.
+   */
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  /** Rail-only directory filter; never changes what a session belongs to. */
+  const [dirFilter, setDirFilter] = useState<string | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
   /** When set, the Tasks page shows only this session's tasks. */
@@ -132,6 +148,33 @@ export function AppShell() {
   // else — the "every workspace" answer that used to land before the default
   // workspace resolved, or a batch left over mid-switch — must not render.
   const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
+  const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
+  const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
+  const workspaceDirs = useMemo(
+    () => (selectedWorkspace ? workspaceDirectories(selectedWorkspace) : []),
+    [selectedWorkspace],
+  );
+  const shownSessions = useMemo(
+    () => (dirFilter ? sessions.filter((session) => sessionMatchesDir(session.cwd, dirFilter)) : sessions),
+    [sessions, dirFilter],
+  );
+  /**
+   * The overview takes the main area while it is open — and whenever no chat is
+   * open at all (fresh launch, just switched workspace, deleted session). The
+   * chat can be alive underneath it; the rail selection says what is *shown*.
+   */
+  const mainShowsOverview = overviewOpen || !activeChat;
+
+  useEffect(() => {
+    setTaskFilter(null);
+    setDirFilter(null);
+  }, [connectionId, workspaceId]);
+
+  // A filtered directory can disappear from the workspace (removed on another
+  // device): clear instead of silently showing an empty rail.
+  useEffect(() => {
+    if (dirFilter && !workspaceDirs.includes(dirFilter)) setDirFilter(null);
+  }, [dirFilter, workspaceDirs]);
 
   // A different host means a different session list: drop the rail's selection.
   // The workspace choice needs no reset here — it is scoped to its connection,
@@ -139,6 +182,8 @@ export function AppShell() {
   // below then picks for that host.
   useEffect(() => {
     setSelectedId(null);
+    setOverviewOpen(false);
+    setOverviewReturn(null);
   }, [connectionId]);
 
   // Workspaces first: they decide which workspace's sessions to ask for.
@@ -229,10 +274,12 @@ export function AppShell() {
 
   // A brand-new session only learns its id when the daemon answers the first
   // prompt; highlight it in the rail without re-opening it (that would reload
-  // history mid-stream).
+  // history mid-stream). The overview deliberately deselects, so it must not be
+  // dragged back to the session underneath.
   useEffect(() => {
+    if (overviewOpen) return;
     if (activeChat?.sessionId && activeChat.sessionId !== selectedId) setSelectedId(activeChat.sessionId);
-  }, [activeChat?.sessionId, selectedId]);
+  }, [activeChat?.sessionId, selectedId, overviewOpen]);
 
   useEffect(() => {
     const onResize = (): void => setViewportWidth(window.innerWidth);
@@ -272,11 +319,12 @@ export function AppShell() {
   /*
    * Report which session this window shows: the notification rule needs it, and
    * only main can see every window (§7.4). One window announcing a session that
-   * another window is already displaying is the bug this prevents.
+   * another window is already displaying is the bug this prevents. The overview
+   * is not the session, even though the chat stays loaded underneath.
    */
   useEffect(() => {
-    void window.paboot.setActiveSession(activeChat?.sessionId ?? null);
-  }, [activeChat?.sessionId]);
+    void window.paboot.setActiveSession(overviewOpen ? null : (activeChat?.sessionId ?? null));
+  }, [activeChat?.sessionId, overviewOpen]);
 
   // A second window is created with a session to focus; pull it once at boot.
   useEffect(() => {
@@ -286,6 +334,8 @@ export function AppShell() {
       if (!sessionId || !windowFocus.claim()) return;
       setPage('chat');
       setSelectedId(sessionId);
+      setOverviewOpen(false);
+      setOverviewReturn(null);
       void openSession(connectionId, sessionId);
     });
   }, [connectionId, openSession]);
@@ -296,13 +346,13 @@ export function AppShell() {
       window.paboot.onSelectSession((sessionId) => {
         setPage('chat');
         setSelectedId(sessionId);
+        setOverviewOpen(false);
+        setOverviewReturn(null);
         if (connectionId) void openSession(connectionId, sessionId);
       }),
     [connectionId, openSession],
   );
 
-  const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
-  const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
   // The built-in fallback keeps its id for fetching, but never shows up as a
   // row/menu entry. It is the only entry only until the first real workspace.
   const shownWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
@@ -351,7 +401,20 @@ export function AppShell() {
   function select(id: string): void {
     setPage('chat');
     setSelectedId(id);
-    if (connectionId) void openSession(connectionId, id);
+    setOverviewOpen(false);
+    setOverviewReturn(null);
+    if (!connectionId) return;
+    // Clicking the session that is already live must not re-open it: that would
+    // throw away the transcript and its stream just to rebuild the same
+    // conversation. A failed open is the exception — re-click is the retry.
+    const live = activeChat?.sessionId === id && !activeChat.error;
+    // A run another device started while this one was elsewhere: the rail knows
+    // it (its poll says running) but the store has no stream, so a plain render
+    // would show a stale transcript. Re-opening is how the stream is attached.
+    const missedRun = live && !activeChat.streamId && sessions.some((s) => s.id === id && s.running);
+    if (!live || missedRun) {
+      void openSession(connectionId, id);
+    }
   }
 
   /**
@@ -367,7 +430,40 @@ export function AppShell() {
   function switchWorkspace(id: string): void {
     setWorkspaceId(id);
     setSelectedId(null);
+    setOverviewOpen(false);
+    setOverviewReturn(null);
     useChat.getState().leave();
+  }
+
+  /**
+   * Take over the main area with the workspace overview. The chat underneath is
+   * kept alive: this is navigation, not a session switch, so returning is a
+   * render — no refetch, no history skeleton, no run replay.
+   */
+  function showOverview(): void {
+    // Remember where we came from. Re-opening the overview (e.g. from its own
+    // directory filter) must not overwrite the earlier target.
+    setOverviewReturn((previous) => (overviewOpen ? previous : { page, sessionId: selectedId }));
+    setPage('chat');
+    setSelectedId(null);
+    setOverviewOpen(true);
+  }
+
+  const canLeaveOverview =
+    overviewReturn !== null &&
+    (overviewReturn.page !== 'chat' ||
+      (!!overviewReturn.sessionId && sessions.some((session) => session.id === overviewReturn.sessionId)));
+
+  function leaveOverview(): void {
+    if (!overviewReturn) return;
+    const target = overviewReturn;
+    setOverviewReturn(null);
+    setOverviewOpen(false);
+    if (target.sessionId && sessions.some((session) => session.id === target.sessionId)) {
+      select(target.sessionId);
+      return;
+    }
+    setPage(target.page);
   }
 
   function stepSession(delta: number): void {
@@ -404,7 +500,15 @@ export function AppShell() {
       return;
     }
     if (connectionId) dropSession(connectionId, id);
-    if (selectedId === id) setSelectedId(null);
+    // The overview deselects the rail but keeps the chat loaded, so `selectedId`
+    // alone is not enough to tell which session is actually on screen.
+    if (selectedId === id || activeChat?.sessionId === id) {
+      setSelectedId(null);
+      useChat.getState().leave();
+    }
+    setOverviewReturn((previous) =>
+      previous?.sessionId === id ? { ...previous, sessionId: null } : previous,
+    );
     if (sessionMemoryKey && readLastSession(sessionMemoryKey) === id) {
       writeLastSession(sessionMemoryKey, null);
     }
@@ -423,12 +527,20 @@ export function AppShell() {
     setNewSessionOpen(false);
     setPage('chat');
     setSelectedId(null);
+    setOverviewOpen(false);
+    setOverviewReturn(null);
     startNew(connectionId, { ...options, workspaceId: workspaceId || null });
   }
 
-  /** Leave the settings page. */
+  /** Leave the current page; from the overview, return to where it was opened. */
   function goBack(): void {
-    setPage('chat');
+    if (page !== 'chat') {
+      setPage('chat');
+      return;
+    }
+    // `overviewReturn` is only set while the overview is up, so this cannot fire
+    // from a normal chat page.
+    if (canLeaveOverview) leaveOverview();
   }
 
   const actions: Record<string, () => void> = {
@@ -504,6 +616,13 @@ export function AppShell() {
       { id: 'action:new-session', section: '动作', label: '新建会话', keywords: 'new create', run: () => setNewSessionOpen(true) },
       { id: 'action:settings', section: '动作', label: '打开设置', keywords: 'preferences', run: () => openSettings() },
       {
+        id: 'action:workspace-overview',
+        section: '动作',
+        label: '工作区：概览',
+        keywords: 'workspace overview 工作区 目录',
+        run: showOverview,
+      },
+      {
         id: 'action:workspaces',
         section: '动作',
         label: '管理工作区',
@@ -577,14 +696,49 @@ export function AppShell() {
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
             <ConnectionSwitcher />
-            {shownWorkspaces.length > 0 && (
-              <select className="ws-select" value={workspaceId} onChange={(event) => switchWorkspace(event.target.value)}>
-                {shownWorkspaces.map((workspace) => (
-                  <option key={workspace.id} value={workspace.id}>
-                    {workspaceLabel(workspace)} · {workspace.sessionCount} 个会话
-                  </option>
-                ))}
-              </select>
+            {(shownWorkspaces.length > 0 || selectedWorkspace) && (
+              <div className="rail-ws-row">
+                {shownWorkspaces.length > 1 ? (
+                  <select
+                    className="ws-select"
+                    value={workspaceId}
+                    onChange={(event) => switchWorkspace(event.target.value)}
+                  >
+                    {shownWorkspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>
+                        {workspaceLabel(workspace)} · {workspace.sessionCount} 个会话
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="rail-ws-label">{workspaceLabel(selectedWorkspace)}</span>
+                )}
+                <button
+                  className="icon-btn"
+                  title="工作区概览"
+                  disabled={!selectedWorkspace}
+                  onClick={showOverview}
+                >
+                  <Icon name="folder" size={15} />
+                </button>
+              </div>
+            )}
+            {workspaceDirs.length > 1 && (
+              <div className="rail-dir-row">
+                <select
+                  className="ws-select"
+                  value={dirFilter ?? ''}
+                  title="按目录筛选会话"
+                  onChange={(event) => setDirFilter(event.target.value || null)}
+                >
+                  <option value="">全部目录</option>
+                  {workspaceDirs.map((dir, index) => (
+                    <option key={dir} value={dir}>
+                      {index === 0 ? `${directoryName(dir)}（主目录）` : directoryName(dir)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
             <button
               className="btn soft"
@@ -603,7 +757,8 @@ export function AppShell() {
               </div>
             ) : (
               <SessionList
-                sessions={sessions}
+                sessions={shownSessions}
+                filtered={Boolean(dirFilter)}
                 selectedId={selectedId}
                 needsInput={needsInput}
                 failed={failed}
@@ -680,24 +835,47 @@ export function AppShell() {
             workspaceName={selectedWorkspaceLabel}
             taskFilter={taskFilter}
             onClearTaskFilter={() => setTaskFilter(null)}
-            onOpenSession={(id) => {
-              if (connectionId) void openSession(connectionId, id);
-              setPage('chat');
-            }}
+            onOpenSession={(id) => select(id)}
           />
         ) : (
           <div className="chat-row">
             {chatVisible ? (
-              <ChatView
-                workspaceName={selectedWorkspaceLabel}
-                asideVisible={asideVisible}
-                onToggleAside={toggleAside}
-                onCollapseChat={toggleChat}
-                onOpenTasks={(sessionId, title) => {
-                  setTaskFilter({ id: sessionId, title });
-                  setPage('tasks');
-                }}
-              />
+              mainShowsOverview ? (
+                connectionId ? (
+                  selectedWorkspace ? (
+                    <WorkspaceOverview
+                      connectionId={connectionId}
+                      workspace={selectedWorkspace}
+                      sessions={sessions}
+                      onNewSession={() => setNewSessionOpen(true)}
+                      onOpenSession={select}
+                      onFilterDir={(dir) => {
+                        setDirFilter(dir);
+                        showOverview();
+                      }}
+                      onCopy={copyText}
+                      onOpenSettings={() => openSettings('workspaces')}
+                      onWorkspaceCreated={(id) => switchWorkspace(id)}
+                      onBack={canLeaveOverview ? leaveOverview : undefined}
+                    />
+                  ) : (
+                    <div className="main-body">{scope.error ?? '正在加载工作区…'}</div>
+                  )
+                ) : (
+                  <div className="main-body">从左侧选择一个会话</div>
+                )
+              ) : (
+                <ChatView
+                  workspaceName={selectedWorkspaceLabel}
+                  asideVisible={asideVisible}
+                  onToggleAside={toggleAside}
+                  onCollapseChat={toggleChat}
+                  onOpenTasks={(sessionId, title) => {
+                    setTaskFilter({ id: sessionId, title });
+                    setPage('tasks');
+                  }}
+                />
+              )
             ) : (
               // Same treatment as the rail: a strip, so there is always a way back.
               <div className="chat-strip">
@@ -706,7 +884,7 @@ export function AppShell() {
                 </button>
               </div>
             )}
-            {asideVisible && (
+            {asideVisible && activeChat && !mainShowsOverview && (
               // Remount per connection: the browser's tree, root and open file
               // are all host-specific state that must not survive a host switch.
               <ChatAside
@@ -723,6 +901,12 @@ export function AppShell() {
       {newSessionOpen && (
         <NewSessionDialog
           workspaceName={selectedWorkspaceLabel}
+          workspacePath={selectedWorkspace?.path ?? null}
+          onlyFallback={shownWorkspaces.length === 0}
+          onAddWorkspace={() => {
+            setNewSessionOpen(false);
+            openSettings('workspaces');
+          }}
           onCancel={() => setNewSessionOpen(false)}
           onCreate={createSession}
         />

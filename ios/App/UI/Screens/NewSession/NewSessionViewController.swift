@@ -8,13 +8,13 @@ final class NewSessionViewController: UIViewController {
     var onStart: ((WorkspaceDto, AgentDto, String) -> Void)?
 
     private let workspaceButton = UIButton(type: .system)
+    private let workspaceHintLabel = UILabel()
     private let agentButton = UIButton(type: .system)
     private let permissionControl = UISegmentedControl(items: ["询问", "自动编辑", "绕过"])
     private let startButton = UIButton(type: .system)
     private let errorLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
 
-    private var workspaces: [WorkspaceDto] = []
     private var agents: [AgentDto] = []
     private var selectedWorkspace: WorkspaceDto?
     private var selectedAgent: AgentDto?
@@ -39,14 +39,20 @@ final class NewSessionViewController: UIViewController {
     }
 
     private func configureViews() {
-        stylePicker(workspaceButton, placeholder: "选择工作区")
+        stylePicker(workspaceButton, placeholder: "工作区")
         stylePicker(agentButton, placeholder: "选择 Agent")
-        for button in [workspaceButton, agentButton] {
-            button.showsMenuAsPrimaryAction = true
-            button.menu = UIMenu(
-                children: [UIAction(title: "加载中…", attributes: .disabled) { _ in }]
-            )
-        }
+        // The workspace comes from the current selection; it is not switchable
+        // from this sheet (s0_plan §4), so the button is a read-only display.
+        workspaceButton.isUserInteractionEnabled = false
+        agentButton.showsMenuAsPrimaryAction = true
+        agentButton.menu = UIMenu(
+            children: [UIAction(title: "加载中…", attributes: .disabled) { _ in }]
+        )
+
+        workspaceHintLabel.font = Typography.caption
+        workspaceHintLabel.textColor = Theme.Colors.textSecondary
+        workspaceHintLabel.numberOfLines = 0
+        workspaceHintLabel.isHidden = true
 
         permissionControl.selectedSegmentIndex = 0
         permissionControl.addTarget(self, action: #selector(permissionChanged), for: .valueChanged)
@@ -74,6 +80,7 @@ final class NewSessionViewController: UIViewController {
         let fields = UIStackView(arrangedSubviews: [
             fieldLabel("工作区"),
             workspaceButton,
+            workspaceHintLabel,
             fieldLabel("Agent"),
             agentButton,
             fieldLabel("权限模式"),
@@ -157,7 +164,6 @@ final class NewSessionViewController: UIViewController {
                 let agents = try await agentsRequest.agents
                 let config = try await configRequest
 
-                self.workspaces = workspaces
                 self.agents = agents
 
                 selectedWorkspace = workspaces.first(where: {
@@ -185,11 +191,14 @@ final class NewSessionViewController: UIViewController {
         if let workspace = selectedWorkspace {
             let title = workspace.isBuiltin
                 ? "内置工作区"
-                : "\(workspace.name.isEmpty ? workspace.path : workspace.name) — \(workspace.path)"
+                : (workspace.name.isEmpty ? workspace.path : workspace.name)
             workspaceButton.setTitle(title, for: .normal)
             workspaceButton.setTitleColor(Theme.Colors.textPrimary, for: .normal)
+            workspaceHintLabel.text = workspace.isBuiltin
+                ? "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
+                : "主目录：\(workspace.path)。其他目录会自动作为附加目录。"
+            workspaceHintLabel.isHidden = false
         }
-        workspaceButton.menu = makeWorkspaceMenu()
 
         if let agent = selectedAgent {
             let identity = RuntimeIdentity.resolve(id: agent.id, fallbackName: agent.name)
@@ -200,28 +209,6 @@ final class NewSessionViewController: UIViewController {
 
         startButton.isEnabled = selectedWorkspace != nil && selectedAgent != nil
         startButton.alpha = startButton.isEnabled ? 1 : 0.5
-    }
-
-    private func makeWorkspaceMenu() -> UIMenu {
-        // The built-in fallback is the implicit target when nothing else exists;
-        // it is not offered as a choice.
-        let shown = workspaces.filter { !$0.isBuiltin }
-        let actions = shown.map { workspace in
-            let name = workspace.name.isEmpty ? workspace.path : workspace.name
-            return UIAction(
-                title: "\(name) — \(workspace.path)",
-                state: workspace.id == selectedWorkspace?.id ? .on : .off
-            ) { [weak self] _ in
-                self?.selectedWorkspace = workspace
-                self?.updateButtons()
-            }
-        }
-        return UIMenu(
-            title: "选择工作区",
-            children: actions.isEmpty
-                ? [UIAction(title: "内置工作区", attributes: .disabled) { _ in }]
-                : actions
-        )
     }
 
     private func makeAgentMenu() -> UIMenu {

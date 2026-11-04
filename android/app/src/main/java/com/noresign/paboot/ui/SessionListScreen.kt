@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
@@ -116,12 +118,15 @@ fun SessionListScreen(
         ?.takeIf { it.isBuiltin }
         ?.let { "内置工作区" }
         ?: workspacePath
+    // 概览只读展示当前工作区的主目录 / 附加目录；没有真实工作区时入口隐藏（与切换菜单一致）。
+    val currentWorkspace = workspaces.find { it.id == selectedWorkspaceId }
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
     var renameTitle by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<SessionDto?>(null) }
     var showNewSession by remember { mutableStateOf(false) }
+    var showOverview by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshSilently()
@@ -149,7 +154,7 @@ fun SessionListScreen(
                         Box {
                             TopBarActionButton(
                                 icon = Icons.Rounded.Folder,
-                                contentDescription = "切换工作区",
+                                contentDescription = "工作区",
                                 onClick = { workspaceMenuOpen = true },
                             )
                             DropdownMenu(
@@ -157,7 +162,7 @@ fun SessionListScreen(
                                 onDismissRequest = { workspaceMenuOpen = false },
                             ) {
                                 Text(
-                                    "切换工作区",
+                                    "工作区",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -199,6 +204,17 @@ fun SessionListScreen(
                                         },
                                     )
                                 }
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("工作区概览") },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Info, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        workspaceMenuOpen = false
+                                        showOverview = true
+                                    },
+                                )
                             }
                         }
                     }
@@ -346,6 +362,15 @@ fun SessionListScreen(
                 showNewSession = false
                 onNewSession()
             },
+        )
+    }
+
+    // 概览只读：主目录 / 附加目录 / 会话数；会话列表还没加载完时不给数字。
+    if (showOverview && currentWorkspace != null) {
+        WorkspaceOverviewSheet(
+            workspace = currentWorkspace,
+            sessions = (uiState as? SessionListUiState.Content)?.model?.allSessions,
+            onDismiss = { showOverview = false },
         )
     }
 }

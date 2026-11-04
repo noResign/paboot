@@ -150,8 +150,8 @@ export function WorkspaceSection() {
           </button>
         </div>
         <div className="hint" style={{ marginTop: 0 }}>
-          新建会话时选一个工作区，它的主目录就是 agent 的工作目录。「附加目录」是该工作区所有会话
-          共用的可达目录，也是唯一的增删入口。
+          工作区的主目录就是 agent 的工作目录；附加目录由这个工作区的所有会话共用，也是唯一的
+          增删入口。会话归属由当前工作区决定，新建会话时不可切换。
         </div>
       </div>
 
@@ -185,6 +185,7 @@ export function WorkspaceSection() {
             </div>
 
             <div className="mono ws-card-path" title={workspace.path}>
+              <span className="badge">主目录</span>
               {workspace.path}
             </div>
             <div className="hint" style={{ marginTop: 4 }}>

@@ -22,6 +22,12 @@ struct SessionListModel: Equatable {
     var isEmpty: Bool {
         rootSessions.isEmpty && olderRootSessions.isEmpty && subGroups.isEmpty && taskSessions.isEmpty
     }
+
+    /// Every session the screen is showing, flattened — used by the workspace
+    /// overview to count sessions per directory.
+    var allSessions: [SessionDto] {
+        rootSessions + olderRootSessions + subGroups.flatMap { $0.sessions } + taskSessions
+    }
 }
 
 enum SessionGrouping {
@@ -88,8 +94,24 @@ enum SessionGrouping {
         }
     }
 
+    /// Primary dir first, extra dirs de-duplicated (same semantics as `workspace_dirs`).
+    static func directories(for workspace: WorkspaceDto) -> [String] {
+        [workspace.path] + workspace.dirs.filter { $0 != workspace.path }
+    }
+
+    /// A session belongs to a directory when its cwd is that directory or below it.
+    /// A sibling sharing the prefix (`/repo2` vs `/repo`) must not match.
+    static func matchesDirectory(_ cwd: String, _ dir: String) -> Bool {
+        let target = normalize(dir)
+        guard !target.isEmpty else { return false }
+        let current = normalize(cwd)
+        if current == target { return true }
+        return current.hasPrefix(target == "/" ? "/" : target + "/")
+    }
+
+    /// Trim trailing separators and use `/` so both platforms compare alike.
     private static func normalize(_ path: String) -> String {
-        var value = path
+        var value = path.replacingOccurrences(of: "\\", with: "/")
         while value.count > 1 && value.hasSuffix("/") {
             value.removeLast()
         }
