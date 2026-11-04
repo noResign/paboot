@@ -112,6 +112,25 @@ final class ConnectionStore {
         return updated
     }
 
+    /// Rename in place: no reconnect, and the Keychain entry (keyed by `id`) is untouched.
+    @discardableResult
+    func rename(_ connection: SavedConnection, name: String) -> SavedConnection? {
+        guard let index = savedConnections.firstIndex(where: { $0.id == connection.id }) else { return nil }
+        let updated = SavedConnection(
+            id: connection.id,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            baseUrl: connection.baseUrl,
+            serverId: connection.serverId,
+            lastUsedAt: connection.lastUsedAt
+        )
+        savedConnections[index] = updated
+        if active?.id == connection.id {
+            active = updated
+        }
+        persist()
+        return updated
+    }
+
     func forget(_ connection: SavedConnection) {
         KeychainStore.delete(connection.id)
         savedConnections.removeAll { $0.id == connection.id }

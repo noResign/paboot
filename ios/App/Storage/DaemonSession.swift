@@ -31,6 +31,11 @@ final class DaemonSession {
         return client
     }
 
+    /// Update display metadata without rebuilding the client (e.g. a rename).
+    func updateMetadata(_ connection: SavedConnection) {
+        self.connection = connection
+    }
+
     func deactivate() {
         connection = nil
         client = nil

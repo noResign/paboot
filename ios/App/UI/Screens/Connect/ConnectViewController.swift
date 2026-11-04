@@ -387,7 +387,7 @@ private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
         nameLabel.textColor = Theme.Colors.textPrimary
 
         let urlLabel = UILabel()
-        urlLabel.text = AddressMask.mask(connection.baseUrl)
+        urlLabel.text = connection.baseUrl
         urlLabel.font = Typography.caption
         urlLabel.textColor = Theme.Colors.textSecondary
 
@@ -428,7 +428,7 @@ private final class SavedConnectionRow: UIControl, UIGestureRecognizerDelegate {
 
         isAccessibilityElement = true
         accessibilityTraits = .button
-        accessibilityLabel = "\(connection.displayName), \(AddressMask.mask(connection.baseUrl))"
+        accessibilityLabel = "\(connection.displayName), \(connection.baseUrl)"
         accessibilityHint = "左滑可编辑或删除"
         accessibilityCustomActions = [
             UIAccessibilityCustomAction(

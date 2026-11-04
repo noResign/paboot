@@ -11,10 +11,17 @@ final class SettingsViewController: UIViewController {
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
 
-    private let nameRow = SettingsInfoRow(title: "名称")
-    private let addressRow = SettingsInfoRow(title: "服务器地址", monospaced: true)
+    /// Hidden address: no host or port leaks until the eye is tapped.
+    private static let hiddenAddress = "••••••••"
+
+    private let nameEditButton = UIButton(type: .system)
+    private let addressToggleButton = UIButton(type: .system)
+    private lazy var nameRow = SettingsInfoRow(title: "名称", accessory: nameEditButton)
+    private lazy var addressRow = SettingsInfoRow(title: "服务器地址", monospaced: true, accessory: addressToggleButton)
     private let tokenRow = SettingsInfoRow(title: "token")
     private let reconnectButton = UIButton(type: .system)
+    /// Address is masked by default; the eye reveals it for reading/typing on another device.
+    private var showAddress = false
 
     private let statusStack = UIStackView()
     private let statusSpinner = UIActivityIndicatorView(style: .medium)
@@ -159,6 +166,15 @@ final class SettingsViewController: UIViewController {
             for: .touchUpInside
         )
 
+        configureSymbolButton(nameEditButton, symbol: "pencil", label: "修改名称") { [weak self] in
+            self?.presentRenameConnection()
+        }
+        configureSymbolButton(addressToggleButton, symbol: "eye", label: "显示地址") { [weak self] in
+            guard let self else { return }
+            self.showAddress.toggle()
+            self.renderConnection()
+        }
+
         contentStack.addArrangedSubview(SettingsSectionTitle("连接"))
         contentStack.addArrangedSubview(nameRow)
         contentStack.addArrangedSubview(addressRow)
@@ -261,6 +277,48 @@ final class SettingsViewController: UIViewController {
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
     }
 
+    /// A symbol-only accessory button inside a settings row (rename / reveal).
+    private func configureSymbolButton(
+        _ button: UIButton,
+        symbol: String,
+        label: String,
+        action: @escaping () -> Void
+    ) {
+        button.setImage(symbolImage(symbol), for: .normal)
+        button.tintColor = Theme.Colors.textSecondary
+        button.accessibilityLabel = label
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+    }
+
+    private func symbolImage(_ name: String) -> UIImage? {
+        UIImage(
+            systemName: name,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        )
+    }
+
+    private func presentRenameConnection() {
+        guard let connection = DaemonSession.shared.connection else { return }
+        let alert = UIAlertController(title: "重命名连接", message: nil, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.text = connection.name
+            field.placeholder = "未命名"
+            field.clearButtonMode = .whileEditing
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self] _ in
+            let name = alert.textFields?.first?.text ?? ""
+            guard let updated = ConnectionStore.shared.rename(connection, name: name) else { return }
+            DaemonSession.shared.updateMetadata(updated)
+            self?.renderConnection()
+        })
+        present(alert, animated: true)
+    }
+
     private func bind() {
         viewModel.$state
             .sink { [weak self] state in
@@ -269,16 +327,28 @@ final class SettingsViewController: UIViewController {
             .store(in: &cancellables)
     }
 
-    private func render(_ state: SettingsViewModel.State) {
+    /// The connection rows are read from `DaemonSession` rather than `State`, so a
+    /// rename / reveal re-renders them directly without reloading the page.
+    private func renderConnection() {
         let connection = DaemonSession.shared.connection
-        let connectionName = connection?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if connection == nil {
-            nameRow.setValue("未配置")
+        if let connection {
+            let name = connection.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            nameRow.setValue(name.isEmpty ? "未命名" : name)
+            addressRow.setValue(showAddress ? connection.baseUrl : Self.hiddenAddress)
+            tokenRow.setValue("••••••••")
         } else {
-            nameRow.setValue(connectionName.isEmpty ? "未命名" : AddressMask.mask(connectionName))
+            nameRow.setValue("未配置")
+            addressRow.setValue("未配置")
+            tokenRow.setValue("未配置")
         }
-        addressRow.setValue(connection.map { AddressMask.mask($0.baseUrl) } ?? "未配置")
-        tokenRow.setValue(connection == nil ? "未配置" : "••••••••")
+        nameEditButton.isHidden = connection == nil
+        addressToggleButton.isHidden = connection == nil
+        addressToggleButton.setImage(symbolImage(showAddress ? "eye.slash" : "eye"), for: .normal)
+        addressToggleButton.accessibilityLabel = showAddress ? "隐藏地址" : "显示地址"
+    }
+
+    private func render(_ state: SettingsViewModel.State) {
+        renderConnection()
         let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceId })
         currentWorkspaceRow.setValue(
             selectedWorkspace?.isBuiltin == true ? "内置工作区" : (state.selectedWorkspacePath ?? "未选择")
@@ -351,7 +421,7 @@ private final class SettingsSectionTitle: UILabel {
 private final class SettingsInfoRow: UIView {
     private let valueLabel = UILabel()
 
-    init(title: String, monospaced: Bool = false) {
+    init(title: String, monospaced: Bool = false, accessory: UIView? = nil) {
         super.init(frame: .zero)
 
         let titleLabel = UILabel()
@@ -368,6 +438,9 @@ private final class SettingsInfoRow: UIView {
         valueLabel.numberOfLines = 1
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, valueLabel])
+        if let accessory {
+            stack.addArrangedSubview(accessory)
+        }
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = Spacing.md
