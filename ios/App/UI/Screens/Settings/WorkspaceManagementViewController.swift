@@ -369,6 +369,7 @@ private final class WorkspaceCell: UITableViewCell {
     private let bannerLabel = InsetLabel()
     private let primaryPathButton = UIButton(type: .system)
     private let dirsStack = UIStackView()
+    private let dirsHintLabel = UILabel()
     private let actionsStack = UIStackView()
     private let toggleEnabledButton = UIButton(type: .system)
     private let renameButton = UIButton(type: .system)
@@ -401,6 +402,7 @@ private final class WorkspaceCell: UITableViewCell {
         configureBanner()
         configurePathButton()
         configureDirsStack()
+        configureDirsHint()
         configureActionRow()
 
         let mainStack = UIStackView(arrangedSubviews: [
@@ -408,6 +410,7 @@ private final class WorkspaceCell: UITableViewCell {
             bannerLabel,
             primaryPathButton,
             dirsStack,
+            dirsHintLabel,
             actionsStack,
         ])
         mainStack.axis = .vertical
@@ -515,6 +518,14 @@ private final class WorkspaceCell: UITableViewCell {
         dirsStack.spacing = 2
     }
 
+    private func configureDirsHint() {
+        dirsHintLabel.font = Typography.caption
+        dirsHintLabel.textColor = Theme.Colors.textSecondary
+        dirsHintLabel.numberOfLines = 0
+        dirsHintLabel.text = "附加目录会扩大该工作区所有会话的可写范围。"
+        dirsHintLabel.isHidden = true
+    }
+
     private func configureActionRow() {
         configureSmallButton(toggleEnabledButton, title: "禁用")
         configureSmallButton(renameButton, title: "重命名")
@@ -557,7 +568,7 @@ private final class WorkspaceCell: UITableViewCell {
         disabledBadge.text = "已禁用"
         disabledBadge.isHidden = workspace.enabled
         sessionCountLabel.text = "\(workspace.sessionCount) 个会话"
-        primaryPathButton.setTitle(workspace.path, for: .normal)
+        primaryPathButton.setTitle("主目录 · \(workspace.path)", for: .normal)
 
         toggleEnabledButton.setTitle(workspace.enabled ? "禁用" : "启用", for: .normal)
 
@@ -567,10 +578,11 @@ private final class WorkspaceCell: UITableViewCell {
 
     private func rebuildDirs(_ dirs: [String]) {
         dirsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        dirsHintLabel.isHidden = dirs.isEmpty
 
         for dir in dirs {
             let pathButton = UIButton(type: .system)
-            pathButton.setTitle("＋ \(dir)", for: .normal)
+            pathButton.setTitle("附加目录 · \(dir)", for: .normal)
             pathButton.setTitleColor(Theme.Colors.textSecondary, for: .normal)
             pathButton.titleLabel?.font = Typography.code
             pathButton.titleLabel?.lineBreakMode = .byTruncatingMiddle

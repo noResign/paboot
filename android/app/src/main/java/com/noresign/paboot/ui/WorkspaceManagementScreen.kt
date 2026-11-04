@@ -419,6 +419,7 @@ private fun WorkspaceCard(
                     var expandedPath by remember(workspace.id) { mutableStateOf<String?>(null) }
                     ExpandablePath(
                         path = workspace.path,
+                        prefix = "主目录 · ",
                         expanded = expandedPath == workspace.path,
                         onToggle = {
                             expandedPath = if (expandedPath == workspace.path) null else workspace.path
@@ -433,10 +434,17 @@ private fun WorkspaceCard(
                     workspace.dirs.forEach { dir ->
                         ExpandablePath(
                             path = dir,
-                            prefix = "＋ ",
+                            prefix = "附加目录 · ",
                             expanded = expandedPath == dir,
                             onToggle = { expandedPath = if (expandedPath == dir) null else dir },
                             trailing = { TextButton(onClick = { onRemoveDir(dir) }) { Text("移除") } },
+                        )
+                    }
+                    if (workspace.dirs.isNotEmpty()) {
+                        Text(
+                            "附加目录会扩大该工作区所有会话的可写范围。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

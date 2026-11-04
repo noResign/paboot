@@ -8,6 +8,10 @@ import type { NewSessionOptions } from '../../store/chat';
 
 interface Props {
   workspaceName: string | null;
+  workspacePath: string | null;
+  /** No real workspace exists: the built-in fallback is all there is. */
+  onlyFallback: boolean;
+  onAddWorkspace(): void;
   onCancel(): void;
   onCreate(options: NewSessionOptions): void;
 }
@@ -17,7 +21,14 @@ interface Props {
  * open. The agent selector is the point of the whole product — running Claude,
  * Codex and DeepSeek Harness side by side from one client.
  */
-export function NewSessionDialog({ workspaceName, onCancel, onCreate }: Props) {
+export function NewSessionDialog({
+  workspaceName,
+  workspacePath,
+  onlyFallback,
+  onAddWorkspace,
+  onCancel,
+  onCreate,
+}: Props) {
   const [agents, setAgents] = useState<AgentDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<string | null>(null);
@@ -75,9 +86,26 @@ export function NewSessionDialog({ workspaceName, onCancel, onCreate }: Props) {
         </div>
 
         <div className="field">
-          <label>Workspace</label>
+          <label>工作区</label>
           <div className="readonly mono">{workspaceName ?? '（未选择）'}</div>
-          <div className="hint">会话在这个工作区内运行，不能在这里切换。</div>
+          <div className="hint">
+            {workspacePath ? (
+              <>
+                会话在主目录 <span className="mono">{workspacePath}</span> 中运行；其他目录会自动作为
+                这个工作区的附加目录。
+              </>
+            ) : (
+              '会话在这个工作区内运行，不能在这里切换。'
+            )}
+          </div>
+          {onlyFallback && (
+            <div className="hint">
+              当前只有内置工作区。它只是临时的技术目录，建议先添加一个真实工作区。
+              <button className="btn tiny" style={{ marginLeft: 8 }} onClick={onAddWorkspace}>
+                去添加工作区
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="field">

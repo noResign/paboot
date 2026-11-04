@@ -219,6 +219,14 @@ final class SettingsViewController: UIViewController {
 
         contentStack.addArrangedSubview(SettingsSectionTitle("工作区"))
         contentStack.addArrangedSubview(currentWorkspaceRow)
+
+        let workspaceHintLabel = UILabel()
+        workspaceHintLabel.text = "主目录就是 agent 的工作目录；附加目录由该工作区的所有会话共用。"
+        workspaceHintLabel.font = Typography.caption
+        workspaceHintLabel.textColor = Theme.Colors.textSecondary
+        workspaceHintLabel.numberOfLines = 0
+        contentStack.addArrangedSubview(workspaceHintLabel)
+
         contentStack.addArrangedSubview(manageWorkspacesButton)
     }
 

@@ -34,7 +34,6 @@ final class SessionsViewController: UIViewController {
     private var expandedSections: Set<String> = ["tasks"]
     private var lastWorkspaceID: String?
     private var workspaceMenuSignature: String?
-
     private var hasLoaded = false
     private var hasRenderedOnce = false
 
@@ -483,14 +482,50 @@ final class SessionsViewController: UIViewController {
             }
         }
 
+        // Read-only overview for the current workspace (docs/ui/mobile/pages/sessions.md §6.2).
+        let overview = UIAction(
+            title: "工作区概览",
+            image: UIImage(systemName: "info.circle")
+        ) { [weak self] _ in
+            self?.presentWorkspaceOverview()
+        }
+
         let item = UIBarButtonItem(
             title: nil,
             image: UIImage(systemName: "folder"),
             primaryAction: nil,
-            menu: UIMenu(title: "切换工作区", children: actions)
+            menu: UIMenu(
+                title: "工作区",
+                children: [
+                    UIMenu(options: .displayInline, children: actions),
+                    overview,
+                ]
+            )
         )
-        item.accessibilityLabel = "切换工作区"
+        item.accessibilityLabel = "工作区"
         navigationItem.rightBarButtonItem = item
+    }
+
+    /// The overview is read-only: dirs are added/removed from workspace management
+    /// (settings) or on desktop, never here.
+    private func presentWorkspaceOverview() {
+        let state = viewModel.state
+        guard let workspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID }) else {
+            return
+        }
+        let sheet = WorkspaceOverviewViewController(
+            workspace: workspace,
+            // `nil` while the list is loading or failed: the overview must not
+            // present「0 个会话」as fact.
+            sessions: state.loadError == nil && !state.isLoading ? state.model.allSessions : nil
+        )
+        let navigation = UINavigationController(rootViewController: sheet)
+        navigation.modalPresentationStyle = .pageSheet
+        if let presentation = navigation.sheetPresentationController {
+            presentation.detents = [.medium(), .large()]
+            presentation.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
     }
 
     private func showLoading() {
@@ -810,4 +845,197 @@ private final class SessionSectionHeader: UITableViewHeaderFooterView {
     @objc private func handleTap() {
         onTap?()
     }
+}
+
+/// Read-only workspace overview (docs/ui/mobile/pages/sessions.md §6.2): the
+/// primary dir plus extra dirs with their session counts. Directory add/remove
+/// belongs to workspace management (and desktop), so nothing here writes.
+private final class WorkspaceOverviewViewController: UIViewController {
+    private let workspace: WorkspaceDto
+    /// `nil` = the list is still loading / failed; do not present「0 个会话」as fact.
+    private let sessions: [SessionDto]?
+
+    private let scrollView = UIScrollView()
+    private let contentStack = UIStackView()
+
+    init(workspace: WorkspaceDto, sessions: [SessionDto]?) {
+        self.workspace = workspace
+        self.sessions = sessions
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "工作区概览"
+        view.backgroundColor = Theme.Colors.background
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "关闭",
+            style: .plain,
+            target: self,
+            action: #selector(close)
+        )
+        configureLayout()
+        buildContent()
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
+    }
+
+    private func configureLayout() {
+        scrollView.alwaysBounceVertical = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        contentStack.axis = .vertical
+        contentStack.spacing = Spacing.sm
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            contentStack.topAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.topAnchor,
+                constant: Spacing.lg
+            ),
+            contentStack.bottomAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.bottomAnchor,
+                constant: -Spacing.lg
+            ),
+            contentStack.leadingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.leadingAnchor,
+                constant: Spacing.lg
+            ),
+            contentStack.trailingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.trailingAnchor,
+                constant: -Spacing.lg
+            ),
+            contentStack.widthAnchor.constraint(
+                equalTo: scrollView.frameLayoutGuide.widthAnchor,
+                constant: -Spacing.lg * 2
+            ),
+        ])
+    }
+
+    private func buildContent() {
+        let name = UILabel()
+        name.text = workspace.isBuiltin
+            ? "内置工作区"
+            : (workspace.name.isEmpty ? workspace.path : workspace.name)
+        name.font = Typography.cardTitle
+        name.textColor = Theme.Colors.textPrimary
+        name.numberOfLines = 0
+        contentStack.addArrangedSubview(name)
+
+        let path = UILabel()
+        path.text = workspace.path
+        path.font = Typography.code
+        path.textColor = Theme.Colors.textSecondary
+        path.numberOfLines = 0
+        path.lineBreakMode = .byCharWrapping
+        contentStack.addArrangedSubview(path)
+        contentStack.setCustomSpacing(Spacing.lg, after: path)
+
+        let section = UILabel()
+        section.text = "目录"
+        section.font = Typography.caption
+        section.textColor = Theme.Colors.textSecondary
+        contentStack.addArrangedSubview(section)
+
+        let dirs = SessionGrouping.directories(for: workspace)
+        for (index, dir) in dirs.enumerated() {
+            contentStack.addArrangedSubview(directoryCard(path: dir, isPrimary: index == 0))
+        }
+
+        let hint = UILabel()
+        hint.text = dirs.count > 1
+            ? "附加目录会扩大这个工作区所有会话的可写范围，不是只给当前对话。"
+            : "还没有附加目录，可以在设置 → 工作区管理里添加。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textSecondary
+        hint.numberOfLines = 0
+        contentStack.addArrangedSubview(hint)
+
+        if workspace.isBuiltin {
+            let builtin = UILabel()
+            builtin.text = "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
+            builtin.font = Typography.caption
+            builtin.textColor = Theme.Colors.textSecondary
+            builtin.numberOfLines = 0
+            contentStack.addArrangedSubview(builtin)
+        }
+    }
+
+    /// One dir row: badge + session count on top, monospaced path below.
+    private func directoryCard(path: String, isPrimary: Bool) -> UIView {
+        let container = UIView()
+        container.backgroundColor = Theme.Colors.surface
+        container.layer.cornerRadius = Radius.card
+        container.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1)
+        container.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+
+        let icon = UIImageView(image: UIImage(systemName: "folder"))
+        icon.tintColor = Theme.Colors.textSecondary
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        let badge = UILabel()
+        badge.text = isPrimary ? "主目录" : "附加目录"
+        badge.font = Typography.caption
+        badge.textColor = isPrimary ? Theme.Colors.primary : Theme.Colors.textSecondary
+
+        let count = UILabel()
+        if let sessions = sessions {
+            count.text = "\(sessions.filter { SessionGrouping.matchesDirectory($0.cwd, path) }.count) 个会话"
+        } else {
+            count.text = "会话数加载中…"
+        }
+        count.font = Typography.caption
+        count.textColor = Theme.Colors.textMuted
+        count.setContentHuggingPriority(.required, for: .horizontal)
+        count.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let head = UIStackView(arrangedSubviews: [icon, badge, spacer, count])
+        head.axis = .horizontal
+        head.alignment = .center
+        head.spacing = 6
+
+        let pathLabel = UILabel()
+        pathLabel.text = path
+        pathLabel.font = Typography.code
+        pathLabel.textColor = Theme.Colors.textPrimary
+        pathLabel.numberOfLines = 0
+        pathLabel.lineBreakMode = .byCharWrapping
+
+        let stack = UIStackView(arrangedSubviews: [head, pathLabel])
+        stack.axis = .vertical
+        stack.spacing = Spacing.xxs
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 16),
+            icon.heightAnchor.constraint(equalToConstant: 16),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Spacing.sm),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Spacing.sm),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Spacing.sm),
+        ])
+
+        return container
+    }
+
 }
