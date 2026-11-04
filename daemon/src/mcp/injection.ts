@@ -22,7 +22,9 @@ export function taskToolServer(ctx: AppContext, runId: string): ToolServerSpec {
     args: [ctx.mcpServerPath],
     env: {
       PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
-      PABOOT_TOKEN: ctx.config.token,
+      // MCP servers only get the internal server token; the agent's own
+      // environment carries the read-only agent token instead.
+      PABOOT_TOKEN: ctx.config.serverToken,
       PABOOT_RUN_ID: runId,
     },
   };

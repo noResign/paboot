@@ -20,6 +20,16 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 /** Bound the map: a token flood with rotating source addresses must not grow it without limit. */
 const MAX_TRACKED_CLIENTS = 10_000;
 
+/** The token's authority level. Only `operator` may use public write endpoints. */
+export type AuthRole = 'operator' | 'agent' | 'server';
+
+export interface AuthOptions extends AuthThrottleOptions {
+  /** Read-only token injected into the agent runtime / permission hook. */
+  agentToken?: string;
+  /** Narrow token injected only into MCP server processes. */
+  serverToken?: string;
+}
+
 export interface AuthThrottleOptions {
   /** `0` disables lockouts entirely. */
   maxFailures?: number;
@@ -119,17 +129,21 @@ export function clientKey(req: Request): string {
 }
 
 /**
- * Bearer-token gate for all `/api/*` routes except the health probe. The token
- * is a single shared secret (env `PABOOT_TOKEN` or the persisted file under
- * the data dir). Wrong tokens are counted per source client: after
- * `maxFailures` consecutive failures that source gets `429` + `Retry-After`
- * until the cooldown (doubling on repeat offences) expires. A successful auth
- * clears the counter.
+ * Bearer-token gate for all `/api/*` routes except the health probe.
+ *
+ * Three token roles share this gate:
+ * - `operator`: the token clients enter; full API access;
+ * - `agent`: read-only public API + the permission-hook internal endpoints;
+ * - `server`: only `/api/internal/*` (MCP server processes).
+ *
+ * Wrong tokens are counted per source client: after `maxFailures` consecutive
+ * failures that source gets `429` + `Retry-After` until the cooldown (doubling
+ * on repeat offences) expires. A successful auth clears the counter.
  *
  * This is the minimum viable remote-auth layer; a multi-user deployment should
  * replace it with OIDC/SSO + per-user tokens.
  */
-export function requireAuth(token: string, options: AuthThrottleOptions = {}): RequestHandler {
+export function requireAuth(token: string, options: AuthOptions = {}): RequestHandler {
   const throttle = new AuthThrottle(options);
 
   return (req, res, next) => {
@@ -142,7 +156,18 @@ export function requireAuth(token: string, options: AuthThrottleOptions = {}): R
 
     const header = req.headers.authorization;
     const provided = header && header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
-    if (provided && safeEqual(provided, token)) {
+    const role = provided
+      ? safeEqual(provided, token)
+        ? 'operator'
+        : options.agentToken && safeEqual(provided, options.agentToken)
+          ? 'agent'
+          : options.serverToken && safeEqual(provided, options.serverToken)
+            ? 'server'
+            : null
+      : null;
+    if (role) {
+      if (!res.locals) res.locals = {};
+      res.locals.authRole = role;
       throttle.recordSuccess(key);
       next();
       return;
@@ -159,6 +184,53 @@ export function requireAuth(token: string, options: AuthThrottleOptions = {}): R
     }
 
     res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
+  };
+}
+
+/** Role attached by {@link requireAuth}; undefined when auth has not run. */
+export function authRole(res: Response): AuthRole | undefined {
+  return (res.locals as { authRole?: AuthRole } | undefined)?.authRole;
+}
+
+const READ_METHODS = new Set(['GET', 'HEAD']);
+
+/**
+ * Role policy applied after authentication:
+ * - operator: everything;
+ * - agent: public reads, plus the permission-hook internal endpoints;
+ * - server: only the daemon's internal endpoints (MCP server processes).
+ *
+ * Paths may be absolute (`/api/internal/...`, as in tests) or relative to the
+ * `/api` mount (`/internal/...`).
+ */
+export function isRoleAllowed(role: AuthRole, method: string, path: string): boolean {
+  if (role === 'operator') return true;
+  const apiPath = path.startsWith('/api/') ? path.slice(4) : path;
+  if (role === 'agent') {
+    if (READ_METHODS.has(method.toUpperCase())) return true;
+    return apiPath.startsWith('/internal/permissions/');
+  }
+  if (role === 'server') return apiPath.startsWith('/internal/');
+  return false;
+}
+
+/** Express middleware enforcing {@link isRoleAllowed}; mount right after auth. */
+export function requireRolePolicy(): RequestHandler {
+  return (req, res, next) => {
+    const role = authRole(res);
+    if (!role) {
+      res.status(401).json({ error: 'unauthorized', code: 'unauthorized' });
+      return;
+    }
+    const path = (req.originalUrl ?? req.path ?? '').split('?')[0] ?? '';
+    if (!isRoleAllowed(role, req.method, path)) {
+      res.status(403).json({
+        error: 'this token is not allowed to perform this action',
+        code: 'forbidden',
+      });
+      return;
+    }
+    next();
   };
 }
 

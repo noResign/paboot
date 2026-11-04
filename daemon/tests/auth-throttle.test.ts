@@ -19,6 +19,7 @@ function call(handler: RequestHandler, ip: string, authorization?: string): Call
     headers: authorization === undefined ? {} : { authorization },
   } as unknown as Request;
   const res = {
+    locals: {},
     setHeader(name: string, value: string) {
       result.headers[name.toLowerCase()] = value;
     },

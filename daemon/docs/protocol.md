@@ -246,7 +246,7 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 | `tls` | 据此选 `http` / `https` |
 | `version` | daemon 版本 |
 | `dataDir` | 数据根（现固定 `~/.paboot`），展示/诊断用 |
-| `tokenSource` | 见 [configuration.md](configuration.md) 的「token 解析顺序」：**只有 `file` 时** `<data-dir>/token` 才是权威值 |
+| `tokenSource` | 见 [configuration.md](configuration.md) 的「operator token 解析顺序」：**只有 `file` 时** `<data-dir>/token` 才是权威值 |
 
 **约定**：
 

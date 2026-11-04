@@ -13,6 +13,8 @@ export interface CliOptions {
   envFile?: string;
   help: boolean;
   version: boolean;
+  /** Print the persisted operator (client) token and exit; no daemon starts. */
+  printOperatorToken: boolean;
 }
 
 export function printHelp(): string {
@@ -25,7 +27,8 @@ Options:
   --host <host>             Bind address. Default 0.0.0.0 (all interfaces; 127.0.0.1 = localhost only)
   --port <port>             Port. Default 4780
   --workspace <path>        Working dir root (default: ~/.paboot/defaultworkspace)
-  --token <token>           Bearer auth token (default: env PABOOT_TOKEN or generated)
+  --token <token>           Operator bearer token (default: env PABOOT_TOKEN or generated)
+  --print-operator-token    Print the operator token (the one clients enter) and exit
   --permission-mode <mode>  Initial Claude Code permission mode (default: default/ask)
   --env-file <path>         Load config from a .env file (default: ./.env if present)
   -h, --help                Show this help
@@ -56,6 +59,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
       'env-file': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
+      'print-operator-token': { type: 'boolean' },
     },
     allowPositionals: false,
     strict: true,
@@ -76,5 +80,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     envFile: typeof values['env-file'] === 'string' ? values['env-file'] : undefined,
     help: values.help === true,
     version: values.version === true,
+    printOperatorToken: values['print-operator-token'] === true,
   };
 }

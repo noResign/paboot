@@ -7,6 +7,7 @@ import { DEEPSEEK_BIN } from './deepseek/detect.js';
 import { startDeepSeekRun } from './deepseek/session.js';
 import { createCommandDriver } from './command.js';
 import { codexToolServerArgs, taskToolServer } from '../mcp/injection.js';
+import { claudePermissionHookMatcher } from '../permissions/hook-matcher.js';
 import { defaultCapabilities, type RuntimeAdapter, type RuntimeCapabilities } from './types.js';
 import type { Registry } from './registry.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';
@@ -71,12 +72,13 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
             : {
                 hookPath,
                 daemonUrl,
-                token: config.token,
+                // The hook runs inside the agent process; give it the read-only
+                // agent token, never the operator token.
+                token: config.agentToken,
                 timeoutMs: config.permissionTimeoutMs,
-                matcher:
-                  req.permissionMode === 'ask'
-                    ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*'
-                    : 'Bash|WebSearch|WebFetch|mcp__.*',
+                matcher: claudePermissionHookMatcher(
+                  req.permissionMode === 'ask' ? 'ask' : 'acceptEdits',
+                ),
               },
         idleTimeoutMs: config.runIdleTimeoutMs,
         onEvent: req.onEvent,

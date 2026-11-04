@@ -81,6 +81,13 @@ async function main(): Promise<void> {
     token: cli.token,
     permissionMode: cli.permissionMode,
   });
+  if (cli.printOperatorToken) {
+    // Deliberately before the data-dir lock: printing must work while a
+    // daemon is already running and holding the lock.
+    process.stdout.write(`${config.token}\n`);
+    return;
+  }
+
   // Take the data dir *before* anything opens the DB. A second daemon on the
   // same root would fight over the SQLite file and, worse, its boot-time
   // `interruptOrphanedRuns` would rewrite this process's live runs as
@@ -208,7 +215,7 @@ async function main(): Promise<void> {
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
 
-  log.info(`auth token: ${config.token}`);
+  log.info(`operator token: ${config.token}`);
   log.info(`  (${config.tokenGenerated ? 'generated and persisted at' : 'loaded from'} ${config.tokenPath})`);
   log.info(`permission mode: ${config.permissionMode}`);
 }

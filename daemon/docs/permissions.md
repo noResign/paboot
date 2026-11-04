@@ -83,7 +83,13 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 
 ## 安全模型
 
-- **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
+- **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较），并按 token 分角色：
+  - `operator`（客户端/本地 CLI）：全权限；
+  - `agent`（runtime / permission hook）：公共 API 只读，另只允许
+    `/api/internal/permissions/*`；
+  - `server`（MCP server 子进程）：只允许 `/api/internal/*`。
+  agent 的 Bash 即使读到自己的 token，也写不了公共端点；operator token 不下发给 agent。
+  详见 [configuration.md](configuration.md) 的「token 角色」。
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；跨网络访问建议用组网工具放进加密内网（见 README
   「手机电脑不在同一个局域网」），内网穿透只适合自用。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见「权限审批」）。
@@ -117,8 +123,10 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   `target` 可选当前会话 / 同 workspace 的已有会话 / 首次触发新建；目标会话由 daemon 校验，
   agent 不能跨 workspace 指定。记录 `created_by='mcp'` 与 audit；每会话最多 20 个；定时 run 内再次
   创建会被 `recursion_blocked`。AI 配置会话使用会话自身的权限模式（通常 `ask`），因此创建任务时
-  仍会经过现有 MCP 审批卡。`paboot_tasks` 是**精确授权 server**：「允许全部」只授权当前工具，
-  不扩到未来工具。
+  仍会经过现有 MCP 审批卡。`paboot_tasks` / `paboot_capability` / `paboot_memory` 都是
+  **精确授权 server**：「允许全部」只授权当前工具，不扩到未来工具；`forget` 必须逐次确认。
+  `paboot_capability` / `paboot_memory` 由 MCP server 自己 gate，Claude 的 PreToolUse matcher
+  会排除这两个前缀，避免双重弹窗。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
 
 ### ⚠️ 重要边界：`workspace` 不是沙箱
@@ -139,7 +147,7 @@ Claude 启动后，访问别的目录由「工具权限」决定，与 workspace
 **因此读取从来不构成边界**：`Read` 与 `cat` 都放行，终点一致——paboot 对读取不做任何拦截。
 曾评估给只读 Bash 白名单补路径校验以堵住这条，**已决定不做**——读命令放行的影响可接受，
 而 agent 本就有 Bash 权限，堵住 `cat` 收益有限。（`env` 泄露 `PABOOT_TOKEN` 同理：
-读命令本来就放行，摘掉 `env` 只是装饰。**但注意这不是「同一个值」**——见 [configuration.md](configuration.md) 的「token 解析顺序」，
+读命令本来就放行，摘掉 `env` 只是装饰。**但注意这不是「同一个值」**——见 [configuration.md](configuration.md) 的「operator token 解析顺序」，
 env 命中时 `<data-dir>/token` 里可能是旧值。）
 
 要做到文件级物理隔离，需要 OS 层沙箱（bwrap / firejail / 容器 / sandbox-exec），纯靠 Claude
