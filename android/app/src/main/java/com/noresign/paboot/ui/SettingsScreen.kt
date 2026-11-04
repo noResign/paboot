@@ -16,11 +16,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -28,7 +35,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import com.noresign.paboot.ui.identity.permissionModeOptions
-import com.noresign.paboot.util.maskAddress
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -79,6 +85,9 @@ fun SettingsScreen(
     val daemonVersion = (uiState as? SettingsUiState.Ready)?.version
 
     val context = LocalContext.current
+    // 地址默认完全隐藏；眼睛按钮临时显示完整地址（不落盘）。
+    var showAddress by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(SettingsStore.backgroundNotifications) }
     var notificationsGranted by remember { mutableStateOf(NotificationPermission.isGranted(context)) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -128,13 +137,50 @@ fun SettingsScreen(
             InfoRow(
                 "名称",
                 when {
-                    !name.isNullOrBlank() -> maskAddress(name)
+                    !name.isNullOrBlank() -> name
                     baseUrl.isBlank() -> "未配置"
                     else -> "未命名"
                 },
+                trailing = {
+                    if (baseUrl.isNotBlank()) {
+                        IconButton(onClick = { renameOpen = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "修改名称", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                },
             )
-            InfoRow("服务器地址", maskAddress(baseUrl).ifBlank { "未配置" }, monospace = true)
+            InfoRow(
+                "服务器地址",
+                when {
+                    baseUrl.isBlank() -> "未配置"
+                    showAddress -> baseUrl
+                    else -> HIDDEN_ADDRESS
+                },
+                monospace = true,
+                trailing = {
+                    if (baseUrl.isNotBlank()) {
+                        IconButton(onClick = { showAddress = !showAddress }, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                imageVector = if (showAddress) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = if (showAddress) "隐藏地址" else "显示地址",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                },
+            )
             InfoRow("token", if (token.isBlank()) "未配置" else "••••••••")
+            if (renameOpen) {
+                RenameConnectionDialog(
+                    initial = name.orEmpty(),
+                    onDismiss = { renameOpen = false },
+                    onSave = { next ->
+                        // updateConnection 会同时更新当前生效的连接名（若地址匹配）。
+                        SettingsStore.updateConnection(baseUrl, next, baseUrl, token)
+                        renameOpen = false
+                    },
+                )
+            }
             OutlinedButton(onClick = onReconnect, modifier = Modifier.fillMaxWidth()) {
                 Text("重新连接")
             }
@@ -364,24 +410,66 @@ internal fun DirectoryPickerDialog(
     }
 }
 
+/** 地址隐藏态：不泄露任何主机/端口信息，点眼睛才显示真实地址。 */
+private const val HIDDEN_ADDRESS = "••••••••"
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium)
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, monospace: Boolean = false) {
+private fun InfoRow(
+    label: String,
+    value: String,
+    monospace: Boolean = false,
+    trailing: @Composable () -> Unit = {},
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            value,
-            style = if (monospace) {
-                MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-            } else {
-                MaterialTheme.typography.bodyMedium
-            },
-            maxLines = if (monospace) 3 else 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                value,
+                style = if (monospace) {
+                    MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                } else {
+                    MaterialTheme.typography.bodyMedium
+                },
+                maxLines = if (monospace) 3 else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            trailing()
+        }
     }
+}
+
+/** 重命名连接：写回 SettingsStore（含当前生效的连接），不做重连。 */
+@Composable
+private fun RenameConnectionDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var draft by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重命名连接") },
+        text = {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                singleLine = true,
+                label = { Text("名称") },
+                placeholder = { Text("未命名") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draft.trim()) }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }

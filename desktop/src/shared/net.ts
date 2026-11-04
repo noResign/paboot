@@ -9,25 +9,13 @@ export function isInsecure(host: string, tls: boolean): boolean {
   return !tls && !isLoopback(host);
 }
 
-/**
- * Keep only the first octet of an IPv4 and hide its port as well:
- * `192.168.1.5:4780` → `192.*.*.*:****`. Hostnames pass through untouched.
- */
-export function maskAddress(value: string): string {
-  return value
-    .replace(/\b(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/g, '$1.*.*.*:****')
-    .replace(/\b(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '$1.*.*.*')
-    .replace(/\[([0-9a-fA-F]+):[0-9a-fA-F:]+\]:\d{1,5}/g, '[$1:…]:****')
-    .replace(/\[([0-9a-fA-F]+):[0-9a-fA-F:]+\]/g, '[$1:…]');
-}
-
-/** Prefer the user's name; fall back to a masked address, never a full IP. */
+/** Prefer the user-provided name; fall back to the address only when there is none. */
 export function displayHost(
   name: string | null | undefined,
   host: string | null | undefined,
 ): string {
   const trimmed = name?.trim();
-  if (trimmed) return maskAddress(trimmed);
-  if (host) return maskAddress(host);
+  if (trimmed) return trimmed;
+  if (host) return host;
   return '未命名主机';
 }

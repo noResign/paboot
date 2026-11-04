@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
-import { displayHost, maskAddress } from '../../../../shared/net';
+import { displayHost } from '../../../../shared/net';
 import { Icon } from '../../ui/Icon';
 
 /**
@@ -43,7 +43,7 @@ export function ConnectionSwitcher() {
       <button
         className="conn-pill"
         onClick={() => setOpen((value) => !value)}
-        title={active?.host ? maskAddress(active.host) : ''}
+        title={active?.host ?? ''}
       >
         <span className={`dot ${active?.connected ? 'ok' : 'warn'}`} />
         <span className="conn-name">{label}</span>
@@ -56,7 +56,7 @@ export function ConnectionSwitcher() {
             <div key={view.id} className={`conn-row${view.id === activeId ? ' active' : ''}`}>
               <button
                 className="conn-pick"
-                title={view.host ? maskAddress(view.host) : ''}
+                title={view.host ?? ''}
                 onClick={() => {
                   setOpen(false);
                   switchTo(view.id);
@@ -66,7 +66,7 @@ export function ConnectionSwitcher() {
                 <span className="conn-row-name">{displayHost(view.name, view.host)}</span>
                 {!view.connected && (
                   <span className="hint" style={{ margin: 0 }}>
-                    {maskAddress(view.error ?? '未连接')}
+                    {view.error ?? '未连接'}
                   </span>
                 )}
               </button>

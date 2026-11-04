@@ -73,6 +73,14 @@ export function registerIpc(
   });
   // Adding a host must not disturb the others (§4: 全部保持连接).
   ipcMain.handle(IPC.connSet, (_event, input: ConnectInput) => manager.connect(input));
+  ipcMain.handle(IPC.connRename, (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || !id) return null;
+    if (name !== null && typeof name !== 'string') return null;
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    // A display label, not a key: cap it so a paste cannot bloat the settings file.
+    if (trimmed.length > 80) return null;
+    return manager.rename(id, trimmed || null);
+  });
   ipcMain.handle(IPC.connClear, (_event, id: unknown) => {
     if (typeof id === 'string' && id) streams.cancelFor(id);
     else streams.cancelAll();

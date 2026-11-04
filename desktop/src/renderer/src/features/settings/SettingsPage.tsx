@@ -6,12 +6,13 @@ import { PreferencesSection } from './PreferencesSection';
 import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
-import { maskAddress } from '../../../../shared/net';
 import { Icon } from '../../ui/Icon';
 import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
+/** Nothing about the host leaks until the eye is clicked. */
+const HIDDEN_ADDRESS = '••••••••';
 
 const SOURCE_LABEL: Record<string, string> = {
   saved: '已保存的连接',
@@ -88,6 +89,9 @@ export function SettingsPage({
   const [tokenConfirm, setTokenConfirm] = useState(false);
   const [tokenResult, setTokenResult] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  // The server address is fully hidden by default; the eye reveals it.
+  const [showAddress, setShowAddress] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     void window.paboot.appInfo().then(setInfo);
@@ -100,9 +104,12 @@ export function SettingsPage({
 
   async function refreshManaged(): Promise<void> {
     setDaemon(await window.paboot.daemonStatus());
-    // Starting/stopping the local daemon flips our own connection with it, so the
-    // shell has to re-read whether it still has a host to show.
-    void refreshViews();
+    // The boot probe runs *before* an app-started daemon exists, so its `found`
+    // is null; the address block reads `probe.found`, so re-probe here — this
+    // also catches a daemon started from this page or by someone else.
+    // Starting/stopping the local daemon flips our own connection with it, so
+    // the shell has to re-read whether it still has a host to show.
+    await Promise.all([probeNow(), refreshViews()]);
   }
 
   // Only while this section is on screen — the log tail is not worth polling
@@ -159,6 +166,8 @@ export function SettingsPage({
   }
 
   const found = probe?.found ?? null;
+  // The scheme is noise in a settings row; host:port is what another device types.
+  const address = view?.baseUrl ? view.baseUrl.replace(/^https?:\/\//, '') : (view?.host ?? null);
 
   return (
     <div className="settings">
@@ -190,9 +199,61 @@ export function SettingsPage({
                 <h3>连接</h3>
                 <dl className="kv">
                   <dt>服务器</dt>
-                  <dd className="mono">{view?.host ? maskAddress(view.host) : '未连接'}</dd>
+                  <dd className="mono">
+                    {address ? (
+                      <span className="kv-inline">
+                        <span>{showAddress ? address : HIDDEN_ADDRESS}</span>
+                        <button
+                          className="icon-btn"
+                          title={showAddress ? '隐藏地址' : '显示地址'}
+                          aria-label={showAddress ? '隐藏地址' : '显示地址'}
+                          aria-pressed={showAddress}
+                          onClick={() => setShowAddress((value) => !value)}
+                        >
+                          <Icon name={showAddress ? 'eye-off' : 'eye'} size={14} />
+                        </button>
+                      </span>
+                    ) : (
+                      '未连接'
+                    )}
+                  </dd>
                   <dt>名称</dt>
-                  <dd>{view ? maskAddress(view.name?.trim() || '未命名') : '未配置'}</dd>
+                  <dd>
+                    {!view ? (
+                      '未配置'
+                    ) : renaming ? (
+                      <input
+                        className="kv-edit"
+                        autoFocus
+                        defaultValue={view.name ?? ''}
+                        maxLength={80}
+                        placeholder="未命名"
+                        aria-label="连接名称"
+                        onBlur={(event) => {
+                          setRenaming(false);
+                          const next = event.target.value.trim();
+                          if (next === (view.name ?? '')) return;
+                          void window.paboot.connRename(view.id, next || null).then(() => refreshViews());
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.currentTarget.blur();
+                          if (event.key === 'Escape') setRenaming(false);
+                        }}
+                      />
+                    ) : (
+                      <span className="kv-inline">
+                        <span>{view.name?.trim() || '未命名'}</span>
+                        <button
+                          className="icon-btn"
+                          title="修改名称"
+                          aria-label="修改名称"
+                          onClick={() => setRenaming(true)}
+                        >
+                          <Icon name="pencil" size={14} />
+                        </button>
+                      </span>
+                    )}
+                  </dd>
                   <dt>Token</dt>
                   <dd>
                     {view?.hasToken ? '已持有' : '无'}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
-import { displayHost, isInsecure, maskAddress } from '../../../../shared/net';
+import { displayHost, isInsecure } from '../../../../shared/net';
 import { Icon } from '../../ui/Icon';
 import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import { parseAddress } from './address';
@@ -315,7 +315,7 @@ export function ConnectPage() {
             等同于那台电脑上的远程 shell 权限。
           </div>
         )}
-        {error && !insecureWarning && <div className="error-text">{maskAddress(error)}</div>}
+        {error && !insecureWarning && <div className="error-text">{error}</div>}
         {errorCode === 'token_required' && (
           <div className="hint">
             这个 daemon 的 token 来自环境变量或启动参数，客户端读不到，请手动粘贴。

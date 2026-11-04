@@ -12,6 +12,7 @@ export const IPC = {
   connList: 'daemon:conn:list',
   connRemove: 'daemon:conn:remove',
   connSet: 'daemon:conn:set',
+  connRename: 'daemon:conn:rename',
   connClear: 'daemon:conn:clear',
   connProbe: 'daemon:conn:probe',
   recentList: 'app:recent:list',
@@ -402,6 +403,8 @@ export interface PabootBridge {
   /** Drop one connection (and its streams). Returns what is left. */
   connRemove(id: string): Promise<ConnectionView[]>;
   connSet(input: ConnectInput): Promise<ConnectResult>;
+  /** Rename a saved connection; `null` clears it. Returns the updated view. */
+  connRename(id: string, name: string | null): Promise<ConnectionView | null>;
   daemonStatus(): Promise<ManagedDaemonStatus>;
   /** Start one we own. Every failure is a `{ ok: false, code }`, never a rejection. */
   daemonStart(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;

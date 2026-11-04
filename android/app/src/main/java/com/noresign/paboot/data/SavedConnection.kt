@@ -1,7 +1,6 @@
 package com.noresign.paboot.data
 
-import com.noresign.paboot.util.hostOf
-import com.noresign.paboot.util.maskAddress
+import java.net.URI
 
 /** 一条「最近连接」记录：可读名称 + 连接成功过的 daemon 地址与 token。 */
 data class SavedConnection(
@@ -15,7 +14,10 @@ data class SavedConnection(
      */
     val serverId: String = "",
 ) {
-    /** 列表和设置页展示用；没起名时退回掩码地址，不直接暴露完整 IP。 */
+    /** 列表和设置页展示用；没起名时退回主机名/地址。 */
     val displayName: String
-        get() = maskAddress(name.ifBlank { hostOf(baseUrl) })
+        get() = name.ifBlank { hostOf(baseUrl) }
 }
+
+private fun hostOf(baseUrl: String): String =
+    runCatching { URI(baseUrl).host }.getOrNull() ?: baseUrl

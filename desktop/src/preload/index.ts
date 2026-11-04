@@ -28,6 +28,7 @@ const api: PabootBridge = {
   connList: () => ipcRenderer.invoke(IPC.connList),
   connRemove: (id: string) => ipcRenderer.invoke(IPC.connRemove, id),
   connSet: (input: ConnectInput) => ipcRenderer.invoke(IPC.connSet, input),
+  connRename: (id: string, name: string | null) => ipcRenderer.invoke(IPC.connRename, id, name),
   connClear: (id?: string) => ipcRenderer.invoke(IPC.connClear, id),
   connProbe: () => ipcRenderer.invoke(IPC.connProbe),
   recentList: () => ipcRenderer.invoke(IPC.recentList),

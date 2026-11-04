@@ -205,6 +205,18 @@ export function saveConnection(target: StoredTarget, token: string | null): stri
   return id;
 }
 
+/** Rename a saved connection and its recent entry. False when neither exists. */
+export function renameConnection(id: string, name: string | null): boolean {
+  const next = read();
+  const saved = next.connections.find((connection) => connectionId(connection) === id);
+  const recent = next.recent.find((entry) => entry.baseUrl === id);
+  if (!saved && !recent) return false;
+  if (saved) saved.name = name;
+  if (recent) recent.name = name;
+  write(next);
+  return true;
+}
+
 export function removeConnection(id: string): void {
   const next = read();
   next.connections = next.connections.filter((c) => connectionId(c) !== id);

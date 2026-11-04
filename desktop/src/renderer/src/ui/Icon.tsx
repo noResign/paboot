@@ -31,7 +31,9 @@ export type IconName =
   | 'stop'
   | 'alert'
   | 'folder'
-  | 'file';
+  | 'file'
+  | 'eye'
+  | 'eye-off';
 
 const GLYPHS: Record<IconName, ReactNode> = {
   plus: (
@@ -134,6 +136,19 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <path d="M13.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9Z" />
       <path d="M13.5 3.5V9H19" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </>
+  ),
+  'eye-off': (
+    <>
+      <path d="M10.7 6.2A10.6 10.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17.2 17.2 0 0 1-3.2 3.8" />
+      <path d="M6.4 6.5C3.9 8.1 2.5 12 2.5 12S6 18 12 18a10.5 10.5 0 0 0 4.2-.9" />
+      <path d="M3 3l18 18" />
     </>
   ),
 };

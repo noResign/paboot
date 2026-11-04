@@ -85,6 +85,15 @@ export class ConnectionManager {
     return entry ? this.viewOf(id, entry) : null;
   }
 
+  /** Rename a connection in place and persist it; no reconnect. */
+  rename(id: string, name: string | null): ConnectionView | null {
+    const entry = this.entries.get(id);
+    if (!entry) return null;
+    entry.target.name = name;
+    settings.renameConnection(id, name);
+    return this.viewOf(id, entry);
+  }
+
   private viewOf(id: string, entry: Entry): ConnectionView {
     const t = entry.target;
     return {

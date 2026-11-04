@@ -57,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.data.SavedConnection
 import com.noresign.paboot.ui.theme.Brand
 import com.noresign.paboot.ui.theme.BrandGlyph
-import com.noresign.paboot.util.maskAddress
 import com.noresign.paboot.viewmodel.ConnectUiState
 import com.noresign.paboot.viewmodel.ConnectViewModel
 import androidx.compose.foundation.background
@@ -381,7 +380,7 @@ private fun SwipeRevealConnectionRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = maskAddress(connection.baseUrl),
+                        text = connection.baseUrl,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

@@ -1509,6 +1509,23 @@ kbd {
   margin: 0;
   word-break: break-all;
 }
+/* Inline affordances inside a key/value row (reveal address, rename). */
+.kv-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.kv-inline .icon-btn {
+  width: 20px;
+  height: 20px;
+}
+.kv-edit {
+  width: 100%;
+  max-width: 260px;
+  height: 26px;
+  font-size: 12.5px;
+}
 .settings-actions {
   display: flex;
   gap: 8px;
