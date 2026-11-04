@@ -14,8 +14,6 @@ interface Props {
   needsInput: ReadonlyMap<string, number>;
   failed: ReadonlySet<string>;
   loading: boolean;
-  /** The rail is showing one directory instead of the whole workspace. */
-  filtered?: boolean;
   onSelect(id: string): void;
   onRename(id: string, title: string): void;
   onDelete(id: string): void;
@@ -36,7 +34,6 @@ export function SessionList({
   needsInput,
   failed,
   loading,
-  filtered = false,
   onSelect,
   onRename,
   onDelete,
@@ -75,19 +72,9 @@ export function SessionList({
   if (sessions.length === 0) {
     return (
       <div className="empty">
-        {filtered ? (
-          <>
-            该目录下还没有会话
-            <br />
-            换个目录或选择「全部目录」
-          </>
-        ) : (
-          <>
-            还没有会话
-            <br />
-            点上方「新建会话」，或从别的电脑连接一个 daemon
-          </>
-        )}
+        还没有会话
+        <br />
+        点上方「新建会话」，或从别的电脑连接一个 daemon
       </div>
     );
   }

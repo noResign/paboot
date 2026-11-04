@@ -4,6 +4,7 @@ import {
   directoryStats,
   fallbackWorkspaceId,
   initialWorkspaceId,
+  manageableWorkspaces,
   recentSessions,
   removeWorkspace,
   replaceWorkspace,
@@ -91,9 +92,29 @@ describe('initialWorkspaceId', () => {
 });
 
 describe('visibleWorkspaces', () => {
-  it('never renders the built-in fallback', () => {
+  it('never renders the dev built-in fallback', () => {
     const list = [ws('builtin', { isBuiltin: true }), ws('real')];
     expect(visibleWorkspaces(list).map((w) => w.id)).toEqual(['real']);
+  });
+
+  it('keeps the built-in life workspace, which must render as 生活', () => {
+    const list = [
+      ws('builtin', { isBuiltin: true }),
+      ws('real'),
+      ws('life', { isBuiltin: true, family: 'life', name: '生活' }),
+    ];
+    expect(visibleWorkspaces(list).map((w) => w.id)).toEqual(['real', 'life']);
+  });
+});
+
+describe('manageableWorkspaces', () => {
+  it('excludes the dev fallback and the reset-only life workspace', () => {
+    const list = [
+      ws('builtin', { isBuiltin: true }),
+      ws('real'),
+      ws('life', { isBuiltin: true, family: 'life' }),
+    ];
+    expect(manageableWorkspaces(list).map((w) => w.id)).toEqual(['real']);
   });
 });
 
@@ -102,6 +123,8 @@ describe('workspaceLabel', () => {
     expect(workspaceLabel(ws('builtin', { isBuiltin: true }))).toBe('内置工作区');
     expect(workspaceLabel(ws('real', { name: '项目' }))).toBe('项目');
     expect(workspaceLabel(ws('real', { name: '' }))).toBe('/home/real');
+    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '生活' }))).toBe('生活');
+    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '' }))).toBe('生活');
     expect(workspaceLabel(null)).toBeNull();
   });
 });

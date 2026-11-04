@@ -15,9 +15,12 @@ final class WorkspaceManagementViewController: UIViewController {
     private var emptyStateView: EmptyStateView?
 
     private var workspaces: [WorkspaceDto] = []
-    /// The built-in fallback keeps its id for session/file scoping but is never
-    /// listed as a workspace the user manages.
-    private var visibleWorkspaces: [WorkspaceDto] { workspaces.filter { !$0.isBuiltin } }
+    /// The dev fallback keeps its id for session/file scoping but is never listed.
+    /// The built-in life workspace is listed (dirs / rename are allowed; delete and
+    /// disable are not).
+    private var visibleWorkspaces: [WorkspaceDto] {
+        workspaces.filter { $0.family == "life" || !$0.isBuiltin }
+    }
     private var selectedWorkspaceId: String?
     private var hasLoaded = false
     private var hasPresentedActionError = false
@@ -339,6 +342,8 @@ extension WorkspaceManagementViewController: UITableViewDelegate {
     ) -> UISwipeActionsConfiguration? {
         guard indexPath.row < visibleWorkspaces.count else { return nil }
         let workspace = visibleWorkspaces[indexPath.row]
+        // Life is reset-only: no swipe-to-delete.
+        if workspace.family == "life" { return nil }
 
         let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, completion in
             self?.confirmDelete(workspace)
@@ -571,6 +576,7 @@ private final class WorkspaceCell: UITableViewCell {
         primaryPathButton.setTitle("主目录 · \(workspace.path)", for: .normal)
 
         toggleEnabledButton.setTitle(workspace.enabled ? "禁用" : "启用", for: .normal)
+        toggleEnabledButton.isHidden = workspace.family == "life"
 
         rebuildDirs(workspace.dirs)
         updateCardAppearance(selected: selected)

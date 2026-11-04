@@ -112,14 +112,17 @@ fun SessionListScreen(
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val selectedWorkspaceId by WorkspaceSelection.selectedId.collectAsState()
     val workspaces by viewModel.workspaces.collectAsState()
-    // daemon 的内置 fallback 仍用它的 id 拉会话/文件，但不作为可切换的工作区展示。
-    val shownWorkspaces = workspaces.filter { !it.isBuiltin }
-    val shownWorkspacePath = workspaces.find { it.id == selectedWorkspaceId }
-        ?.takeIf { it.isBuiltin }
-        ?.let { "内置工作区" }
-        ?: workspacePath
+    // daemon 的内置 fallback 仍用它的 id 拉会话/文件，但不作为可切换的工作区展示；
+    // family=life 是例外，必须渲染成「生活」入口。
+    val shownWorkspaces = workspaces.filter { it.family == "life" || !it.isBuiltin }
+    val selectedWorkspace = workspaces.find { it.id == selectedWorkspaceId }
+    val shownWorkspacePath = when {
+        selectedWorkspace?.family == "life" -> workspaceDisplayName(selectedWorkspace)
+        selectedWorkspace?.isBuiltin == true -> "内置工作区"
+        else -> workspacePath
+    }
     // 概览只读展示当前工作区的主目录 / 附加目录；没有真实工作区时入口隐藏（与切换菜单一致）。
-    val currentWorkspace = workspaces.find { it.id == selectedWorkspaceId }
+    val currentWorkspace = selectedWorkspace
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }

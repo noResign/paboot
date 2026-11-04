@@ -57,7 +57,7 @@ fun WorkspaceOverviewSheet(
 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (workspace.isBuiltin) "内置工作区" else workspace.name.ifBlank { workspace.path },
+                    workspaceDisplayName(workspace) ?: workspace.path,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

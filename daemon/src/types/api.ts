@@ -159,6 +159,12 @@ export interface WorkspaceDto {
   isDefault: boolean;
   /** The built-in fallback root. It is visible only while it is the only workspace. */
   isBuiltin: boolean;
+  /** `dev` | `life`; absent on older daemons (treated as `dev`). */
+  family?: 'dev' | 'life';
+  /** `off` | `portable` | `full`; life only (D35 default `portable`). */
+  profileMode?: 'off' | 'portable' | 'full';
+  /** dev only: whether life may read this workspace; the column default is off. */
+  lifeReadable?: boolean;
   enabled: boolean;
   sessionCount: number;
   createdAt: number;

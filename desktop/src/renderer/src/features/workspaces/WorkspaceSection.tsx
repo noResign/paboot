@@ -3,7 +3,7 @@ import { Icon } from '../../ui/Icon';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, type WorkspaceMutation } from '../../store/sessions';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
-import { visibleWorkspaces } from '../../store/workspaceList';
+import { manageableWorkspaces } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
 import type { WorkspaceDto } from '../../../../shared/contract';
 
@@ -39,7 +39,7 @@ export function WorkspaceSection() {
   const workspacePaths = useMemo(() => scope.workspaces.map((item) => item.path), [scope.workspaces]);
   // The built-in fallback is usable (it holds the session/file id) but is not a
   // workspace the user manages, so it never gets a card here.
-  const managedWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
+  const managedWorkspaces = useMemo(() => manageableWorkspaces(scope.workspaces), [scope.workspaces]);
 
   useEffect(() => {
     if (!notice) return;

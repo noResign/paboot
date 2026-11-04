@@ -77,13 +77,7 @@ fun NewSessionSheet(
                         // 会话归属的工作区由「工作区管理」里的当前选择决定，此处只读展示。
                         item {
                             val workspace = state.workspaces.find { it.id == selectedWorkspaceId }
-                            val workspaceLabel = workspace?.let {
-                                when {
-                                    it.isBuiltin -> "内置工作区"
-                                    it.name.isBlank() -> it.path
-                                    else -> it.name
-                                }
-                            }
+                            val workspaceLabel = workspaceDisplayName(workspace)
                             Text(
                                 text = "工作区：${workspaceLabel ?: "-"}",
                                 style = MaterialTheme.typography.labelSmall,
@@ -93,10 +87,10 @@ fun NewSessionSheet(
                             )
                             if (workspace != null) {
                                 Text(
-                                    text = if (workspace.isBuiltin) {
-                                        "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
-                                    } else {
-                                        "主目录：${workspace.path}。其他目录会自动作为附加目录。"
+                                    text = when {
+                                        workspace.isBuiltin && workspace.family != "life" ->
+                                            "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
+                                        else -> "主目录：${workspace.path}。其他目录会自动作为附加目录。"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,

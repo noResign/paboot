@@ -2,12 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import {
-  directoryName,
   fallbackWorkspaceId,
   initialWorkspaceId,
-  sessionMatchesDir,
   visibleWorkspaces,
-  workspaceDirectories,
   workspaceLabel,
 } from '../../store/workspaceList';
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
@@ -123,8 +120,6 @@ export function AppShell() {
    * a full skeleton flash for a navigation that never left the session.
    */
   const [overviewOpen, setOverviewOpen] = useState(false);
-  /** Rail-only directory filter; never changes what a session belongs to. */
-  const [dirFilter, setDirFilter] = useState<string | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
   /** When set, the Tasks page shows only this session's tasks. */
@@ -150,14 +145,6 @@ export function AppShell() {
   const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
   const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
-  const workspaceDirs = useMemo(
-    () => (selectedWorkspace ? workspaceDirectories(selectedWorkspace) : []),
-    [selectedWorkspace],
-  );
-  const shownSessions = useMemo(
-    () => (dirFilter ? sessions.filter((session) => sessionMatchesDir(session.cwd, dirFilter)) : sessions),
-    [sessions, dirFilter],
-  );
   /**
    * The overview takes the main area while it is open — and whenever no chat is
    * open at all (fresh launch, just switched workspace, deleted session). The
@@ -167,14 +154,7 @@ export function AppShell() {
 
   useEffect(() => {
     setTaskFilter(null);
-    setDirFilter(null);
   }, [connectionId, workspaceId]);
-
-  // A filtered directory can disappear from the workspace (removed on another
-  // device): clear instead of silently showing an empty rail.
-  useEffect(() => {
-    if (dirFilter && !workspaceDirs.includes(dirFilter)) setDirFilter(null);
-  }, [dirFilter, workspaceDirs]);
 
   // A different host means a different session list: drop the rail's selection.
   // The workspace choice needs no reset here — it is scoped to its connection,
@@ -355,7 +335,18 @@ export function AppShell() {
 
   // The built-in fallback keeps its id for fetching, but never shows up as a
   // row/menu entry. It is the only entry only until the first real workspace.
+  // family=life is the exception: the built-in life workspace must be renderable
+  // as「生活」, so it stays in this list.
   const shownWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
+  /** No real dev workspace yet: only the scratch fallback (and maybe life). */
+  const hasRealDevWorkspace = useMemo(
+    () => scope.workspaces.some((workspace) => workspace.family !== 'life' && !workspace.isBuiltin),
+    [scope.workspaces],
+  );
+  // A single visible workspace is a label — unless it is not the current one
+  // (only-fallback + life), where the switcher must still offer moving to life.
+  const currentIsVisible = shownWorkspaces.some((workspace) => workspace.id === workspaceId);
+  const showWorkspaceSelect = shownWorkspaces.length > 1 || (shownWorkspaces.length === 1 && !currentIsVisible);
   const runningCount = sessions.filter((session) => session.running).length;
   /*
    * Four columns are more than a 1280–1440 window can hold. The panel's width
@@ -698,12 +689,17 @@ export function AppShell() {
             <ConnectionSwitcher />
             {(shownWorkspaces.length > 0 || selectedWorkspace) && (
               <div className="rail-ws-row">
-                {shownWorkspaces.length > 1 ? (
+                {showWorkspaceSelect ? (
                   <select
                     className="ws-select"
-                    value={workspaceId}
+                    value={currentIsVisible ? workspaceId : ''}
                     onChange={(event) => switchWorkspace(event.target.value)}
                   >
+                    {!currentIsVisible && selectedWorkspace && (
+                      <option value="" disabled>
+                        {workspaceLabel(selectedWorkspace)}（当前）
+                      </option>
+                    )}
                     {shownWorkspaces.map((workspace) => (
                       <option key={workspace.id} value={workspace.id}>
                         {workspaceLabel(workspace)} · {workspace.sessionCount} 个会话
@@ -723,23 +719,6 @@ export function AppShell() {
                 </button>
               </div>
             )}
-            {workspaceDirs.length > 1 && (
-              <div className="rail-dir-row">
-                <select
-                  className="ws-select"
-                  value={dirFilter ?? ''}
-                  title="按目录筛选会话"
-                  onChange={(event) => setDirFilter(event.target.value || null)}
-                >
-                  <option value="">全部目录</option>
-                  {workspaceDirs.map((dir, index) => (
-                    <option key={dir} value={dir}>
-                      {index === 0 ? `${directoryName(dir)}（主目录）` : directoryName(dir)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
             <button
               className="btn soft"
               onClick={() => setNewSessionOpen(true)}
@@ -757,8 +736,7 @@ export function AppShell() {
               </div>
             ) : (
               <SessionList
-                sessions={shownSessions}
-                filtered={Boolean(dirFilter)}
+                sessions={sessions}
                 selectedId={selectedId}
                 needsInput={needsInput}
                 failed={failed}
@@ -849,10 +827,6 @@ export function AppShell() {
                       sessions={sessions}
                       onNewSession={() => setNewSessionOpen(true)}
                       onOpenSession={select}
-                      onFilterDir={(dir) => {
-                        setDirFilter(dir);
-                        showOverview();
-                      }}
                       onCopy={copyText}
                       onOpenSettings={() => openSettings('workspaces')}
                       onWorkspaceCreated={(id) => switchWorkspace(id)}
@@ -902,7 +876,7 @@ export function AppShell() {
         <NewSessionDialog
           workspaceName={selectedWorkspaceLabel}
           workspacePath={selectedWorkspace?.path ?? null}
-          onlyFallback={shownWorkspaces.length === 0}
+          onlyFallback={!hasRealDevWorkspace && selectedWorkspace?.family !== 'life'}
           onAddWorkspace={() => {
             setNewSessionOpen(false);
             openSettings('workspaces');

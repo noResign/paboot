@@ -108,6 +108,10 @@ async function main(): Promise<void> {
     // marks the workspace as built-in instead of a real user choice.
     path.join(config.dataDir, 'defaultworkspace'),
   );
+  // The life workspace is built-in and reset-only. Creating it at boot keeps it
+  // out of the schema migration and means `GET /api/workspaces` always has the
+  // 「生活」entry a client must render (family=life is the one builtin exception).
+  db.ensureLifeWorkspace(path.join(config.dataDir, 'life'));
   // Runs are only ever `running` while a process is live. After a restart the
   // active-run registry is empty, so anything still `running` is a run the
   // previous process left behind — reconcile it before serving requests.

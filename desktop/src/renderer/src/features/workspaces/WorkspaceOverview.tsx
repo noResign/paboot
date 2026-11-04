@@ -20,8 +20,6 @@ interface Props {
   sessions: SessionDto[];
   onNewSession(): void;
   onOpenSession(id: string): void;
-  /** Apply a rail directory filter; `null` clears it. */
-  onFilterDir(dir: string | null): void;
   onCopy(text: string): void;
   onOpenSettings(): void;
   onWorkspaceCreated(id: string): void;
@@ -42,7 +40,6 @@ export function WorkspaceOverview({
   sessions,
   onNewSession,
   onOpenSession,
-  onFilterDir,
   onCopy,
   onOpenSettings,
   onWorkspaceCreated,
@@ -111,7 +108,9 @@ export function WorkspaceOverview({
     />
   );
 
-  if (!workspace || workspace.isBuiltin) {
+  // The dev fallback is a technical scratch (no overview); family=life is a
+  // real, built-in workspace and must still render (as「生活」).
+  if (!workspace || (workspace.isBuiltin && workspace.family !== 'life')) {
     return (
       <div className="workspace-overview">
         <div className="wo-empty settings-section">
@@ -135,6 +134,7 @@ export function WorkspaceOverview({
     );
   }
 
+  const isLife = workspace.family === 'life';
   const dirs = workspaceDirectories(workspace);
   const recent = recentSessions(sessions, 8);
   // `sessions` is empty until the workspace's batch lands, so "no sessions in
@@ -143,14 +143,11 @@ export function WorkspaceOverview({
 
   function dirMenu(dir: string, stats: ReturnType<typeof directoryStats>, main: boolean): MenuItem[] {
     const items: MenuItem[] = [{ id: 'copy', label: '复制路径', run: () => onCopy(dir) }];
-    // The primary dir is not removable (v1 has no "change primary"), and
-    // filtering by it would match every session while the rail hides the
-    // filter for a single-dir workspace — so neither item belongs on its row.
+    // The primary dir is not removable (v1 has no "change primary").
     if (main) return items;
     const blocked = stats.count > 0;
     return [
       ...items,
-      { id: 'filter', label: '在会话列表筛选此目录', run: () => onFilterDir(dir) },
       {
         id: 'remove',
         label: !sessionsLoaded
@@ -190,9 +187,11 @@ export function WorkspaceOverview({
             <Icon name="plus" size={15} />
             添加目录
           </button>
-          <button className="btn ghost" onClick={onOpenSettings}>
-            工作区设置
-          </button>
+          {!isLife && (
+            <button className="btn ghost" onClick={onOpenSettings}>
+              工作区设置
+            </button>
+          )}
         </div>
       </header>
 
@@ -247,17 +246,16 @@ export function WorkspaceOverview({
             </div>
           );
         })}
-        <p className="hint">附加目录会扩大这个工作区所有会话的可写范围，不是只给当前对话。</p>
+        <p className="hint">
+          {dirs.length > 1
+            ? '附加目录会扩大这个工作区所有会话的可写范围，不是只给当前对话。'
+            : '还没有附加目录，可以在「添加目录」里把别的目录加进来。'}
+        </p>
       </section>
 
       <section className="settings-section">
         <div className="section-head">
           <h3>最近会话</h3>
-          {dirs.length > 1 && (
-            <button className="btn ghost tiny" onClick={() => onFilterDir(null)}>
-              查看全部
-            </button>
-          )}
         </div>
         {recent.length === 0 ? (
           <p className="hint">还没有会话。点上方「新建会话」开始。</p>

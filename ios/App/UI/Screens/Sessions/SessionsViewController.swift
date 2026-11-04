@@ -310,7 +310,12 @@ final class SessionsViewController: UIViewController {
         }
 
         let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID })
-        let selectedLabel = selectedWorkspace?.isBuiltin == true ? "内置工作区" : state.selectedWorkspacePath
+        let selectedLabel: String?
+        if selectedWorkspace?.family == "life" {
+            selectedLabel = selectedWorkspace?.displayName
+        } else {
+            selectedLabel = selectedWorkspace?.isBuiltin == true ? "内置工作区" : state.selectedWorkspacePath
+        }
         pathLabel.text = selectedLabel
         pathLabel.isHidden = selectedLabel == nil
         updateWorkspaceMenu(state)
@@ -461,7 +466,9 @@ final class SessionsViewController: UIViewController {
     private func updateWorkspaceMenu(_ state: SessionListViewModel.State) {
         // The built-in fallback still scopes sessions/files, but is not a row the
         // user can switch to.
-        let shown = state.workspaces.filter { !$0.isBuiltin }
+        // family=life is a builtin the client must still render (as「生活」);
+        // only the dev fallback is hidden.
+        let shown = state.workspaces.filter { $0.family == "life" || !$0.isBuiltin }
         let signature = shown.map(\.id).joined(separator: ",")
             + "|" + (state.selectedWorkspaceID ?? "")
         guard signature != workspaceMenuSignature else { return }
@@ -929,9 +936,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
     private func buildContent() {
         let name = UILabel()
-        name.text = workspace.isBuiltin
-            ? "内置工作区"
-            : (workspace.name.isEmpty ? workspace.path : workspace.name)
+        name.text = workspace.displayName
         name.font = Typography.cardTitle
         name.textColor = Theme.Colors.textPrimary
         name.numberOfLines = 0
@@ -966,7 +971,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         hint.numberOfLines = 0
         contentStack.addArrangedSubview(hint)
 
-        if workspace.isBuiltin {
+        if workspace.isBuiltin && workspace.family != "life" {
             let builtin = UILabel()
             builtin.text = "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
             builtin.font = Typography.caption
