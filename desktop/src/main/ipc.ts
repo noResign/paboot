@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell as electronShell } from 'electron';
+import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { IPC } from '../shared/ipc';
 import type {
   AppPrefs,
@@ -10,6 +12,8 @@ import type {
   ConnectInput,
   DaemonRequest,
   NotifyInput,
+  RevealInput,
+  RevealResult,
   StreamCancelInput,
   StreamSpec,
   TrayState,
@@ -178,6 +182,35 @@ export function registerIpc(
   ipcMain.handle(IPC.streamCancel, (_event, input: StreamCancelInput) => {
     if (!input || typeof input.streamId !== 'string') return;
     streams.cancel({ streamId: input.streamId, abortRun: input.abortRun === true });
+  });
+
+  // OS file-manager actions only make sense when the daemon is on this machine:
+  // a remote daemon's paths do not exist here (and an SSH tunnel would make that
+  // invisible to an address check alone, hence `local` on the view).
+  ipcMain.handle(IPC.revealPath, async (_event, input: RevealInput): Promise<RevealResult> => {
+    if (
+      !input ||
+      typeof input.connectionId !== 'string' ||
+      typeof input.path !== 'string' ||
+      (input.kind !== 'file' && input.kind !== 'directory')
+    ) {
+      return { ok: false, code: 'bad_path', message: '非法参数' };
+    }
+    if (!manager.view(input.connectionId)?.local) {
+      return { ok: false, code: 'not_local', message: '该 daemon 不在本机' };
+    }
+    if (!isAbsolute(input.path)) {
+      return { ok: false, code: 'bad_path', message: '需要绝对路径' };
+    }
+    if (!existsSync(input.path)) {
+      return { ok: false, code: 'not_found', message: '路径不存在' };
+    }
+    if (input.kind === 'directory') {
+      const failure = await electronShell.openPath(input.path);
+      return failure ? { ok: false, code: 'open_failed', message: failure } : { ok: true };
+    }
+    electronShell.showItemInFolder(input.path);
+    return { ok: true };
   });
 }
 

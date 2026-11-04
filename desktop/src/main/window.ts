@@ -3,6 +3,7 @@ import { loadWindowBounds, saveWindowBounds, type WindowBounds } from './setting
 import { existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { MEDIA_SCHEME } from '../shared/media';
 
 /**
  * The renderer is served over a custom `paboot://` scheme rather than
@@ -40,6 +41,11 @@ export function registerAppScheme(): void {
   protocol.registerSchemesAsPrivileged([
     {
       scheme: APP_SCHEME,
+      privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+    },
+    {
+      // `stream` keeps `<video>` from buffering the whole file before playback.
+      scheme: MEDIA_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
     },
   ]);

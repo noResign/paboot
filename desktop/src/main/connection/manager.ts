@@ -96,6 +96,12 @@ export class ConnectionManager {
       host: t.host,
       port: t.port,
       tls: t.tls,
+      // Loopback covers the normal case; the serverId match recovers a local
+      // daemon dialed by a LAN address. A daemon old enough not to send
+      // `serverId` stays loopback-only.
+      local:
+        settings.isLoopback(t.host) ||
+        (entry.serverId !== null && entry.serverId === this.lastProbe?.found?.serverId),
       hasToken: entry.token !== null,
       tokenEphemeral: !settings.isLoopback(t.host) && !safeStorage.isEncryptionAvailable(),
       tokenSource: entry.localTokenSource,

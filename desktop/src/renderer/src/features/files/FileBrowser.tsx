@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../ipc/client';
+import { useEffect, useState, type MouseEvent } from 'react';
+import { api, revealPath } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
 import { Icon } from '../../ui/Icon';
+import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 import type {
   ChangedFileDto,
@@ -99,6 +100,29 @@ export function FileBrowser({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
+
+  const { menu, open, close } = useContextMenu();
+  // OS-level reveal needs the daemon on this machine — see `ConnectionView.local`.
+  const localDaemon = useConnection(
+    (state) => state.views.find((view) => view.id === state.activeId)?.local === true,
+  );
+  const rootPath = mode === 'changes' ? (changes?.root ?? null) : (listing?.root ?? null);
+
+  const openEntryMenu = (event: MouseEvent, path: string, kind: 'file' | 'directory'): void => {
+    const items: MenuItem[] = [
+      { id: 'copy-path', label: '复制路径', run: () => void navigator.clipboard.writeText(path) },
+    ];
+    if (localDaemon && rootPath) {
+      // Wire paths always use `/`; the native root may end with either separator.
+      const absolute = `${rootPath.replace(/[\\/]+$/, '')}/${path}`;
+      items.push({
+        id: 'reveal',
+        label: kind === 'directory' ? '打开文件夹' : '在文件夹中显示',
+        run: () => void revealPath(absolute, kind),
+      });
+    }
+    open(event, items);
+  };
 
   useEffect(() => {
     setDir('');
@@ -326,6 +350,7 @@ export function FileBrowser({
             expanded={expanded}
             onToggleDir={(path) => void toggleDir(path)}
             onPick={(path, kind) => onSelect({ path, kind })}
+            onContext={openEntryMenu}
           />
         ) : (
           <AllFilesList
@@ -334,6 +359,7 @@ export function FileBrowser({
             onOpenDir={navigate}
             onPick={(path) => onSelect({ path, kind: 'content' })}
             onLoadMore={() => void loadMore()}
+            onContext={openEntryMenu}
           />
         )}
       </div>
@@ -351,6 +377,8 @@ export function FileBrowser({
           onPick={(path) => void addBookmark(path)}
         />
       )}
+
+      <ContextMenu menu={menu} onClose={close} />
     </div>
   );
 }
@@ -403,6 +431,7 @@ function ChangesList({
   expanded,
   onToggleDir,
   onPick,
+  onContext,
 }: {
   changes: ChangesResponse | null;
   compact: boolean;
@@ -410,6 +439,7 @@ function ChangesList({
   expanded: Record<string, DirExpansion>;
   onToggleDir(path: string): void;
   onPick(path: string, kind: 'diff' | 'content'): void;
+  onContext(event: MouseEvent, path: string, kind: 'file' | 'directory'): void;
 }) {
   if (!changes) return null;
   if (!changes.isGitRepo) {
@@ -430,6 +460,7 @@ function ChangesList({
           expanded={expanded}
           onToggleDir={onToggleDir}
           onPick={onPick}
+          onContext={onContext}
         />
       ))}
     </>
@@ -451,6 +482,7 @@ function ChangeNode({
   expanded,
   onToggleDir,
   onPick,
+  onContext,
 }: {
   row: Row;
   depth: number;
@@ -459,6 +491,7 @@ function ChangeNode({
   expanded: Record<string, DirExpansion>;
   onToggleDir(path: string): void;
   onPick(path: string, kind: 'diff' | 'content'): void;
+  onContext(event: MouseEvent, path: string, kind: 'file' | 'directory'): void;
 }) {
   const indent = { paddingLeft: 8 + depth * 12 };
   const state = expanded[row.path];
@@ -471,6 +504,7 @@ function ChangeNode({
         style={indent}
         title={row.path}
         onClick={() => onPick(row.path, depth === 0 ? 'diff' : 'content')}
+        onContextMenu={(event) => onContext(event, row.path, 'file')}
       >
         <span className="frow-main">
           <span className="fname">
@@ -485,7 +519,13 @@ function ChangeNode({
 
   return (
     <>
-      <button className="fnode fnode-rich" style={indent} title={row.path} onClick={() => onToggleDir(row.path)}>
+      <button
+        className="fnode fnode-rich"
+        style={indent}
+        title={row.path}
+        onClick={() => onToggleDir(row.path)}
+        onContextMenu={(event) => onContext(event, row.path, 'directory')}
+      >
         <span className="frow-main">
           <span className="fchev">
             <Icon name={state ? 'chevron-down' : 'chevron-right'} size={12} />
@@ -518,6 +558,7 @@ function ChangeNode({
           expanded={expanded}
           onToggleDir={onToggleDir}
           onPick={onPick}
+          onContext={onContext}
         />
       ))}
       {state && !state.loading && !state.error && state.entries.length === 0 && (
@@ -535,12 +576,14 @@ function AllFilesList({
   onOpenDir,
   onPick,
   onLoadMore,
+  onContext,
 }: {
   listing: FilesResponse | null;
   selected: string | null;
   onOpenDir(path: string): void;
   onPick(path: string): void;
   onLoadMore(): void;
+  onContext(event: MouseEvent, path: string, kind: 'file' | 'directory'): void;
 }) {
   if (!listing) return null;
   if (listing.entries.length === 0) return <div className="fnotice">这个目录是空的。</div>;
@@ -552,6 +595,9 @@ function AllFilesList({
           className={`fnode${entry.path === selected ? ' active' : ''}`}
           title={entry.path}
           onClick={() => (entry.type === 'directory' ? onOpenDir(entry.path) : onPick(entry.path))}
+          onContextMenu={(event) =>
+            onContext(event, entry.path, entry.type === 'directory' ? 'directory' : 'file')
+          }
         >
           <span className="fname">
             {entry.type === 'directory' && <Icon name="folder" size={13} className="ficon" />}

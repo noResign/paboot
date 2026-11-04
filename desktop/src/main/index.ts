@@ -9,6 +9,7 @@ import {
   type ManagedDaemonTokenResult,
 } from '../shared/ipc';
 import { createWindow, installAppProtocol, installCsp, registerAppScheme } from './window';
+import { installMediaProtocol } from './media-protocol';
 import { ConnectionManager, daemonDataDir } from './connection/manager';
 import { SYSTEMD_UNIT_NAME, baseUrlOf, systemdUnitPath } from './connection/discovery';
 import { DaemonClient } from './daemon/client';
@@ -516,6 +517,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     installMenu();
     installAppProtocol();
+    installMediaProtocol(manager);
     installCsp(session.defaultSession);
     registerIpc(manager, streams, { tray, showWindow, quitApp, openSessionWindow, daemon: daemonApi }, registry);
 

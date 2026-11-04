@@ -59,6 +59,7 @@ function view(id: string, over: Partial<ConnectionView> = {}): ConnectionView {
     host: null,
     port: null,
     tls: false,
+    local: false,
     hasToken: true,
     tokenEphemeral: false,
     tokenSource: null,

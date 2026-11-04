@@ -16,6 +16,7 @@ export const ROUTES = {
   config: '/api/config',
   files: '/api/files',
   fileContent: '/api/files/content',
+  fileRaw: '/api/files/raw',
   changes: '/api/changes',
   changesDiff: '/api/changes/diff',
   sessions: '/api/sessions',

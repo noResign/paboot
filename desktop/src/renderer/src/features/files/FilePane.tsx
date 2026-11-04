@@ -135,7 +135,7 @@ export function FilePane({
         ) : diff ? (
           <DiffViewer diff={diff} view={view} />
         ) : file ? (
-          <FileContent file={file} />
+          <FileContent file={file} workspaceId={workspaceId} />
         ) : (
           <div className="fnotice">左侧选一个文件，这里显示它的内容或改动。</div>
         )}

@@ -2871,6 +2871,25 @@ a.btn {
   overflow: visible;
 }
 
+/* Image/video preview: contain within the pane rather than crop. */
+.fmedia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+.fmedia img,
+.fmedia video {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+.fmedia video {
+  width: 100%;
+}
+
 .fdiff {
   font-family: var(--font-mono);
   font-size: 12px;

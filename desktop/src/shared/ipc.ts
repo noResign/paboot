@@ -33,6 +33,7 @@ export const IPC = {
   streamStart: 'stream:start',
   streamCancel: 'stream:cancel',
   streamEvent: 'stream:event',
+  revealPath: 'app:reveal-path',
 } as const;
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -58,6 +59,22 @@ export interface DaemonResponse<T = unknown> {
   ok: boolean;
   data: T;
 }
+
+/** An OS file-manager action against a path on the daemon's machine. */
+export interface RevealInput {
+  connectionId: string;
+  /** Absolute native path. The renderer joins it from the daemon-reported root. */
+  path: string;
+  kind: 'file' | 'directory';
+}
+
+export type RevealResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code: 'not_connected' | 'not_local' | 'bad_path' | 'not_found' | 'open_failed';
+      message: string;
+    };
 
 /** Where a discovered daemon came from, in candidate-table priority order. */
 export type DaemonSource = 'saved' | 'managed' | 'default' | 'systemd' | 'port-scan';
@@ -129,6 +146,12 @@ export interface ConnectionView {
   host: string | null;
   port: number | null;
   tls: boolean;
+  /**
+   * The daemon runs on this machine: a loopback address, or one whose
+   * `serverId` matches the locally discovered daemon. Used for OS-level actions
+   * (reveal in the file manager) that cannot cross the network.
+   */
+  local: boolean;
   hasToken: boolean;
   /** Token held only in memory (safeStorage unavailable) — not remembered. */
   tokenEphemeral: boolean;
@@ -413,4 +436,6 @@ export interface PabootBridge {
   streamCancel(input: StreamCancelInput): Promise<void>;
   /** Subscribe to stream events; returns an unsubscribe function. */
   onStream(listener: (event: StreamEvent) => void): () => void;
+  /** Reveal a file / open a directory in the OS file manager (local daemon only). */
+  revealPath(input: RevealInput): Promise<RevealResult>;
 }

@@ -6,6 +6,7 @@ import type {
   DaemonResponse,
   ManagedDaemonStartInput,
   ManagedDaemonStartResult,
+  RevealResult,
   StreamCancelInput,
   StreamSpec,
 } from '../../../shared/ipc';
@@ -57,6 +58,17 @@ let activeConnectionId: string | null = null;
 
 export function setActiveConnectionId(id: string | null): void {
   activeConnectionId = id;
+}
+
+/**
+ * Reveal a file / open a directory on the daemon's machine. Main re-checks both
+ * "local daemon" and "path exists", so a stale menu cannot bypass either.
+ */
+export function revealPath(path: string, kind: 'file' | 'directory'): Promise<RevealResult> {
+  if (!activeConnectionId) {
+    return Promise.resolve({ ok: false, code: 'not_connected', message: '尚未连接 daemon' });
+  }
+  return window.paboot.revealPath({ connectionId: activeConnectionId, path, kind });
 }
 
 async function request<T>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {

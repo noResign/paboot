@@ -1,5 +1,8 @@
 import { formatBytes } from '../../../../shared/format';
+import { mediaKindOf, mediaUrl } from '../../../../shared/media';
+import { useConnection } from '../../store/connection';
 import { Markdown } from '../chat/Markdown';
+import { fileName } from './pathLabel';
 import type { FileContentDto } from '../../../../shared/contract';
 
 const MARKDOWN_FILE = /\.(md|markdown)$/i;
@@ -10,8 +13,27 @@ const MARKDOWN_FILE = /\.(md|markdown)$/i;
  * shows size + path instead of a megabyte of mojibake.
  *
  * Markdown is rendered instead of shown as source, matching the mobile clients.
+ * Images/videos stream from `/api/files/raw` through `paboot-media://` instead
+ * of going through the size-capped text endpoint.
  */
-export function FileContent({ file }: { file: FileContentDto }) {
+export function FileContent({ file, workspaceId }: { file: FileContentDto; workspaceId: string | null }) {
+  const connectionId = useConnection((state) => state.activeId);
+  const mediaKind = mediaKindOf(file.path);
+  if (mediaKind) {
+    if (!connectionId || !workspaceId) {
+      return <div className="fnotice">尚未连接 daemon。</div>;
+    }
+    const src = mediaUrl({ connectionId, workspaceId, root: file.root, path: file.path });
+    return (
+      <div className="fmedia">
+        {mediaKind === 'image' ? (
+          <img src={src} alt={fileName(file.path)} />
+        ) : (
+          <video src={src} controls playsInline preload="metadata" />
+        )}
+      </div>
+    );
+  }
   if (file.binary) {
     return <div className="fnotice">二进制文件，不预览。{formatBytes(file.size)}</div>;
   }

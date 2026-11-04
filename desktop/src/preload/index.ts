@@ -6,6 +6,7 @@ import type {
   ConnectInput,
   DaemonRequest,
   NotifyInput,
+  RevealInput,
   StreamCancelInput,
   StreamEvent,
   StreamSpec,
@@ -56,6 +57,7 @@ const api: PabootBridge = {
     ipcRenderer.on(IPC.streamEvent, handler);
     return () => ipcRenderer.removeListener(IPC.streamEvent, handler);
   },
+  revealPath: (input: RevealInput) => ipcRenderer.invoke(IPC.revealPath, input),
 };
 
 contextBridge.exposeInMainWorld('paboot', api);

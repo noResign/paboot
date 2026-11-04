@@ -75,6 +75,23 @@ export class DaemonClient {
   }
 
   /**
+   * Authenticated raw fetch that leaves the body unread. The media protocol
+   * uses this so `<video>` can carry `Range` and stream `206` bytes without the
+   * renderer ever seeing the token.
+   */
+  fetchRaw(
+    path: string,
+    query?: DaemonRequest['query'],
+    headers: Record<string, string> = {},
+    method: 'GET' | 'HEAD' = 'GET',
+  ): Promise<Response> {
+    return fetch(buildUrl(this.target.baseUrl, path, query), {
+      method,
+      headers: { Authorization: `Bearer ${this.target.token}`, ...headers },
+    });
+  }
+
+  /**
    * A client already belongs to one connection, so it does not need to be told
    * which daemon a request is for — main's IPC layer strips that field before
    * handing the request over.
