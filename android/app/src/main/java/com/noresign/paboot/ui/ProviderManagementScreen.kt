@@ -1,22 +1,37 @@
 package com.noresign.paboot.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -31,13 +46,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.network.daemon.dto.ProviderDto
+import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.noresign.paboot.viewmodel.ProviderDraft
-import com.noresign.paboot.viewmodel.ProviderUiState
 import com.noresign.paboot.viewmodel.ProviderViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,50 +69,92 @@ fun ProviderManagementScreen(
     var editorOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ProviderDto?>(null) }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text("模型 Provider") },
-            navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-        )
-    }) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                "builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机，不会回传客户端。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = {
-                    editorTarget = null
-                    editorOpen = true
-                    viewModel.clearMessages()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("模型 Provider") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
                 },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("新增 Provider") }
-
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            state.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            if (state.loading) CircularProgressIndicator()
-            state.providers.forEach { provider ->
-                ProviderCard(
-                    provider = provider,
-                    busy = state.busy,
-                    onEdit = {
-                        editorTarget = provider
-                        editorOpen = true
-                        viewModel.clearMessages()
-                    },
-                    onTest = { viewModel.test(provider) },
-                    onRefresh = { viewModel.refreshModels(provider) },
-                    onDelete = { deleteTarget = provider },
-                )
+                actions = {
+                    TextButton(
+                        onClick = {
+                            editorTarget = null
+                            editorOpen = true
+                            viewModel.clearMessages()
+                        },
+                    ) { Text("+ 新增") }
+                },
+            )
+        },
+    ) { padding ->
+        if (state.loading && state.providers.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        "builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机，不会回传客户端。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+                state.error?.let { message ->
+                    item {
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                state.notice?.let { message ->
+                    item {
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (state.providers.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "还没有 Provider，点右上角「+ 新增」添加一个。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                items(state.providers, key = { it.id }) { provider ->
+                    ProviderCard(
+                        provider = provider,
+                        busy = state.busy,
+                        onEdit = {
+                            editorTarget = provider
+                            editorOpen = true
+                            viewModel.clearMessages()
+                        },
+                        onTest = { viewModel.test(provider) },
+                        onRefresh = { viewModel.refreshModels(provider) },
+                        onDelete = { deleteTarget = provider },
+                    )
+                }
             }
         }
     }
@@ -115,13 +175,15 @@ fun ProviderManagementScreen(
             onDismissRequest = { deleteTarget = null },
             title = { Text("删除 Provider") },
             text = {
-                Text("删除「${provider.label.ifBlank { provider.id }}」？历史会话保留，但后续使用该模型的 run 会失败。")
+                Text("删除「${provider.label.ifBlank { provider.id }}」？历史会话保留，但之后使用该模型的 run 会失败。")
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.delete(provider)
-                    deleteTarget = null
-                }) { Text("删除") }
+                TextButton(
+                    onClick = {
+                        viewModel.delete(provider)
+                        deleteTarget = null
+                    },
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("取消") }
@@ -139,50 +201,142 @@ private fun ProviderCard(
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val enabledModels = provider.models.count { it.enabled != false }
+    val supportsImages = provider.models.any { it.supportsImages == true }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(12.dp),
+    ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 13.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    provider.label.ifBlank { provider.id },
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                if (provider.builtin) {
-                    Text("内置", style = MaterialTheme.typography.labelSmall)
+            Row(verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            provider.label.ifBlank { provider.id },
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.width(7.dp))
+                        ProviderBadge(
+                            text = providerKindLabel(provider.kind),
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (provider.builtin) {
+                            Spacer(modifier = Modifier.width(5.dp))
+                            ProviderBadge(
+                                text = "内置",
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                    if (showProviderId(provider)) {
+                        Text(
+                            provider.id,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+                KeyStatus(provider)
             }
             Text(
-                provider.id,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-            )
-            Text(
                 provider.baseUrl,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                buildString {
-                    append(if (provider.hasApiKey) "Key 已配置" else "未配置 Key")
-                    provider.apiKeySource?.let { append(" · $it") }
-                    append(" · ${provider.models.size} 个模型")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (provider.hasApiKey) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.error,
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatChip("${provider.models.size} 个模型")
+                StatChip("$enabledModels 已启用")
+                if (supportsImages) StatChip("图片")
+            }
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 3.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onEdit, enabled = !busy) { Text("编辑") }
-                OutlinedButton(onClick = onTest, enabled = !busy && provider.hasApiKey) { Text("测试") }
-                OutlinedButton(onClick = onRefresh, enabled = !busy && provider.hasApiKey) { Text("刷新") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onEdit, enabled = !busy) { Text("编辑") }
+                TextButton(onClick = onTest, enabled = !busy && provider.hasApiKey) { Text("测试") }
+                TextButton(onClick = onRefresh, enabled = !busy && provider.hasApiKey) { Text("刷新") }
+                Spacer(modifier = Modifier.weight(1f))
                 if (!provider.builtin) {
-                    OutlinedButton(onClick = onDelete, enabled = !busy) { Text("删除") }
+                    TextButton(onClick = onDelete, enabled = !busy) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun KeyStatus(provider: ProviderDto) {
+    val colors = LocalSemanticColors.current
+    val color = if (provider.hasApiKey) colors.success else colors.warning
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = if (provider.hasApiKey) {
+                "Key 已配置${provider.apiKeySource?.let { " · $it" } ?: ""}"
+            } else {
+                "未配置 Key"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+        )
+    }
+}
+
+@Composable
+private fun ProviderBadge(text: String, containerColor: Color, contentColor: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(containerColor)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, color = contentColor)
+    }
+}
+
+@Composable
+private fun StatChip(text: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -205,14 +359,36 @@ private fun ProviderEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (provider == null) "新增 Provider" else "编辑 Provider") },
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (provider == null) "新增 Provider" else "编辑 Provider")
+                Text(
+                    provider?.let { it.label.ifBlank { it.id } } ?: "填写连接信息和模型目录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Text("协议类型", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = kind == "openai",
+                        onClick = { kind = "openai" },
+                        label = { Text("OpenAI-compatible") },
+                    )
+                    FilterChip(
+                        selected = kind == "anthropic",
+                        onClick = { kind = "anthropic" },
+                        label = { Text("Anthropic") },
+                    )
+                }
                 OutlinedTextField(
                     value = id,
                     onValueChange = { id = it },
@@ -221,14 +397,6 @@ private fun ProviderEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { kind = "openai" }) {
-                        Text(if (kind == "openai") "✓ OpenAI-compatible" else "OpenAI-compatible")
-                    }
-                    OutlinedButton(onClick = { kind = "anthropic" }) {
-                        Text(if (kind == "anthropic") "✓ Anthropic" else "Anthropic")
-                    }
-                }
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
@@ -249,31 +417,40 @@ private fun ProviderEditorDialog(
                         apiKey = it
                         clearKey = false
                     },
-                    label = { Text(if (provider?.hasApiKey == true) "API Key（留空不变）" else "API Key") },
+                    label = {
+                        Text(
+                            when {
+                                provider?.hasApiKey == true -> "API Key（留空不修改）"
+                                provider == null -> "API Key（可选）"
+                                else -> "API Key"
+                            },
+                        )
+                    },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (provider?.hasApiKey == true) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(checked = clearKey, onCheckedChange = {
-                            clearKey = it
-                            if (it) apiKey = ""
-                        })
-                        Text("清除已保存的 Key")
+                        Switch(
+                            checked = clearKey,
+                            onCheckedChange = {
+                                clearKey = it
+                                if (it) apiKey = ""
+                            },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("清除已保存的 Key", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 OutlinedTextField(
                     value = modelIds,
                     onValueChange = { modelIds = it },
-                    label = { Text("模型 ID（每行一个）") },
-                    minLines = 3,
+                    label = { Text("模型 ID") },
+                    supportingText = { Text("每行一个。已有模型会保留 Tools / 图片 / 上下文配置。") },
+                    minLines = 2,
+                    maxLines = 5,
                     modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    "已有模型的 tools / 图片 / 上下文配置会按 id 保留；新模型默认支持 tools、不支持图片。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
@@ -298,3 +475,12 @@ private fun ProviderEditorDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
+
+private fun providerKindLabel(kind: String): String =
+    if (kind == "anthropic") "Anthropic" else "OpenAI-compatible"
+
+private fun normalizedProviderLabel(value: String): String =
+    value.replace(Regex("[\\s_-]+"), "").lowercase()
+
+private fun showProviderId(provider: ProviderDto): Boolean =
+    normalizedProviderLabel(provider.id) != normalizedProviderLabel(provider.label.ifBlank { provider.id })
