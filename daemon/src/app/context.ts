@@ -2,6 +2,7 @@ import type { Config } from './config.js';
 import type { Db } from '../db/db.js';
 import type { AttachmentStore } from '../attachments/store.js';
 import type { KnowledgeStore } from '../knowledge/store.js';
+import type { ProviderManager } from '../providers/provider-manager.js';
 import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
@@ -18,6 +19,8 @@ export interface AppContext {
   knowledge: KnowledgeStore;
   /** Immutable image bytes + SQLite metadata. */
   attachments: AttachmentStore;
+  /** Shared provider catalog + write-only credential store for builtin/Memory. */
+  providers: ProviderManager;
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;

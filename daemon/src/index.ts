@@ -9,6 +9,8 @@ import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
 import { AttachmentStore } from './attachments/store.js';
+import { DEFAULT_PROVIDERS_FILE } from './llm/credentials.js';
+import { ProviderManager } from './providers/provider-manager.js';
 import { PermissionManager } from './permissions/permissions.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
@@ -151,6 +153,9 @@ async function main(): Promise<void> {
     db,
     knowledge: new KnowledgeStore(config.dataDir),
     attachments: new AttachmentStore(db, config.dataDir),
+    providers: new ProviderManager({
+      providersFile: process.env.PABOOT_LLM_PROVIDERS_FILE?.trim() || DEFAULT_PROVIDERS_FILE(),
+    }),
     registry,
     permissions: new PermissionManager(
       config.permissionTimeoutMs,

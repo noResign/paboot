@@ -28,6 +28,8 @@ export interface PublicProvider {
   models: ProviderConfig['models'];
   hasApiKey: boolean;
   apiKeySource: ApiKeySource | null;
+  /** Built-in template ids cannot be deleted, only overridden/cleared. */
+  builtin: boolean;
 }
 
 /** A provider entry as written in `providers.json` / `PABOOT_LLM_PROVIDERS`. */
@@ -127,11 +129,23 @@ export function toPublicProvider(provider: ResolvedProvider): PublicProvider {
     models: provider.models.map((model) => ({ ...model })),
     hasApiKey: provider.apiKey !== null,
     apiKeySource: provider.apiKeySource,
+    builtin: BUILTIN_PROVIDERS.some((template) => template.id === provider.id),
   };
 }
 
 export function toPublicProviders(providers: readonly ResolvedProvider[]): PublicProvider[] {
   return providers.map(toPublicProvider);
+}
+
+/** Read raw file entries, including plaintext keys, for a manager that must edit without losing secrets. */
+export async function readProvidersFileEntries(
+  filePath: string,
+): Promise<{ entries: ProviderFileEntry[]; warnings: string[]; exists: boolean }> {
+  const read = await readIfExists(filePath);
+  if (read.error) return { entries: [], warnings: [read.error], exists: false };
+  if (read.text === null) return { entries: [], warnings: [], exists: false };
+  const parsed = parseDocument(read.text, 'providers.json');
+  return { entries: parsed.entries, warnings: parsed.warnings, exists: true };
 }
 
 /**
