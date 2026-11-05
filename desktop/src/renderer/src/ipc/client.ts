@@ -4,6 +4,7 @@ import type {
   ConnectInput,
   DaemonRequest,
   DaemonResponse,
+  KnowledgeExportResult,
   ManagedDaemonStartInput,
   ManagedDaemonStartResult,
   RevealResult,
@@ -21,6 +22,12 @@ import type {
   FileContentDto,
   FilesResponse,
   HealthDto,
+  CreateKnowledgeDocRequest,
+  DeleteKnowledgeDocResponse,
+  KnowledgeDocResponse,
+  KnowledgeDocsResponse,
+  KnowledgeVerifyResponse,
+  UpdateKnowledgeDocRequest,
   PermissionDecision,
   PermissionDto,
   PermissionGrantDto,
@@ -69,6 +76,16 @@ export function revealPath(path: string, kind: 'file' | 'directory'): Promise<Re
     return Promise.resolve({ ok: false, code: 'not_connected', message: '尚未连接 daemon' });
   }
   return window.paboot.revealPath({ connectionId: activeConnectionId, path, kind });
+}
+
+export function exportKnowledge(
+  workspaceId: string,
+  suggestedName?: string,
+): Promise<KnowledgeExportResult> {
+  if (!activeConnectionId) {
+    return Promise.resolve({ ok: false, code: 'not_connected', message: '尚未连接 daemon' });
+  }
+  return window.paboot.knowledgeExport({ connectionId: activeConnectionId, workspaceId, suggestedName });
 }
 
 async function request<T>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {
@@ -225,4 +242,34 @@ export const api = {
     request<RunNowResponse>({ method: 'POST', path: ROUTES.scheduledTaskRunNow(id) }),
   startTaskConfigSession: (body: { workspaceId?: string; runtime?: string }) =>
     request<TaskConfigSessionResponse>({ method: 'POST', path: ROUTES.taskConfigSession, body }),
+  knowledge: (
+    workspaceId: string,
+    filter?: { endId?: string; kind?: string; status?: string; verified?: boolean; q?: string },
+  ) =>
+    request<KnowledgeDocsResponse>({
+      method: 'GET',
+      path: ROUTES.knowledge(workspaceId),
+      query: { ...filter },
+    }),
+  knowledgeDoc: (workspaceId: string, kid: string) =>
+    request<KnowledgeDocResponse>({ method: 'GET', path: ROUTES.knowledgeDoc(workspaceId, kid) }),
+  createKnowledgeDoc: (workspaceId: string, body: CreateKnowledgeDocRequest) =>
+    request<KnowledgeDocResponse>({ method: 'POST', path: ROUTES.knowledge(workspaceId), body }),
+  updateKnowledgeDoc: (workspaceId: string, kid: string, body: UpdateKnowledgeDocRequest) =>
+    request<KnowledgeDocResponse>({
+      method: 'PATCH',
+      path: ROUTES.knowledgeDoc(workspaceId, kid),
+      body,
+    }),
+  verifyKnowledgeDoc: (workspaceId: string, kid: string, verified: boolean) =>
+    request<KnowledgeVerifyResponse>({
+      method: 'POST',
+      path: ROUTES.knowledgeVerify(workspaceId, kid),
+      body: { verified },
+    }),
+  deleteKnowledgeDoc: (workspaceId: string, kid: string) =>
+    request<DeleteKnowledgeDocResponse>({
+      method: 'DELETE',
+      path: ROUTES.knowledgeDoc(workspaceId, kid),
+    }),
 };

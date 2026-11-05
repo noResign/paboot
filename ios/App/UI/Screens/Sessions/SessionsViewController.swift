@@ -514,25 +514,20 @@ final class SessionsViewController: UIViewController {
     }
 
     /// The overview is read-only: dirs are added/removed from workspace management
-    /// (settings) or on desktop, never here.
+    /// (settings) or on desktop, never here. It is a normal pushed page, not a
+    /// sheet, so knowledge opens as another full page on top of it.
     private func presentWorkspaceOverview() {
         let state = viewModel.state
         guard let workspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID }) else {
             return
         }
-        let sheet = WorkspaceOverviewViewController(
+        let overview = WorkspaceOverviewViewController(
             workspace: workspace,
             // `nil` while the list is loading or failed: the overview must not
             // present「0 个会话」as fact.
             sessions: state.loadError == nil && !state.isLoading ? state.model.allSessions : nil
         )
-        let navigation = UINavigationController(rootViewController: sheet)
-        navigation.modalPresentationStyle = .pageSheet
-        if let presentation = navigation.sheetPresentationController {
-            presentation.detents = [.medium(), .large()]
-            presentation.prefersGrabberVisible = true
-        }
-        present(navigation, animated: true)
+        navigationController?.pushViewController(overview, animated: true)
     }
 
     private func showLoading() {
@@ -880,18 +875,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
         super.viewDidLoad()
         title = "工作区概览"
         view.backgroundColor = Theme.Colors.background
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "关闭",
-            style: .plain,
-            target: self,
-            action: #selector(close)
-        )
         configureLayout()
         buildContent()
-    }
-
-    @objc private func close() {
-        dismiss(animated: true)
     }
 
     private func configureLayout() {
@@ -899,7 +884,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         contentStack.axis = .vertical
-        contentStack.spacing = Spacing.sm
+        contentStack.alignment = .fill
+        contentStack.spacing = Spacing.md
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(scrollView)
@@ -913,63 +899,41 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
             contentStack.topAnchor.constraint(
                 equalTo: scrollView.contentLayoutGuide.topAnchor,
-                constant: Spacing.lg
+                constant: Spacing.md
             ),
             contentStack.bottomAnchor.constraint(
                 equalTo: scrollView.contentLayoutGuide.bottomAnchor,
-                constant: -Spacing.lg
+                constant: -Spacing.md
             ),
             contentStack.leadingAnchor.constraint(
                 equalTo: scrollView.contentLayoutGuide.leadingAnchor,
-                constant: Spacing.lg
+                constant: Spacing.md
             ),
             contentStack.trailingAnchor.constraint(
                 equalTo: scrollView.contentLayoutGuide.trailingAnchor,
-                constant: -Spacing.lg
+                constant: -Spacing.md
             ),
             contentStack.widthAnchor.constraint(
                 equalTo: scrollView.frameLayoutGuide.widthAnchor,
-                constant: -Spacing.lg * 2
+                constant: -Spacing.md * 2
             ),
         ])
     }
 
     private func buildContent() {
-        let name = UILabel()
-        name.text = workspace.displayName
-        name.font = Typography.cardTitle
-        name.textColor = Theme.Colors.textPrimary
-        name.numberOfLines = 0
-        contentStack.addArrangedSubview(name)
-
-        let path = UILabel()
-        path.text = workspace.path
-        path.font = Typography.code
-        path.textColor = Theme.Colors.textSecondary
-        path.numberOfLines = 0
-        path.lineBreakMode = .byCharWrapping
-        contentStack.addArrangedSubview(path)
-        contentStack.setCustomSpacing(Spacing.lg, after: path)
-
-        let section = UILabel()
-        section.text = "目录"
-        section.font = Typography.caption
-        section.textColor = Theme.Colors.textSecondary
-        contentStack.addArrangedSubview(section)
-
         let dirs = SessionGrouping.directories(for: workspace)
-        for (index, dir) in dirs.enumerated() {
-            contentStack.addArrangedSubview(directoryCard(path: dir, isPrimary: index == 0))
+        let totalSessions = sessions.map { allSessions in
+            dirs.reduce(0) { sum, path in
+                sum + allSessions.filter { SessionGrouping.matchesDirectory($0.cwd, path) }.count
+            }
         }
 
-        let hint = UILabel()
-        hint.text = dirs.count > 1
-            ? "附加目录会扩大这个工作区所有会话的可写范围，不是只给当前对话。"
-            : "还没有附加目录，可以在设置 → 工作区管理里添加。"
-        hint.font = Typography.caption
-        hint.textColor = Theme.Colors.textSecondary
-        hint.numberOfLines = 0
-        contentStack.addArrangedSubview(hint)
+        contentStack.addArrangedSubview(heroCard(dirs: dirs, totalSessions: totalSessions))
+        contentStack.addArrangedSubview(directorySection(dirs: dirs))
+
+        if workspace.family != "life" {
+            contentStack.addArrangedSubview(knowledgeCard())
+        }
 
         if workspace.isBuiltin && workspace.family != "life" {
             let builtin = UILabel()
@@ -981,66 +945,363 @@ private final class WorkspaceOverviewViewController: UIViewController {
         }
     }
 
-    /// One dir row: badge + session count on top, monospaced path below.
-    private func directoryCard(path: String, isPrimary: Bool) -> UIView {
-        let container = UIView()
-        container.backgroundColor = Theme.Colors.surface
-        container.layer.cornerRadius = Radius.card
-        container.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1)
-        container.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+    private func heroCard(dirs: [String], totalSessions: Int?) -> UIView {
+        let card = makeCard()
+        let iconBox = makeIconBox(systemName: "folder", boxSize: 42, iconSize: 21)
+
+        let name = UILabel()
+        name.text = workspace.displayName
+        name.font = Typography.cardTitle
+        name.textColor = Theme.Colors.textPrimary
+        name.numberOfLines = 1
+        name.lineBreakMode = .byTruncatingTail
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let nameRow = UIStackView(arrangedSubviews: [name])
+        nameRow.axis = .horizontal
+        nameRow.alignment = .center
+        nameRow.spacing = Spacing.xs
+        if let badge = kindBadge() {
+            nameRow.addArrangedSubview(badge)
+        }
+
+        let path = UILabel()
+        path.text = workspace.path
+        path.font = Typography.code
+        path.textColor = Theme.Colors.textSecondary
+        path.numberOfLines = 2
+        path.lineBreakMode = .byCharWrapping
+
+        let textStack = UIStackView(arrangedSubviews: [nameRow, path])
+        textStack.axis = .vertical
+        textStack.spacing = 3
+
+        let top = UIStackView(arrangedSubviews: [iconBox, textStack])
+        top.axis = .horizontal
+        top.alignment = .center
+        top.spacing = Spacing.sm
+
+        let stats = UIStackView(arrangedSubviews: [
+            makePill(
+                "\(dirs.count) 个目录",
+                background: Theme.Colors.surface2,
+                foreground: Theme.Colors.textSecondary
+            )
+        ])
+        stats.axis = .horizontal
+        stats.spacing = Spacing.xs
+        if let totalSessions {
+            stats.addArrangedSubview(
+                makePill(
+                    "\(totalSessions) 个会话",
+                    background: Theme.Colors.surface2,
+                    foreground: Theme.Colors.textSecondary
+                )
+            )
+        }
+
+        let stack = UIStackView(arrangedSubviews: [top, stats])
+        stack.axis = .vertical
+        stack.spacing = Spacing.sm
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.md),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.md),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
+        ])
+        return card
+    }
+
+    private func kindBadge() -> UIView? {
+        let label: String?
+        if workspace.family == "life" {
+            label = "生活"
+        } else if workspace.isBuiltin {
+            label = "内置"
+        } else {
+            label = nil
+        }
+        guard let label else { return nil }
+        return makePill(
+            label,
+            background: Theme.Colors.primarySubtle,
+            foreground: Theme.Colors.primaryDeep
+        )
+    }
+
+    private func directorySection(dirs: [String]) -> UIView {
+        let card = makeCard()
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let header = UIStackView()
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = Spacing.xs
+        header.isLayoutMarginsRelativeArrangement = true
+        header.layoutMargins = UIEdgeInsets(
+            top: 14,
+            left: Spacing.md,
+            bottom: 4,
+            right: Spacing.md
+        )
+        let title = UILabel()
+        title.text = "目录"
+        title.font = Typography.cardTitle
+        title.textColor = Theme.Colors.textPrimary
+        let count = UILabel()
+        count.text = "\(dirs.count)"
+        count.font = Typography.caption
+        count.textColor = Theme.Colors.textSecondary
+        count.setContentHuggingPriority(.required, for: .horizontal)
+        header.addArrangedSubview(title)
+        header.addArrangedSubview(UIView())
+        header.addArrangedSubview(count)
+        stack.addArrangedSubview(header)
+
+        for (index, path) in dirs.enumerated() {
+            if index > 0 {
+                stack.addArrangedSubview(makeDivider())
+            }
+            stack.addArrangedSubview(directoryRow(path: path, isPrimary: index == 0))
+        }
+
+        let hint = makeInsetHint(
+            dirs.count > 1
+                ? "附加目录会扩大这个工作区所有会话的可写范围，不是只给当前对话。"
+                : "还没有附加目录，可以在设置 → 工作区管理里添加。"
+        )
+        stack.addArrangedSubview(hint)
+
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+        ])
+        return card
+    }
+
+    private func directoryRow(path: String, isPrimary: Bool) -> UIView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = Spacing.sm
+        row.isLayoutMarginsRelativeArrangement = true
+        row.layoutMargins = UIEdgeInsets(
+            top: Spacing.sm,
+            left: Spacing.md,
+            bottom: Spacing.sm,
+            right: Spacing.md
+        )
 
         let icon = UIImageView(image: UIImage(systemName: "folder"))
-        icon.tintColor = Theme.Colors.textSecondary
+        icon.tintColor = isPrimary ? Theme.Colors.primary : Theme.Colors.textSecondary
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 19),
+            icon.heightAnchor.constraint(equalToConstant: 19),
+        ])
 
-        let badge = UILabel()
-        badge.text = isPrimary ? "主目录" : "附加目录"
-        badge.font = Typography.caption
-        badge.textColor = isPrimary ? Theme.Colors.primary : Theme.Colors.textSecondary
-
-        let count = UILabel()
-        if let sessions = sessions {
-            count.text = "\(sessions.filter { SessionGrouping.matchesDirectory($0.cwd, path) }.count) 个会话"
-        } else {
-            count.text = "会话数加载中…"
-        }
-        count.font = Typography.caption
-        count.textColor = Theme.Colors.textMuted
-        count.setContentHuggingPriority(.required, for: .horizontal)
-        count.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let head = UIStackView(arrangedSubviews: [icon, badge, spacer, count])
-        head.axis = .horizontal
-        head.alignment = .center
-        head.spacing = 6
+        let label = UILabel()
+        label.text = isPrimary ? "主目录" : "附加目录"
+        label.font = Typography.caption
+        label.textColor = isPrimary ? Theme.Colors.primary : Theme.Colors.textSecondary
 
         let pathLabel = UILabel()
         pathLabel.text = path
         pathLabel.font = Typography.code
-        pathLabel.textColor = Theme.Colors.textPrimary
-        pathLabel.numberOfLines = 0
-        pathLabel.lineBreakMode = .byCharWrapping
+        pathLabel.textColor = Theme.Colors.textSecondary
+        pathLabel.numberOfLines = 1
+        pathLabel.lineBreakMode = .byTruncatingTail
+        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let stack = UIStackView(arrangedSubviews: [head, pathLabel])
-        stack.axis = .vertical
-        stack.spacing = Spacing.xxs
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        let textStack = UIStackView(arrangedSubviews: [label, pathLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 2
 
-        NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 16),
-            icon.heightAnchor.constraint(equalToConstant: 16),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: Spacing.sm),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Spacing.sm),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Spacing.sm),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Spacing.sm),
-        ])
+        row.addArrangedSubview(icon)
+        row.addArrangedSubview(textStack)
 
-        return container
+        if let sessions {
+            let count = sessions.filter { SessionGrouping.matchesDirectory($0.cwd, path) }.count
+            let number = UILabel()
+            number.text = "\(count)"
+            number.font = Typography.cardTitle
+            number.textColor = Theme.Colors.textPrimary
+            number.textAlignment = .right
+            let unit = UILabel()
+            unit.text = "会话"
+            unit.font = Typography.caption
+            unit.textColor = Theme.Colors.textMuted
+            unit.textAlignment = .right
+            let countStack = UIStackView(arrangedSubviews: [number, unit])
+            countStack.axis = .vertical
+            countStack.spacing = 0
+            countStack.setContentHuggingPriority(.required, for: .horizontal)
+            countStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+            row.addArrangedSubview(countStack)
+        }
+
+        return row
     }
 
+    private func knowledgeCard() -> UIView {
+        let card = makeCard()
+        card.isUserInteractionEnabled = true
+        card.isAccessibilityElement = true
+        card.accessibilityTraits = .button
+        card.accessibilityLabel = "知识"
+        card.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(openKnowledge))
+        )
+
+        let iconBox = makeIconBox(systemName: "doc.text", boxSize: 38, iconSize: 19)
+        let title = UILabel()
+        title.text = "知识"
+        title.font = Typography.cardTitle
+        title.textColor = Theme.Colors.textPrimary
+        let hint = UILabel()
+        hint.text = "项目约定、决策与踩坑；自动收录，新会话按路径注入。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textSecondary
+        hint.numberOfLines = 2
+        let textStack = UIStackView(arrangedSubviews: [title, hint])
+        textStack.axis = .vertical
+        textStack.spacing = 2
+
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right"))
+        chevron.tintColor = Theme.Colors.textMuted
+        chevron.contentMode = .scaleAspectFit
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+            chevron.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        let row = UIStackView(arrangedSubviews: [iconBox, textStack, chevron])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = Spacing.sm
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.md),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.md),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
+        ])
+        return card
+    }
+
+    @objc private func openKnowledge() {
+        let controller = KnowledgeListViewController(
+            workspaceId: workspace.id,
+            workspaceName: workspace.displayName
+        )
+        navigationController?.pushViewController(controller, animated: true)
+    }
+
+    private func makeCard() -> UIView {
+        let card = UIView()
+        card.backgroundColor = Theme.Colors.surface
+        card.layer.cornerRadius = Radius.card
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1.0 / max(traitCollection.displayScale, 1)
+        card.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+        return card
+    }
+
+    private func makeIconBox(systemName: String, boxSize: CGFloat, iconSize: CGFloat) -> UIView {
+        let box = UIView()
+        box.backgroundColor = Theme.Colors.primarySubtle
+        box.layer.cornerRadius = 11
+        box.layer.cornerCurve = .continuous
+        box.translatesAutoresizingMaskIntoConstraints = false
+
+        let image = UIImageView(image: UIImage(systemName: systemName))
+        image.tintColor = Theme.Colors.primaryDeep
+        image.contentMode = .scaleAspectFit
+        image.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(image)
+
+        NSLayoutConstraint.activate([
+            box.widthAnchor.constraint(equalToConstant: boxSize),
+            box.heightAnchor.constraint(equalToConstant: boxSize),
+            image.widthAnchor.constraint(equalToConstant: iconSize),
+            image.heightAnchor.constraint(equalToConstant: iconSize),
+            image.centerXAnchor.constraint(equalTo: box.centerXAnchor),
+            image.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+        ])
+        return box
+    }
+
+    private func makePill(_ text: String, background: UIColor, foreground: UIColor) -> UIView {
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.caption
+        label.textColor = foreground
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let pill = UIView()
+        pill.backgroundColor = background
+        pill.layer.cornerRadius = 11
+        pill.layer.cornerCurve = .continuous
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.setContentHuggingPriority(.required, for: .horizontal)
+        pill.setContentCompressionResistancePriority(.required, for: .horizontal)
+        pill.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: pill.topAnchor, constant: 3),
+            label.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -3),
+            label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 9),
+            label.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -9),
+        ])
+        return pill
+    }
+
+    private func makeDivider() -> UIView {
+        let wrapper = UIView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        let line = UIView()
+        line.backgroundColor = Theme.Colors.border
+        line.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: Spacing.md),
+            line.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -Spacing.md),
+            line.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            line.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
+            line.heightAnchor.constraint(equalToConstant: 1.0 / max(traitCollection.displayScale, 1)),
+        ])
+        return wrapper
+    }
+
+    private func makeInsetHint(_ text: String) -> UIView {
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.caption
+        label.textColor = Theme.Colors.textSecondary
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let wrapper = UIView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: Spacing.xxs),
+            label.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -14),
+            label.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: Spacing.md),
+            label.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -Spacing.md),
+        ])
+        return wrapper
+    }
 }

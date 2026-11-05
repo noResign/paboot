@@ -8,6 +8,7 @@ import {
   workspaceLabel,
 } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
+import { KnowledgePanel } from '../knowledge/KnowledgePanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { Icon } from '../../ui/Icon';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
@@ -55,6 +56,7 @@ export function WorkspaceOverview({
   const [pickerBusy, setPickerBusy] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -253,6 +255,40 @@ export function WorkspaceOverview({
         </p>
       </section>
 
+      {!isLife && (
+        <section className="settings-section">
+          <div className="section-head">
+            <h3>知识</h3>
+          </div>
+          <button
+            type="button"
+            className="wo-knowledge"
+            onClick={() => setKnowledgeOpen(true)}
+            aria-label="管理工作区知识"
+          >
+            <span className="wo-knowledge-icon">
+              <Icon name="folder" size={18} />
+            </span>
+            <span className="wo-knowledge-copy">
+              <b>工作区知识</b>
+              <span className="hint">
+                项目约定、决策、踩坑和需求会自动收录，并在新会话首条消息里按路径注入。
+              </span>
+              <span className="wo-knowledge-meta">
+                <span className="wo-knowledge-chip">自动收录</span>
+                <span className="wo-knowledge-chip">按路径注入</span>
+                <span className="wo-knowledge-chip">未核验标注</span>
+                <span className="wo-knowledge-path mono">~/.paboot/workspaces/&lt;id&gt;/</span>
+              </span>
+            </span>
+            <span className="wo-knowledge-action">
+              管理知识
+              <Icon name="chevron-right" size={14} />
+            </span>
+          </button>
+        </section>
+      )}
+
       <section className="settings-section">
         <div className="section-head">
           <h3>最近会话</h3>
@@ -295,6 +331,13 @@ export function WorkspaceOverview({
       </section>
 
       {pickerDialog}
+      {knowledgeOpen && (
+        <KnowledgePanel
+          workspaceId={workspace.id}
+          workspaceName={workspaceLabel(workspace) ?? workspace.name}
+          onClose={() => setKnowledgeOpen(false)}
+        />
+      )}
       {notice && <div className="ws-notice">{notice}</div>}
       <ContextMenu menu={menu} onClose={close} />
     </div>

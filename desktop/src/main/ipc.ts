@@ -1,9 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell as electronShell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell as electronShell } from 'electron';
 import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import path, { isAbsolute } from 'node:path';
 import { IPC } from '../shared/ipc';
+import { ROUTES } from '../shared/routes';
 import type {
   AppPrefs,
+  KnowledgeExportInput,
+  KnowledgeExportResult,
   ManagedDaemonStartInput,
   ManagedDaemonStartResult,
   ManagedDaemonStatus,
@@ -220,6 +224,56 @@ export function registerIpc(
     electronShell.showItemInFolder(input.path);
     return { ok: true };
   });
+
+  ipcMain.handle(
+    IPC.knowledgeExport,
+    async (_event, input: KnowledgeExportInput): Promise<KnowledgeExportResult> => {
+      if (
+        !input ||
+        typeof input.connectionId !== 'string' ||
+        typeof input.workspaceId !== 'string' ||
+        !input.workspaceId
+      ) {
+        return { ok: false, code: 'bad_request', message: '非法请求' };
+      }
+      const client = manager.clientFor(input.connectionId);
+      if (!client) return { ok: false, code: 'not_connected', message: '尚未连接 daemon' };
+
+      let bytes: Buffer;
+      try {
+        const response = await client.fetchRaw(ROUTES.knowledgeExport(input.workspaceId));
+        if (!response.ok) {
+          return { ok: false, code: 'request_failed', message: `daemon 返回 HTTP ${response.status}` };
+        }
+        bytes = Buffer.from(await response.arrayBuffer());
+      } catch (err) {
+        return { ok: false, code: 'request_failed', message: (err as Error).message };
+      }
+
+      const suggested = safeZipName(input.suggestedName, input.workspaceId);
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        title: '导出知识',
+        defaultPath: suggested,
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      });
+      if (canceled || !filePath) return { ok: false, code: 'canceled', message: '已取消' };
+
+      try {
+        await writeFile(filePath, bytes);
+        return { ok: true, path: filePath };
+      } catch (err) {
+        return { ok: false, code: 'write_failed', message: (err as Error).message };
+      }
+    },
+  );
+}
+
+function safeZipName(suggested: string | undefined, workspaceId: string): string {
+  const fallback = `knowledge-${workspaceId.replace(/[^A-Za-z0-9_-]/g, '_')}.zip`;
+  if (typeof suggested !== 'string' || !suggested.trim()) return fallback;
+  const name = path.basename(suggested.trim());
+  if (!/^[^/\\:*?"<>|]+\.zip$/i.test(name)) return fallback;
+  return name.slice(0, 120);
 }
 
 const DAEMON_ON_QUIT = new Set(['ask', 'stop', 'keep']);

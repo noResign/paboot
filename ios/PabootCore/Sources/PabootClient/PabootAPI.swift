@@ -70,6 +70,54 @@ public final class PabootAPI {
         )
     }
 
+    // MARK: - Knowledge (K0)
+
+    public func knowledge(
+        workspaceId: String,
+        status: String? = nil,
+        verified: Bool? = nil,
+        query: String? = nil
+    ) async throws -> KnowledgeDocsResponse {
+        var items: [URLQueryItem] = []
+        if let status, !status.isEmpty {
+            items.append(URLQueryItem(name: "status", value: status))
+        }
+        if let verified {
+            items.append(URLQueryItem(name: "verified", value: verified ? "true" : "false"))
+        }
+        if let query, !query.isEmpty {
+            items.append(URLQueryItem(name: "q", value: query))
+        }
+        return try await get(
+            "api/workspaces/\(workspaceId)/knowledge",
+            query: items,
+            authenticated: true,
+            as: KnowledgeDocsResponse.self
+        )
+    }
+
+    public func knowledgeDoc(workspaceId: String, id: String) async throws -> KnowledgeDocResponse {
+        try await get(
+            "api/workspaces/\(workspaceId)/knowledge/\(id)",
+            authenticated: true,
+            as: KnowledgeDocResponse.self
+        )
+    }
+
+    public func verifyKnowledge(
+        workspaceId: String,
+        id: String,
+        verified: Bool
+    ) async throws -> KnowledgeVerifyResponse {
+        try await request(
+            "POST",
+            path: "api/workspaces/\(workspaceId)/knowledge/\(id)/verify",
+            body: try encode(KnowledgeVerifyRequest(verified: verified)),
+            authenticated: true,
+            as: KnowledgeVerifyResponse.self
+        )
+    }
+
     public func addWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
         try await request(
             "POST",

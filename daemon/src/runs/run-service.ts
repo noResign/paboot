@@ -8,6 +8,7 @@ import type { RunOutcome } from '../runtimes/engine.js';
 import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
+import { knowledgePrelude } from './knowledge-context.js';
 
 /**
  * The transport side of a run. The chat route writes SSE frames; the scheduler
@@ -148,6 +149,17 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
     }
 
+    // K0 injects knowledge pointers into the *runtime* prompt only: the user
+    // message and `runs.prompt` stay raw so replay/capture see what the user
+    // actually typed.
+    const knowledge = knowledgePrelude(ctx, session, workspace);
+    if (knowledge) {
+      log.info(
+        `run ${runId}: injecting ${knowledge.documents} knowledge pointer(s) ` +
+          `(${knowledge.used} chars${knowledge.overBudget ? ', truncated' : ''})`,
+      );
+    }
+
     const sessionId = session.id;
     ctx.notifier.register(runId, send);
 
@@ -155,7 +167,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       const active = driver.start({
         runId,
         sessionId,
-        prompt,
+        prompt: knowledge ? `${knowledge.prefix}\n\n${prompt}` : prompt,
         cwd: session.cwd,
         model: model ?? undefined,
         modelParameters: modelParameters ?? undefined,

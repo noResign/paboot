@@ -4,6 +4,7 @@ import type { AppContext } from '../app/context.js';
 import type { WorkspaceRow } from '../db/db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
+import { log } from '../platform/log.js';
 
 function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
   return {
@@ -306,6 +307,17 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       }
       ctx.db.deleteSession(session.id);
       ctx.permissions.clearSession(session.id);
+    }
+    // Knowledge belongs to the workspace: deleting the workspace removes its
+    // knowledge root too. Best-effort so a permission/IO problem does not keep
+    // the workspace alive forever.
+    try {
+      const removed = ctx.knowledge?.deleteWorkspaceData(workspace.id) ?? null;
+      if (removed) {
+        ctx.db.audit('delete_workspace_knowledge', JSON.stringify({ id: workspace.id, path: removed }));
+      }
+    } catch (err) {
+      log.warn(`failed to delete knowledge store for ${workspace.id}: ${String(err)}`);
     }
     ctx.db.deleteWorkspace(workspace.id);
     ctx.db.audit(

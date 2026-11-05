@@ -34,6 +34,7 @@ fun MainScreen(
     onNewSession: () -> Unit,
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onOpenWorkspaceOverview: (String) -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
 
@@ -53,6 +54,7 @@ fun MainScreen(
                     onOpenSession = onOpenSession,
                     onNewSession = onNewSession,
                     onReconnect = onReconnect,
+                    onOpenWorkspaceOverview = onOpenWorkspaceOverview,
                     bottomOverlayPadding = innerPadding.calculateBottomPadding(),
                 )
                 MainTab.Files -> FilesScreen(bottomOverlayPadding = innerPadding.calculateBottomPadding())
