@@ -7,13 +7,32 @@ import { projectActiveMessages } from './projection.js';
 
 type ImageBlock = Extract<TranscriptContentBlock, { type: 'image' }>;
 
+export type TranscriptImageResolver = (
+  block: ImageBlock,
+) => Promise<LlmContentBlock | null> | LlmContentBlock | null;
+
 export interface TranscriptRenderOptions {
   /**
    * P3.2 can render with a placeholder. P3.7's attachment store supplies the
    * actual provider image block here, so transcript storage never contains
    * base64 bytes.
    */
-  resolveImage?: (block: ImageBlock) => Promise<LlmContentBlock | null> | LlmContentBlock | null;
+  resolveImage?: TranscriptImageResolver;
+  /** When false, historical images become text placeholders. Default true. */
+  supportsImages?: boolean;
+}
+
+/** Bridge the attachment store into the transcript renderer. */
+export function createAttachmentImageResolver(store: {
+  providerImage(
+    id: string,
+    expectedMediaType?: ImageBlock['mediaType'],
+  ): Promise<{ mediaType: ImageBlock['mediaType']; data: string }>;
+}): TranscriptImageResolver {
+  return async (block) => {
+    const image = await store.providerImage(block.attachmentId, block.mediaType);
+    return { type: 'image', mediaType: image.mediaType, data: image.data };
+  };
 }
 
 /**
@@ -140,13 +159,16 @@ async function resolveImage(
   block: ImageBlock,
   options: TranscriptRenderOptions,
 ): Promise<LlmContentBlock> {
-  if (!block.offloaded && options.resolveImage) {
+  if (!block.offloaded && options.supportsImages !== false && options.resolveImage) {
     const resolved = await options.resolveImage(block);
     if (resolved) return resolved;
   }
+  const reason = options.supportsImages === false
+    ? 'current model does not support images'
+    : 'image data is unavailable';
   return {
     type: 'text',
-    text: `[image ${block.attachmentId} omitted: ${block.mediaType}, ${block.width}x${block.height}]`,
+    text: `[image ${block.attachmentId} omitted: ${block.mediaType}, ${block.width}x${block.height}; ${reason}]`,
   };
 }
 
