@@ -126,7 +126,7 @@ export interface ToolDescriptor {
     kind: 'native' | 'mcp' | 'delegate';
     id: string;
   };
-  sideEffect: 'read' | 'write' | 'execute' | 'network' | 'control';
+  sideEffect: 'read' | 'write' | 'execute' | 'network' | 'control' | 'mcp';
   concurrencySafe: boolean;
   timeoutMs?: number;
 }
