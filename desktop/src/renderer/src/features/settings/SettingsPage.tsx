@@ -3,6 +3,7 @@ import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
 import { PreferencesSection } from './PreferencesSection';
+import { ProviderSection } from './ProviderSection';
 import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
@@ -34,6 +35,7 @@ export type SettingsSection =
   | 'connection'
   | 'daemon'
   | 'workspaces'
+  | 'providers'
   | 'preferences'
   | 'notifications'
   | 'appearance'
@@ -43,6 +45,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'connection', label: '连接' },
   { id: 'daemon', label: '本机 daemon' },
   { id: 'workspaces', label: '工作区' },
+  { id: 'providers', label: '模型 Provider' },
   { id: 'preferences', label: '默认偏好' },
   { id: 'notifications', label: '通知' },
   { id: 'appearance', label: '外观' },
@@ -461,6 +464,7 @@ export function SettingsPage({
 
             {section === 'workspaces' && <WorkspaceSection />}
 
+            {section === 'providers' && <ProviderSection />}
             {section === 'preferences' && <PreferencesSection />}
 
             {section === 'notifications' && (

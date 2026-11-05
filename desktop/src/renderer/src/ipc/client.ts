@@ -32,6 +32,10 @@ import type {
   PermissionDto,
   PermissionGrantDto,
   ProductPermissionMode,
+  ProviderDto,
+  ProvidersResponse,
+  ProviderResponse,
+  ProviderTestResponse,
   RunNowResponse,
   RunRollbackResponse,
   ScheduledTaskDetailResponse,
@@ -116,6 +120,28 @@ export const api = {
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
   agentModels: (id: string) =>
     request<AgentModelsResponse>({ method: 'GET', path: ROUTES.agentModels(id) }),
+  providers: () => request<ProvidersResponse>({ method: 'GET', path: ROUTES.providers }),
+  createProvider: (body: {
+    id: string;
+    kind: 'anthropic' | 'openai';
+    label?: string;
+    baseUrl: string;
+    apiKey?: string | null;
+    models?: ProviderDto['models'];
+  }) => request<ProviderResponse>({ method: 'POST', path: ROUTES.providers, body }),
+  updateProvider: (id: string, body: {
+    kind?: 'anthropic' | 'openai';
+    label?: string;
+    baseUrl?: string;
+    apiKey?: string | null;
+    models?: ProviderDto['models'];
+  }) => request<ProviderResponse>({ method: 'PATCH', path: ROUTES.provider(id), body }),
+  deleteProvider: (id: string) =>
+    request<{ ok: boolean; id: string }>({ method: 'DELETE', path: ROUTES.provider(id) }),
+  testProvider: (id: string) =>
+    request<ProviderTestResponse>({ method: 'POST', path: ROUTES.providerTest(id) }),
+  refreshProviderModels: (id: string) =>
+    request<ProviderResponse>({ method: 'POST', path: ROUTES.providerModelsRefresh(id) }),
   updateSessionModel: (id: string, model: string | null, modelParameters: Record<string, string> | null) =>
     request<UpdateSessionModelResponse>({
       method: 'PATCH',
