@@ -9,10 +9,17 @@ final class ProviderManagementViewController: UIViewController {
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
+
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "模型 Provider"
         view.backgroundColor = Theme.Colors.background
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "+ 新增",
+            style: .plain,
+            target: self,
+            action: #selector(addProvider)
+        )
         configureLayout()
         bind()
         Task { await viewModel.load() }
@@ -22,7 +29,7 @@ final class ProviderManagementViewController: UIViewController {
         scrollView.alwaysBounceVertical = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         contentStack.axis = .vertical
-        contentStack.spacing = Spacing.md
+        contentStack.spacing = Spacing.sm
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(scrollView)
@@ -32,11 +39,11 @@ final class ProviderManagementViewController: UIViewController {
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: Spacing.lg),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: Spacing.md),
             contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -Spacing.lg),
-            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: Spacing.lg),
-            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -Spacing.lg),
-            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -Spacing.lg * 2),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: Spacing.md),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -Spacing.md),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -Spacing.md * 2),
         ])
     }
 
@@ -60,23 +67,30 @@ final class ProviderManagementViewController: UIViewController {
         hint.numberOfLines = 0
         contentStack.addArrangedSubview(hint)
 
-        let addButton = makeButton("新增 Provider", filled: true)
-        addButton.addAction(UIAction { [weak self] _ in
-            self?.viewModel.clearMessages()
-            self?.presentEditor(provider: nil)
-        }, for: .touchUpInside)
-        contentStack.addArrangedSubview(addButton)
-
         if let error = state.error {
             contentStack.addArrangedSubview(messageLabel(error, color: Theme.Colors.error))
         }
         if let notice = state.notice {
             contentStack.addArrangedSubview(messageLabel(notice, color: Theme.Colors.primary))
         }
-        if state.isLoading {
+
+        if state.isLoading && state.providers.isEmpty {
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
             contentStack.addArrangedSubview(spinner)
+            return
+        }
+
+        if state.providers.isEmpty {
+            let empty = UILabel()
+            empty.text = "还没有 Provider，点右上角「+ 新增」添加一个。"
+            empty.font = Typography.body
+            empty.textColor = Theme.Colors.textSecondary
+            empty.textAlignment = .center
+            empty.numberOfLines = 0
+            empty.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+            contentStack.addArrangedSubview(empty)
+            return
         }
 
         for provider in state.providers {
@@ -89,66 +103,97 @@ final class ProviderManagementViewController: UIViewController {
         card.backgroundColor = Theme.Colors.surface
         card.layer.cornerRadius = Radius.card
         card.layer.borderWidth = 1
-        card.layer.borderColor = Theme.Colors.border.cgColor
+        card.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
 
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = Spacing.xs
+        stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.md),
-            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.md),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.xs),
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
         ])
 
-        let titleRow = UIStackView()
-        titleRow.axis = .horizontal
-        titleRow.alignment = .center
-        titleRow.spacing = Spacing.sm
+        let header = UIStackView()
+        header.axis = .horizontal
+        header.alignment = .top
+        header.spacing = Spacing.sm
+
+        let titleStack = UIStackView()
+        titleStack.axis = .vertical
+        titleStack.spacing = 1
         let title = UILabel()
         title.text = provider.label.isEmpty ? provider.id : provider.label
         title.font = Typography.cardTitle
         title.textColor = Theme.Colors.textPrimary
-        titleRow.addArrangedSubview(title)
-        if provider.builtin {
-            let badge = UILabel()
-            badge.text = "内置"
-            badge.font = Typography.caption
-            badge.textColor = Theme.Colors.textSecondary
-            titleRow.addArrangedSubview(badge)
+        title.numberOfLines = 1
+        titleStack.addArrangedSubview(title)
+        if showProviderId(provider) {
+            let id = UILabel()
+            id.text = provider.id
+            id.font = Typography.caption
+            id.textColor = Theme.Colors.textMuted
+            titleStack.addArrangedSubview(id)
         }
-        let spacer = UIView()
-        titleRow.addArrangedSubview(spacer)
+        header.addArrangedSubview(titleStack)
+
         let keyLabel = UILabel()
         keyLabel.text = provider.hasApiKey
-            ? "Key 已配置 · \(provider.apiKeySource ?? "unknown")"
-            : "未配置 Key"
+            ? "● Key 已配置\(provider.apiKeySource.map { " · \($0)" } ?? "")"
+            : "● 未配置 Key"
         keyLabel.font = Typography.caption
-        keyLabel.textColor = provider.hasApiKey ? Theme.Colors.textSecondary : Theme.Colors.error
-        titleRow.addArrangedSubview(keyLabel)
-        stack.addArrangedSubview(titleRow)
+        keyLabel.textColor = provider.hasApiKey ? Theme.Colors.success : Theme.Colors.warning
+        keyLabel.setContentHuggingPriority(.required, for: .horizontal)
+        keyLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let headerSpacer = UIView()
+        header.addArrangedSubview(headerSpacer)
+        header.addArrangedSubview(keyLabel)
+        stack.addArrangedSubview(header)
 
-        stack.addArrangedSubview(monoLabel(provider.id))
-        stack.addArrangedSubview(monoLabel(provider.baseUrl))
-        let models = provider.models.filter { $0.enabled != false }
-        stack.addArrangedSubview(messageLabel("\(provider.models.count) 个模型 · 已启用 \(models.count)", color: Theme.Colors.textSecondary))
+        let baseUrl = UILabel()
+        baseUrl.text = provider.baseUrl
+        baseUrl.font = Typography.code
+        baseUrl.textColor = Theme.Colors.textSecondary
+        baseUrl.numberOfLines = 1
+        baseUrl.lineBreakMode = .byTruncatingMiddle
+        stack.addArrangedSubview(baseUrl)
+
+        let enabledModels = provider.models.filter { $0.enabled != false }.count
+        let supportsImages = provider.models.contains { $0.supportsImages == true }
+        var meta = "\(providerKindLabel(provider.kind))"
+        if provider.builtin { meta += " · 内置" }
+        meta += " · \(provider.models.count) 个模型 · 已启用 \(enabledModels) 个"
+        if supportsImages { meta += " · 支持图片" }
+        let metaLabel = UILabel()
+        metaLabel.text = meta
+        metaLabel.font = Typography.caption
+        metaLabel.textColor = Theme.Colors.textSecondary
+        metaLabel.numberOfLines = 0
+        stack.addArrangedSubview(metaLabel)
+
+        let divider = UIView()
+        divider.backgroundColor = Theme.Colors.border
+        divider.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        stack.addArrangedSubview(divider)
 
         let actions = UIStackView()
         actions.axis = .horizontal
-        actions.spacing = Spacing.sm
-        let edit = makeButton("编辑")
+        actions.alignment = .center
+        actions.spacing = 2
+        let edit = makeActionButton("编辑", color: Theme.Colors.primary)
         edit.addAction(UIAction { [weak self] _ in
             self?.viewModel.clearMessages()
             self?.presentEditor(provider: provider)
         }, for: .touchUpInside)
-        let test = makeButton("测试")
+        let test = makeActionButton("测试", color: Theme.Colors.textPrimary)
         test.isEnabled = provider.hasApiKey && !busy
         test.addAction(UIAction { [weak self] _ in
             Task { await self?.viewModel.test(provider) }
         }, for: .touchUpInside)
-        let refresh = makeButton("刷新")
+        let refresh = makeActionButton("刷新", color: Theme.Colors.textPrimary)
         refresh.isEnabled = provider.hasApiKey && !busy
         refresh.addAction(UIAction { [weak self] _ in
             Task { await self?.viewModel.refreshModels(provider) }
@@ -156,8 +201,10 @@ final class ProviderManagementViewController: UIViewController {
         actions.addArrangedSubview(edit)
         actions.addArrangedSubview(test)
         actions.addArrangedSubview(refresh)
+        let spacer = UIView()
+        actions.addArrangedSubview(spacer)
         if !provider.builtin {
-            let delete = makeButton("删除", destructive: true)
+            let delete = makeActionButton("删除", color: Theme.Colors.error)
             delete.isEnabled = !busy
             delete.addAction(UIAction { [weak self] _ in
                 self?.confirmDelete(provider)
@@ -168,14 +215,22 @@ final class ProviderManagementViewController: UIViewController {
         return card
     }
 
+    @objc private func addProvider() {
+        viewModel.clearMessages()
+        presentEditor(provider: nil)
+    }
+
     private func presentEditor(provider: ProviderDto?) {
         let editor = ProviderEditorViewController(provider: provider)
         editor.onSave = { [weak self] draft in
-            Task {
-                await self?.viewModel.save(original: provider, draft: draft)
-            }
+            Task { await self?.viewModel.save(original: provider, draft: draft) }
         }
         let nav = UINavigationController(rootViewController: editor)
+        nav.modalPresentationStyle = .pageSheet
+        if let sheet = nav.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+        }
         present(nav, animated: true)
     }
 
@@ -192,16 +247,6 @@ final class ProviderManagementViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    private func monoLabel(_ text: String) -> UILabel {
-        let label = UILabel()
-        label.text = text
-        label.font = Typography.code
-        label.textColor = Theme.Colors.textSecondary
-        label.numberOfLines = 1
-        label.lineBreakMode = .byTruncatingMiddle
-        return label
-    }
-
     private func messageLabel(_ text: String, color: UIColor) -> UILabel {
         let label = UILabel()
         label.text = text
@@ -211,26 +256,20 @@ final class ProviderManagementViewController: UIViewController {
         return label
     }
 
-    private func makeButton(_ title: String, filled: Bool = false, destructive: Bool = false) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(title, for: .normal)
+    private func makeActionButton(_ title: String, color: UIColor) -> UIButton {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.baseForegroundColor = color
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+        let button = UIButton(configuration: configuration)
         button.titleLabel?.font = Typography.caption
-        button.layer.cornerRadius = Radius.card
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 34).isActive = true
-        if filled {
-            button.backgroundColor = Theme.Colors.primary
-            button.setTitleColor(.white, for: .normal)
-        } else {
-            button.layer.borderWidth = 1
-            button.layer.borderColor = Theme.Colors.border.cgColor
-            button.setTitleColor(destructive ? Theme.Colors.error : Theme.Colors.textPrimary, for: .normal)
-        }
         return button
     }
 }
 
 private final class ProviderEditorViewController: UIViewController {
     var onSave: ((ProviderDraft) -> Void)?
+
     private let provider: ProviderDto?
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
@@ -255,7 +294,11 @@ private final class ProviderEditorViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = provider == nil ? "新增 Provider" : "编辑 Provider"
+        if let provider {
+            title = "编辑 \(provider.label.isEmpty ? provider.id : provider.label)"
+        } else {
+            title = "新增 Provider"
+        }
         view.backgroundColor = Theme.Colors.background
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "取消",
@@ -276,7 +319,7 @@ private final class ProviderEditorViewController: UIViewController {
     private func configureLayout() {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
-        stack.spacing = Spacing.md
+        stack.spacing = Spacing.sm
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         scrollView.addSubview(stack)
@@ -292,15 +335,16 @@ private final class ProviderEditorViewController: UIViewController {
             stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -Spacing.lg * 2),
         ])
 
-        configureField(idField, placeholder: "Provider id")
-        configureField(labelField, placeholder: "显示名称")
-        configureField(baseUrlField, placeholder: "https://api.deepseek.com")
-        configureField(apiKeyField, placeholder: "API Key（留空不修改）", secure: true)
+        configureField(idField, placeholder: "my-provider")
+        configureField(labelField, placeholder: "我的 Provider")
+        configureField(baseUrlField, placeholder: "https://api.example.com")
+        configureField(apiKeyField, placeholder: "可选，也可以稍后设置", secure: true)
         idField.autocapitalizationType = .none
         idField.autocorrectionType = .no
         baseUrlField.keyboardType = .URL
 
-        stack.addArrangedSubview(captionLabel("类型"))
+        stack.addArrangedSubview(sectionLabel("连接"))
+        stack.addArrangedSubview(captionLabel("协议类型"))
         stack.addArrangedSubview(kindControl)
         stack.addArrangedSubview(captionLabel("ID"))
         stack.addArrangedSubview(idField)
@@ -318,24 +362,25 @@ private final class ProviderEditorViewController: UIViewController {
         clearKeyRow.addArrangedSubview(captionLabel("清除已保存的 Key（环境变量 fallback 仍可生效）"))
         stack.addArrangedSubview(clearKeyRow)
 
+        stack.addArrangedSubview(sectionLabel("模型目录"))
         stack.addArrangedSubview(captionLabel("模型 ID（每行一个）"))
         modelIdsView.font = Typography.code
         modelIdsView.textColor = Theme.Colors.textPrimary
         modelIdsView.backgroundColor = Theme.Colors.surface
         modelIdsView.layer.borderWidth = 1
-        modelIdsView.layer.borderColor = Theme.Colors.border.cgColor
+        modelIdsView.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
         modelIdsView.layer.cornerRadius = Radius.card
-        modelIdsView.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        modelIdsView.textContainerInset = UIEdgeInsets(top: 10, left: 8, bottom: 10, right: 8)
+        modelIdsView.heightAnchor.constraint(equalToConstant: 130).isActive = true
         stack.addArrangedSubview(modelIdsView)
-
-        let hint = captionLabel("已有模型会按 id 保留 tools / 图片 / 上下文配置；新模型默认支持 tools、不支持图片。")
-        stack.addArrangedSubview(hint)
+        stack.addArrangedSubview(
+            captionLabel("已有模型会按 id 保留 Tools / 图片 / 上下文配置；新模型默认支持 Tools、不支持图片。")
+        )
     }
 
     private func populate() {
         guard let provider else {
             kindControl.selectedSegmentIndex = 0
-            baseUrlField.text = "https://api.deepseek.com"
             clearKeyRow.isHidden = true
             return
         }
@@ -344,17 +389,28 @@ private final class ProviderEditorViewController: UIViewController {
         labelField.text = provider.label
         baseUrlField.text = provider.baseUrl
         kindControl.selectedSegmentIndex = provider.kind == "anthropic" ? 1 : 0
+        apiKeyField.placeholder = provider.hasApiKey ? "已配置；留空不修改" : "未配置；输入新 Key"
         modelIdsView.text = provider.models.map(\.id).joined(separator: "\n")
         clearKeyRow.isHidden = !provider.hasApiKey
         clearKeySwitch.isOn = false
     }
 
     @objc private func saveTapped() {
+        let id = (idField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseUrl = (baseUrlField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            presentValidation("Provider ID 不能为空")
+            return
+        }
+        guard !baseUrl.isEmpty else {
+            presentValidation("Base URL 不能为空")
+            return
+        }
         let draft = ProviderDraft(
-            id: idField.text ?? "",
+            id: id,
             kind: kindControl.selectedSegmentIndex == 1 ? "anthropic" : "openai",
             label: labelField.text ?? "",
-            baseUrl: baseUrlField.text ?? "",
+            baseUrl: baseUrl,
             apiKey: apiKeyField.text ?? "",
             clearKey: clearKeySwitch.isOn,
             modelIds: modelIdsView.text
@@ -367,6 +423,12 @@ private final class ProviderEditorViewController: UIViewController {
         dismiss(animated: true)
     }
 
+    private func presentValidation(_ message: String) {
+        let alert = UIAlertController(title: "无法保存", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+
     private func configureField(_ field: UITextField, placeholder: String, secure: Bool = false) {
         field.placeholder = placeholder
         field.isSecureTextEntry = secure
@@ -375,10 +437,18 @@ private final class ProviderEditorViewController: UIViewController {
         field.backgroundColor = Theme.Colors.surface
         field.layer.cornerRadius = Radius.card
         field.layer.borderWidth = 1
-        field.layer.borderColor = Theme.Colors.border.cgColor
-        field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 1))
+        field.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+        field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
         field.leftViewMode = .always
-        field.heightAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
+        field.heightAnchor.constraint(greaterThanOrEqualToConstant: 46).isActive = true
+    }
+
+    private func sectionLabel(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.cardTitle
+        label.textColor = Theme.Colors.textPrimary
+        return label
     }
 
     private func captionLabel(_ text: String) -> UILabel {
@@ -389,4 +459,17 @@ private final class ProviderEditorViewController: UIViewController {
         label.numberOfLines = 0
         return label
     }
+}
+
+private func providerKindLabel(_ kind: String) -> String {
+    kind == "anthropic" ? "Anthropic" : "OpenAI-compatible"
+}
+
+private func normalizedProviderLabel(_ value: String) -> String {
+    value.replacingOccurrences(of: #"[\s_-]+"#, with: "", options: .regularExpression).lowercased()
+}
+
+private func showProviderId(_ provider: ProviderDto) -> Bool {
+    normalizedProviderLabel(provider.id)
+        != normalizedProviderLabel(provider.label.isEmpty ? provider.id : provider.label)
 }
