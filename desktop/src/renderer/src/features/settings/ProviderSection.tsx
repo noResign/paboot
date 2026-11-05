@@ -17,6 +17,7 @@ interface ProviderDraft {
   baseUrl: string;
   apiKey: string;
   clearKey: boolean;
+  hasApiKey: boolean;
   models: ModelDraft[];
 }
 
@@ -24,11 +25,25 @@ const EMPTY_DRAFT: ProviderDraft = {
   id: '',
   kind: 'openai',
   label: '',
-  baseUrl: 'https://api.deepseek.com',
+  baseUrl: '',
   apiKey: '',
   clearKey: false,
+  hasApiKey: false,
   models: [],
 };
+
+const PROVIDER_KIND_LABEL: Record<ProviderKind, string> = {
+  openai: 'OpenAI-compatible',
+  anthropic: 'Anthropic',
+};
+
+function normalizedLabel(value: string): string {
+  return value.replace(/[\s_-]+/g, '').toLowerCase();
+}
+
+function showProviderId(provider: ProviderDto): boolean {
+  return normalizedLabel(provider.id) !== normalizedLabel(provider.label || provider.id);
+}
 
 function modelDraft(model?: ProviderModelDto): ModelDraft {
   return {
@@ -51,6 +66,7 @@ function editDraft(provider: ProviderDto): ProviderDraft {
     baseUrl: provider.baseUrl,
     apiKey: '',
     clearKey: false,
+    hasApiKey: provider.hasApiKey,
     models: provider.models.map((model) => modelDraft(model)),
   };
 }
@@ -72,7 +88,7 @@ export function ProviderSection() {
   }, []);
 
   const title = useMemo(
-    () => (draft ? (editing ? `编辑 ${draft.id}` : '新增 Provider') : ''),
+    () => (draft ? (editing ? `编辑 ${draft.label || draft.id}` : '新增 Provider') : ''),
     [draft, editing],
   );
 
@@ -123,7 +139,7 @@ export function ProviderSection() {
     setError(null);
     const common = {
       kind: draft.kind,
-      label: draft.label.trim(),
+      label: draft.label.trim() || draft.id.trim(),
       baseUrl: draft.baseUrl.trim(),
       models,
     };
@@ -216,6 +232,9 @@ export function ProviderSection() {
         builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机的 providers.json，
         不会回传客户端，也不会出现在日志里。
       </div>
+      <div className="hint">
+        内置 Provider 点击「编辑」即可覆盖 Base URL、Key 和模型；「新增」用于自定义网关或额外 Provider。
+      </div>
 
       <div className="provider-list">
         {providers.map((provider) => (
@@ -223,11 +242,12 @@ export function ProviderSection() {
             <div className="provider-head">
               <div className="provider-title">
                 <b>{provider.label || provider.id}</b>
-                <span className="mono">{provider.id}</span>
-                <span className="badge subtle">{provider.kind}</span>
+                {showProviderId(provider) && <span className="provider-id mono">{provider.id}</span>}
+                <span className="badge subtle">{PROVIDER_KIND_LABEL[provider.kind]}</span>
                 {provider.builtin && <span className="badge subtle">内置</span>}
               </div>
-              <span className={`badge ${provider.hasApiKey ? '' : 'warn'}`}>
+              <span className={`provider-key ${provider.hasApiKey ? 'ok' : 'missing'}`}>
+                <span className="provider-key-dot" />
                 {provider.hasApiKey ? `Key 已配置 · ${provider.apiKeySource ?? 'unknown'}` : '未配置 Key'}
               </span>
             </div>
@@ -259,7 +279,7 @@ export function ProviderSection() {
               <input
                 value={draft.id}
                 readOnly={editing}
-                placeholder="deepseek"
+                placeholder="my-provider"
                 onChange={(event) => setDraft({ ...draft, id: event.target.value })}
               />
             </div>
@@ -277,7 +297,7 @@ export function ProviderSection() {
               <label>显示名称</label>
               <input
                 value={draft.label}
-                placeholder="DeepSeek"
+                placeholder="我的 Provider"
                 onChange={(event) => setDraft({ ...draft, label: event.target.value })}
               />
             </div>
@@ -285,7 +305,7 @@ export function ProviderSection() {
               <label>Base URL</label>
               <input
                 value={draft.baseUrl}
-                placeholder="https://api.deepseek.com"
+                placeholder="https://api.example.com"
                 onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
               />
             </div>
@@ -296,10 +316,10 @@ export function ProviderSection() {
               type="password"
               autoComplete="new-password"
               value={draft.apiKey}
-              placeholder={editing ? '已配置；留空不修改' : '可选，也可以稍后设置'}
+              placeholder={editing ? (draft.hasApiKey ? '已配置；留空不修改' : '未配置；输入新 Key') : '可选，也可以稍后设置'}
               onChange={(event) => setDraft({ ...draft, apiKey: event.target.value, clearKey: false })}
             />
-            {editing && (
+            {editing && draft.hasApiKey && (
               <label className="provider-clear-key">
                 <input
                   type="checkbox"
@@ -350,9 +370,11 @@ export function ProviderSection() {
                     maxOutput: event.target.value ? Number(event.target.value) : undefined,
                   })}
                 />
-                <label><input type="checkbox" checked={model.supportsTools !== false} onChange={(event) => patchModel(index, { supportsTools: event.target.checked })} /> Tools</label>
-                <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
-                <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
+                <div className="provider-model-flags">
+                  <label><input type="checkbox" checked={model.supportsTools !== false} onChange={(event) => patchModel(index, { supportsTools: event.target.checked })} /> Tools</label>
+                  <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
+                  <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
+                </div>
                 <button
                   className="btn danger"
                   onClick={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })}
