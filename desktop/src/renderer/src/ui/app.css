@@ -4682,3 +4682,23 @@ a.btn {
     margin-left: 0;
   }
 }
+
+/* Provider add/edit lives in a real modal, never inline under the list. */
+.provider-modal {
+  width: min(760px, calc(100vw - 48px));
+  padding: 16px;
+}
+.provider-modal .modal-head {
+  margin-bottom: 14px;
+}
+.provider-modal .provider-form-grid {
+  margin-top: 0;
+}
+.provider-modal .provider-model-list {
+  max-height: 38vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.provider-modal .modal-actions {
+  margin-top: 16px;
+}

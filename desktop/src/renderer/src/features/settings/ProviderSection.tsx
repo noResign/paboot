@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
+import { Icon } from '../../ui/Icon';
 import type { ProviderDto, ProviderModelDto } from '../../../../shared/contract';
 
 type ProviderKind = 'anthropic' | 'openai';
@@ -91,6 +92,21 @@ export function ProviderSection() {
     () => (draft ? (editing ? `编辑 ${draft.label || draft.id}` : '新增 Provider') : ''),
     [draft, editing],
   );
+
+  useEffect(() => {
+    if (!draft) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) closeEditor();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [draft, busy]);
+
+  function closeEditor(): void {
+    if (busy) return;
+    setDraft(null);
+    setError(null);
+  }
 
   async function refresh(): Promise<void> {
     const res = await api.providers();
@@ -268,12 +284,21 @@ export function ProviderSection() {
       </div>
 
       {draft && (
-        <div className="provider-editor">
-          <div className="section-head">
-            <h3>{title}</h3>
-            <button className="btn ghost" onClick={() => setDraft(null)}>取消</button>
-          </div>
-          <div className="provider-form-grid">
+        <div className="modal-scrim" onClick={closeEditor}>
+          <div
+            className="modal provider-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-head">
+              <span>{title}</span>
+              <button className="btn ghost" title="关闭" disabled={busy} onClick={closeEditor}>
+                <Icon name="x" size={15} />
+              </button>
+            </div>
+            <div className="provider-form-grid">
             <div className="field">
               <label>ID</label>
               <input
@@ -401,15 +426,18 @@ export function ProviderSection() {
             ))}
           </div>
 
-          <div className="settings-actions">
-            <button className="btn primary" disabled={busy} onClick={() => void save()}>
-              {busy ? '保存中…' : '保存'}
-            </button>
+            {error && <div className="error-text">{error}</div>}
+            <div className="modal-actions">
+              <button className="btn" disabled={busy} onClick={closeEditor}>取消</button>
+              <button className="btn primary" disabled={busy} onClick={() => void save()}>
+                {busy ? '保存中…' : '保存'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {error && <div className="error-text">{error}</div>}
+      {error && !draft && <div className="error-text">{error}</div>}
     </section>
   );
 }
