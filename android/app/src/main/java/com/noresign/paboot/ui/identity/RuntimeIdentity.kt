@@ -34,6 +34,7 @@ object RuntimeIdentities {
         // 两个 agent 同图标时，选择器里只剩颜色可分辨。
         "codex" to RuntimeIdentity("codex", "Codex", Icons.Rounded.Terminal, Color(0xFF10A37F)),
         "deepseek" to RuntimeIdentity("deepseek", "DeepSeek Harness", Icons.Rounded.Bolt, Color(0xFF4D6BFE)),
+        "builtin" to RuntimeIdentity("builtin", "Builtin", Icons.Rounded.Build, Color(0xFF7C3AED)),
     )
 
     /** 未知 id 兜底：build 图标 + 中性色 + 直接展示后端 name（§5.2）。 */
@@ -74,6 +75,11 @@ internal fun permissionModeOptions(runtime: String?): List<Pair<String, String>>
         "ask" to "修改类操作询问",
         "acceptEdits" to "编辑自动放行，Bash 仍询问",
         "bypass" to "全部通过（高风险）",
+    )
+    "builtin" -> listOf(
+        "ask" to "Read 自动；写入、命令和 MCP 工具需要审批",
+        "acceptEdits" to "工作区内写入自动；命令和 MCP 工具仍需审批",
+        "bypass" to "全路径读写且跳过审批（极高风险）",
     )
     else -> listOf(
         "ask" to "按 Agent 默认规则审批，具体范围见新建会话页",
