@@ -6,6 +6,10 @@
 export const ROUTES = {
   health: '/api/health',
   agents: '/api/agents',
+  providers: '/api/providers',
+  provider: (id: string) => `/api/providers/${encodeURIComponent(id)}`,
+  providerTest: (id: string) => `/api/providers/${encodeURIComponent(id)}/test`,
+  providerModelsRefresh: (id: string) => `/api/providers/${encodeURIComponent(id)}/models/refresh`,
   agent: '/api/agent',
   agentModels: (id: string) => `/api/agents/${encodeURIComponent(id)}/models`,
   workspaces: '/api/workspaces',
