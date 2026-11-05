@@ -65,6 +65,7 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
         capabilities,
         env: process.env,
         extraDirs: req.extraDirs,
+        systemContext: req.systemContext,
         toolServers: [taskToolServer(deps.ctx, req.runId)],
         permissionHook:
           req.permissionMode === 'bypass'
@@ -101,6 +102,7 @@ function createCodexDriver(ctx: AppContext): RuntimeDriver {
         modelParameters: req.modelParameters,
         resumeThreadId: req.resumeNativeSessionId,
         extraDirs: req.extraDirs,
+        systemContext: req.systemContext,
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
         env: process.env,

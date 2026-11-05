@@ -46,6 +46,8 @@ export interface CodexRunRequest {
   modelParameters?: Record<string, string>;
   /** Existing, canonical workspace grants, refreshed for every run. */
   extraDirs?: string[];
+  /** Native developer instructions (workspace knowledge), refreshed every run. */
+  systemContext?: string;
   /** Codex thread id to continue; omit to start a new thread. */
   resumeThreadId?: string;
   /**
@@ -270,6 +272,9 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
       sandbox: codexSandbox(req.permissionMode),
       approvalPolicy: codexApprovalPolicy(req.permissionMode),
       ...(req.model ? { model: req.model } : {}),
+      // Passing the current block on resume refreshes context after a doc edit;
+      // unchanged content is byte-identical, so it does not churn the prompt.
+      ...(req.systemContext ? { developerInstructions: req.systemContext } : {}),
     };
     const result = req.resumeThreadId
       ? await conn.request('thread/resume', { ...params, threadId: req.resumeThreadId })

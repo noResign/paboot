@@ -8,7 +8,7 @@ import type { RunOutcome } from '../runtimes/engine.js';
 import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
-import { knowledgePrelude } from './knowledge-context.js';
+import { knowledgeContext } from './knowledge-context.js';
 
 /**
  * The transport side of a run. The chat route writes SSE frames; the scheduler
@@ -149,14 +149,26 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
     }
 
-    // K0 injects knowledge pointers into the *runtime* prompt only: the user
-    // message and `runs.prompt` stay raw so replay/capture see what the user
-    // actually typed.
-    const knowledge = knowledgePrelude(ctx, session, workspace);
+    // Knowledge goes to the runtime only: the user message and `runs.prompt`
+    // stay raw so replay/capture see what the user actually typed.
+    //   native system prompt → every run (Claude --append-system-prompt), so an
+    //     edited doc takes effect next turn while an unchanged block keeps the
+    //     cache warm;
+    //   otherwise → first-message prelude only (K0 behavior), never on resume.
+    const knowledge = knowledgeContext(ctx, session, workspace);
+    const nativeSystemPrompt =
+      knowledge !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
+    const usePrelude = knowledge !== null && !nativeSystemPrompt && !session.native_session_id;
     if (knowledge) {
+      const mode = nativeSystemPrompt
+        ? 'system prompt'
+        : usePrelude
+          ? 'first-message prelude'
+          : 'skipped (resume without native injection)';
       log.info(
-        `run ${runId}: injecting ${knowledge.documents} knowledge pointer(s) ` +
-          `(${knowledge.used} chars${knowledge.overBudget ? ', truncated' : ''})`,
+        `run ${runId}: knowledge ${mode}, ${knowledge.documents} pointer(s), ` +
+          `${knowledge.used} chars (index ${knowledge.indexVersion}` +
+          `${knowledge.overBudget ? ', truncated' : ''})`,
       );
     }
 
@@ -167,7 +179,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       const active = driver.start({
         runId,
         sessionId,
-        prompt: knowledge ? `${knowledge.prefix}\n\n${prompt}` : prompt,
+        prompt: usePrelude && knowledge ? `${knowledge.prefix}\n\n${prompt}` : prompt,
         cwd: session.cwd,
         model: model ?? undefined,
         modelParameters: modelParameters ?? undefined,
@@ -178,6 +190,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         // provider reports it.
         onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
+        systemContext: nativeSystemPrompt && knowledge ? knowledge.prefix : undefined,
         // The service owns the terminal frame: provider errors may arrive before
         // exit, while the final checkpoint and run metadata are not ready yet.
         onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),

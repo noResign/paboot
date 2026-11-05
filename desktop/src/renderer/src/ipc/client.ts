@@ -132,7 +132,15 @@ export const api = {
       path: ROUTES.workspaces,
       body: name?.trim() ? { path, name } : { path },
     }),
-  updateWorkspace: (id: string, patch: { name?: string; enabled?: boolean }) =>
+  updateWorkspace: (
+    id: string,
+    patch: {
+      name?: string;
+      enabled?: boolean;
+      defaultRuntime?: string | null;
+      defaultPermissionMode?: ProductPermissionMode | null;
+    },
+  ) =>
     request<WorkspaceResponse>({ method: 'PATCH', path: ROUTES.workspace(id), body: patch }),
   deleteWorkspace: (id: string, cascade: boolean) =>
     request<DeleteWorkspaceResponse>({

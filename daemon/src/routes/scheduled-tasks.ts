@@ -18,6 +18,10 @@ import { normalizeModel, parseStoredModelParameters } from '../db/model-selectio
 import { ScheduleError, nextRunAt, normalizeSchedule, scheduleLabel, type NormalizedSchedule } from '../scheduling/schedule.js';
 import { fireScheduledTask } from '../scheduling/scheduler.js';
 import { workspaceContains } from '../workspaces/workspace-service.js';
+import {
+  resolveNewSessionPermissionMode,
+  resolveNewSessionRuntime,
+} from '../workspaces/workspace-defaults.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
 import { TASK_CONFIG_PROMPT } from '../scheduling/task-config.js';
 import { activeRunIdForSession } from '../runs/session-runs.js';
@@ -297,7 +301,7 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
     const requestedRuntime =
       typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
     if (!session) {
-      const runtime = await pickConfigRuntime(ctx, requestedRuntime);
+      const runtime = await pickConfigRuntime(ctx, requestedRuntime ?? workspace.default_runtime ?? undefined);
       if (!runtime) {
         sendError(res, 503, 'runtime_unavailable', 'no agent runtime is available');
         return;
@@ -306,7 +310,11 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
         id: randomUUID(),
         runtime,
         workspaceId: workspace.id,
-        permissionMode: getDefaultPermissionMode(ctx.db, ctx.config),
+        permissionMode: resolveNewSessionPermissionMode(
+          workspace,
+          undefined,
+          getDefaultPermissionMode(ctx.db, ctx.config),
+        ),
         cwd: workspace.path,
         title: '配置定时任务',
         purpose: 'task_config',
@@ -474,7 +482,10 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
           sendError(res, 409, 'workspace_disabled', 'workspace is disabled');
           return;
         }
-        runtime = typeof target.runtime === 'string' && target.runtime ? target.runtime : 'claude';
+        runtime = resolveNewSessionRuntime(
+          workspace,
+          typeof target.runtime === 'string' && target.runtime ? target.runtime : undefined,
+        );
         const driver = ctx.registry.driver(runtime);
         if (!driver || driver.internal) {
           sendError(res, 400, 'unknown_runtime', `unknown runtime: ${runtime}`);

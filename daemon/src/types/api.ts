@@ -165,6 +165,10 @@ export interface WorkspaceDto {
   profileMode?: 'off' | 'portable' | 'full';
   /** dev only: whether life may read this workspace; the column default is off. */
   lifeReadable?: boolean;
+  /** New-session default runtime; `null` inherits the daemon's default (claude). */
+  defaultRuntime?: string | null;
+  /** New-session default permission mode; `null` inherits the global default. */
+  defaultPermissionMode?: ProductPermissionMode | null;
   enabled: boolean;
   sessionCount: number;
   createdAt: number;

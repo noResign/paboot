@@ -29,6 +29,31 @@ describe('claudeAdapter.buildArgs', () => {
     expect(claudeAdapter.buildArgs(spawnContext([]))).not.toContain('--add-dir');
   });
 
+  it('passes --append-system-prompt only when probed and non-empty', () => {
+    const withContext = claudeAdapter.buildArgs({
+      ...spawnContext([]),
+      capabilities: { ...defaultCapabilities, nativeSystemPrompt: true },
+      systemContext: '## Knowledge\n- [note] Build',
+    });
+    expect(withContext).toEqual(
+      expect.arrayContaining(['--append-system-prompt', '## Knowledge\n- [note] Build']),
+    );
+
+    expect(
+      claudeAdapter.buildArgs({
+        ...spawnContext([]),
+        systemContext: '## Knowledge',
+      }),
+    ).not.toContain('--append-system-prompt');
+
+    expect(
+      claudeAdapter.buildArgs({
+        ...spawnContext([]),
+        capabilities: { ...defaultCapabilities, nativeSystemPrompt: true },
+      }),
+    ).not.toContain('--append-system-prompt');
+  });
+
   it('passes --effort only when the probed CLI advertises it', () => {
     const withEffort = claudeAdapter.buildArgs({
       ...spawnContext([]),

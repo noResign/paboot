@@ -4,8 +4,10 @@ import { useConnection } from '../../store/connection';
 import { useScope, useSessions, type WorkspaceMutation } from '../../store/sessions';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { manageableWorkspaces } from '../../store/workspaceList';
+import { api } from '../../ipc/client';
+import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
-import type { WorkspaceDto } from '../../../../shared/contract';
+import type { AgentDto, ProductPermissionMode, WorkspaceDto } from '../../../../shared/contract';
 
 type PickerState = { mode: 'create' | 'add-dir'; workspaceId?: string };
 
@@ -35,6 +37,7 @@ export function WorkspaceSection() {
   const [cascade, setCascade] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentDto[]>([]);
 
   const workspacePaths = useMemo(() => scope.workspaces.map((item) => item.path), [scope.workspaces]);
   // The built-in fallback is usable (it holds the session/file id) but is not a
@@ -46,6 +49,17 @@ export function WorkspaceSection() {
     const timer = setTimeout(() => setNotice(null), 2600);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!connectionId) return;
+    let live = true;
+    void api.agents().then((res) => {
+      if (live && res.ok) setAgents(res.data.agents);
+    });
+    return () => {
+      live = false;
+    };
+  }, [connectionId]);
 
   /** Runs a mutation, routing its failure (or a success line) into the banner. */
   async function run(id: string, action: () => Promise<WorkspaceMutation>, success: string): Promise<void> {
@@ -209,32 +223,93 @@ export function WorkspaceSection() {
               </div>
             ))}
 
-            <div className="ws-card-actions">
-              <button
-                className="btn tiny"
-                disabled={busyId === workspace.id}
-                onClick={() =>
-                  mutate(
-                    workspace.id,
-                    (cid) => updateWorkspace(cid, workspace.id, { enabled: !workspace.enabled }),
-                    workspace.enabled ? '已禁用' : '已启用',
-                  )
-                }
-              >
-                {workspace.enabled ? '禁用' : '启用'}
-              </button>
-              <button
-                className="btn tiny"
-                onClick={() => {
-                  setRename(workspace);
-                  setRenameText(workspace.name);
-                }}
-              >
-                重命名
-              </button>
-              <button className="btn tiny" onClick={() => openPicker({ mode: 'add-dir', workspaceId: workspace.id })}>
-                ＋ 附加目录
-              </button>
+            <div className="ws-card-footer">
+              <div className="ws-defaults">
+                <div className="ws-defaults-head">
+                  <span>新会话默认</span>
+                  <span className="ws-defaults-hint">仅影响新会话</span>
+                </div>
+                <div className="ws-defaults-grid">
+                  <label className="ws-default-field">
+                    <span>Agent</span>
+                    <select
+                      value={workspace.defaultRuntime ?? ''}
+                      disabled={busyId === workspace.id}
+                      onChange={(event) =>
+                        mutate(
+                          workspace.id,
+                          (cid) =>
+                            updateWorkspace(cid, workspace.id, {
+                              defaultRuntime: event.target.value || null,
+                            }),
+                          '已更新默认 Agent',
+                        )
+                      }
+                    >
+                      <option value="">跟随全局</option>
+                      {agents.map((agent) => (
+                        <option key={agent.id} value={agent.id} disabled={!agent.available}>
+                          {agent.name}
+                          {agent.available ? '' : '（未安装）'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ws-default-field">
+                    <span>权限</span>
+                    <select
+                      value={workspace.defaultPermissionMode ?? ''}
+                      disabled={busyId === workspace.id}
+                      onChange={(event) =>
+                        mutate(
+                          workspace.id,
+                          (cid) =>
+                            updateWorkspace(cid, workspace.id, {
+                              defaultPermissionMode:
+                                (event.target.value as ProductPermissionMode) || null,
+                            }),
+                          '已更新默认权限',
+                        )
+                      }
+                    >
+                      <option value="">跟随全局</option>
+                      {(['ask', 'acceptEdits', 'bypass'] as const).map((mode) => (
+                        <option key={mode} value={mode}>
+                          {PERMISSION_MODE_LABEL[mode]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="ws-card-actions">
+                <button
+                  className="btn tiny"
+                  disabled={busyId === workspace.id}
+                  onClick={() =>
+                    mutate(
+                      workspace.id,
+                      (cid) => updateWorkspace(cid, workspace.id, { enabled: !workspace.enabled }),
+                      workspace.enabled ? '已禁用' : '已启用',
+                    )
+                  }
+                >
+                  {workspace.enabled ? '禁用' : '启用'}
+                </button>
+                <button
+                  className="btn tiny"
+                  onClick={() => {
+                    setRename(workspace);
+                    setRenameText(workspace.name);
+                  }}
+                >
+                  重命名
+                </button>
+                <button className="btn tiny" onClick={() => openPicker({ mode: 'add-dir', workspaceId: workspace.id })}>
+                  ＋ 附加目录
+                </button>
+              </div>
             </div>
           </div>
         ))

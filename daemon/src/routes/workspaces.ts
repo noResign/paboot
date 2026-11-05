@@ -4,6 +4,7 @@ import type { AppContext } from '../app/context.js';
 import type { WorkspaceRow } from '../db/db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
+import { isProductPermissionMode } from '../permissions/permission-mode.js';
 import { log } from '../platform/log.js';
 
 function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
@@ -18,6 +19,8 @@ function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], sh
     family: w.family === 'life' ? 'life' : 'dev',
     profileMode: w.profile_mode,
     lifeReadable: w.life_readable === 1,
+    defaultRuntime: w.default_runtime ?? null,
+    defaultPermissionMode: w.default_permission_mode ?? null,
     enabled: w.enabled === 1,
     sessionCount,
     createdAt: w.created_at,
@@ -85,7 +88,13 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const body = (req.body ?? {}) as { name?: unknown; isDefault?: unknown; enabled?: unknown };
+    const body = (req.body ?? {}) as {
+      name?: unknown;
+      isDefault?: unknown;
+      enabled?: unknown;
+      defaultRuntime?: unknown;
+      defaultPermissionMode?: unknown;
+    };
     // The life workspace is reset-only: allow a display-name change, nothing else.
     if (workspace.family === 'life' && (body.enabled !== undefined || body.isDefault === true)) {
       res.status(409).json({ error: 'life workspace is reset-only', code: 'workspace_is_life' });
@@ -101,7 +110,12 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         return;
       }
     }
-    const update: { name?: string; enabled?: boolean } = {};
+    const update: {
+      name?: string;
+      enabled?: boolean;
+      defaultRuntime?: string | null;
+      defaultPermissionMode?: string | null;
+    } = {};
     if (body.name !== undefined) {
       if (typeof body.name !== 'string' || !body.name.trim()) {
         res.status(400).json({ error: 'name must be a non-empty string', code: 'bad_request' });
@@ -115,6 +129,32 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         return;
       }
       update.enabled = body.enabled;
+    }
+    if (body.defaultRuntime !== undefined) {
+      if (body.defaultRuntime === null || body.defaultRuntime === '') {
+        update.defaultRuntime = null;
+      } else if (
+        typeof body.defaultRuntime === 'string' &&
+        ctx.registry.list().some((runtime) => runtime.id === body.defaultRuntime)
+      ) {
+        update.defaultRuntime = body.defaultRuntime;
+      } else {
+        res.status(400).json({ error: 'defaultRuntime is not a registered runtime', code: 'bad_request' });
+        return;
+      }
+    }
+    if (body.defaultPermissionMode !== undefined) {
+      if (body.defaultPermissionMode === null || body.defaultPermissionMode === '') {
+        update.defaultPermissionMode = null;
+      } else if (isProductPermissionMode(body.defaultPermissionMode)) {
+        update.defaultPermissionMode = body.defaultPermissionMode;
+      } else {
+        res.status(400).json({
+          error: 'defaultPermissionMode must be ask, acceptEdits or bypass',
+          code: 'bad_request',
+        });
+        return;
+      }
     }
     if (body.isDefault !== undefined) {
       if (typeof body.isDefault !== 'boolean') {

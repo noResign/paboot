@@ -169,9 +169,16 @@ final class NewSessionViewController: UIViewController {
                 selectedWorkspace = workspaces.first(where: {
                     $0.id == WorkspaceSelection.shared.selectedId
                 }) ?? workspaces.first(where: { $0.isDefault }) ?? workspaces.first
-                selectedAgent = agents.first(where: { $0.available })
+                // Workspace default wins, then the first available agent.
+                if let preferred = selectedWorkspace?.defaultRuntime {
+                    selectedAgent = agents.first(where: { $0.id == preferred && $0.available })
+                }
+                if selectedAgent == nil {
+                    selectedAgent = agents.first(where: { $0.available })
+                }
 
-                if let index = permissionModes.firstIndex(of: config.defaultPermissionMode) {
+                let mode = selectedWorkspace?.defaultPermissionMode ?? config.defaultPermissionMode
+                if let index = permissionModes.firstIndex(of: mode) {
                     permissionControl.selectedSegmentIndex = index
                 }
 

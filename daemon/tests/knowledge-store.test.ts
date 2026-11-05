@@ -260,9 +260,17 @@ describe('buildKnowledgeSections', () => {
       ['end', 'knowledge:end:android'],
       ['requirements', 'knowledge:requirements'],
     ]);
-    expect(sections[0]!.content).toContain(`- [convention] Build — ${workspaceDoc.absolutePath}`);
-    expect(sections[0]!.content).toContain('- [note] Auto（未核验） — ');
-    expect(sections[1]!.content).toContain(`- [tech_doc] Android Build — ${endDoc.absolutePath}`);
-    expect(sections[2]!.content).toContain(`- [requirement] K0 — ${requirement.absolutePath}`);
+    const version = (doc: { contentHash: string }) =>
+      doc.contentHash.replace(/^sha256:/, '').slice(0, 8);
+    expect(sections[0]!.content).toContain(
+      `- [convention] Build — Body. — ${workspaceDoc.absolutePath} （v=${version(workspaceDoc)}）`,
+    );
+    expect(sections[0]!.content).toContain('- [note] Auto（未核验） — Collected without review. — ');
+    expect(sections[1]!.content).toContain(
+      `- [tech_doc] Android Build — Body. — ${endDoc.absolutePath} （v=${version(endDoc)}）`,
+    );
+    expect(sections[2]!.content).toContain(
+      `- [requirement] K0 — Ship knowledge. — ${requirement.absolutePath} （v=${version(requirement)}）`,
+    );
   });
 });

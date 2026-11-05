@@ -18,6 +18,7 @@ import { registerRunRoutes } from '../src/routes/runs';
 import { registerSessionRoutes } from '../src/routes/sessions';
 import { registerPermissionRoutes } from '../src/routes/permissions';
 import { registerAgentRoutes } from '../src/routes/agent';
+import { KnowledgeStore } from '../src/knowledge/store';
 
 // Mock only the provider transport. Exercise real sessions, DB, SSE, routes,
 // permission decisions and the shared lifecycle without making model requests.
@@ -59,6 +60,7 @@ vi.mock('../src/runtimes/codex/rpc', () => ({
 
 const servers: Server[] = [];
 const dbs: Db[] = [];
+const tempDirs: string[] = [];
 afterEach(async () => {
   const runs = listActiveRuns();
   for (const run of runs) run.cancel();
@@ -68,6 +70,7 @@ afterEach(async () => {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
   for (const db of dbs.splice(0)) db.close();
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   peers.length = 0;
   hold.clear();
 });
@@ -77,12 +80,28 @@ async function api(config: Record<string, unknown> = {}) {
   dbs.push(db);
   db.seedDefaultWorkspace(process.cwd(), 'ask');
   const registry = createRegistry();
-  registry.detect = vi.fn(async (id: string) => ({
-    id, name: id, bin: id, available: true, version: 'test', authed: true,
-    capabilities: defaultCapabilities, models: [], error: null,
-  }));
+  // Cache detections the way the real registry does: `detection(id)` is what
+  // run-service reads for capabilities, while `detect(id)` gates availability.
+  const detections: Record<string, ReturnType<typeof detection>> = {};
+  function detection(id: string) {
+    return {
+      id, name: id, bin: id, available: true, version: 'test', authed: true,
+      // Codex app-server accepts `developerInstructions`; Claude needs the flag probe.
+      capabilities: id === 'codex'
+        ? { ...defaultCapabilities, nativeSystemPrompt: true }
+        : defaultCapabilities,
+      models: [] as [],
+      error: null as string | null,
+    };
+  }
+  for (const id of ['claude', 'codex', 'deepseek']) detections[id] = detection(id);
+  registry.detect = vi.fn(async (id: string) => detections[id]);
+  registry.detection = vi.fn((id: string) => detections[id]);
+  const dataDir = mkdtempSync(join(tmpdir(), 'paboot-codex-knowledge-'));
+  tempDirs.push(dataDir);
   const ctx = {
     db, registry, permissions: new PermissionManager(), notifier: new RunNotifier(),
+    knowledge: new KnowledgeStore(dataDir),
     config: { permissionMode: 'default', host: '127.0.0.1', port: 1, runIdleTimeoutMs: 0, ...config },
   } as unknown as AppContext;
   registerRuntimeDrivers(registry, ctx);
@@ -311,6 +330,37 @@ describe('Codex HTTP integration', () => {
     const { events } = await (await fetch(`${base}/api/runs/${run.id}/events`)).json();
     expect(events.some((e: { event: { type: string } }) => e.event.type === 'error')).toBe(false);
     expect(events.at(-1).event).toMatchObject({ type: 'status', label: 'cancelled', terminal: true });
+  });
+
+  it('passes knowledge as developer instructions on start and resume', async () => {
+    const { db, post, ctx } = await api();
+    const workspace = db.getDefaultWorkspace()!;
+    ctx.knowledge.create(workspace.id, {
+      title: 'Build',
+      body: '# Build\n\nUse pnpm build.',
+      kind: 'convention',
+    });
+
+    const first = await post('/api/chat', { prompt: 'first', runtime: 'codex' });
+    const peer = await startedPeer();
+    expect(peer.request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
+      developerInstructions: expect.stringContaining('<paboot-memory-context>'),
+    }));
+    expect(peer.request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
+      developerInstructions: expect.stringContaining('- [convention] Build — Use pnpm build.'),
+    }));
+    complete(peer);
+    await first.text();
+
+    const session = db.listSessions()[0];
+    const second = await post('/api/chat', { prompt: 'second', sessionId: session.id });
+    const resumed = await startedPeer(1);
+    expect(resumed.request).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+      threadId: 'codex-thread-1',
+      developerInstructions: expect.stringContaining('<paboot-memory-context>'),
+    }));
+    complete(resumed);
+    await second.text();
   });
 
   it('resumes the saved Codex runtime without a runtime field and rejects a mismatch', async () => {

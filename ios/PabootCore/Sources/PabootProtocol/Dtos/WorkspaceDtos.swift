@@ -17,6 +17,10 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
     public let profileMode: String
     /// dev 专用：life 是否可单向读；默认关。
     public let lifeReadable: Bool
+    /// 新建会话默认 runtime；nil = 跟随全局（claude）。
+    public let defaultRuntime: String?
+    /// 新建会话默认权限模式；nil = 跟随全局。
+    public let defaultPermissionMode: String?
     public let enabled: Bool
     public let sessionCount: Int
     public let createdAt: Int64
@@ -34,6 +38,8 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
         family = try container.decodeIfPresent(String.self, forKey: .family) ?? "dev"
         profileMode = try container.decodeIfPresent(String.self, forKey: .profileMode) ?? "portable"
         lifeReadable = try container.decodeIfPresent(Bool.self, forKey: .lifeReadable) ?? false
+        defaultRuntime = try container.decodeIfPresent(String.self, forKey: .defaultRuntime)
+        defaultPermissionMode = try container.decodeIfPresent(String.self, forKey: .defaultPermissionMode)
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         sessionCount = try container.decodeIfPresent(Int.self, forKey: .sessionCount) ?? 0
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
@@ -42,7 +48,7 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, path, dirs, shortcutDirs, isDefault, isBuiltin, enabled
-        case family, profileMode, lifeReadable
+        case family, profileMode, lifeReadable, defaultRuntime, defaultPermissionMode
         case sessionCount, createdAt, lastUsedAt
     }
 }

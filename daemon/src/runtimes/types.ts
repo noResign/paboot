@@ -50,6 +50,8 @@ export interface RuntimeCapabilities {
   effort: boolean;
   /** `--mcp-config` accepts an inline MCP server configuration. */
   mcpConfig: boolean;
+  /** The runtime can receive an extra native system prompt (Claude flag / Codex developer instructions). */
+  nativeSystemPrompt: boolean;
 }
 
 export const defaultCapabilities: RuntimeCapabilities = {
@@ -61,6 +63,7 @@ export const defaultCapabilities: RuntimeCapabilities = {
   permissionHook: false,
   effort: false,
   mcpConfig: false,
+  nativeSystemPrompt: false,
 };
 
 export interface RuntimeDetection {
@@ -107,6 +110,12 @@ export interface SpawnContext {
   permissionHook?: { settingsJson: string };
   /** External tool servers the runtime should expose to the agent. */
   toolServers?: ToolServerSpec[];
+  /**
+   * Assembled workspace knowledge, injected through the runtime's native
+   * system-prompt mechanism when it supports one. Runtimes that do not get the
+   * context as a first-message prelude instead.
+   */
+  systemContext?: string;
 }
 
 /**

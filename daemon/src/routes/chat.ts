@@ -9,6 +9,10 @@ import { activeRunIdForSession } from '../runs/session-runs.js';
 import { streamRunToResponse } from './runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
 import { resolveWorkspaceForRequest, workspaceContains } from '../workspaces/workspace-service.js';
+import {
+  resolveNewSessionPermissionMode,
+  resolveNewSessionRuntime,
+} from '../workspaces/workspace-defaults.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import {
   isValidModelParameters,
@@ -146,11 +150,26 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       }
     }
 
+    // The workspace is needed before choosing a runtime: a new session inherits
+    // the workspace defaults when the request does not carry an explicit value.
+    const requestedWorkspaceId =
+      typeof body.workspaceId === 'string' && body.workspaceId.trim() ? body.workspaceId.trim() : undefined;
+    const workspace = resolveWorkspaceForRequest(ctx.db, session?.workspace_id ?? requestedWorkspaceId);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    // Resuming an existing session: cwd must still be inside its workspace.
+    if (session && !workspaceContains(workspace.path, session.cwd)) {
+      res.status(400).json({ error: `session cwd not allowed: ${session.cwd}`, code: 'cwd_not_allowed' });
+      return;
+    }
+
     if (session && requestedRuntime && requestedRuntime !== session.runtime) {
       res.status(400).json({ error: 'runtime does not match session', code: 'runtime_mismatch' });
       return;
     }
-    const runtime = session?.runtime ?? requestedRuntime ?? 'claude';
+    const runtime = session?.runtime ?? resolveNewSessionRuntime(workspace, requestedRuntime);
 
     // The execution seam is the registered driver; argv (Claude) and RPC
     // (Codex) runtimes both provide one. The route never branches on the
@@ -196,28 +215,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       }
     }
 
-    // Existing sessions keep their own workspace; new sessions use the
-    // requested workspace or the daemon default.
-    const requestedWorkspaceId =
-      typeof body.workspaceId === 'string' && body.workspaceId.trim() ? body.workspaceId.trim() : undefined;
-    const workspace = resolveWorkspaceForRequest(ctx.db, session?.workspace_id ?? requestedWorkspaceId);
-    if (!workspace) {
-      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
-      return;
-    }
-
-    // Resuming an existing session: cwd must still be inside its workspace.
-    if (session && !workspaceContains(workspace.path, session.cwd)) {
-      res.status(400).json({ error: `session cwd not allowed: ${session.cwd}`, code: 'cwd_not_allowed' });
-      return;
-    }
-
     const defaultPermissionMode = getDefaultPermissionMode(ctx.db, ctx.config);
     const sessionPermissionMode: ProductPermissionMode = session && isProductPermissionMode(session.permission_mode)
       ? session.permission_mode
-      : isProductPermissionMode(body.permissionMode)
-        ? body.permissionMode
-        : defaultPermissionMode;
+      : resolveNewSessionPermissionMode(
+          workspace,
+          isProductPermissionMode(body.permissionMode) ? body.permissionMode : undefined,
+          defaultPermissionMode,
+        );
     // A request-level model overrides for this run; otherwise the session's
     // creation-time choice decides, and absent both the runtime's default wins.
     const effectiveModel = model ?? normalizeModel(session?.model) ?? undefined;

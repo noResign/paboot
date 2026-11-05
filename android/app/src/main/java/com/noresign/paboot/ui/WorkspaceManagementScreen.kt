@@ -439,6 +439,12 @@ private fun WorkspaceCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        "新建会话默认：${workspace.defaultRuntime ?: "跟随全局"} · " +
+                            (workspace.defaultPermissionMode ?: "跟随全局权限"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     // 附加目录是这个工作区所有会话共用的可达目录；这里是唯一的增删入口。
                     workspace.dirs.forEach { dir ->
                         ExpandablePath(

@@ -12,6 +12,7 @@ import { RunNotifier } from '../src/runs/run-notifier';
 import { KnowledgeStore } from '../src/knowledge/store';
 import { PermissionManager } from '../src/permissions/permissions';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
+import { defaultCapabilities } from '../src/runtimes/types';
 
 const tempDirs: string[] = [];
 
@@ -64,7 +65,7 @@ interface Harness {
   ctx: AppContext;
 }
 
-function harness(family: 'dev' | 'life' = 'dev'): Harness {
+function harness(family: 'dev' | 'life' = 'dev', nativeSystemPrompt = false): Harness {
   const dataDir = tempDir('paboot-kn-inject-data-');
   const workspacePath = tempDir('paboot-kn-inject-ws-');
   const db = new Db(':memory:');
@@ -76,6 +77,11 @@ function harness(family: 'dev' | 'life' = 'dev'): Harness {
     knowledge,
     notifier: new RunNotifier(),
     permissions: new PermissionManager(1000, () => {}),
+    registry: {
+      detection: () => ({
+        capabilities: { ...defaultCapabilities, nativeSystemPrompt: nativeSystemPrompt },
+      }),
+    },
   } as unknown as AppContext;
   return { db, knowledge, workspacePath, workspaceId: workspace.id, dataDir, ctx };
 }
@@ -165,6 +171,32 @@ describe('knowledgePrelude', () => {
     expect(prelude?.prefix).toContain('- [note] Build（未核验） — ');
   });
 
+  it('changes the version marker when only the body changes', () => {
+    const h = harness();
+    const created = h.knowledge.create(h.workspaceId, {
+      title: 'Build',
+      body: '# Build\n\nUse pnpm.',
+      kind: 'convention',
+    });
+    const session = createSession(h);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const version = (hash: string) => hash.replace(/^sha256:/, '').slice(0, 8);
+
+    const first = knowledgePrelude(h.ctx, session, workspace);
+    expect(first?.prefix).toContain(`（v=${version(created.contentHash)}）`);
+
+    h.knowledge.update(h.workspaceId, created.id, {
+      body: '# Build\n\nUse pnpm.\n\nAppended line.',
+      summary: created.summary,
+    });
+    const updated = h.knowledge.get(h.workspaceId, created.id);
+    const second = knowledgePrelude(h.ctx, session, workspace);
+
+    expect(second?.prefix).toContain(`（v=${version(updated.contentHash)}）`);
+    expect(second?.prefix).not.toBe(first?.prefix);
+    expect(second?.indexVersion).not.toBe(first?.indexVersion);
+  });
+
   it('never blocks the run when the knowledge store is broken', () => {
     const h = harness();
     const root = h.knowledge.root(h.workspaceId);
@@ -225,6 +257,53 @@ describe('run-service knowledge injection', () => {
     expect(starts[0]?.prompt?.endsWith('\n\nhello')).toBe(true);
     expect(h.db.listMessages(session.id).find((message) => message.role === 'user')?.content).toBe('hello');
     expect(h.db.listRuns(session.id)[0]?.prompt).toBe('hello');
+  });
+
+  it('passes knowledge as a native system prompt when the runtime supports it', async () => {
+    const h = harness('dev', true);
+    h.knowledge.create(h.workspaceId, {
+      title: 'Build',
+      body: '# Build\n\nUse pnpm.',
+      kind: 'convention',
+    });
+    const session = h.db.createSession({
+      id: 'session-native',
+      runtime: 'claude',
+      workspaceId: h.workspaceId,
+      permissionMode: 'ask',
+      cwd: h.workspacePath,
+    });
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const starts: RuntimeDriverRequest[] = [];
+    const driver: RuntimeDriver = {
+      id: 'claude',
+      start(req) {
+        starts.push(req);
+        return {
+          id: req.runId,
+          promise: Promise.resolve({ status: 'succeeded', exitCode: 0, error: null }),
+          cancel: () => {},
+        };
+      },
+    };
+
+    await startSessionRun(h.ctx, {
+      session,
+      workspace,
+      prompt: 'hello',
+      driver,
+      permissionMode: 'ask',
+      model: null,
+      modelParameters: null,
+      trigger: 'user',
+      commandId: null,
+      sink: { frame: () => {}, end: () => {} },
+    }).done;
+
+    expect(starts[0]?.prompt).toBe('hello');
+    expect(starts[0]?.systemContext).toContain('<paboot-memory-context>');
+    expect(starts[0]?.systemContext).toContain('- [convention] Build — Use pnpm.');
+    expect(h.db.listMessages(session.id).find((message) => message.role === 'user')?.content).toBe('hello');
   });
 
   it('does not re-inject when the session already has a native id', async () => {

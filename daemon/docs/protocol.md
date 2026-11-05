@@ -42,9 +42,9 @@
 | `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 + `serverId`（见下） |
 | `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置；`workspaces` 与 `defaultWorkspaceId` 都只反映可见工作区 |
 | `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId`（life 工作区不能设为默认，409 `workspace_is_life`） |
-| `GET /api/workspaces` | 是 | 工作区列表（含 `family` / `profileMode` / `lifeReadable`、sessionCount 与附加目录 `dirs`）。dev 内置 fallback（`<dataDir>/defaultworkspace`）在存在启用的真实 dev 工作区时**不返回**；它是唯一启用的 dev 工作区时照常返回（客户端靠它的 id 拉会话/文件，但**不把它渲染成列表行/切换项**）。`family=life` 的内置工作区**始终返回**，客户端必须渲染成「生活」入口（这是 builtin 隐藏规则的唯一例外） |
+| `GET /api/workspaces` | 是 | 工作区列表（含 `family` / `profileMode` / `lifeReadable` / `defaultRuntime` / `defaultPermissionMode`、sessionCount 与附加目录 `dirs`）。dev 内置 fallback（`<dataDir>/defaultworkspace`）在存在启用的真实 dev 工作区时**不返回**；它是唯一启用的 dev 工作区时照常返回（客户端靠它的 id 拉会话/文件，但**不把它渲染成列表行/切换项**）。`family=life` 的内置工作区**始终返回**，客户端必须渲染成「生活」入口（这是 builtin 隐藏规则的唯一例外） |
 | `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区）。第一条真实工作区自动成为默认 |
-| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认。dev 内置 fallback 不可停用，且在存在真实工作区时不可设为默认（409 `workspace_is_builtin`）。life 工作区只允许改展示名；停用 / 设为默认 → 409 `workspace_is_life` |
+| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 / 设置新建会话默认 `defaultRuntime` / `defaultPermissionMode`（`null` 清除 = 跟随全局）。dev 内置 fallback 不可停用，且在存在真实工作区时不可设为默认（409 `workspace_is_builtin`）。life 工作区只允许改展示名与默认值；停用 / 设为默认 → 409 `workspace_is_life` |
 | `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`。删除默认工作区时先把默认切给另一个启用的真实工作区，没有就切给内置 fallback；内置 fallback 本身不可删（409 `workspace_is_builtin`），因此「零工作区」不可达。life 工作区不可删（409 `workspace_is_life`，只能重置） |
 | `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」。dev / life 都适用 |
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
@@ -168,7 +168,7 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 
 `POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, model?, runtime?, permissionMode?, commandId? }`。
 
-- 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
+- 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd。runtime 优先级：请求 `runtime` → workspace `defaultRuntime` → `claude`；权限优先级：请求 `permissionMode` → workspace `defaultPermissionMode` → 全局 `default_permission_mode`。已有会话始终沿用自身的 runtime / 权限模式。
 - `model` 缺省 / 空串 / `'default'` 都表示沿用 CLI 默认。新建会话通常不带 `model`（`sessions.model` 留空）；会话模型用 `PATCH /api/sessions/:id/model` 切换，下一轮生效。单轮请求仍可用 `body.model` 覆盖（`runs.model` 记录实际使用的值），但不会改写会话。
 - `modelParameters` 是通用字符串 map（当前只有 `reasoningEffort`）。解析顺序与 `model` 相同：请求体 > 会话保存值 > provider 默认。Claude 映射为 `--effort`（探测到才传），Codex 写进 `turn/start.effort`，DeepSeek 走 ACP `session/set_config_option(reasoning_effort)`。新增参数不需要改协议：目录声明描述符，daemon 原样存储/透传，客户端按描述符渲染。
 - 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
