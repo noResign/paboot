@@ -42,8 +42,9 @@ export interface ProviderInput {
 }
 
 /**
- * Built-in provider templates. Models are intentionally empty: the catalog
- * (P2 refresh / P3 adapters) fills them, so no stale model names get baked in.
+ * Built-in provider templates. The small default model catalog is deliberately
+ * conservative and can be replaced wholesale by PABOOT_LLM_PROVIDERS or
+ * providers.json. Remote model refresh remains a later phase.
  */
 export const BUILTIN_PROVIDERS: readonly ProviderConfig[] = [
   {
@@ -52,7 +53,16 @@ export const BUILTIN_PROVIDERS: readonly ProviderConfig[] = [
     label: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
     apiKeyEnv: 'ANTHROPIC_API_KEY',
-    models: [],
+    models: [
+      {
+        id: 'claude-sonnet-4-6',
+        label: 'Claude Sonnet 4.6',
+        contextWindow: 200_000,
+        maxOutput: 64_000,
+        supportsTools: true,
+        supportsImages: true,
+      },
+    ],
   },
   {
     id: 'openai',
@@ -60,7 +70,16 @@ export const BUILTIN_PROVIDERS: readonly ProviderConfig[] = [
     label: 'OpenAI',
     baseUrl: 'https://api.openai.com',
     apiKeyEnv: 'OPENAI_API_KEY',
-    models: [],
+    models: [
+      {
+        id: 'gpt-5.2',
+        label: 'GPT-5.2',
+        contextWindow: 400_000,
+        maxOutput: 128_000,
+        supportsTools: true,
+        supportsImages: true,
+      },
+    ],
   },
   {
     id: 'deepseek',
@@ -68,7 +87,24 @@ export const BUILTIN_PROVIDERS: readonly ProviderConfig[] = [
     label: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
-    models: [],
+    models: [
+      {
+        id: 'deepseek-chat',
+        label: 'DeepSeek Chat',
+        contextWindow: 128_000,
+        maxOutput: 8_192,
+        supportsTools: true,
+        supportsImages: false,
+      },
+      {
+        id: 'deepseek-reasoner',
+        label: 'DeepSeek Reasoner',
+        contextWindow: 128_000,
+        maxOutput: 64_000,
+        supportsTools: false,
+        supportsImages: false,
+      },
+    ],
   },
 ];
 

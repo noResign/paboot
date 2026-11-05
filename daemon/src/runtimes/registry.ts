@@ -1,4 +1,5 @@
 import { claudeAdapter } from './claude/adapter.js';
+import { BUILTIN_RUNTIME_ID, BUILTIN_RUNTIME_NAME, detectBuiltin, listBuiltinModels } from './builtin/detect.js';
 import { detectCodex } from './codex/detect.js';
 import { listCodexModels } from './codex/models.js';
 import { DEEPSEEK_BIN, detectDeepSeek } from './deepseek/detect.js';
@@ -47,6 +48,13 @@ export interface Registry {
 const CODEX_BIN = 'codex';
 
 const DETECTORS: RuntimeDetector[] = [
+  {
+    id: BUILTIN_RUNTIME_ID,
+    name: BUILTIN_RUNTIME_NAME,
+    bin: BUILTIN_RUNTIME_ID,
+    detect: (env) => detectBuiltin(env),
+    listModels: (env) => listBuiltinModels(env),
+  },
   {
     id: 'codex',
     name: 'Codex',
