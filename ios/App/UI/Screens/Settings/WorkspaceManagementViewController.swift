@@ -371,6 +371,7 @@ private final class WorkspaceCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let disabledBadge = UILabel()
     private let sessionCountLabel = UILabel()
+    private let defaultsLabel = UILabel()
     private let bannerLabel = InsetLabel()
     private let primaryPathButton = UIButton(type: .system)
     private let dirsStack = UIStackView()
@@ -456,8 +457,11 @@ private final class WorkspaceCell: UITableViewCell {
 
         sessionCountLabel.font = Typography.caption
         sessionCountLabel.textColor = Theme.Colors.textSecondary
+        defaultsLabel.font = Typography.caption
+        defaultsLabel.textColor = Theme.Colors.textMuted
+        defaultsLabel.numberOfLines = 0
 
-        let textStack = UIStackView(arrangedSubviews: [nameRow, sessionCountLabel])
+        let textStack = UIStackView(arrangedSubviews: [nameRow, sessionCountLabel, defaultsLabel])
         textStack.axis = .vertical
         textStack.spacing = 2
 
@@ -573,6 +577,8 @@ private final class WorkspaceCell: UITableViewCell {
         disabledBadge.text = "已禁用"
         disabledBadge.isHidden = workspace.enabled
         sessionCountLabel.text = "\(workspace.sessionCount) 个会话"
+        defaultsLabel.text = "新建会话默认：\(workspace.defaultRuntime ?? "跟随全局") · " +
+            (workspace.defaultPermissionMode ?? "跟随全局权限")
         primaryPathButton.setTitle("主目录 · \(workspace.path)", for: .normal)
 
         toggleEnabledButton.setTitle(workspace.enabled ? "禁用" : "启用", for: .normal)

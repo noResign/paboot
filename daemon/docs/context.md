@@ -1,7 +1,7 @@
 # daemon 技术方案 · 上下文装配（ContextAssembler）
 
-> 索引见 [daemon.md](daemon.md)。P0.3 先落契约与纯函数；S1/P2 接 runtime 注入，
-> P1 K0 提供 curated，P4 Memory 提供 memory 段。
+> 索引见 [daemon.md](daemon.md)。P0.3 落契约与纯函数；P1 K0 提供 curated；S1/P2 接
+> runtime 注入（当前 Claude 已用原生 system prompt，其余走首条消息前导）；P4 Memory 提供 memory 段。
 
 ## 1. 契约
 
@@ -39,8 +39,10 @@ end / session），不参与排序；记忆隔离是 Memory 的 read-policy，�
 | `runtime` | builtin runtime（P3）；外部 runtime 不使用 |
 | `task` | 会话 / builtin 任务状态（后续） |
 
-P0.3 只有 `src/context/` 的契约与纯函数；还没有 provider，也没有接入任何 runtime。
-`runs` / `runtimes` 的接线在 S1（P2）与 builtin P3。
+K0 已经提供 workspace / end / requirements section（`src/knowledge/index.ts`）。S1 把它接到
+run 启动（`src/runs/knowledge-context.ts` + `run-service`）：runtime 原生支持 system prompt 时
+（Claude `--append-system-prompt`）每轮传入，否则退化为首条用户消息前导。builtin 的 `runtime`
+段留给 P3。
 
 ## 4. 预算
 
@@ -60,8 +62,11 @@ P0.3 只有 `src/context/` 的契约与纯函数；还没有 provider，也没�
 
 ## 6. 后续
 
-1. P1 K0：提供 workspace / requirements curated section（文件 + `.meta.json`）。
-2. P2/S1：逐 runtime 注入适配（Claude `--append-system-prompt` / Codex instructions /
-   DeepSeek ACP / builtin system prompt），把 assembler 输出接到 run 启动。
-3. P3：builtin 的 `runtime` 段（身份 / 工具规范 / 项目文档）。
-4. P4：Memory 的 `memory` 段与 read-policy。
+1. **已完成（K0）**：workspace / end / requirements curated section（文件 + `.meta.json`）。
+2. **S1.1 已完成**：assembler 输出接到 run 启动；Claude 在探测到 `--append-system-prompt` 后
+   **每轮**传稳定 block（未变化时字节一致，保 prompt cache；变化时下一轮生效）；Codex 用
+   `thread/start` / `thread/resume` 的 `developerInstructions`，同样每轮刷新。DeepSeek 的
+   ACP `session/new` 没有 instruction 字段，暂退回首条消息前导（resume 不再注入）。
+3. **S1 后续**：DeepSeek 原生通道（若 ACP/DSH 后续提供）；工作区默认 agent / 权限。
+4. P3：builtin 的 `runtime` 段（身份 / 工具规范 / 项目文档）。
+5. P4：Memory 的 `memory` 段与 read-policy。

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api } from '../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
 import { removeWorkspace, replaceWorkspace, setWorkspaceDirs } from './workspaceList';
-import type { SessionDto, WorkspaceDto } from '../../../shared/contract';
+import type { ProductPermissionMode, SessionDto, WorkspaceDto } from '../../../shared/contract';
 
 /**
  * Session and workspace state, keyed by connection id. M1 only ever shows one
@@ -60,7 +60,12 @@ interface SessionsState {
   updateWorkspace(
     connectionId: string,
     id: string,
-    patch: { name?: string; enabled?: boolean },
+    patch: {
+      name?: string;
+      enabled?: boolean;
+      defaultRuntime?: string | null;
+      defaultPermissionMode?: ProductPermissionMode | null;
+    },
   ): Promise<WorkspaceMutation>;
   deleteWorkspace(connectionId: string, id: string, cascade: boolean): Promise<WorkspaceMutation>;
   addWorkspaceDir(connectionId: string, id: string, path: string): Promise<WorkspaceMutation>;

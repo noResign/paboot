@@ -41,6 +41,11 @@ export const claudeAdapter: RuntimeAdapter = {
     if (ctx.permissionHook) {
       args.push('--settings', ctx.permissionHook.settingsJson);
     }
+    if (c.nativeSystemPrompt && ctx.systemContext) {
+      // Stable across runs when the knowledge index is unchanged, which keeps
+      // Claude's prompt-cache prefix warm on resume.
+      args.push('--append-system-prompt', ctx.systemContext);
+    }
     if (c.mcpConfig && ctx.toolServers?.length) {
       const mcpServers = Object.fromEntries(
         ctx.toolServers.map((server) => [

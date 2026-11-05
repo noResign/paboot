@@ -40,6 +40,9 @@ class NewSessionViewModel(
     private val _permissionMode = MutableStateFlow("ask")
     val permissionMode = _permissionMode.asStateFlow()
 
+    /** The workspace whose defaults have already been applied to this form. */
+    private var defaultsWorkspaceId: String? = null
+
     init {
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
@@ -74,11 +77,26 @@ class NewSessionViewModel(
             if (current != null) WorkspaceSelection.select(current, workspaceList.find { it.id == current }?.path)
 
             val config = workspaceRepository.config()
-            if (config is NetworkResult.Success) {
-                _permissionMode.value = config.data.defaultPermissionMode
+            val globalPermission = if (config is NetworkResult.Success) {
+                config.data.defaultPermissionMode
+            } else {
+                _permissionMode.value
             }
 
-            if (_selectedAgent.value == null) _selectedAgent.value = defaultAgentId(agentList)
+            val currentWorkspace = workspaceList.find { it.id == current }
+            // Apply workspace defaults when the workspace changes; a manual
+            // choice made while the sheet is open is not overwritten by a
+            // background refresh.
+            if (defaultsWorkspaceId != current) {
+                defaultsWorkspaceId = current
+                _permissionMode.value = currentWorkspace?.defaultPermissionMode ?: globalPermission
+                val workspaceRuntime = currentWorkspace?.defaultRuntime
+                _selectedAgent.value = workspaceRuntime
+                    ?.takeIf { id -> agentList.any { it.id == id && it.available } }
+                    ?: defaultAgentId(agentList)
+            } else if (_selectedAgent.value == null) {
+                _selectedAgent.value = defaultAgentId(agentList)
+            }
             _uiState.value = NewSessionUiState.Ready(
                 agents = agentList,
                 workspaces = workspaceList,

@@ -79,13 +79,20 @@ tags / contentHash / createdAt / updatedAt / lastEditedBy`。
   `builtin`、且 workspace 是 `dev` 时注入。`purpose=task_config` 的 AI 配置会话也注入（用户决定）。
   builtin 以后走 ContextAssembler，不走这个前导块。
 - 取所有 `confirmed` 文档：工作区级 + 当前 `session.end_id` 的端级 + `requirements`。
-- 注入的是**指针**：`[kind] 标题（未核验） — 绝对路径`；`authority=curated` 的条目不带标记。
-  正文由 agent 按路径 Read，因此正文更新天然实时。
+- 注入的是**指针**：`[kind] 标题（未核验） — 摘要 — 绝对路径 （v=xxxxxxxx）`；
+  `authority=curated` 的条目不带标记。`v=` 是正文 sha256 前 8 位：正文一改版本就变，
+  模型因此有一个“该文件已更新”的明确信号，被提示重新 Read。
 - 使用 `ContextAssembler` 排序 / 去重 / 预算（默认 6000 字符，整段丢弃），包在
   `<paboot-memory-context>…</paboot-memory-context>` 中。
-- **用户消息与 `runs.prompt` 保存原文**；只有发给 runtime 的 prompt 带前导块。
-- 会话建立后不会刷新指针集合：标题 / 新增 / 删除需要新会话才反映；S1 起按
-  `indexVersion` 每轮重建动态尾部（见 `read-pipeline.md` §6.5）。
+- **注入通道**：Claude 用 `--append-system-prompt`，Codex 用 `thread/start` / `thread/resume` 的
+  `developerInstructions`，都是每轮传入 assembler 输出；未变化时字节一致（保 prompt cache），
+  变化时下一轮生效。DeepSeek 的 ACP `session/new` 没有 instruction 字段，退回首条用户消息前导，
+  resume 不重复注入。
+- **用户消息与 `runs.prompt` 保存原文**；只有发给 runtime 的 prompt / system prompt 带块。
+- **正文-only 更新的边界**：指针行带 `v=`，所以只改正文也会改变注入块；但模型仍可能忽略版本号、
+  沿用上一轮记忆。需要确定性生效时，可在对话里明确要求重读，或改标题/摘要。
+- 日志会打 `knowledge system prompt|first-message prelude|skipped`、指针数、字符数和
+  `indexVersion`（块内容的 sha256 前 16 位），便于排查缓存与刷新。
 - 预算超限写日志；为 K0 不新增 SSE 事件，避免三端协议扩展。
 - 知识库损坏只 warn，不阻塞 run。
 

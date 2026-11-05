@@ -9,6 +9,9 @@ import type { NewSessionOptions } from '../../store/chat';
 interface Props {
   workspaceName: string | null;
   workspacePath: string | null;
+  /** Workspace-level new-session defaults; null = follow global / claude. */
+  defaultRuntime: string | null;
+  defaultPermissionMode: ProductPermissionMode | null;
   /** No real dev workspace exists: the built-in fallback is all there is. */
   onlyFallback: boolean;
   onAddWorkspace(): void;
@@ -24,6 +27,8 @@ interface Props {
 export function NewSessionDialog({
   workspaceName,
   workspacePath,
+  defaultRuntime,
+  defaultPermissionMode,
   onlyFallback,
   onAddWorkspace,
   onCancel,
@@ -45,15 +50,24 @@ export function NewSessionDialog({
         setAgents([]);
       } else {
         setAgents(agentsRes.data.agents);
-        setRuntime(defaultAgentId(agentsRes.data.agents));
+        const canUseWorkspaceDefault =
+          defaultRuntime !== null &&
+          agentsRes.data.agents.some((agent) => agent.id === defaultRuntime && agent.available);
+        setRuntime(
+          canUseWorkspaceDefault ? defaultRuntime : defaultAgentId(agentsRes.data.agents),
+        );
       }
-      // A config failure is not fatal: fall back to the hard-coded 'ask'.
-      if (configRes.ok) setMode(configRes.data.defaultPermissionMode);
+      // Workspace default wins; otherwise the daemon's global default; a config
+      // failure is not fatal and falls back to the hard-coded 'ask'.
+      setMode(
+        defaultPermissionMode ??
+          (configRes.ok ? configRes.data.defaultPermissionMode : 'ask'),
+      );
     });
     return () => {
       live = false;
     };
-  }, []);
+  }, [defaultRuntime, defaultPermissionMode]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {

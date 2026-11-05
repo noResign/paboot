@@ -54,6 +54,9 @@ export interface WorkspaceRow {
   profile_mode: string;
   /** dev only: whether life may read this workspace (default off). */
   life_readable: number;
+  /** New-session defaults; `null` inherits the global default. */
+  default_runtime: string | null;
+  default_permission_mode: string | null;
   created_at: number;
   last_used_at: number;
 }
@@ -423,6 +426,8 @@ export class Db {
     this.ensureColumn('workspaces', 'family', "TEXT NOT NULL DEFAULT 'dev'");
     this.ensureColumn('workspaces', 'profile_mode', "TEXT NOT NULL DEFAULT 'portable'");
     this.ensureColumn('workspaces', 'life_readable', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('workspaces', 'default_runtime', 'TEXT');
+    this.ensureColumn('workspaces', 'default_permission_mode', 'TEXT');
     this.ensureColumn('sessions', 'end_id', 'TEXT');
     this.ensureColumn('sessions', 'memory_mode', "TEXT NOT NULL DEFAULT 'normal'");
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
@@ -704,6 +709,8 @@ export class Db {
     family?: 'dev' | 'life';
     profileMode?: 'off' | 'portable' | 'full';
     lifeReadable?: boolean;
+    defaultRuntime?: string | null;
+    defaultPermissionMode?: string | null;
   }): WorkspaceRow {
     const now = Date.now();
     const id = input.id ?? randomUUID();
@@ -717,10 +724,24 @@ export class Db {
     this.db
       .prepare(
         `INSERT INTO workspaces
-           (id, name, path, is_default, is_builtin, enabled, family, profile_mode, life_readable, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+           (id, name, path, is_default, is_builtin, enabled, family, profile_mode, life_readable,
+            default_runtime, default_permission_mode, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, input.name, input.path, isDefault, isBuiltin, family, profileMode, lifeReadable, now, now);
+      .run(
+        id,
+        input.name,
+        input.path,
+        isDefault,
+        isBuiltin,
+        family,
+        profileMode,
+        lifeReadable,
+        input.defaultRuntime ?? null,
+        input.defaultPermissionMode ?? null,
+        now,
+        now,
+      );
     if (isDefault) this.setDefaultWorkspace(id);
     return this.getWorkspace(id) as WorkspaceRow;
   }
@@ -773,11 +794,27 @@ export class Db {
     }
   }
 
-  updateWorkspace(id: string, update: { name?: string; enabled?: boolean }): void {
+  updateWorkspace(
+    id: string,
+    update: {
+      name?: string;
+      enabled?: boolean;
+      defaultRuntime?: string | null;
+      defaultPermissionMode?: string | null;
+    },
+  ): void {
     const current = this.getWorkspace(id);
     if (!current) return;
     if (update.name !== undefined) {
       this.db.prepare(`UPDATE workspaces SET name = ? WHERE id = ?`).run(update.name, id);
+    }
+    if (update.defaultRuntime !== undefined) {
+      this.db.prepare(`UPDATE workspaces SET default_runtime = ? WHERE id = ?`).run(update.defaultRuntime, id);
+    }
+    if (update.defaultPermissionMode !== undefined) {
+      this.db
+        .prepare(`UPDATE workspaces SET default_permission_mode = ? WHERE id = ?`)
+        .run(update.defaultPermissionMode, id);
     }
     if (update.enabled !== undefined) {
       this.db.prepare(`UPDATE workspaces SET enabled = ? WHERE id = ?`).run(update.enabled ? 1 : 0, id);

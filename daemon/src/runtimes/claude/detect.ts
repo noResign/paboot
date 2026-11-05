@@ -41,6 +41,7 @@ function probeCapabilities(help: string): RuntimeCapabilities {
     permissionHook: help.includes('--settings'),
     effort: help.includes('--effort'),
     mcpConfig: help.includes('--mcp-config'),
+    nativeSystemPrompt: help.includes('--append-system-prompt'),
   };
 }
 
@@ -53,6 +54,7 @@ const FALLBACK_CAPS: RuntimeCapabilities = {
   permissionHook: false,
   effort: false,
   mcpConfig: false,
+  nativeSystemPrompt: false,
 };
 
 /**

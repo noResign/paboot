@@ -51,6 +51,8 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   permissionHook: false,
   effort: false,
   mcpConfig: false,
+  // ACP v2 `session/new` has no instruction field; keep the prelude fallback.
+  nativeSystemPrompt: false,
 };
 
 /** DSH's user-data root (`$DSH_HOME` or `~/.dsh`), where credentials live. */

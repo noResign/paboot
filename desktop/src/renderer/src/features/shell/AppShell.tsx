@@ -876,6 +876,8 @@ export function AppShell() {
         <NewSessionDialog
           workspaceName={selectedWorkspaceLabel}
           workspacePath={selectedWorkspace?.path ?? null}
+          defaultRuntime={selectedWorkspace?.defaultRuntime ?? null}
+          defaultPermissionMode={selectedWorkspace?.defaultPermissionMode ?? null}
           onlyFallback={!hasRealDevWorkspace && selectedWorkspace?.family !== 'life'}
           onAddWorkspace={() => {
             setNewSessionOpen(false);

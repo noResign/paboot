@@ -26,6 +26,10 @@ data class WorkspaceDto(
     val profileMode: String = "portable",
     /** dev 专用：life 是否可单向读；默认关。 */
     val lifeReadable: Boolean = false,
+    /** 新建会话默认 runtime；null = 跟随全局（claude）。 */
+    val defaultRuntime: String? = null,
+    /** 新建会话默认权限模式；null = 跟随全局。 */
+    val defaultPermissionMode: String? = null,
     val enabled: Boolean = true,
     val sessionCount: Int = 0,
     val createdAt: Long = 0,
@@ -65,6 +69,8 @@ data class UpdateWorkspaceRequest(
     val name: String? = null,
     val isDefault: Boolean? = null,
     val enabled: Boolean? = null,
+    val defaultRuntime: String? = null,
+    val defaultPermissionMode: String? = null,
 )
 
 @Serializable

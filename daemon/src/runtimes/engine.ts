@@ -31,6 +31,8 @@ export interface RunRequest {
   permissionHook?: { hookPath: string; daemonUrl: string; token: string; timeoutMs: number; matcher: string };
   /** External tool servers (MCP) to expose to the agent. */
   toolServers?: ToolServerSpec[];
+  /** Native system-prompt context, when the runtime advertises support. */
+  systemContext?: string;
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
   onEvent: (ev: NormalizedEvent) => void;
@@ -122,6 +124,7 @@ export function startRun(req: RunRequest): ActiveRun {
     extraDirs: req.extraDirs,
     permissionHook: hookSettings,
     toolServers: req.toolServers,
+    systemContext: req.systemContext,
   };
 
   const args = req.adapter.buildArgs(ctx);

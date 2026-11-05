@@ -28,6 +28,11 @@ export interface RuntimeDriverRequest {
   onNativeSessionId: (id: string) => void;
   /** Workspace dirs beyond `cwd` this run may touch. */
   extraDirs?: string[];
+  /**
+   * Native system-prompt context for runtimes that support one; the driver may
+   * ignore it and rely on the caller's prompt prelude instead.
+   */
+  systemContext?: string;
   onEvent: (ev: NormalizedEvent) => void;
 }
 

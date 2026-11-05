@@ -48,6 +48,8 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   permissionHook: false,
   effort: false,
   mcpConfig: false,
+  // Codex app-server accepts `developerInstructions` on thread start/resume.
+  nativeSystemPrompt: true,
 };
 
 /**
