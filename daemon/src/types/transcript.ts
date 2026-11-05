@@ -51,15 +51,43 @@ export interface NativeMessage {
   createdAt: number;
 }
 
-/**
- * The request projection sends only the newest durable runtime-context
- * snapshot. Older snapshots stay in SQLite for audit/replay but are not
- * re-sent to the model.
- */
-export function selectActiveRuntimeContext(messages: readonly NativeMessage[]): NativeMessage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]!;
-    if (message.source.kind === 'runtime-context') return message;
-  }
-  return null;
+export interface NativeCompaction {
+  id: string;
+  threadId: string;
+  prevId: string | null;
+  summary: string;
+  throughSeq: number;
+  tokensBefore: number | null;
+  tokensAfter: number | null;
+  createdAt: number;
+}
+
+export interface CreateNativeThreadInput {
+  id?: string;
+  sessionId: string;
+  agentId: string;
+  parentThreadId?: string | null;
+}
+
+export interface AppendNativeMessageInput {
+  threadId: string;
+  role: TranscriptRole;
+  blocks: TranscriptContentBlock[];
+  source: NativeMessageSource;
+  runId?: string | null;
+  step?: number | null;
+  provider?: string | null;
+  model?: string | null;
+  usage?: unknown;
+  formatVersion?: number;
+}
+
+export interface AppendNativeCompactionInput {
+  id?: string;
+  threadId: string;
+  prevId?: string | null;
+  summary: string;
+  throughSeq: number;
+  tokensBefore?: number | null;
+  tokensAfter?: number | null;
 }

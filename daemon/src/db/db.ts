@@ -3,10 +3,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { WorkspaceSource } from '../app/config.js';
+import type {
+  AppendNativeCompactionInput,
+  AppendNativeMessageInput,
+  CreateNativeThreadInput,
+  NativeCompaction,
+  NativeMessage,
+  NativeThread,
+  NativeMessageSource,
+  TranscriptContentBlock,
+} from '../types/transcript.js';
 import { serializeModelParameters } from './model-selection.js';
 
 /** Setting key: the `env` / `cwd` startup workspace has already been seeded once. */
 const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
+
+const NATIVE_MESSAGE_COLUMNS = `
+  id, thread_id AS threadId, seq, role, blocks, source, source_kind AS sourceKind,
+  source_key AS sourceKey, run_id AS runId, step, provider, model, usage,
+  format_version AS formatVersion, created_at AS createdAt`;
 
 export interface SessionRow {
   id: string;
@@ -176,6 +191,42 @@ export interface DeployJobRow {
   finished_at: number | null;
   exit_code: number | null;
   error: string | null;
+}
+
+interface NativeMessageDbRow {
+  id: number;
+  threadId: string;
+  seq: number;
+  role: string;
+  blocks: string;
+  source: string;
+  sourceKind: string;
+  sourceKey: string | null;
+  runId: string | null;
+  step: number | null;
+  provider: string | null;
+  model: string | null;
+  usage: string | null;
+  formatVersion: number;
+  createdAt: number;
+}
+
+function parseNativeMessageRow(row: NativeMessageDbRow): NativeMessage {
+  return {
+    id: row.id,
+    threadId: row.threadId,
+    seq: row.seq,
+    role: row.role as NativeMessage['role'],
+    blocks: JSON.parse(row.blocks) as TranscriptContentBlock[],
+    source: JSON.parse(row.source) as NativeMessageSource,
+    runId: row.runId,
+    step: row.step,
+    provider: row.provider,
+    model: row.model,
+    usage: row.usage === null ? null : (JSON.parse(row.usage) as unknown),
+    formatVersion: row.formatVersion,
+    createdAt: row.createdAt,
+  };
 }
 
 /**
@@ -360,6 +411,58 @@ export class Db {
         created_at INTEGER NOT NULL,
         PRIMARY KEY (session_id, tool_name)
       );
+
+      -- Builtin runtime transcript. One thread per agent run lineage; P3 uses
+      -- one fixed builtin thread per session, while group chat/subagents can add
+      -- sibling or child threads without changing this schema.
+      CREATE TABLE IF NOT EXISTS native_threads (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        parent_thread_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_native_threads_session
+        ON native_threads (session_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_native_threads_parent
+        ON native_threads (parent_thread_id);
+
+      CREATE TABLE IF NOT EXISTS native_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        blocks TEXT NOT NULL,
+        source TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        source_key TEXT,
+        run_id TEXT,
+        step INTEGER,
+        provider TEXT,
+        model TEXT,
+        usage TEXT,
+        format_version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        UNIQUE (thread_id, seq)
+      );
+      CREATE INDEX IF NOT EXISTS idx_native_messages_thread_seq
+        ON native_messages (thread_id, seq);
+      CREATE INDEX IF NOT EXISTS idx_native_messages_context
+        ON native_messages (thread_id, source_kind, seq DESC);
+
+      CREATE TABLE IF NOT EXISTS native_compactions (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        prev_id TEXT,
+        summary TEXT NOT NULL,
+        through_seq INTEGER NOT NULL,
+        tokens_before INTEGER,
+        tokens_after INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE (thread_id, through_seq)
+      );
+      CREATE INDEX IF NOT EXISTS idx_native_compactions_thread
+        ON native_compactions (thread_id, through_seq DESC);
 
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
@@ -580,7 +683,194 @@ export class Db {
     this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_permission_grants WHERE session_id = ?`).run(id);
+    this.db
+      .prepare(
+        `DELETE FROM native_compactions WHERE thread_id IN
+           (SELECT id FROM native_threads WHERE session_id = ?)`,
+      )
+      .run(id);
+    this.db
+      .prepare(
+        `DELETE FROM native_messages WHERE thread_id IN
+           (SELECT id FROM native_threads WHERE session_id = ?)`,
+      )
+      .run(id);
+    this.db.prepare(`DELETE FROM native_threads WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+  }
+
+  // ---- builtin transcript ----
+
+  createNativeThread(input: CreateNativeThreadInput): NativeThread {
+    const id = input.id ?? randomUUID();
+    const createdAt = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO native_threads (id, session_id, agent_id, parent_thread_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(id, input.sessionId, input.agentId, input.parentThreadId ?? null, createdAt);
+    return this.getNativeThread(id) as NativeThread;
+  }
+
+  getNativeThread(id: string): NativeThread | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, session_id AS sessionId, agent_id AS agentId,
+                parent_thread_id AS parentThreadId, created_at AS createdAt
+         FROM native_threads WHERE id = ?`,
+      )
+      .get(id) as unknown as NativeThread | undefined;
+  }
+
+  getNativeThreadForSession(sessionId: string, agentId = 'builtin'): NativeThread | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, session_id AS sessionId, agent_id AS agentId,
+                parent_thread_id AS parentThreadId, created_at AS createdAt
+         FROM native_threads WHERE session_id = ? AND agent_id = ?
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(sessionId, agentId) as unknown as NativeThread | undefined;
+  }
+
+  listNativeThreads(sessionId: string): NativeThread[] {
+    return this.db
+      .prepare(
+        `SELECT id, session_id AS sessionId, agent_id AS agentId,
+                parent_thread_id AS parentThreadId, created_at AS createdAt
+         FROM native_threads WHERE session_id = ? ORDER BY created_at ASC`,
+      )
+      .all(sessionId) as unknown as NativeThread[];
+  }
+
+  deleteNativeThread(threadId: string): void {
+    this.db.prepare(`DELETE FROM native_compactions WHERE thread_id = ?`).run(threadId);
+    this.db.prepare(`DELETE FROM native_messages WHERE thread_id = ?`).run(threadId);
+    this.db.prepare(`DELETE FROM native_threads WHERE id = ?`).run(threadId);
+  }
+
+  appendNativeMessage(input: AppendNativeMessageInput): NativeMessage {
+    if (!this.getNativeThread(input.threadId)) {
+      throw new Error(`native thread not found: ${input.threadId}`);
+    }
+    const sourceJson = JSON.stringify(input.source);
+    const sourceKind = input.source.kind;
+    const sourceKey = input.source.kind === 'runtime-context' ? input.source.sourceKey : null;
+    const usageJson = input.usage === undefined ? null : JSON.stringify(input.usage);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const seq = (
+        this.db
+          .prepare(`SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM native_messages WHERE thread_id = ?`)
+          .get(input.threadId) as unknown as { seq: number }
+      ).seq;
+      this.db
+        .prepare(
+          `INSERT INTO native_messages
+             (thread_id, seq, role, blocks, source, source_kind, source_key, run_id, step,
+              provider, model, usage, format_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          input.threadId,
+          seq,
+          input.role,
+          JSON.stringify(input.blocks),
+          sourceJson,
+          sourceKind,
+          sourceKey,
+          input.runId ?? null,
+          input.step ?? null,
+          input.provider ?? null,
+          input.model ?? null,
+          usageJson,
+          input.formatVersion ?? 1,
+          Date.now(),
+        );
+      this.db.exec('COMMIT');
+      return this.getNativeMessage(input.threadId, seq) as NativeMessage;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  listNativeMessages(threadId: string, afterSeq = 0): NativeMessage[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${NATIVE_MESSAGE_COLUMNS} FROM native_messages
+         WHERE thread_id = ? AND seq > ? ORDER BY seq ASC`,
+      )
+      .all(threadId, afterSeq) as unknown as NativeMessageDbRow[];
+    return rows.map(parseNativeMessageRow);
+  }
+
+  latestNativeContextMessage(threadId: string): NativeMessage | null {
+    const row = this.db
+      .prepare(
+        `SELECT ${NATIVE_MESSAGE_COLUMNS} FROM native_messages
+         WHERE thread_id = ? AND source_kind = 'runtime-context'
+         ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(threadId) as unknown as NativeMessageDbRow | undefined;
+    return row ? parseNativeMessageRow(row) : null;
+  }
+
+  appendNativeCompaction(input: AppendNativeCompactionInput): NativeCompaction {
+    if (!this.getNativeThread(input.threadId)) {
+      throw new Error(`native thread not found: ${input.threadId}`);
+    }
+    const id = input.id ?? randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO native_compactions
+           (id, thread_id, prev_id, summary, through_seq, tokens_before, tokens_after, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.threadId,
+        input.prevId ?? null,
+        input.summary,
+        input.throughSeq,
+        input.tokensBefore ?? null,
+        input.tokensAfter ?? null,
+        Date.now(),
+      );
+    return this.getNativeCompaction(id) as NativeCompaction;
+  }
+
+  listNativeCompactions(threadId: string): NativeCompaction[] {
+    return this.db
+      .prepare(
+        `SELECT id, thread_id AS threadId, prev_id AS prevId, summary,
+                through_seq AS throughSeq, tokens_before AS tokensBefore,
+                tokens_after AS tokensAfter, created_at AS createdAt
+         FROM native_compactions WHERE thread_id = ? ORDER BY through_seq ASC`,
+      )
+      .all(threadId) as unknown as NativeCompaction[];
+  }
+
+  private getNativeMessage(threadId: string, seq: number): NativeMessage | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT ${NATIVE_MESSAGE_COLUMNS} FROM native_messages
+         WHERE thread_id = ? AND seq = ?`,
+      )
+      .get(threadId, seq) as unknown as NativeMessageDbRow | undefined;
+    return row ? parseNativeMessageRow(row) : undefined;
+  }
+
+  private getNativeCompaction(id: string): NativeCompaction | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, thread_id AS threadId, prev_id AS prevId, summary,
+                through_seq AS throughSeq, tokens_before AS tokensBefore,
+                tokens_after AS tokensAfter, created_at AS createdAt
+         FROM native_compactions WHERE id = ?`,
+      )
+      .get(id) as unknown as NativeCompaction | undefined;
   }
 
   // ---- workspaces ----
