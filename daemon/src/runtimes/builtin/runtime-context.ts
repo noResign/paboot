@@ -41,6 +41,8 @@ export interface RuntimeContextCollectContext {
   toolSet: readonly ToolDescriptor[];
   skillCatalog: readonly SkillManifest[];
   signal: AbortSignal;
+  /** Normalized current time for deterministic source rendering/tests. */
+  now?: number;
 }
 
 export interface RuntimeContextSource {
@@ -50,11 +52,32 @@ export interface RuntimeContextSource {
   ): Promise<RuntimeContextContribution[]> | RuntimeContextContribution[];
 }
 
+export type RuntimeContextOmissionReason =
+  | 'empty'
+  | 'duplicate'
+  | 'section_budget'
+  | 'budget'
+  | 'source_error';
+
+export interface RuntimeContextOmission {
+  source: string;
+  reason: RuntimeContextOmissionReason;
+}
+
 export interface RuntimeContextSnapshot {
   /** Exact model-facing text including the supersedes preamble. */
   text: string;
   contributions: RuntimeContextContribution[];
+  omitted: RuntimeContextOmission[];
+  /** True when a contribution was dropped because it did not fit a budget. */
+  overBudget: boolean;
   version: string;
+}
+
+export interface RuntimeContextCollectionOptions {
+  /** Total cap for the rendered runtime-context body, in measure units. */
+  maxChars?: number;
+  measure?: (text: string) => number;
 }
 
 /** Effective context configuration for one agent. */
@@ -75,27 +98,86 @@ export interface AgentContextProfile {
 export async function collectRuntimeContext(
   sources: readonly RuntimeContextSource[],
   context: RuntimeContextCollectContext,
+  options: RuntimeContextCollectionOptions = {},
 ): Promise<RuntimeContextSnapshot> {
   const collected: RuntimeContextContribution[] = [];
+  const omitted: RuntimeContextOmission[] = [];
   for (const source of sources) {
-    collected.push(...(await source.collect(context)));
+    try {
+      collected.push(...(await source.collect(context)));
+    } catch {
+      omitted.push({ source: source.id, reason: 'source_error' });
+    }
   }
+
   collected.sort((a, b) => b.priority - a.priority || a.source.localeCompare(b.source));
   const bySource = new Map<string, RuntimeContextContribution>();
   for (const contribution of collected) {
-    if (!bySource.has(contribution.source)) bySource.set(contribution.source, contribution);
+    if (bySource.has(contribution.source)) {
+      omitted.push({ source: contribution.source, reason: 'duplicate' });
+      continue;
+    }
+    bySource.set(contribution.source, contribution);
   }
-  const contributions = [...bySource.values()].filter((item) => item.content.trim().length > 0);
-  const body = contributions
-    .map((item) => item.content.trim())
-    .filter(Boolean)
-    .join('\n\n');
+
+  const measure = options.measure ?? ((text: string) => text.length);
+  let overBudget = false;
+  const measured: RuntimeContextContribution[] = [];
+  for (const contribution of bySource.values()) {
+    if (contribution.content.trim().length === 0) {
+      omitted.push({ source: contribution.source, reason: 'empty' });
+      continue;
+    }
+    if (
+      contribution.tokenBudget !== undefined &&
+      measure(contribution.content.trim()) > contribution.tokenBudget
+    ) {
+      omitted.push({ source: contribution.source, reason: 'section_budget' });
+      overBudget = true;
+      continue;
+    }
+    measured.push(contribution);
+  }
+
+  const included = [...measured];
+  if (options.maxChars !== undefined) {
+    while (measure(renderBody(included)) > options.maxChars) {
+      let dropIndex = -1;
+      for (let index = included.length - 1; index >= 0; index -= 1) {
+        if (!included[index]!.required) {
+          dropIndex = index;
+          break;
+        }
+      }
+      if (dropIndex < 0) {
+        // Required operational context wins over the soft budget; keep it and
+        // make the overflow visible to the caller.
+        overBudget = true;
+        break;
+      }
+      const [dropped] = included.splice(dropIndex, 1);
+      omitted.push({ source: dropped!.source, reason: 'budget' });
+      overBudget = true;
+    }
+  }
+
+  const body = renderBody(included);
   const text = body
     ? `Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n${body}`
     : '';
+  omitted.sort((a, b) => a.source.localeCompare(b.source) || a.reason.localeCompare(b.reason));
   return {
     text,
-    contributions,
+    contributions: included,
+    omitted,
+    overBudget,
     version: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
   };
+}
+
+function renderBody(contributions: readonly RuntimeContextContribution[]): string {
+  return contributions
+    .map((item) => item.content.trim())
+    .filter(Boolean)
+    .join('\n\n');
 }

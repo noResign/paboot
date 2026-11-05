@@ -73,7 +73,7 @@ export interface CompiledPromptSection {
   text: string;
 }
 
-export type PromptOmissionReason = 'empty' | 'condition' | 'section_budget' | 'duplicate';
+export type PromptOmissionReason = 'empty' | 'condition' | 'section_budget' | 'budget' | 'duplicate';
 
 export interface PromptOmission {
   id: string;
@@ -87,8 +87,16 @@ export interface PromptCompileResult {
   text: string;
   sections: CompiledPromptSection[];
   omitted: PromptOmission[];
+  /** True when a whole section had to be dropped to fit the total budget. */
+  overBudget: boolean;
   /** Hash of the exact model-facing system text. */
   version: string;
+}
+
+export interface PromptCompileOptions {
+  /** Total cap across stable + dynamic system text. */
+  maxChars?: number;
+  measure?: (text: string) => number;
 }
 
 export class PromptCompileError extends Error {
@@ -210,6 +218,7 @@ function lastDefinedAllow(policies: readonly (ToolPolicy | SkillPolicy)[]): stri
 export function compilePromptSections(
   sections: readonly PromptSectionSpec[],
   context: PromptBuildContext,
+  options: PromptCompileOptions = {},
 ): PromptCompileResult {
   const variables = promptVariables(context);
   const sorted = [...sections].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
@@ -246,11 +255,29 @@ export function compilePromptSections(
     });
   }
 
-  const stableText = compiled
+  const measure = options.measure ?? ((text: string) => text.length);
+  const included = [...compiled];
+  let overBudget = false;
+  if (options.maxChars !== undefined) {
+    while (measure(renderCompiledText(included)) > options.maxChars) {
+      const dropIndex = findBudgetDropIndex(included);
+      if (dropIndex < 0) {
+        // The trusted system floor itself exceeds the budget. Keep it: silently
+        // dropping safety/policy text is worse than an explicitly over-budget prompt.
+        overBudget = true;
+        break;
+      }
+      const [dropped] = included.splice(dropIndex, 1);
+      omitted.push({ id: dropped!.id, reason: 'budget' });
+      overBudget = true;
+    }
+  }
+
+  const stableText = included
     .filter((section) => section.stability === 'stable')
     .map((section) => section.text)
     .join('\n\n');
-  const dynamicText = compiled
+  const dynamicText = included
     .filter((section) => section.stability === 'dynamic')
     .map((section) => section.text)
     .join('\n\n');
@@ -259,10 +286,34 @@ export function compilePromptSections(
     stableText,
     dynamicText,
     text,
-    sections: compiled,
+    sections: included,
     omitted,
+    overBudget,
     version: createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 16),
   };
+}
+
+function renderCompiledText(sections: readonly CompiledPromptSection[]): string {
+  return [
+    sections
+      .filter((section) => section.stability === 'stable')
+      .map((section) => section.text)
+      .join('\n\n'),
+    sections
+      .filter((section) => section.stability === 'dynamic')
+      .map((section) => section.text)
+      .join('\n\n'),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** Drop the lowest-priority non-system tail first; system sections are last. */
+function findBudgetDropIndex(sections: readonly CompiledPromptSection[]): number {
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    if (sections[index]!.trust !== 'system') return index;
+  }
+  return -1;
 }
 
 /** Compile a resolved preset for one agent/step. */
@@ -271,11 +322,13 @@ export function compileAgentPrompt(
   presetId: string,
   context: PromptBuildContext,
   globalSections: readonly PromptSectionSpec[] = [],
+  options: PromptCompileOptions = {},
 ): PromptCompileResult {
   const preset = resolvePromptPreset(presets, presetId);
   return compilePromptSections(
     mergePromptSections([globalSections, preset.sections ?? []]),
     { ...context, preset },
+    options,
   );
 }
 

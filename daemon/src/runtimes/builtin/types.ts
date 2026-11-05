@@ -86,6 +86,8 @@ export interface SessionSnapshot {
   id: string;
   workspaceId: string | null;
   agentId: string;
+  /** Primary end for end-scoped knowledge; null/absent for workspace scope. */
+  endId?: string | null;
 }
 
 export interface ModelSnapshot {
