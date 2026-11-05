@@ -344,43 +344,59 @@ export function ProviderSection() {
             {draft.models.length === 0 && <div className="hint">还没有模型。至少添加一个模型后 builtin 才会显示为可用。</div>}
             {draft.models.map((model, index) => (
               <div className="provider-model-row" key={model.rowKey}>
-                <input
-                  value={model.id}
-                  placeholder="model id"
-                  onChange={(event) => patchModel(index, { id: event.target.value })}
-                />
-                <input
-                  value={model.label ?? ''}
-                  placeholder="显示名称"
-                  onChange={(event) => patchModel(index, { label: event.target.value })}
-                />
-                <input
-                  type="number"
-                  value={model.contextWindow ?? ''}
-                  placeholder="上下文"
-                  onChange={(event) => patchModel(index, {
-                    contextWindow: event.target.value ? Number(event.target.value) : undefined,
-                  })}
-                />
-                <input
-                  type="number"
-                  value={model.maxOutput ?? ''}
-                  placeholder="最大输出"
-                  onChange={(event) => patchModel(index, {
-                    maxOutput: event.target.value ? Number(event.target.value) : undefined,
-                  })}
-                />
-                <div className="provider-model-flags">
-                  <label><input type="checkbox" checked={model.supportsTools !== false} onChange={(event) => patchModel(index, { supportsTools: event.target.checked })} /> Tools</label>
-                  <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
-                  <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
+                <div className="provider-model-identity">
+                  <label className="provider-model-field">
+                    <span>模型 ID</span>
+                    <input
+                      value={model.id}
+                      placeholder="model id"
+                      onChange={(event) => patchModel(index, { id: event.target.value })}
+                    />
+                  </label>
+                  <label className="provider-model-field">
+                    <span>显示名称</span>
+                    <input
+                      value={model.label ?? ''}
+                      placeholder="显示名称"
+                      onChange={(event) => patchModel(index, { label: event.target.value })}
+                    />
+                  </label>
                 </div>
-                <button
-                  className="btn danger"
-                  onClick={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })}
-                >
-                  删除
-                </button>
+                <div className="provider-model-params">
+                  <label className="provider-model-number">
+                    <span>上下文</span>
+                    <input
+                      type="number"
+                      value={model.contextWindow ?? ''}
+                      placeholder="128000"
+                      onChange={(event) => patchModel(index, {
+                        contextWindow: event.target.value ? Number(event.target.value) : undefined,
+                      })}
+                    />
+                  </label>
+                  <label className="provider-model-number">
+                    <span>最大输出</span>
+                    <input
+                      type="number"
+                      value={model.maxOutput ?? ''}
+                      placeholder="8192"
+                      onChange={(event) => patchModel(index, {
+                        maxOutput: event.target.value ? Number(event.target.value) : undefined,
+                      })}
+                    />
+                  </label>
+                  <div className="provider-model-flags">
+                    <label><input type="checkbox" checked={model.supportsTools !== false} onChange={(event) => patchModel(index, { supportsTools: event.target.checked })} /> Tools</label>
+                    <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
+                    <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
+                  </div>
+                  <button
+                    className="btn danger provider-model-delete"
+                    onClick={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })}
+                  >
+                    删除
+                  </button>
+                </div>
               </div>
             ))}
           </div>
