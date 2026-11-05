@@ -30,6 +30,7 @@ final class SettingsViewController: UIViewController {
 
     private let currentWorkspaceRow = SettingsInfoRow(title: "当前工作区", monospaced: true)
     private let manageWorkspacesButton = UIButton(type: .system)
+    private let manageProvidersButton = UIButton(type: .system)
 
     private let permissionErrorLabel = UILabel()
     private var permissionRows: [PermissionModeRow] = []
@@ -107,6 +108,7 @@ final class SettingsViewController: UIViewController {
         configureConnectionSection()
         configureStatusSection()
         configureWorkspaceSection()
+        configureProviderSection()
         configurePermissionSection()
         configureNotificationSection()
         configureAboutSection()
@@ -228,6 +230,29 @@ final class SettingsViewController: UIViewController {
         contentStack.addArrangedSubview(workspaceHintLabel)
 
         contentStack.addArrangedSubview(manageWorkspacesButton)
+    }
+
+    private func configureProviderSection() {
+        configureOutlinedActionButton(manageProvidersButton, title: "管理模型 Provider")
+        manageProvidersButton.addAction(
+            UIAction { [weak self] _ in
+                self?.navigationController?.pushViewController(
+                    ProviderManagementViewController(),
+                    animated: true
+                )
+            },
+            for: .touchUpInside
+        )
+
+        contentStack.addArrangedSubview(SettingsSectionTitle("模型 Provider"))
+
+        let hint = UILabel()
+        hint.text = "builtin runtime 与 Memory 共用 provider 目录；API Key 只写入 daemon 本机，不会回传客户端。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textSecondary
+        hint.numberOfLines = 0
+        contentStack.addArrangedSubview(hint)
+        contentStack.addArrangedSubview(manageProvidersButton)
     }
 
     private func configurePermissionSection() {

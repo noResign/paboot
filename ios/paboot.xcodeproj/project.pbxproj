@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+F20000000000000000000001 /* ProviderRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000011 /* ProviderRepository.swift */; };
+F20000000000000000000002 /* ProviderViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000012 /* ProviderViewModel.swift */; };
+F20000000000000000000003 /* ProviderManagementViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000013 /* ProviderManagementViewController.swift */; };
 		F10000000000000000000012 /* RunNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
 		F10000000000000000000011 /* RunWatchCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
 		D10000000000000000000001 /* UserInputViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000002 /* UserInputViewController.swift */; };
@@ -79,6 +82,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+F20000000000000000000011 /* ProviderRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRepository.swift; sourceTree = "<group>"; };
+F20000000000000000000012 /* ProviderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderViewModel.swift; sourceTree = "<group>"; };
+F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderManagementViewController.swift; sourceTree = "<group>"; };
 		F10000000000000000000002 /* RunNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunNotifications.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* RunWatchCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunWatchCenter.swift; sourceTree = "<group>"; };
 		D10000000000000000000002 /* UserInputViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInputViewController.swift; sourceTree = "<group>"; };
@@ -277,6 +283,7 @@
 				AAAA00000000000000000025 /* SettingsViewController.swift */,
 				C00000000000000000000007 /* WorkspaceManagementViewController.swift */,
 				C00000000000000000000008 /* DirectoryPickerViewController.swift */,
+				F20000000000000000000013 /* ProviderManagementViewController.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -341,6 +348,7 @@
 				C00000000000000000000002 /* SessionPermissionRepository.swift */,
 				C0000000000000000000002A /* KnowledgeRepository.swift */,
 				D00000000000000000000001 /* FilesRepository.swift */,
+				F20000000000000000000011 /* ProviderRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -371,6 +379,7 @@
 				D00000000000000000000004 /* FilesViewModel.swift */,
 				D00000000000000000000005 /* DiffViewModel.swift */,
 				D00000000000000000000006 /* FileContentViewModel.swift */,
+				F20000000000000000000012 /* ProviderViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -581,6 +590,9 @@
 				D0000000000000000000001A /* DiffViewController.swift in Sources */,
 				D0000000000000000000001B /* FileContentViewController.swift in Sources */,
 				E00000000000000000000011 /* SplitDiffView.swift in Sources */,
+				F20000000000000000000001 /* ProviderRepository.swift in Sources */,
+				F20000000000000000000002 /* ProviderViewModel.swift in Sources */,
+				F20000000000000000000003 /* ProviderManagementViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

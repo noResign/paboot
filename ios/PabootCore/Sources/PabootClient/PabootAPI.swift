@@ -279,6 +279,59 @@ public final class PabootAPI {
         try await get("api/agents/\(agentId)/models", authenticated: true, as: AgentModelsResponse.self)
     }
 
+    // MARK: - LLM providers
+
+    public func providers() async throws -> ProvidersResponse {
+        try await get("api/providers", authenticated: true, as: ProvidersResponse.self)
+    }
+
+    public func createProvider(_ body: ProviderCreateRequest) async throws -> ProviderResponse {
+        try await request(
+            "POST",
+            path: "api/providers",
+            body: try encode(body),
+            authenticated: true,
+            as: ProviderResponse.self
+        )
+    }
+
+    public func updateProvider(id: String, body: ProviderUpdateRequest) async throws -> ProviderResponse {
+        try await request(
+            "PATCH",
+            path: "api/providers/\(id)",
+            body: try encode(body),
+            authenticated: true,
+            as: ProviderResponse.self
+        )
+    }
+
+    public func deleteProvider(id: String) async throws -> OkResponse {
+        try await request(
+            "DELETE",
+            path: "api/providers/\(id)",
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
+    public func testProvider(id: String) async throws -> ProviderTestResponse {
+        try await request(
+            "POST",
+            path: "api/providers/\(id)/test",
+            authenticated: true,
+            as: ProviderTestResponse.self
+        )
+    }
+
+    public func refreshProviderModels(id: String) async throws -> ProviderResponse {
+        try await request(
+            "POST",
+            path: "api/providers/\(id)/models/refresh",
+            authenticated: true,
+            as: ProviderResponse.self
+        )
+    }
+
     // MARK: - Sessions
 
     public func sessions(workspaceId: String? = nil) async throws -> SessionsResponse {
