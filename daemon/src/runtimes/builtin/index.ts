@@ -6,5 +6,6 @@ export * from './context/index.js';
 export * from './security/index.js';
 export * from './tools/index.js';
 export * from './mcp/index.js';
+export * from './skills/index.js';
 export * from './transcript/index.js';
 export * from './detect.js';
