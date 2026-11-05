@@ -70,17 +70,18 @@ class ProviderViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(busy = true, error = null, notice = null)
             val models = buildModels(original, draft.modelIds)
+            val label = draft.label.trim().ifEmpty { draft.id.trim() }
             val body = buildJsonObject {
                 if (original == null) {
                     put("id", draft.id.trim())
                     put("kind", draft.kind)
-                    put("label", draft.label.trim())
+                    put("label", label)
                     put("baseUrl", draft.baseUrl.trim())
                     put("models", models)
                     if (draft.apiKey.isNotBlank()) put("apiKey", draft.apiKey.trim())
                 } else {
                     put("kind", draft.kind)
-                    put("label", draft.label.trim())
+                    put("label", label)
                     put("baseUrl", draft.baseUrl.trim())
                     put("models", models)
                     if (draft.clearKey) put("apiKey", JsonNull)
