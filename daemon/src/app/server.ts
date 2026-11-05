@@ -7,6 +7,7 @@ import { requireAuth, requireRolePolicy } from '../http/auth.js';
 import { corsMiddleware } from '../http/cors.js';
 import { registerHealthRoutes } from '../routes/health.js';
 import { registerAgentRoutes } from '../routes/agent.js';
+import { registerAttachmentRoutes } from '../routes/attachments.js';
 import { registerChatRoutes } from '../routes/chat.js';
 import { registerChangesRoutes } from '../routes/changes.js';
 import { registerConfigRoutes } from '../routes/config.js';
@@ -43,6 +44,7 @@ export function createApp(ctx: AppContext): Express {
   );
   app.use('/api', requireRolePolicy());
   registerAgentRoutes(app, ctx);
+  registerAttachmentRoutes(app, ctx);
   registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
   registerDeployRoutes(app, ctx);

@@ -1,5 +1,6 @@
 import type { Config } from './config.js';
 import type { Db } from '../db/db.js';
+import type { AttachmentStore } from '../attachments/store.js';
 import type { KnowledgeStore } from '../knowledge/store.js';
 import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
@@ -15,6 +16,8 @@ export interface AppContext {
   db: Db;
   /** Curated knowledge documents (K0); file-backed, no memory.db. */
   knowledge: KnowledgeStore;
+  /** Immutable image bytes + SQLite metadata. */
+  attachments: AttachmentStore;
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;

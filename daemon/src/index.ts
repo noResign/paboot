@@ -8,6 +8,7 @@ import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
 import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
+import { AttachmentStore } from './attachments/store.js';
 import { PermissionManager } from './permissions/permissions.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
     config,
     db,
     knowledge: new KnowledgeStore(config.dataDir),
+    attachments: new AttachmentStore(db, config.dataDir),
     registry,
     permissions: new PermissionManager(
       config.permissionTimeoutMs,

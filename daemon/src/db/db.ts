@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { WorkspaceSource } from '../app/config.js';
+import type { AttachmentRow, CreateAttachmentInput } from '../types/attachments.js';
 import type {
   AppendNativeCompactionInput,
   AppendNativeMessageInput,
@@ -464,6 +465,25 @@ export class Db {
       CREATE INDEX IF NOT EXISTS idx_native_compactions_thread
         ON native_compactions (thread_id, through_seq DESC);
 
+      -- Immutable image bytes live under <dataDir>/attachments; SQLite stores
+      -- metadata and ownership refs only. session_id/run_id stay nullable until
+      -- the first chat message binds the attachment.
+      CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        media_type TEXT NOT NULL,
+        bytes INTEGER NOT NULL,
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        session_id TEXT,
+        workspace_id TEXT,
+        run_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_attachments_session
+        ON attachments (session_id, created_at);
+
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
@@ -697,6 +717,79 @@ export class Db {
       .run(id);
     this.db.prepare(`DELETE FROM native_threads WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+  }
+
+  // ---- attachments ----
+
+  createAttachment(input: CreateAttachmentInput): AttachmentRow {
+    this.db
+      .prepare(
+        `INSERT INTO attachments
+           (id, media_type, bytes, width, height, sha256, storage_path,
+            session_id, workspace_id, run_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.mediaType,
+        input.bytes,
+        input.width,
+        input.height,
+        input.sha256,
+        input.storagePath,
+        input.sessionId ?? null,
+        input.workspaceId ?? null,
+        input.runId ?? null,
+        Date.now(),
+      );
+    return this.getAttachment(input.id) as AttachmentRow;
+  }
+
+  getAttachment(id: string): AttachmentRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, media_type AS mediaType, bytes, width, height, sha256,
+                storage_path AS storagePath, session_id AS sessionId,
+                workspace_id AS workspaceId, run_id AS runId, created_at AS createdAt
+         FROM attachments WHERE id = ?`,
+      )
+      .get(id) as unknown as AttachmentRow | undefined;
+  }
+
+  bindAttachment(id: string, input: {
+    sessionId?: string | null;
+    workspaceId?: string | null;
+    runId?: string | null;
+  }): AttachmentRow | undefined {
+    const current = this.getAttachment(id);
+    if (!current) return undefined;
+    this.db
+      .prepare(
+        `UPDATE attachments SET session_id = ?, workspace_id = ?, run_id = ?
+         WHERE id = ?`,
+      )
+      .run(
+        input.sessionId !== undefined ? input.sessionId : current.sessionId,
+        input.workspaceId !== undefined ? input.workspaceId : current.workspaceId,
+        input.runId !== undefined ? input.runId : current.runId,
+        id,
+      );
+    return this.getAttachment(id);
+  }
+
+  deleteAttachment(id: string): void {
+    this.db.prepare(`DELETE FROM attachments WHERE id = ?`).run(id);
+  }
+
+  listAttachmentsForSession(sessionId: string): AttachmentRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, media_type AS mediaType, bytes, width, height, sha256,
+                storage_path AS storagePath, session_id AS sessionId,
+                workspace_id AS workspaceId, run_id AS runId, created_at AS createdAt
+         FROM attachments WHERE session_id = ? ORDER BY created_at ASC`,
+      )
+      .all(sessionId) as unknown as AttachmentRow[];
   }
 
   // ---- builtin transcript ----

@@ -108,6 +108,16 @@ export type NormalizedEvent =
     }
   | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
 
+/** Public metadata for an uploaded image attachment; bytes are fetched separately. */
+export interface AttachmentDto {
+  id: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  bytes: number;
+  width: number;
+  height: number;
+  sha256: string;
+}
+
 export interface ApiError {
   error: string;
   code?: string;

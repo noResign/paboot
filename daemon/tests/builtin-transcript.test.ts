@@ -293,7 +293,7 @@ describe('transcript request projection', () => {
     expect(rendered).toEqual([
       {
         role: 'user',
-        content: [{ type: 'text', text: '[image att-1 omitted: image/webp, 2x3]' }],
+        content: [{ type: 'text', text: '[image att-1 omitted: image/webp, 2x3; image data is unavailable]' }],
       },
     ]);
   });
