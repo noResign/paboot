@@ -17,6 +17,9 @@ import com.noresign.paboot.network.daemon.dto.KnowledgeDocsResponse
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyRequest
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyResponse
 import com.noresign.paboot.network.daemon.dto.OkResponse
+import com.noresign.paboot.network.daemon.dto.ProviderResponse
+import com.noresign.paboot.network.daemon.dto.ProviderTestResponse
+import com.noresign.paboot.network.daemon.dto.ProvidersResponse
 import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
 import com.noresign.paboot.network.daemon.dto.RenameRequest
 import com.noresign.paboot.network.daemon.dto.RenameResponse
@@ -78,6 +81,24 @@ interface PabootApi {
 
     @GET("api/agents/{id}/models")
     suspend fun agentModels(@Path("id") id: String): AgentModelsResponse
+
+    @GET("api/providers")
+    suspend fun providers(): ProvidersResponse
+
+    @POST("api/providers")
+    suspend fun createProvider(@Body body: JsonObject): ProviderResponse
+
+    @PATCH("api/providers/{id}")
+    suspend fun updateProvider(@Path("id") id: String, @Body body: JsonObject): ProviderResponse
+
+    @DELETE("api/providers/{id}")
+    suspend fun deleteProvider(@Path("id") id: String): OkResponse
+
+    @POST("api/providers/{id}/test")
+    suspend fun testProvider(@Path("id") id: String): ProviderTestResponse
+
+    @POST("api/providers/{id}/models/refresh")
+    suspend fun refreshProviderModels(@Path("id") id: String): ProviderResponse
 
     @GET("api/runs")
     suspend fun runs(@Query("workspaceId") workspaceId: String? = null): RunsResponse

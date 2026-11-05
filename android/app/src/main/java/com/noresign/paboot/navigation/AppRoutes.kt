@@ -8,6 +8,7 @@ object AppRoutes {
     const val CONNECT = "connect"
     const val MAIN = "main"
     const val WORKSPACES = "workspaces"
+    const val PROVIDERS = "providers"
 
     /** Read-only workspace overview. A full page, not a bottom sheet. */
     const val WORKSPACE_OVERVIEW = "workspace_overview/{workspaceId}"
@@ -47,6 +48,10 @@ fun NavController.navigateToConnect() {
 
 fun NavController.navigateToWorkspaces() {
     navigate(AppRoutes.WORKSPACES)
+}
+
+fun NavController.navigateToProviders() {
+    navigate(AppRoutes.PROVIDERS)
 }
 
 fun NavController.navigateToWorkspaceOverview(workspaceId: String) {

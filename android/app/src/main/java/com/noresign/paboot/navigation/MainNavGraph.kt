@@ -10,6 +10,7 @@ import androidx.navigation.navArgument
 import com.noresign.paboot.ui.ChatScreen
 import com.noresign.paboot.ui.KnowledgeScreen
 import com.noresign.paboot.ui.MainScreen
+import com.noresign.paboot.ui.ProviderManagementScreen
 import com.noresign.paboot.ui.WorkspaceManagementScreen
 import com.noresign.paboot.ui.WorkspaceOverviewScreen
 import com.noresign.paboot.viewmodel.SessionListViewModel
@@ -21,6 +22,7 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
             onNewSession = { navController.navigateToConversation(null) },
             onReconnect = { navController.navigateToConnect() },
             onManageWorkspaces = { navController.navigateToWorkspaces() },
+            onManageProviders = { navController.navigateToProviders() },
             onOpenWorkspaceOverview = { id -> navController.navigateToWorkspaceOverview(id) },
         )
     }
@@ -57,6 +59,10 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
         WorkspaceManagementScreen(onBack = { navController.popBackStack() })
     }
 
+    composable(AppRoutes.PROVIDERS) {
+        ProviderManagementScreen(onBack = { navController.popBackStack() })
+    }
+
     composable(
         route = AppRoutes.CONVERSATION,
         arguments = listOf(
@@ -73,6 +79,7 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
             onBack = { navController.popBackStack() },
             onReconnect = { navController.navigateToConnect() },
             onManageWorkspaces = { navController.navigateToWorkspaces() },
+            onManageProviders = { navController.navigateToProviders() },
             onOpenSession = { id -> navController.navigateToConversation(id) },
         )
     }

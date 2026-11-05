@@ -72,6 +72,7 @@ import com.noresign.paboot.viewmodel.UpdateViewModel
 fun SettingsScreen(
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onManageProviders: () -> Unit,
     bottomOverlayPadding: Dp = 0.dp,
     viewModel: SettingsViewModel = viewModel(),
     updateViewModel: UpdateViewModel = viewModel(),
@@ -209,6 +210,17 @@ fun SettingsScreen(
                         onClick = onManageWorkspaces,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("管理工作区") }
+
+                    SectionTitle("模型 Provider")
+                    Text(
+                        "builtin runtime 与 Memory 共用 provider 目录；API key 只写入 daemon 本机。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = onManageProviders,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("管理模型 Provider") }
 
                     SectionTitle("新会话默认权限")
                     permissionModeOptions(null).forEach { (mode, desc) ->
