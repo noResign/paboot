@@ -16,6 +16,7 @@ import { registerFileRoutes } from '../routes/files.js';
 import { registerFsRoutes } from '../routes/fs.js';
 import { registerKnowledgeRoutes } from '../routes/knowledge.js';
 import { registerPermissionRoutes } from '../routes/permissions.js';
+import { registerProviderRoutes } from '../routes/providers.js';
 import { registerRunRoutes } from '../routes/runs.js';
 import { registerSessionPermissionRoutes } from '../routes/session-permissions.js';
 import { registerSessionRoutes } from '../routes/sessions.js';
@@ -47,6 +48,7 @@ export function createApp(ctx: AppContext): Express {
   registerAttachmentRoutes(app, ctx);
   registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
+  registerProviderRoutes(app, ctx);
   registerDeployRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerFsRoutes(app, ctx);

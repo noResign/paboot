@@ -41,6 +41,8 @@ export interface Registry {
   listModels(id: string, env: NodeJS.ProcessEnv): Promise<ModelOption[] | undefined>;
   /** Register the execution driver for a runtime id (argv or RPC). */
   registerDriver(driver: RuntimeDriver): void;
+  /** Drop detection/model caches after provider configuration changes. */
+  invalidate(id: string): void;
   /** The driver for a runtime, if one is registered. */
   driver(id: string): RuntimeDriver | undefined;
 }
@@ -153,6 +155,11 @@ export function createRegistry(): Registry {
     listModels,
     registerDriver(driver) {
       drivers.set(driver.id, driver);
+    },
+    invalidate(id) {
+      detections.delete(id);
+      modelCache.delete(id);
+      modelInflight.delete(id);
     },
     driver(id) {
       return drivers.get(id);

@@ -108,6 +108,45 @@ export type NormalizedEvent =
     }
   | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
 
+/** A model exposed by a configured LLM provider. */
+export interface ProviderModelDto {
+  id: string;
+  label?: string;
+  contextWindow?: number;
+  maxOutput?: number;
+  supportsTools?: boolean;
+  supportsImages?: boolean;
+  enabled?: boolean;
+}
+
+/** Public provider config. Plaintext API keys never cross this boundary. */
+export interface ProviderDto {
+  id: string;
+  kind: 'anthropic' | 'openai';
+  label: string;
+  baseUrl: string;
+  models: ProviderModelDto[];
+  hasApiKey: boolean;
+  apiKeySource: 'file' | 'env' | null;
+  builtin: boolean;
+}
+
+export interface ProvidersResponse {
+  providers: ProviderDto[];
+}
+
+export interface ProviderResponse {
+  ok: boolean;
+  provider: ProviderDto;
+}
+
+export interface ProviderTestResponse {
+  ok: true;
+  status: number;
+  latencyMs: number;
+  modelCount: number | null;
+}
+
 /** Public metadata for an uploaded image attachment; bytes are fetched separately. */
 export interface AttachmentDto {
   id: string;
