@@ -35,6 +35,7 @@ export const IPC = {
   streamCancel: 'stream:cancel',
   streamEvent: 'stream:event',
   revealPath: 'app:reveal-path',
+  knowledgeExport: 'app:knowledge-export',
 } as const;
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -74,6 +75,25 @@ export type RevealResult =
   | {
       ok: false;
       code: 'not_connected' | 'not_local' | 'bad_path' | 'not_found' | 'open_failed';
+      message: string;
+    };
+
+/**
+ * Knowledge export is binary, so it cannot ride the JSON `request` proxy:
+ * main fetches the zip with the operator token and writes it where the user
+ * picked. The raw bytes never cross the renderer.
+ */
+export interface KnowledgeExportInput {
+  connectionId: string;
+  workspaceId: string;
+  suggestedName?: string;
+}
+
+export type KnowledgeExportResult =
+  | { ok: true; path: string }
+  | {
+      ok: false;
+      code: 'bad_request' | 'not_connected' | 'request_failed' | 'canceled' | 'write_failed';
       message: string;
     };
 
@@ -441,4 +461,6 @@ export interface PabootBridge {
   onStream(listener: (event: StreamEvent) => void): () => void;
   /** Reveal a file / open a directory in the OS file manager (local daemon only). */
   revealPath(input: RevealInput): Promise<RevealResult>;
+  /** Ask main to fetch the knowledge zip and save it through a native dialog. */
+  knowledgeExport(input: KnowledgeExportInput): Promise<KnowledgeExportResult>;
 }

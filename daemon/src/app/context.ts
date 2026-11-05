@@ -1,5 +1,6 @@
 import type { Config } from './config.js';
 import type { Db } from '../db/db.js';
+import type { KnowledgeStore } from '../knowledge/store.js';
 import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
@@ -12,6 +13,8 @@ import type { Registry } from '../runtimes/registry.js';
 export interface AppContext {
   config: Config;
   db: Db;
+  /** Curated knowledge documents (K0); file-backed, no memory.db. */
+  knowledge: KnowledgeStore;
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;

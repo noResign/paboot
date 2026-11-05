@@ -83,7 +83,8 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 载体已定：`UITabBarController`（底部会话 / 文件 / 任务 / 设置四个 Tab）+ `UINavigationController`
 （聊天详情等 push）；需要浮层时用 `UISheetPresentationController`（对应 Android 的
 `ModalBottomSheet`）。**已实现**：Tab 图标 / 尺寸、会话列表 → 聊天 push、新建会话 sheet、设置 → 工作区管理 push、
-目录选择器与会话权限 sheet、文件列表 → Diff / 文件查看器 push。
+目录选择器与会话权限 sheet、文件列表 → Diff / 文件查看器 push；
+**工作区概览与知识都是 push 的独立页面**，不再使用 pageSheet（概览页无「关闭」按钮，用系统返回）。
 
 ## 7. 分阶段实现方案
 

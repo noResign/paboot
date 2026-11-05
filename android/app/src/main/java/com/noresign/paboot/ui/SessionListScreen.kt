@@ -101,6 +101,7 @@ fun SessionListScreen(
     onOpenSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onReconnect: () -> Unit,
+    onOpenWorkspaceOverview: (String) -> Unit,
     bottomOverlayPadding: Dp = 0.dp,
     viewModel: SessionListViewModel = viewModel(),
 ) {
@@ -129,7 +130,6 @@ fun SessionListScreen(
     var renameTitle by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<SessionDto?>(null) }
     var showNewSession by remember { mutableStateOf(false) }
-    var showOverview by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshSilently()
@@ -215,7 +215,7 @@ fun SessionListScreen(
                                     },
                                     onClick = {
                                         workspaceMenuOpen = false
-                                        showOverview = true
+                                        currentWorkspace?.let { onOpenWorkspaceOverview(it.id) }
                                     },
                                 )
                             }
@@ -368,14 +368,6 @@ fun SessionListScreen(
         )
     }
 
-    // 概览只读：主目录 / 附加目录 / 会话数；会话列表还没加载完时不给数字。
-    if (showOverview && currentWorkspace != null) {
-        WorkspaceOverviewSheet(
-            workspace = currentWorkspace,
-            sessions = (uiState as? SessionListUiState.Content)?.model?.allSessions,
-            onDismiss = { showOverview = false },
-        )
-    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

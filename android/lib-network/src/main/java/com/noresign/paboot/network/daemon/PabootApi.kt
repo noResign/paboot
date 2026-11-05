@@ -12,6 +12,10 @@ import com.noresign.paboot.network.daemon.dto.EventsResponse
 import com.noresign.paboot.network.daemon.dto.FileContentDto
 import com.noresign.paboot.network.daemon.dto.FilesResponse
 import com.noresign.paboot.network.daemon.dto.HealthResponse
+import com.noresign.paboot.network.daemon.dto.KnowledgeDocResponse
+import com.noresign.paboot.network.daemon.dto.KnowledgeDocsResponse
+import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyRequest
+import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyResponse
 import com.noresign.paboot.network.daemon.dto.OkResponse
 import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
 import com.noresign.paboot.network.daemon.dto.RenameRequest
@@ -220,4 +224,28 @@ interface PabootApi {
 
     @POST("api/scheduled-tasks/config-session")
     suspend fun startTaskConfigSession(@Body body: JsonObject): TaskConfigSessionResponse
+
+    // ---- Knowledge (K0) ----
+
+    @GET("api/workspaces/{id}/knowledge")
+    suspend fun knowledge(
+        @Path("id") id: String,
+        @Query("endId") endId: String? = null,
+        @Query("status") status: String? = null,
+        @Query("verified") verified: Boolean? = null,
+        @Query("q") q: String? = null,
+    ): KnowledgeDocsResponse
+
+    @GET("api/workspaces/{id}/knowledge/{kid}")
+    suspend fun knowledgeDoc(
+        @Path("id") id: String,
+        @Path("kid") kid: String,
+    ): KnowledgeDocResponse
+
+    @POST("api/workspaces/{id}/knowledge/{kid}/verify")
+    suspend fun verifyKnowledgeDoc(
+        @Path("id") id: String,
+        @Path("kid") kid: String,
+        @Body body: KnowledgeVerifyRequest,
+    ): KnowledgeVerifyResponse
 }

@@ -50,6 +50,13 @@
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
 | `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |
 | `DELETE /api/workspaces/:id/shortcuts` | 是 | 移除浏览书签，`{path}`；只删书签，不动任何授权 |
+| `GET /api/workspaces/:id/knowledge` | 是 | K0 知识列表；`?endId=&kind=&status=&verified=&q=` 过滤（`endId=workspace` 表示工作区级；`verified=true/false` = 已/未人工核验）。文件自动收录 |
+| `GET /api/workspaces/:id/knowledge/:kid` | 是 | 知识详情：元数据 + `body` + `absolutePath`（正文真源仍是磁盘文件） |
+| `POST /api/workspaces/:id/knowledge` | 是 | 人工新建知识，直接 `confirmed/curated`；body `{title,body,kind?,endId?,tags?,summary?}` |
+| `PATCH /api/workspaces/:id/knowledge/:kid` | 是 | 编辑知识，保存后保持 `confirmed`；body 同上字段可选 |
+| `POST /api/workspaces/:id/knowledge/:kid/verify` | 是 | `{verified:boolean}`；切换人工核验标记（`curated`/`derived`），不改文件、不影响注入 |
+| `DELETE /api/workspaces/:id/knowledge/:kid` | 是 | **永久删除**文件（不可恢复）；同时清理空的 end 目录 |
+| `GET /api/workspaces/:id/knowledge/export` | 是 | 导出 ZIP（识别到的 markdown + `.meta.json`） |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
 | `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>`；带 `?runId=` 时改为该 run 的 `pre..post` 改动 |
 | `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>`（可带 `?runId=`） |

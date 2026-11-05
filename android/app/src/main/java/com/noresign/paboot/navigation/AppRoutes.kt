@@ -1,5 +1,6 @@
 package com.noresign.paboot.navigation
 
+import android.net.Uri
 import androidx.navigation.NavController
 
 object AppRoutes {
@@ -8,11 +9,23 @@ object AppRoutes {
     const val MAIN = "main"
     const val WORKSPACES = "workspaces"
 
+    /** Read-only workspace overview. A full page, not a bottom sheet. */
+    const val WORKSPACE_OVERVIEW = "workspace_overview/{workspaceId}"
+
+    /** K0 knowledge list/detail. A full page, not a bottom sheet. */
+    const val KNOWLEDGE = "knowledge/{workspaceId}"
+
     /** 聊天详情；`sessionId` 为空 = 新会话。 */
     const val CONVERSATION = "conversation?sessionId={sessionId}"
 
     fun conversation(sessionId: String?): String =
         if (sessionId.isNullOrBlank()) "conversation" else "conversation?sessionId=$sessionId"
+
+    fun workspaceOverview(workspaceId: String): String =
+        "workspace_overview/${Uri.encode(workspaceId)}"
+
+    fun knowledge(workspaceId: String): String =
+        "knowledge/${Uri.encode(workspaceId)}"
 }
 
 fun NavController.navigateToMain() {
@@ -34,4 +47,12 @@ fun NavController.navigateToConnect() {
 
 fun NavController.navigateToWorkspaces() {
     navigate(AppRoutes.WORKSPACES)
+}
+
+fun NavController.navigateToWorkspaceOverview(workspaceId: String) {
+    navigate(AppRoutes.workspaceOverview(workspaceId))
+}
+
+fun NavController.navigateToKnowledge(workspaceId: String) {
+    navigate(AppRoutes.knowledge(workspaceId))
 }

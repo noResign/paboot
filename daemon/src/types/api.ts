@@ -490,3 +490,89 @@ export interface TaskConfigSessionResponse {
   /** True when an existing run was already active, so no new prompt was sent. */
   busy: boolean;
 }
+
+// ---- curated knowledge (K0) ----
+// Keep these unions in sync with `knowledge/types.ts`; wire types must stay a
+// leaf module, so they are declared here rather than imported from the domain.
+
+export type KnowledgeDocumentKind =
+  | 'workspace_context'
+  | 'convention'
+  | 'requirement'
+  | 'tech_doc'
+  | 'adr'
+  | 'decision'
+  | 'gotcha'
+  | 'contract'
+  | 'runbook'
+  | 'note';
+
+export type KnowledgeDocumentOrigin = 'user' | 'agent' | 'imported';
+export type KnowledgeDocumentAuthority = 'curated' | 'derived';
+export type KnowledgeReviewStatus = 'pending' | 'confirmed' | 'rejected' | 'missing';
+export type KnowledgeLastEditedBy = 'user' | 'agent' | 'scan';
+
+export interface KnowledgeDocDto {
+  id: string;
+  workspaceId: string;
+  /** `null` for workspace-level knowledge. */
+  endId: string | null;
+  kind: KnowledgeDocumentKind;
+  title: string;
+  summary: string | null;
+  tags: string[];
+  origin: KnowledgeDocumentOrigin;
+  /** `curated` = human-verified; `derived` = auto-collected / unverified. */
+  authority: KnowledgeDocumentAuthority;
+  reviewStatus: KnowledgeReviewStatus;
+  /** POSIX path relative to `<dataDir>/workspaces/<workspaceId>/`. */
+  path: string;
+  contentHash: string;
+  updatedAt: number;
+  lastEditedBy: KnowledgeLastEditedBy;
+}
+
+export interface KnowledgeDocDetailDto extends KnowledgeDocDto {
+  body: string;
+  /** Absolute path the agent can Read; not persisted in the manifest. */
+  absolutePath: string;
+}
+
+export interface KnowledgeDocsResponse {
+  documents: KnowledgeDocDto[];
+}
+
+export interface KnowledgeDocResponse {
+  document: KnowledgeDocDetailDto;
+}
+
+export interface KnowledgeVerifyResponse {
+  document: KnowledgeDocDto;
+}
+
+export interface CreateKnowledgeDocRequest {
+  title: string;
+  body: string;
+  kind?: KnowledgeDocumentKind;
+  endId?: string | null;
+  tags?: string[];
+  summary?: string | null;
+}
+
+export interface UpdateKnowledgeDocRequest {
+  title?: string;
+  body?: string;
+  kind?: KnowledgeDocumentKind;
+  endId?: string | null;
+  tags?: string[];
+  summary?: string | null;
+}
+
+export interface KnowledgeVerifyRequest {
+  verified: boolean;
+}
+
+export interface DeleteKnowledgeDocResponse {
+  ok: true;
+  id: string;
+}

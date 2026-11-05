@@ -12,6 +12,13 @@ export const ROUTES = {
   workspace: (id: string) => `/api/workspaces/${encodeURIComponent(id)}`,
   workspaceDirs: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/dirs`,
   workspaceShortcuts: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/shortcuts`,
+  knowledge: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/knowledge`,
+  knowledgeDoc: (id: string, kid: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(kid)}`,
+  knowledgeVerify: (id: string, kid: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(kid)}/verify`,
+  knowledgeExport: (id: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/knowledge/export`,
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',
