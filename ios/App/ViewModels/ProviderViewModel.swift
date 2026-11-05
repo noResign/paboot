@@ -62,6 +62,8 @@ final class ProviderViewModel {
         do {
             let models = buildModels(original: original, text: draft.modelIds)
             let key = draft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            let labelText = draft.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = labelText.isEmpty ? id : labelText
             if let original {
                 let apiKey: JSONValue? = draft.clearKey
                     ? .null
@@ -70,7 +72,7 @@ final class ProviderViewModel {
                     id: original.id,
                     body: ProviderUpdateRequest(
                         kind: draft.kind,
-                        label: draft.label.trimmingCharacters(in: .whitespacesAndNewlines),
+                        label: label,
                         baseUrl: baseUrl,
                         apiKey: apiKey,
                         models: models
@@ -81,7 +83,7 @@ final class ProviderViewModel {
                     ProviderCreateRequest(
                         id: id,
                         kind: draft.kind,
-                        label: draft.label.trimmingCharacters(in: .whitespacesAndNewlines),
+                        label: label,
                         baseUrl: baseUrl,
                         apiKey: key.isEmpty ? nil : key,
                         models: models
