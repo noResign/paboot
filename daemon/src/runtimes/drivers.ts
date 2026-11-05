@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
 import { toClaudePermissionMode } from '../permissions/permission-mode.js';
 import { startRun } from './engine.js';
+import { createBuiltinDriver } from './builtin/driver.js';
 import { startCodexRun } from './codex/session.js';
 import { DEEPSEEK_BIN } from './deepseek/detect.js';
 import { startDeepSeekRun } from './deepseek/session.js';
@@ -25,6 +26,7 @@ export function registerRuntimeDrivers(registry: Registry, ctx: AppContext): voi
   for (const adapter of registry.adapters()) {
     registry.registerDriver(createArgvDriver(adapter, { ctx, capabilities }));
   }
+  registry.registerDriver(createBuiltinDriver(ctx));
   registry.registerDriver(createCodexDriver(ctx));
   registry.registerDriver(createDeepSeekDriver(ctx));
   registry.registerDriver(createCommandDriver({ idleTimeoutMs: ctx.config.runIdleTimeoutMs }));

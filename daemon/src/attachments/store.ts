@@ -113,6 +113,10 @@ export class AttachmentStore {
     }
   }
 
+  get(id: string): AttachmentRow | undefined {
+    return this.db.getAttachment(id);
+  }
+
   async readImage(id: string, expectedMediaType?: AttachmentMediaType): Promise<StoredAttachment> {
     const row = this.db.getAttachment(id);
     if (!row) {

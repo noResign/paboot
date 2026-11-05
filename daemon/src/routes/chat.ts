@@ -28,6 +28,8 @@ interface ChatBody {
   model?: string;
   /** Generic per-model knobs (e.g. `{reasoningEffort: "high"}`). */
   modelParameters?: Record<string, string>;
+  /** Image attachments previously uploaded through POST /api/attachments. */
+  attachmentIds?: string[];
   runtime?: string;
   /** Product permission mode: ask | acceptEdits | bypass. Only used for new sessions. */
   permissionMode?: string;
@@ -94,6 +96,11 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const requestedRuntime = typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
     const model = normalizeModel(body.model) ?? undefined;
+    const attachmentIds = normalizeAttachmentIds(body.attachmentIds);
+    if (attachmentIds === null) {
+      res.status(400).json({ error: 'attachmentIds must be an array of unique ids', code: 'bad_request' });
+      return;
+    }
 
     if (!prompt) {
       res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
@@ -180,6 +187,27 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
+    if (attachmentIds.length > 0) {
+      if (runtime !== 'builtin') {
+        res.status(400).json({
+          error: 'image attachments are only supported by the builtin runtime',
+          code: 'attachments_unsupported_runtime',
+        });
+        return;
+      }
+      for (const id of attachmentIds) {
+        const attachment = ctx.attachments.get(id);
+        if (!attachment) {
+          res.status(404).json({ error: `attachment not found: ${id}`, code: 'attachment_not_found' });
+          return;
+        }
+        if (attachment.sessionId && attachment.sessionId !== session?.id) {
+          res.status(403).json({ error: `attachment belongs to another session: ${id}`, code: 'attachment_forbidden' });
+          return;
+        }
+      }
+    }
+
     if (driver.requiresDetection !== false) {
       const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
       if (!detection?.available) {
@@ -249,6 +277,10 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       });
     }
 
+    for (const id of attachmentIds) {
+      ctx.attachments.bind(id, { sessionId: session.id, workspaceId: workspace.id });
+    }
+
     const sink = new ChatSseSink(res);
     try {
       const handle = startSessionRun(ctx, {
@@ -259,6 +291,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         permissionMode: sessionPermissionMode,
         model: effectiveModel ?? null,
         modelParameters: effectiveParameters ?? null,
+        attachmentIds,
         trigger: 'user',
         commandId: commandId ?? null,
         sink,
@@ -273,4 +306,18 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       }
     }
   });
+}
+
+
+function normalizeAttachmentIds(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) return null;
+  const ids: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || !item.trim()) return null;
+    const id = item.trim();
+    if (ids.includes(id)) return null;
+    ids.push(id);
+  }
+  return ids;
 }

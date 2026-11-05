@@ -29,6 +29,8 @@ export interface StartSessionRunInput {
   permissionMode: ProductPermissionMode;
   model: string | null;
   modelParameters: Record<string, string> | null;
+  /** Image attachment ids admitted with this run. */
+  attachmentIds?: string[];
   trigger: 'user' | 'scheduled' | 'run_now';
   taskId?: string | null;
   commandId?: string | null;
@@ -190,6 +192,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         // provider reports it.
         onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
+        attachmentIds: input.attachmentIds,
         systemContext: nativeSystemPrompt && knowledge ? knowledge.prefix : undefined,
         // The service owns the terminal frame: provider errors may arrive before
         // exit, while the final checkpoint and run metadata are not ready yet.

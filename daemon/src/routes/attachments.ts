@@ -12,6 +12,9 @@ const SUPPORTED_TYPES: AttachmentMediaType[] = [
 ];
 
 export function registerAttachmentRoutes(app: Express, ctx: AppContext): void {
+  // Older/unit test contexts may omit the attachment service; production
+  // AppContext always wires it.
+  if (!ctx.attachments) return;
   const rawImage = express.raw({
     type: SUPPORTED_TYPES,
     limit: ctx.attachments.maxUploadBytes,

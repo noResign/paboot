@@ -44,6 +44,12 @@ describe('builtin detection', () => {
     expect(detection.error).toBeNull();
   });
 
+  it('exposes DeepSeek Flash as a vision-capable configured model', async () => {
+    const detection = await detectBuiltin(await env({ DEEPSEEK_API_KEY: 'sk-test' }));
+    expect(detection.available).toBe(true);
+    expect(detection.models).toContainEqual({ id: 'deepseek:deepseek-flash', label: 'DeepSeek Flash' });
+  });
+
   it('honours models from providers.json and excludes disabled models', async () => {
     const runtimeEnv = await env({ ANTHROPIC_API_KEY: 'sk-test' });
     await writeProvidersFile(runtimeEnv.PABOOT_LLM_PROVIDERS_FILE!, [

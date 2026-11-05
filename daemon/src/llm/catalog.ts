@@ -89,6 +89,14 @@ export const BUILTIN_PROVIDERS: readonly ProviderConfig[] = [
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     models: [
       {
+        id: 'deepseek-flash',
+        label: 'DeepSeek Flash',
+        contextWindow: 128_000,
+        maxOutput: 8_192,
+        supportsTools: true,
+        supportsImages: true,
+      },
+      {
         id: 'deepseek-chat',
         label: 'DeepSeek Chat',
         contextWindow: 128_000,
