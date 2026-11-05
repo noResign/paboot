@@ -86,6 +86,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onManageProviders: () -> Unit,
     onOpenSession: (String) -> Unit,
     viewModel: ChatViewModel = viewModel(),
 ) {
@@ -351,6 +352,7 @@ fun ChatScreen(
                     MainTab.Settings -> SettingsScreen(
                         onReconnect,
                         onManageWorkspaces,
+                        onManageProviders,
                         bottomOverlayPadding = innerPadding.calculateBottomPadding(),
                     )
                     MainTab.Sessions -> Unit

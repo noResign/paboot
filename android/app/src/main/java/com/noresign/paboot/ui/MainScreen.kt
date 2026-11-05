@@ -34,6 +34,7 @@ fun MainScreen(
     onNewSession: () -> Unit,
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onManageProviders: () -> Unit,
     onOpenWorkspaceOverview: (String) -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
@@ -65,6 +66,7 @@ fun MainScreen(
                 MainTab.Settings -> SettingsScreen(
                     onReconnect = onReconnect,
                     onManageWorkspaces = onManageWorkspaces,
+                    onManageProviders = onManageProviders,
                     bottomOverlayPadding = innerPadding.calculateBottomPadding(),
                 )
             }
