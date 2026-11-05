@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from '../../types/api.js';
+import type { NormalizedEvent, ProductPermissionMode } from '../../types/api.js';
 
 /**
  * Stable identity of one agent instance. Builtin single-agent sessions use
@@ -173,6 +173,8 @@ export interface AgentRunContext {
   extraDirs: string[];
   /** Effective filesystem policy; `bypass` intentionally removes root checks. */
   pathPolicy: ResolvedPathPolicy;
+  /** Approval behavior; independent from tool visibility and path policy. */
+  permissionMode: ProductPermissionMode;
   signal: AbortSignal;
   /** Effective limits for this run, not accumulated usage. */
   budget: AgentBudget;
