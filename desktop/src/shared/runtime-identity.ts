@@ -22,6 +22,7 @@ const TABLE: Record<string, RuntimeIdentity> = {
   // glyph the selector would be readable only by hue.
   codex: { id: 'codex', displayName: 'Codex', icon: 'terminal', color: '#10A37F' },
   deepseek: { id: 'deepseek', displayName: 'DeepSeek Harness', icon: 'bolt', color: '#4D6BFE' },
+  builtin: { id: 'builtin', displayName: 'Builtin', icon: 'build', color: '#7C3AED' },
 };
 
 export function runtimeIdentity(id: string): RuntimeIdentity {
@@ -62,6 +63,12 @@ export function permissionModeOptions(runtime: string | null | undefined): Permi
         { mode: 'ask', description: '修改类操作询问' },
         { mode: 'acceptEdits', description: '编辑自动放行，Bash 仍询问' },
         { mode: 'bypass', description: '全部通过（高风险）' },
+      ];
+    case 'builtin':
+      return [
+        { mode: 'ask', description: 'Read 自动；写入、命令和 MCP 工具需要审批' },
+        { mode: 'acceptEdits', description: '工作区内写入自动；命令和 MCP 工具仍需审批' },
+        { mode: 'bypass', description: '全路径读写且跳过审批（极高风险）' },
       ];
     default:
       return [

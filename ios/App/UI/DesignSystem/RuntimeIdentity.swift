@@ -28,6 +28,12 @@ struct RuntimeIdentity: Equatable {
             symbolName: "bolt.fill",
             tint: UIColor(hex: 0x4D6BFE)
         ),
+        "builtin": RuntimeIdentity(
+            id: "builtin",
+            displayName: "Builtin",
+            symbolName: "cpu",
+            tint: UIColor(hex: 0x7C3AED)
+        ),
     ]
 
     /// Unknown ids stay neutral but keep the daemon-provided name.
