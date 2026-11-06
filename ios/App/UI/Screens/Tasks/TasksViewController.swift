@@ -422,7 +422,7 @@ final class TaskDetailViewController: UIViewController {
         let next = task.nextRunAt.map { Formatters.relativeTime(fromMilliseconds: $0) } ?? "—"
         let last = task.lastRunAt.map { Formatters.relativeTime(fromMilliseconds: $0) } ?? "—"
         metaLabel.text = "\(task.schedule.label) · 下次 \(next) · 上次 \(last) · 已执行 \(task.runCount) 次\n" +
-            "完全权限\(task.createdBy == "mcp" ? " · AI 创建" : "")"
+            "\(PermissionModeOptions.label(for: task.permissionMode))\(task.createdBy == "mcp" ? " · AI 创建" : "")"
         var stateText: [String] = []
         if !task.enabled { stateText.append("已停用" + (task.disabledReason.map { "：\($0)" } ?? "")) }
         if let error = task.lastError { stateText.append("最近错误：\(error)") }
@@ -661,7 +661,8 @@ final class TaskEditorViewController: UIViewController {
         metaLabel.font = Typography.caption
         metaLabel.textColor = Theme.Colors.textMuted
         metaLabel.numberOfLines = 0
-        metaLabel.text = "\(task.type == "command" ? "命令任务" : "AI 会话任务") · 完全权限"
+        metaLabel.text = "\(task.type == "command" ? "命令任务" : "AI 会话任务") · " +
+            PermissionModeOptions.label(for: task.permissionMode)
 
         nameField.borderStyle = .roundedRect
         nameField.font = Typography.body

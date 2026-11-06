@@ -9,7 +9,26 @@ enum PermissionModeOptions {
         let detail: String
     }
 
-    static func options(runtime: String?) -> [Option] {
+    static func options(runtime: String?, bypassAllowed: Bool = true) -> [Option] {
+        let all = buildOptions(runtime: runtime)
+        return bypassAllowed ? all : all.filter { $0.mode != "bypass" }
+    }
+
+    /// A server-strict daemon silently downgrades bypass; mirror that in the UI.
+    static func clamp(_ mode: String, bypassAllowed: Bool) -> String {
+        !bypassAllowed && mode == "bypass" ? "acceptEdits" : mode
+    }
+
+    static func label(for mode: String) -> String {
+        switch mode {
+        case "ask": return "询问"
+        case "acceptEdits": return "自动接受编辑"
+        case "bypass": return "绕过审批"
+        default: return mode
+        }
+    }
+
+    private static func buildOptions(runtime: String?) -> [Option] {
         switch runtime {
         case "codex":
             return [
@@ -40,6 +59,12 @@ enum PermissionModeOptions {
                 Option(mode: "ask", title: "询问", detail: "修改类操作询问"),
                 Option(mode: "acceptEdits", title: "自动接受编辑", detail: "编辑自动放行，Bash 仍询问"),
                 Option(mode: "bypass", title: "绕过审批", detail: "全部通过（高风险）"),
+            ]
+        case "builtin":
+            return [
+                Option(mode: "ask", title: "询问", detail: "Read 自动；写入、命令和 MCP 工具需要审批"),
+                Option(mode: "acceptEdits", title: "自动接受编辑", detail: "工作区内写入自动；命令和 MCP 工具仍需审批"),
+                Option(mode: "bypass", title: "绕过审批", detail: "全路径读写且跳过审批（极高风险）"),
             ]
         default:
             return [

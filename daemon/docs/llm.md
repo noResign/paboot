@@ -36,8 +36,9 @@
 
 内置模板：`anthropic`、`openai`、`deepseek`（后两者是 OpenAI 兼容 kind，baseUrl 不同）。
 模板只给 baseUrl、`apiKeyEnv` 和空模型数组；模型目录由 P2 刷新 / P3 adapter 填充，
-避免把会过期的模型名写死。模型元数据支持 `supportsTools` / `supportsImages`：附件入口和请求
-构造都要先看当前模型是否支持图片；非 vision 模型的历史图片在渲染时替换为文字占位
+避免把会过期的模型名写死。模型元数据支持 `supportsTools` / `supportsImages` / `enabled` /
+可选 `price`（`inputPerMTok` / `outputPerMTok`，用于内置 runtime 的 run 累计 cost）：附件入口和
+请求构造都要先看当前模型是否支持图片；非 vision 模型的历史图片在渲染时替换为文字占位
 （「图片已省略：当前模型不支持图片输入」），不让 run 整体失败。
 
 Provider 来源按 id 合并，后者覆盖前者：

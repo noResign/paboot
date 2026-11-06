@@ -23,6 +23,10 @@ import {
   resolveNewSessionRuntime,
 } from '../workspaces/workspace-defaults.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  resolveEffectivePermissionMode,
+  resolveEffectiveStoredPermissionMode,
+} from '../permissions/security-profile.js';
 import { TASK_CONFIG_PROMPT } from '../scheduling/task-config.js';
 import { activeRunIdForSession } from '../runs/session-runs.js';
 import { startSessionRun } from '../runs/run-service.js';
@@ -66,7 +70,7 @@ export function scheduledTaskDto(ctx: AppContext, task: ScheduledTaskRow): Sched
     runtime: task.runtime,
     prompt: task.prompt,
     command: task.command,
-    permissionMode: task.permission_mode,
+    permissionMode: resolveEffectiveStoredPermissionMode(task.permission_mode, ctx.builtinConfig),
     schedule,
     nextRunAt: task.next_run_at,
     lastFireAt: task.last_fire_at,
@@ -138,7 +142,7 @@ export function insertAiTaskOnSession(
     runtime: input.session.runtime,
     model: normalizeModel(input.session.model),
     prompt: input.prompt,
-    permissionMode: 'bypass',
+    permissionMode: resolveEffectivePermissionMode('bypass', ctx.builtinConfig),
     cronExpr: input.schedule.cron,
     timezone: input.schedule.timezone,
     schedulePreset: input.schedule.preset ? JSON.stringify(input.schedule.preset) : null,
@@ -200,7 +204,7 @@ export function insertNewAiTask(
     runtime: input.runtime,
     model: input.model,
     prompt: input.prompt,
-    permissionMode: 'bypass',
+    permissionMode: resolveEffectivePermissionMode('bypass', ctx.builtinConfig),
     cronExpr: input.schedule.cron,
     timezone: input.schedule.timezone,
     schedulePreset: input.schedule.preset ? JSON.stringify(input.schedule.preset) : null,
@@ -310,10 +314,13 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
         id: randomUUID(),
         runtime,
         workspaceId: workspace.id,
-        permissionMode: resolveNewSessionPermissionMode(
-          workspace,
-          undefined,
-          getDefaultPermissionMode(ctx.db, ctx.config),
+        permissionMode: resolveEffectivePermissionMode(
+          resolveNewSessionPermissionMode(
+            workspace,
+            undefined,
+            getDefaultPermissionMode(ctx.db, ctx.config),
+          ),
+          ctx.builtinConfig,
         ),
         cwd: workspace.path,
         title: '配置定时任务',
@@ -527,7 +534,7 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
         id: randomUUID(),
         runtime: 'command',
         workspaceId: workspace.id,
-        permissionMode: 'bypass',
+        permissionMode: resolveEffectivePermissionMode('bypass', ctx.builtinConfig),
         cwd: workspace.path,
         title: name,
         kind: 'command',
@@ -548,7 +555,7 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
         model,
         prompt,
         command,
-        permissionMode: 'bypass',
+        permissionMode: resolveEffectivePermissionMode('bypass', ctx.builtinConfig),
         cronExpr: schedule.cron,
         timezone: schedule.timezone,
         schedulePreset: schedule.preset ? JSON.stringify(schedule.preset) : null,

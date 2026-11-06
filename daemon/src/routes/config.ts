@@ -5,6 +5,10 @@ import {
   isProductPermissionMode,
   SETTING_DEFAULT_PERMISSION_MODE,
 } from '../permissions/permission-mode.js';
+import {
+  isBypassAllowed,
+  resolveEffectivePermissionMode,
+} from '../permissions/security-profile.js';
 
 function configDto(ctx: AppContext) {
   // Mirror the visible list: a hidden built-in fallback must not be handed to
@@ -12,7 +16,12 @@ function configDto(ctx: AppContext) {
   const workspaces = ctx.db.listVisibleWorkspaces();
   const defaultWorkspace = workspaces.find((w) => w.is_default === 1) ?? workspaces[0] ?? null;
   return {
-    defaultPermissionMode: getDefaultPermissionMode(ctx.db, ctx.config),
+    defaultPermissionMode: resolveEffectivePermissionMode(
+      getDefaultPermissionMode(ctx.db, ctx.config),
+      ctx.builtinConfig,
+    ),
+    securityProfile: ctx.builtinConfig?.securityProfile ?? 'local',
+    bypassAllowed: isBypassAllowed(ctx.builtinConfig),
     defaultWorkspaceId: defaultWorkspace?.id ?? null,
     workspaces: workspaces.map((w) => ({
       id: w.id,
@@ -46,7 +55,10 @@ export function registerConfigRoutes(app: Express, ctx: AppContext): void {
         res.status(400).json({ error: 'defaultPermissionMode must be ask, acceptEdits or bypass', code: 'bad_request' });
         return;
       }
-      ctx.db.setSetting(SETTING_DEFAULT_PERMISSION_MODE, body.defaultPermissionMode);
+      ctx.db.setSetting(
+        SETTING_DEFAULT_PERMISSION_MODE,
+        resolveEffectivePermissionMode(body.defaultPermissionMode, ctx.builtinConfig),
+      );
     }
 
     if (body.defaultWorkspaceId !== undefined) {

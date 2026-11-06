@@ -392,6 +392,7 @@ final class SettingsViewController: UIViewController {
         }
 
         for row in permissionRows {
+            row.isHidden = row.mode == "bypass" && !state.bypassAllowed
             row.setSelected(row.mode == state.defaultPermissionMode)
         }
 

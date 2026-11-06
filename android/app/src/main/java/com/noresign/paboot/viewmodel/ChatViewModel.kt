@@ -7,6 +7,8 @@ import com.noresign.paboot.data.PendingNewSession
 import com.noresign.paboot.data.repository.ChatRepository
 import com.noresign.paboot.data.repository.MetaRepository
 import com.noresign.paboot.data.repository.SessionRepository
+import com.noresign.paboot.data.repository.WorkspaceRepository
+import com.noresign.paboot.ui.identity.clampPermissionMode
 import com.noresign.paboot.network.daemon.dto.ModelOptionDto
 import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.notify.RunWatchCenter
@@ -53,6 +55,7 @@ class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
     private val sessionRepository: SessionRepository = SessionRepository(),
     private val metaRepository: MetaRepository = MetaRepository(),
+    private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
@@ -120,6 +123,11 @@ class ChatViewModel(
     private val _sessionPermissionMode = MutableStateFlow("ask")
     val sessionPermissionMode = _sessionPermissionMode.asStateFlow()
 
+    /** Global policy: when false, the UI must not offer bypass. */
+    private val _bypassAllowed = MutableStateFlow(true)
+    val bypassAllowed = _bypassAllowed.asStateFlow()
+    private var securityPolicyLoaded = false
+
     /** 会话当前使用的模型；`null` = 沿用电脑端 CLI 默认。 */
     private val _sessionModel = MutableStateFlow<String?>(null)
     val sessionModel = _sessionModel.asStateFlow()
@@ -165,7 +173,27 @@ class ChatViewModel(
     private var initialWorkspaceId: String? = null
     private var initialPermissionMode: String? = null
 
+    private fun loadSecurityPolicy() {
+        if (securityPolicyLoaded) return
+        securityPolicyLoaded = true
+        viewModelScope.launch {
+            when (val r = workspaceRepository.config()) {
+                is NetworkResult.Success -> {
+                    _bypassAllowed.value = r.data.bypassAllowed
+                    if (!r.data.bypassAllowed) {
+                        _sessionPermissionMode.value =
+                            clampPermissionMode(_sessionPermissionMode.value, false)
+                        initialPermissionMode =
+                            initialPermissionMode?.let { clampPermissionMode(it, false) }
+                    }
+                }
+                is NetworkResult.Error -> securityPolicyLoaded = false
+            }
+        }
+    }
+
     fun load(sessionId: String?) {
+        loadSecurityPolicy()
         // 切会话时先掐掉在途的流，否则旧 run 的帧会灌进新会话。
         cancelStream()
         // 上下文占用属于上一个会话，必须先清；打开会话时由历史重建填回。
@@ -186,8 +214,10 @@ class ChatViewModel(
                 initialRuntime = it.runtime
                 _sessionRuntime.value = it.runtime ?: "claude"
                 initialWorkspaceId = it.workspaceId
-                initialPermissionMode = it.permissionMode
-                _sessionPermissionMode.value = it.permissionMode ?: "ask"
+                initialPermissionMode = it.permissionMode?.let { mode ->
+                    clampPermissionMode(mode, _bypassAllowed.value)
+                }
+                _sessionPermissionMode.value = initialPermissionMode ?: "ask"
             }
             return
         }
@@ -200,7 +230,10 @@ class ChatViewModel(
                         _sessionTitle.value = session.title
                         _sessionCwd.value = session.cwd
                         _sessionRuntime.value = session.runtime
-                        _sessionPermissionMode.value = session.permissionMode
+                        _sessionPermissionMode.value = clampPermissionMode(
+                            session.permissionMode,
+                            _bypassAllowed.value,
+                        )
                         _sessionModel.value = session.model
                         _sessionModelParameters.value = session.modelParameters ?: emptyMap()
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
@@ -525,9 +558,10 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = sessionRepository.permissions(id)) {
                 is NetworkResult.Success -> {
-                    _sessionPermissionMode.value = r.data.mode
+                    val mode = clampPermissionMode(r.data.mode, _bypassAllowed.value)
+                    _sessionPermissionMode.value = mode
                     _sessionPermissions.value = SessionPermissionsUiState.Ready(
-                        mode = r.data.mode,
+                        mode = mode,
                         grants = r.data.grants,
                     )
                 }
@@ -598,16 +632,17 @@ class ChatViewModel(
     }
 
     fun updateSessionPermissionMode(mode: String) {
+        val effective = clampPermissionMode(mode, _bypassAllowed.value)
         val id = sessionId
         if (id == null) {
-            initialPermissionMode = mode
-            _sessionPermissionMode.value = mode
+            initialPermissionMode = effective
+            _sessionPermissionMode.value = effective
             return
         }
         viewModelScope.launch {
-            when (val r = sessionRepository.updatePermissionMode(id, mode)) {
+            when (val r = sessionRepository.updatePermissionMode(id, effective)) {
                 is NetworkResult.Success -> {
-                    _sessionPermissionMode.value = mode
+                    _sessionPermissionMode.value = effective
                     if (_sessionPermissions.value != null) openSessionPermissions()
                 }
                 is NetworkResult.Error -> _error.value = friendlyError(r)

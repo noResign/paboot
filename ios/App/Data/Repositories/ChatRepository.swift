@@ -23,6 +23,7 @@ extension ChatRepositoryError: LocalizedError {
 
 /// Everything the chat screen needs from the daemon.
 protocol ChatRepositoryProtocol {
+    func config() async throws -> ConfigResponse
     func sessionDetail(id: String) async throws -> SessionDetailResponse
     func runEvents(runId: String, after: Int64?) async throws -> [SSEFrame]
     func isRunActive(runId: String) async -> Bool?
@@ -40,6 +41,15 @@ final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
 
     init(session: DaemonSession = .shared) {
         self.session = session
+    }
+
+    func config() async throws -> ConfigResponse {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.config()
+        } catch {
+            throw map(error)
+        }
     }
 
     func sessionDetail(id: String) async throws -> SessionDetailResponse {

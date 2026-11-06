@@ -1,5 +1,16 @@
 import Foundation
 
+/// Optional list price for a provider model, in USD per million tokens.
+public struct ProviderModelPriceDto: Codable, Equatable, Sendable {
+    public let inputPerMTok: Double
+    public let outputPerMTok: Double
+
+    public init(inputPerMTok: Double, outputPerMTok: Double) {
+        self.inputPerMTok = inputPerMTok
+        self.outputPerMTok = outputPerMTok
+    }
+}
+
 /// A model exposed by a configured LLM provider.
 public struct ProviderModelDto: Codable, Equatable, Sendable {
     public let id: String
@@ -9,6 +20,7 @@ public struct ProviderModelDto: Codable, Equatable, Sendable {
     public let supportsTools: Bool?
     public let supportsImages: Bool?
     public let enabled: Bool?
+    public let price: ProviderModelPriceDto?
 
     public init(
         id: String,
@@ -17,7 +29,8 @@ public struct ProviderModelDto: Codable, Equatable, Sendable {
         maxOutput: Int? = nil,
         supportsTools: Bool? = nil,
         supportsImages: Bool? = nil,
-        enabled: Bool? = nil
+        enabled: Bool? = nil,
+        price: ProviderModelPriceDto? = nil
     ) {
         self.id = id
         self.label = label
@@ -26,6 +39,7 @@ public struct ProviderModelDto: Codable, Equatable, Sendable {
         self.supportsTools = supportsTools
         self.supportsImages = supportsImages
         self.enabled = enabled
+        self.price = price
     }
 }
 

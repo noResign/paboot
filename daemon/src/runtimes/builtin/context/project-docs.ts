@@ -6,13 +6,18 @@ import type {
   RuntimeContextContribution,
   RuntimeContextSource,
 } from '../runtime-context.js';
+import { estimateTokens, truncateToTokens } from '../tokens.js';
 
 const DEFAULT_FILE_NAMES = ['CLAUDE.md', 'AGENTS.md'] as const;
 const DEFAULT_MAX_FILE_BYTES = 32 * 1024;
+const DEFAULT_MAX_TOKENS = 16_000;
 
 export interface ProjectDocsSourceOptions {
   fileNames?: readonly string[];
   maxFileBytes?: number;
+  /** Combined token cap for this contribution, so it survives the runtime-context budget. */
+  maxTokens?: number;
+  measure?: (text: string) => number;
   projectMarkers?: readonly string[];
 }
 
@@ -24,11 +29,15 @@ export class ProjectDocsContextSource implements RuntimeContextSource {
   readonly id = 'project-docs';
   private readonly fileNames: readonly string[];
   private readonly maxFileBytes: number;
+  private readonly maxTokens: number;
+  private readonly measure: (text: string) => number;
   private readonly projectMarkers: readonly string[];
 
   constructor(options: ProjectDocsSourceOptions = {}) {
     this.fileNames = options.fileNames ?? DEFAULT_FILE_NAMES;
     this.maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+    this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
+    this.measure = options.measure ?? estimateTokens;
     this.projectMarkers = options.projectMarkers ?? ['.git'];
   }
 
@@ -60,7 +69,11 @@ export class ProjectDocsContextSource implements RuntimeContextSource {
         stability: 'dynamic',
         trust: 'workspace',
         priority: 30,
-        content: parts.join('\n\n'),
+        content: truncateToTokens(parts.join('\n\n'), this.maxTokens, {
+          measure: this.measure,
+          headRatio: 0.8,
+          marker: `\n\n[project docs truncated to fit the ${this.maxTokens}-token budget]\n\n`,
+        }),
       },
     ];
   }

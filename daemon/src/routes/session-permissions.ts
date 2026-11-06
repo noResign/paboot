@@ -1,6 +1,9 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  resolveEffectivePermissionMode,
+} from '../permissions/security-profile.js';
 
 export function registerSessionPermissionRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/sessions/:id/permissions', (req, res) => {
@@ -10,7 +13,10 @@ export function registerSessionPermissionRoutes(app: Express, ctx: AppContext): 
       return;
     }
     res.json({
-      mode: session.permission_mode,
+      mode: resolveEffectivePermissionMode(
+        isProductPermissionMode(session.permission_mode) ? session.permission_mode : 'ask',
+        ctx.builtinConfig,
+      ),
       grants: ctx.db.listPermissionGrants(session.id).map((g) => ({
         toolName: g.tool_name,
         createdAt: g.created_at,
@@ -29,9 +35,10 @@ export function registerSessionPermissionRoutes(app: Express, ctx: AppContext): 
       res.status(400).json({ error: 'mode must be ask, acceptEdits or bypass', code: 'bad_request' });
       return;
     }
-    ctx.db.setSessionPermissionMode(session.id, body.mode);
-    ctx.db.audit('update_session_permissions', JSON.stringify({ sessionId: session.id, mode: body.mode }));
-    res.json({ ok: true, sessionId: session.id, mode: body.mode, effective: 'next_run' });
+    const mode = resolveEffectivePermissionMode(body.mode, ctx.builtinConfig);
+    ctx.db.setSessionPermissionMode(session.id, mode);
+    ctx.db.audit('update_session_permissions', JSON.stringify({ sessionId: session.id, mode }));
+    res.json({ ok: true, sessionId: session.id, mode, requestedMode: body.mode, effective: 'next_run' });
   });
 
   app.delete('/api/sessions/:id/permissions/grants/:toolName', (req, res) => {

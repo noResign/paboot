@@ -1,4 +1,5 @@
 import { sanitizeErrorMessage } from '../../../llm/errors.js';
+import { truncateToTokens } from '../tokens.js';
 import type { AgentRunContext, ToolDescriptor } from '../types.js';
 import { defaultToolApprovalPolicy, type ToolApprovalPolicy } from './policy.js';
 import type { ToolRegistry } from './registry.js';
@@ -10,6 +11,9 @@ export interface ToolExecutorOptions {
   policy?: ToolApprovalPolicy;
   /** Fallback when a descriptor does not set timeoutMs. */
   defaultTimeoutMs?: number;
+  /** Model-visible tool result cap; applied before the event and transcript. */
+  maxResultTokens?: number;
+  measure?: (text: string) => number;
 }
 
 /**
@@ -21,10 +25,14 @@ export interface ToolExecutorOptions {
 export class ToolExecutor {
   private readonly policy: ToolApprovalPolicy;
   private readonly defaultTimeoutMs: number;
+  private readonly maxResultTokens: number | undefined;
+  private readonly measure: ((text: string) => number) | undefined;
 
   constructor(private readonly options: ToolExecutorOptions) {
     this.policy = options.policy ?? defaultToolApprovalPolicy;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
+    this.maxResultTokens = options.maxResultTokens;
+    this.measure = options.measure;
   }
 
   async execute(call: ToolCallRequest, agent: AgentRunContext): Promise<ToolResult> {
@@ -46,6 +54,7 @@ export class ToolExecutor {
         isError: true,
       };
     }
+    result = this.clampResult(result);
 
     agent.eventSink.emit({
       type: 'tool_result',
@@ -59,6 +68,16 @@ export class ToolExecutor {
 
   async close(): Promise<void> {
     await this.options.registry.close();
+  }
+
+  private clampResult(result: ToolResult): ToolResult {
+    if (this.maxResultTokens === undefined) return result;
+    const content = truncateToTokens(result.content, this.maxResultTokens, {
+      ...(this.measure === undefined ? {} : { measure: this.measure }),
+      headRatio: 0.75,
+      marker: `\n\n[... tool result truncated to fit the ${this.maxResultTokens}-token budget ...]\n\n`,
+    });
+    return content === result.content ? result : { ...result, content };
   }
 
   private async executeDescriptor(

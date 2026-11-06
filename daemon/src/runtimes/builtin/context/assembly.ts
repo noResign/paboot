@@ -35,8 +35,8 @@ export interface AssembleAgentContextInput {
   globalSections: readonly PromptSectionSpec[];
   promptContext: PromptBuildContext;
   runtimeContextContext: RuntimeContextCollectContext;
-  systemBudget?: number;
-  runtimeContextBudget?: number;
+  systemTokenBudget?: number;
+  runtimeContextTokenBudget?: number;
   measure?: (text: string) => number;
 }
 
@@ -72,12 +72,12 @@ export async function assembleAgentContext(
   const system = compilePromptSections(
     systemSections,
     { ...input.promptContext, preset },
-    { maxChars: input.systemBudget, measure: input.measure },
+    { maxTokens: input.systemTokenBudget, measure: input.measure },
   );
   const runtimeContext = await collectRuntimeContext(
     input.profile.contextSources,
     input.runtimeContextContext,
-    { maxChars: input.runtimeContextBudget, measure: input.measure },
+    { maxTokens: input.runtimeContextTokenBudget, measure: input.measure },
   );
   return {
     agentId: input.profile.agentId,

@@ -3,7 +3,11 @@ import { useChat } from '../../store/chat';
 import { api } from '../../ipc/client';
 import { useSessions } from '../../store/sessions';
 import { formatContextUsage, contextPercent } from '../../../../shared/format';
-import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
+import {
+  clampPermissionMode,
+  permissionModeLabel,
+} from '../../../../shared/runtime-identity';
+import { bypassAllowedOf, useConfig } from '../../store/config';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
 import { Icon } from '../../ui/Icon';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
@@ -17,7 +21,7 @@ import { PermissionDialog, InlinePermissionCard } from '../permissions/Permissio
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
-import type { ModelOptionDto } from '../../../../shared/contract';
+import type { ModelOptionDto, ProductPermissionMode } from '../../../../shared/contract';
 
 interface Props {
   workspaceName: string | null;
@@ -37,6 +41,7 @@ export function ChatView({
   onOpenTasks,
 }: Props) {
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
+  const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const send = useChat((state) => state.send);
   const stop = useChat((state) => state.stop);
   const decide = useChat((state) => state.decide);
@@ -194,7 +199,9 @@ export function ChatView({
             )}
             {chat.permissionMode && (
               <button className="badge-btn" title="会话权限设置" onClick={() => setShowPerms(true)}>
-                {PERMISSION_MODE_LABEL[chat.permissionMode as 'ask'] ?? chat.permissionMode}
+                {permissionModeLabel(
+                  clampPermissionMode(chat.permissionMode as ProductPermissionMode, bypassAllowed),
+                )}
               </button>
             )}
           </div>

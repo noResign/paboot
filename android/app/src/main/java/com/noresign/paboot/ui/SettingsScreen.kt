@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -223,7 +224,7 @@ fun SettingsScreen(
                     ) { Text("管理模型 Provider") }
 
                     SectionTitle("新会话默认权限")
-                    permissionModeOptions(null).forEach { (mode, desc) ->
+                    permissionModeOptions(null, state.bypassAllowed).forEach { (mode, desc) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -237,7 +238,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(mode, style = MaterialTheme.typography.bodyMedium)
+                                Text(permissionModeLabel(mode), style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     desc,
                                     style = MaterialTheme.typography.labelSmall,

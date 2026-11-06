@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.data.repository.MetaRepository
 import com.noresign.paboot.data.repository.WorkspaceRepository
+import com.noresign.paboot.ui.identity.clampPermissionMode
 import com.noresign.paboot.ui.identity.defaultAgentId
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.network.daemon.dto.AgentDto
@@ -19,6 +20,7 @@ sealed class NewSessionUiState {
     data class Ready(
         val agents: List<AgentDto>,
         val workspaces: List<WorkspaceDto>,
+        val bypassAllowed: Boolean = true,
     ) : NewSessionUiState()
     data class Error(val message: String) : NewSessionUiState()
 }
@@ -77,11 +79,10 @@ class NewSessionViewModel(
             if (current != null) WorkspaceSelection.select(current, workspaceList.find { it.id == current }?.path)
 
             val config = workspaceRepository.config()
-            val globalPermission = if (config is NetworkResult.Success) {
-                config.data.defaultPermissionMode
-            } else {
-                _permissionMode.value
-            }
+            val configData = if (config is NetworkResult.Success) config.data else null
+            val bypassAllowed = configData?.bypassAllowed ?: true
+            val globalPermission = configData?.defaultPermissionMode ?: _permissionMode.value
+            _permissionMode.value = clampPermissionMode(_permissionMode.value, bypassAllowed)
 
             val currentWorkspace = workspaceList.find { it.id == current }
             // Apply workspace defaults when the workspace changes; a manual
@@ -89,7 +90,10 @@ class NewSessionViewModel(
             // background refresh.
             if (defaultsWorkspaceId != current) {
                 defaultsWorkspaceId = current
-                _permissionMode.value = currentWorkspace?.defaultPermissionMode ?: globalPermission
+                _permissionMode.value = clampPermissionMode(
+                    currentWorkspace?.defaultPermissionMode ?: globalPermission,
+                    bypassAllowed,
+                )
                 val workspaceRuntime = currentWorkspace?.defaultRuntime
                 _selectedAgent.value = workspaceRuntime
                     ?.takeIf { id -> agentList.any { it.id == id && it.available } }
@@ -100,6 +104,7 @@ class NewSessionViewModel(
             _uiState.value = NewSessionUiState.Ready(
                 agents = agentList,
                 workspaces = workspaceList,
+                bypassAllowed = bypassAllowed,
             )
         }
     }
@@ -112,6 +117,7 @@ class NewSessionViewModel(
     }
 
     fun selectPermissionMode(mode: String) {
-        _permissionMode.value = mode
+        val allowed = (_uiState.value as? NewSessionUiState.Ready)?.bypassAllowed ?: true
+        _permissionMode.value = clampPermissionMode(mode, allowed)
     }
 }

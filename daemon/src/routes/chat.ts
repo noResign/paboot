@@ -8,6 +8,9 @@ import { titleFromPrompt } from '../runs/session-title.js';
 import { activeRunIdForSession } from '../runs/session-runs.js';
 import { streamRunToResponse } from './runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  resolveEffectivePermissionMode,
+} from '../permissions/security-profile.js';
 import { resolveWorkspaceForRequest, workspaceContains } from '../workspaces/workspace-service.js';
 import {
   resolveNewSessionPermissionMode,
@@ -244,13 +247,20 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     }
 
     const defaultPermissionMode = getDefaultPermissionMode(ctx.db, ctx.config);
-    const sessionPermissionMode: ProductPermissionMode = session && isProductPermissionMode(session.permission_mode)
-      ? session.permission_mode
-      : resolveNewSessionPermissionMode(
-          workspace,
-          isProductPermissionMode(body.permissionMode) ? body.permissionMode : undefined,
-          defaultPermissionMode,
-        );
+    const requestedSessionPermissionMode: ProductPermissionMode =
+      session && isProductPermissionMode(session.permission_mode)
+        ? session.permission_mode
+        : resolveNewSessionPermissionMode(
+            workspace,
+            isProductPermissionMode(body.permissionMode) ? body.permissionMode : undefined,
+            defaultPermissionMode,
+          );
+    // `bypass` is only honored when the daemon-wide policy allows it; otherwise
+    // it silently becomes `acceptEdits` at every entry point.
+    const sessionPermissionMode = resolveEffectivePermissionMode(
+      requestedSessionPermissionMode,
+      ctx.builtinConfig,
+    );
     // A request-level model overrides for this run; otherwise the session's
     // creation-time choice decides, and absent both the runtime's default wins.
     const effectiveModel = model ?? normalizeModel(session?.model) ?? undefined;

@@ -2,6 +2,13 @@ package com.noresign.paboot.network.daemon.dto
 
 import kotlinx.serialization.Serializable
 
+/** Optional list price for a provider model, in USD per million tokens. */
+@Serializable
+data class ProviderModelPriceDto(
+    val inputPerMTok: Double,
+    val outputPerMTok: Double,
+)
+
 /** LLM provider catalog wire models; plaintext API keys never appear here. */
 @Serializable
 data class ProviderModelDto(
@@ -12,6 +19,7 @@ data class ProviderModelDto(
     val supportsTools: Boolean? = null,
     val supportsImages: Boolean? = null,
     val enabled: Boolean? = null,
+    val price: ProviderModelPriceDto? = null,
 )
 
 @Serializable

@@ -11,6 +11,7 @@ final class SettingsViewModel {
         var selectedWorkspaceId: String?
         var selectedWorkspacePath: String?
         var defaultPermissionMode = "ask"
+        var bypassAllowed = true
         var isLoading = true
         var loadError: String?
         var permissionModeError: String?
@@ -57,7 +58,11 @@ final class SettingsViewModel {
             state.workspaces = workspaces
             state.selectedWorkspaceId = selected?.id
             state.selectedWorkspacePath = selected?.path
-            state.defaultPermissionMode = config.defaultPermissionMode
+            state.bypassAllowed = config.bypassAllowed
+            state.defaultPermissionMode = PermissionModeOptions.clamp(
+                config.defaultPermissionMode,
+                bypassAllowed: config.bypassAllowed
+            )
             state.loadError = nil
         } catch {
             guard generation == loadGeneration else { return }
@@ -67,6 +72,7 @@ final class SettingsViewModel {
 
     /// Optimistic: the radio updates immediately; a failed PATCH rolls it back with a reason.
     func setDefaultPermissionMode(_ mode: String) async {
+        let mode = PermissionModeOptions.clamp(mode, bypassAllowed: state.bypassAllowed)
         guard mode != state.defaultPermissionMode else { return }
 
         let previous = state.defaultPermissionMode
@@ -76,7 +82,10 @@ final class SettingsViewModel {
         do {
             let response = try await repository.updateConfig(defaultPermissionMode: mode)
             if let config = response.config {
-                state.defaultPermissionMode = config.defaultPermissionMode
+                state.defaultPermissionMode = PermissionModeOptions.clamp(
+                    config.defaultPermissionMode,
+                    bypassAllowed: state.bypassAllowed
+                )
             }
         } catch {
             state.defaultPermissionMode = previous

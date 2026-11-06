@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import com.noresign.paboot.ui.identity.permissionModeLabel
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -347,7 +348,8 @@ private fun TaskDetailSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(task.name, style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "${task.schedule.label} · ${targetText(task)} · 完全权限" +
+                        "${task.schedule.label} · ${targetText(task)} · " +
+                            permissionModeLabel(task.permissionMode) +
                             if (task.createdBy == "mcp") " · AI 创建" else "",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -558,7 +560,8 @@ private fun TaskEditorSheet(
             item(key = "title") { Text("编辑定时任务", style = MaterialTheme.typography.titleLarge) }
             item(key = "meta") {
                 Text(
-                    "${if (task.type == "command") "命令任务" else "AI 会话任务"} · 完全权限",
+                    "${if (task.type == "command") "命令任务" else "AI 会话任务"} · " +
+                        permissionModeLabel(task.permissionMode),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

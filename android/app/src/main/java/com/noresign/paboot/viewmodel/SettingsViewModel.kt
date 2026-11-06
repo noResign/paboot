@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.WorkspaceSelection
 import com.noresign.paboot.data.repository.MetaRepository
 import com.noresign.paboot.data.repository.WorkspaceRepository
+import com.noresign.paboot.ui.identity.clampPermissionMode
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.network.daemon.dto.DirectoryEntryDto
 import com.noresign.paboot.network.daemon.dto.UpdateConfigRequest
@@ -34,6 +35,7 @@ sealed class SettingsUiState {
         val workspaces: List<WorkspaceDto>,
         val defaultWorkspaceId: String?,
         val defaultPermissionMode: String,
+        val bypassAllowed: Boolean = true,
     ) : SettingsUiState()
     data class Error(val message: String) : SettingsUiState()
 }
@@ -108,7 +110,11 @@ class SettingsViewModel(
                 version = (health as NetworkResult.Success).data.version ?: "unknown",
                 workspaces = workspaceList,
                 defaultWorkspaceId = configData.defaultWorkspaceId,
-                defaultPermissionMode = configData.defaultPermissionMode,
+                defaultPermissionMode = clampPermissionMode(
+                    configData.defaultPermissionMode,
+                    configData.bypassAllowed,
+                ),
+                bypassAllowed = configData.bypassAllowed,
             )
         }
     }
@@ -121,12 +127,13 @@ class SettingsViewModel(
 
     fun setDefaultPermissionMode(mode: String) {
         val ready = _uiState.value as? SettingsUiState.Ready ?: return
-        if (ready.defaultPermissionMode == mode) return
+        val effective = clampPermissionMode(mode, ready.bypassAllowed)
+        if (ready.defaultPermissionMode == effective) return
         _permissionModeError.value = null
         // 先立即选中，不等接口；成功后以服务端数据为准，失败回滚并提示。
-        _uiState.value = ready.copy(defaultPermissionMode = mode)
+        _uiState.value = ready.copy(defaultPermissionMode = effective)
         viewModelScope.launch {
-            when (val r = workspaceRepository.updateConfig(UpdateConfigRequest(defaultPermissionMode = mode))) {
+            when (val r = workspaceRepository.updateConfig(UpdateConfigRequest(defaultPermissionMode = effective))) {
                 is NetworkResult.Success -> load()
                 is NetworkResult.Error -> {
                     _uiState.value = ready

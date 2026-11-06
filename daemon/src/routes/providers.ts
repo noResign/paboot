@@ -1,6 +1,6 @@
 import type { Express, Response } from 'express';
 import type { AppContext } from '../app/context.js';
-import type { ProviderModel, RealProviderKind } from '../llm/catalog.js';
+import { parseModelPrice, type ProviderModel, type RealProviderKind } from '../llm/catalog.js';
 import { LlmError } from '../llm/types.js';
 import { ProviderManagerError, type ProviderCreateInput, type ProviderUpdateInput } from '../providers/provider-manager.js';
 
@@ -123,6 +123,9 @@ function parseModels(value: unknown): ProviderModel[] {
         if (typeof record[key] !== 'boolean') throw bad(`${key} must be boolean`);
         model[key] = record[key];
       }
+    }
+    if (record['price'] !== undefined) {
+      model.price = parseModelPrice(record['price'], `models[${index}]`);
     }
     return model;
   });

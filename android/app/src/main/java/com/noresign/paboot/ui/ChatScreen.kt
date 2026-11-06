@@ -40,6 +40,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -104,6 +105,7 @@ fun ChatScreen(
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val sessionPermissionMode by viewModel.sessionPermissionMode.collectAsState()
+    val bypassAllowed by viewModel.bypassAllowed.collectAsState()
     val reconnecting by viewModel.reconnecting.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
     val sessionModel by viewModel.sessionModel.collectAsState()
@@ -213,15 +215,9 @@ fun ChatScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            permissionModeOptions(runtime).forEach { (mode, _) ->
-                                val label = when (mode) {
-                                    "ask" -> "询问"
-                                    "acceptEdits" -> "自动接受编辑"
-                                    "bypass" -> "绕过审批"
-                                    else -> mode
-                                }
+                            permissionModeOptions(runtime, bypassAllowed).forEach { (mode, _) ->
                                 DropdownMenuItem(
-                                    text = { Text(label) },
+                                    text = { Text(permissionModeLabel(mode)) },
                                     trailingIcon = {
                                         if (sessionPermissionMode == mode) {
                                             Icon(Icons.Rounded.Check, contentDescription = "当前权限模式")
@@ -388,7 +384,7 @@ fun ChatScreen(
                         TextButton(onClick = viewModel::closeSessionPermissions) { Text("关闭") }
                     }
                     is SessionPermissionsUiState.Ready -> {
-                        permissionModeOptions(runtime).forEach { (mode, desc) ->
+                        permissionModeOptions(runtime, bypassAllowed).forEach { (mode, desc) ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -402,7 +398,7 @@ fun ChatScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(mode, style = MaterialTheme.typography.bodyMedium)
+                                    Text(permissionModeLabel(mode), style = MaterialTheme.typography.bodyMedium)
                                     Text(
                                         desc,
                                         style = MaterialTheme.typography.labelSmall,

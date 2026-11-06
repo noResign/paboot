@@ -109,6 +109,10 @@ export interface DirectoriesResponse {
 export interface ConfigResponse {
   /** Applied to a new session whose request omits `permissionMode`. */
   defaultPermissionMode: ProductPermissionMode;
+  /** Daemon-wide security posture (`local` on a personal machine). */
+  securityProfile: 'local' | 'server-strict';
+  /** Whether the active profile honors `permissionMode=bypass`. */
+  bypassAllowed: boolean;
   defaultWorkspaceId: string | null;
   workspaces: Array<{ id: string; name: string; path: string; isDefault: boolean; enabled: boolean }>;
   server: { host: string; port: number; dataDir: string; tls: boolean; restartRequired: string[] };

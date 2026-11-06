@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 
 import { resolvePathAccess } from '../security/path-policy.js';
+import { estimateTokens } from '../tokens.js';
 import type { ToolDescriptor } from '../types.js';
 import type { ToolCallContext, ToolImplementation, ToolResult } from './types.js';
 import { ToolError } from './types.js';
@@ -8,14 +9,16 @@ import { ToolError } from './types.js';
 const DEFAULT_LIMIT = 2_000;
 const MAX_LIMIT = 2_000;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
-const MAX_OUTPUT_BYTES = 256 * 1024;
+const MAX_OUTPUT_TOKENS = 8_000;
 const MAX_LINE_CHARS = 4_000;
 
 export interface ReadToolOptions {
   defaultLimit?: number;
   maxLimit?: number;
   maxFileBytes?: number;
-  maxOutputBytes?: number;
+  maxOutputTokens?: number;
+  maxLineChars?: number;
+  measure?: (text: string) => number;
 }
 
 interface ReadArgs {
@@ -29,7 +32,9 @@ export function createReadTool(options: ReadToolOptions = {}): ToolImplementatio
   const defaultLimit = options.defaultLimit ?? DEFAULT_LIMIT;
   const maxLimit = options.maxLimit ?? MAX_LIMIT;
   const maxFileBytes = options.maxFileBytes ?? MAX_FILE_BYTES;
-  const maxOutputBytes = options.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+  const maxOutputTokens = options.maxOutputTokens ?? MAX_OUTPUT_TOKENS;
+  const maxLineChars = options.maxLineChars ?? MAX_LINE_CHARS;
+  const measure = options.measure ?? estimateTokens;
   const descriptor: ToolDescriptor = {
     name: 'Read',
     title: 'Read',
@@ -90,22 +95,22 @@ export function createReadTool(options: ReadToolOptions = {}): ToolImplementatio
 
       const selected = lines.slice(args.offset - 1, args.offset - 1 + args.limit);
       const output: string[] = [];
-      let outputBytes = 0;
+      let outputTokens = 0;
       let truncatedOutput = false;
       for (let index = 0; index < selected.length; index += 1) {
         const lineNumber = args.offset + index;
         let line = selected[index]!;
-        if (line.length > MAX_LINE_CHARS) line = `${line.slice(0, MAX_LINE_CHARS)}…`;
+        if (line.length > maxLineChars) line = `${line.slice(0, maxLineChars)}…`;
         const rendered = `${String(lineNumber).padStart(6, ' ')}→${line}`;
-        const bytes = Buffer.byteLength(rendered, 'utf8') + 1;
-        if (outputBytes + bytes > maxOutputBytes) {
+        const tokens = measure(rendered) + 1;
+        if (outputTokens + tokens > maxOutputTokens) {
           truncatedOutput = true;
           break;
         }
         output.push(rendered);
-        outputBytes += bytes;
+        outputTokens += tokens;
       }
-      if (truncatedOutput) output.push(`[output truncated at ${maxOutputBytes} bytes]`);
+      if (truncatedOutput) output.push(`[output truncated at ${maxOutputTokens} tokens]`);
       return {
         content: output.join('\n'),
         isError: false,

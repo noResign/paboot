@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import com.noresign.paboot.data.NewSessionConfig
 import com.noresign.paboot.viewmodel.NewSessionUiState
@@ -140,7 +141,7 @@ fun NewSessionSheet(
 
                         item { Text("模型与推理强度使用电脑端 Agent 默认配置", style = MaterialTheme.typography.bodySmall) }
                         item { Text("权限模式", style = MaterialTheme.typography.labelLarge) }
-                        items(permissionModeOptions(selectedAgent)) { (value, desc) ->
+                        items(permissionModeOptions(selectedAgent, state.bypassAllowed)) { (value, desc) ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -154,7 +155,7 @@ fun NewSessionSheet(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(value, style = MaterialTheme.typography.bodyMedium)
+                                    Text(permissionModeLabel(value), style = MaterialTheme.typography.bodyMedium)
                                     Text(
                                         desc,
                                         style = MaterialTheme.typography.labelSmall,

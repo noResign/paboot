@@ -5,7 +5,12 @@ import { useScope, useSessions, type WorkspaceMutation } from '../../store/sessi
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { manageableWorkspaces } from '../../store/workspaceList';
 import { api } from '../../ipc/client';
-import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
+import {
+  clampPermissionMode,
+  permissionModeOptions,
+  PERMISSION_MODE_LABEL,
+} from '../../../../shared/runtime-identity';
+import { bypassAllowedOf, useConfig } from '../../store/config';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
 import type { AgentDto, ProductPermissionMode, WorkspaceDto } from '../../../../shared/contract';
 
@@ -20,6 +25,7 @@ type PickerState = { mode: 'create' | 'add-dir'; workspaceId?: string };
 export function WorkspaceSection() {
   const connectionId = useConnection((state) => state.activeId);
   const scope = useScope(connectionId);
+  const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
 
   const createWorkspace = useSessions((state) => state.createWorkspace);
   const updateWorkspace = useSessions((state) => state.updateWorkspace);
@@ -258,7 +264,11 @@ export function WorkspaceSection() {
                   <label className="ws-default-field">
                     <span>权限</span>
                     <select
-                      value={workspace.defaultPermissionMode ?? ''}
+                      value={
+                        workspace.defaultPermissionMode
+                          ? clampPermissionMode(workspace.defaultPermissionMode, bypassAllowed)
+                          : ''
+                      }
                       disabled={busyId === workspace.id}
                       onChange={(event) =>
                         mutate(
@@ -273,9 +283,9 @@ export function WorkspaceSection() {
                       }
                     >
                       <option value="">跟随全局</option>
-                      {(['ask', 'acceptEdits', 'bypass'] as const).map((mode) => (
-                        <option key={mode} value={mode}>
-                          {PERMISSION_MODE_LABEL[mode]}
+                      {permissionModeOptions(null, bypassAllowed).map((option) => (
+                        <option key={option.mode} value={option.mode}>
+                          {PERMISSION_MODE_LABEL[option.mode]}
                         </option>
                       ))}
                     </select>

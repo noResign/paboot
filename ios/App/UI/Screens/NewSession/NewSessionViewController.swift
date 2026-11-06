@@ -10,7 +10,7 @@ final class NewSessionViewController: UIViewController {
     private let workspaceButton = UIButton(type: .system)
     private let workspaceHintLabel = UILabel()
     private let agentButton = UIButton(type: .system)
-    private let permissionControl = UISegmentedControl(items: ["询问", "自动编辑", "绕过"])
+    private let permissionControl = UISegmentedControl(items: [])
     private let startButton = UIButton(type: .system)
     private let errorLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -18,8 +18,8 @@ final class NewSessionViewController: UIViewController {
     private var agents: [AgentDto] = []
     private var selectedWorkspace: WorkspaceDto?
     private var selectedAgent: AgentDto?
-
-    private let permissionModes = ["ask", "acceptEdits", "bypass"]
+    private var bypassAllowed = true
+    private var permissionOptions = PermissionModeOptions.options(runtime: nil)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -54,7 +54,7 @@ final class NewSessionViewController: UIViewController {
         workspaceHintLabel.numberOfLines = 0
         workspaceHintLabel.isHidden = true
 
-        permissionControl.selectedSegmentIndex = 0
+        rebuildPermissionControl(selected: "ask")
         permissionControl.addTarget(self, action: #selector(permissionChanged), for: .valueChanged)
 
         startButton.setTitle("开始会话", for: .normal)
@@ -177,10 +177,11 @@ final class NewSessionViewController: UIViewController {
                     selectedAgent = agents.first(where: { $0.available })
                 }
 
-                let mode = selectedWorkspace?.defaultPermissionMode ?? config.defaultPermissionMode
-                if let index = permissionModes.firstIndex(of: mode) {
-                    permissionControl.selectedSegmentIndex = index
-                }
+                bypassAllowed = config.bypassAllowed
+                let requested = selectedWorkspace?.defaultPermissionMode ?? config.defaultPermissionMode
+                rebuildPermissionControl(
+                    selected: PermissionModeOptions.clamp(requested, bypassAllowed: bypassAllowed)
+                )
 
                 updateButtons()
             } catch let error as NewSessionLoadError {
@@ -223,8 +224,13 @@ final class NewSessionViewController: UIViewController {
                 attributes: agent.available ? [] : .disabled,
                 state: agent.id == selectedAgent?.id ? .on : .off
             ) { [weak self] _ in
-                self?.selectedAgent = agent
-                self?.updateButtons()
+                guard let self else { return }
+                let current = self.currentPermissionMode
+                self.selectedAgent = agent
+                self.rebuildPermissionControl(
+                    selected: PermissionModeOptions.clamp(current, bypassAllowed: self.bypassAllowed)
+                )
+                self.updateButtons()
             }
         }
         return UIMenu(
@@ -239,14 +245,37 @@ final class NewSessionViewController: UIViewController {
         updateButtons()
     }
 
+    private var currentPermissionMode: String {
+        let index = permissionControl.selectedSegmentIndex
+        guard index >= 0, index < permissionOptions.count else { return "ask" }
+        return permissionOptions[index].mode
+    }
+
+    private func rebuildPermissionControl(selected: String) {
+        let options = PermissionModeOptions.options(
+            runtime: selectedAgent?.id,
+            bypassAllowed: bypassAllowed
+        )
+        permissionOptions = options
+        permissionControl.removeAllSegments()
+        for (index, option) in options.enumerated() {
+            permissionControl.insertSegment(withTitle: option.title, at: index, animated: false)
+        }
+        let mode = options.contains(where: { $0.mode == selected }) ? selected : "acceptEdits"
+        if let index = options.firstIndex(where: { $0.mode == mode }) {
+            permissionControl.selectedSegmentIndex = index
+        } else {
+            permissionControl.selectedSegmentIndex = UISegmentedControl.noSegment
+        }
+    }
+
     @objc private func cancel() {
         dismiss(animated: true)
     }
 
     private func start() {
         guard let workspace = selectedWorkspace, let agent = selectedAgent else { return }
-        let mode = permissionModes[permissionControl.selectedSegmentIndex]
-        onStart?(workspace, agent, mode)
+        onStart?(workspace, agent, currentPermissionMode)
     }
 }
 

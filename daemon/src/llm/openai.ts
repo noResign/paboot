@@ -67,29 +67,44 @@ export class OpenAIProvider implements LlmProvider {
   }
 
   private async *streamOnce(request: LlmRequest): AsyncGenerator<LlmChunk> {
-    const response = await requestSse(
-      `${trimTrailingSlash(this.options.baseUrl)}/v1/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-          authorization: `Bearer ${this.options.apiKey}`,
+    const url = `${trimTrailingSlash(this.options.baseUrl)}/v1/chat/completions`;
+    const includeStreamUsage = this.options.includeStreamUsage ?? true;
+    const send = (maxTokensField: 'max_tokens' | 'max_completion_tokens'): Promise<Response> =>
+      requestSse(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            authorization: `Bearer ${this.options.apiKey}`,
+          },
+          body: JSON.stringify(buildOpenAIBody(request, { includeStreamUsage, maxTokensField })),
         },
-        body: JSON.stringify(
-          buildOpenAIBody(request, {
-            includeStreamUsage: this.options.includeStreamUsage ?? true,
-            maxTokensField: this.options.maxTokensField ?? 'max_tokens',
-          }),
-        ),
-      },
-      {
-        signal: request.signal,
-        connectTimeoutMs: this.options.connectTimeoutMs,
-        idleTimeoutMs: this.options.idleTimeoutMs,
-        fetch: this.options.fetch,
-      },
-    );
+        {
+          signal: request.signal,
+          connectTimeoutMs: this.options.connectTimeoutMs,
+          idleTimeoutMs: this.options.idleTimeoutMs,
+          fetch: this.options.fetch,
+        },
+      );
+
+    // Newer OpenAI models reject `max_tokens`; older compatible gateways reject
+    // `max_completion_tokens`. Try the modern field first and fall back once when
+    // a 400/422 explicitly names it — no generation has started yet.
+    const primary = this.options.maxTokensField ?? 'max_completion_tokens';
+    let response = await send(primary);
+    if (!response.ok && primary === 'max_completion_tokens') {
+      const body = await response.text().catch(() => '');
+      if (
+        (response.status === 400 || response.status === 422) &&
+        /max_completion_tokens/i.test(body)
+      ) {
+        response = await send('max_tokens');
+      } else {
+        throw errorFromResponse(response, body);
+      }
+    }
     if (!response.ok) {
       throw errorFromResponse(response, await response.text().catch(() => ''));
     }
@@ -233,7 +248,7 @@ export function buildOpenAIBody(
     stream: true,
   };
   const maxTokens = request.maxTokens ?? DEFAULT_MAX_TOKENS;
-  body[options.maxTokensField ?? 'max_tokens'] = maxTokens;
+  body[options.maxTokensField ?? 'max_completion_tokens'] = maxTokens;
   if (options.includeStreamUsage !== false) {
     body['stream_options'] = { include_usage: true };
   }

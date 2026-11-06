@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { api } from '../../ipc/client';
 import { friendlyMessage, apiErrorOf } from '../../../../shared/errors';
-import { permissionModeOptions, PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
+import {
+  clampPermissionMode,
+  permissionModeOptions,
+  PERMISSION_MODE_LABEL,
+} from '../../../../shared/runtime-identity';
+import { bypassAllowedOf, useConfig } from '../../store/config';
 import type { PermissionGrantDto, ProductPermissionMode } from '../../../../shared/contract';
 
 interface Props {
@@ -22,6 +27,8 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
   const [grants, setGrants] = useState<PermissionGrantDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
+  const effectiveMode = mode === null ? null : clampPermissionMode(mode, bypassAllowed);
 
   async function refresh(): Promise<void> {
     const res = await api.sessionPermissions(sessionId);
@@ -72,7 +79,7 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
     await refresh();
   }
 
-  const modes = permissionModeOptions(runtime);
+  const modes = permissionModeOptions(runtime, bypassAllowed);
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -90,8 +97,8 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
             {modes.map((option) => (
               <button
                 key={option.mode}
-                className={`mode-option${option.mode === mode ? ' active' : ''}`}
-                disabled={busy || mode === null}
+                className={`mode-option${option.mode === effectiveMode ? ' active' : ''}`}
+                disabled={busy || effectiveMode === null}
                 onClick={() => void changeMode(option.mode)}
               >
                 <b>{PERMISSION_MODE_LABEL[option.mode]}</b>
@@ -116,7 +123,7 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
           ) : (
             <ul className="grant-list">
               {grants.map((grant) => (
-                <li key={grant.toolName} className={`grant-item${mode === 'bypass' ? ' paused' : ''}`}>
+                <li key={grant.toolName} className={`grant-item${effectiveMode === 'bypass' ? ' paused' : ''}`}>
                   <code className="mono">{grant.toolName}</code>
                   <span className="hint">{new Date(grant.createdAt).toLocaleString()}</span>
                   <button className="btn ghost tiny" disabled={busy} onClick={() => void revoke(grant.toolName)}>
@@ -126,7 +133,7 @@ export function SessionPermissionsDialog({ sessionId, runtime, onClose, onModeCh
               ))}
             </ul>
           )}
-          {mode === 'bypass' && (
+          {effectiveMode === 'bypass' && (
             <div className="hint">当前是 bypass：所有审批都被跳过，这些授权处于「已暂停」状态，改回其他模式后重新生效。</div>
           )}
         </div>

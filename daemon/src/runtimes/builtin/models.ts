@@ -58,6 +58,7 @@ export async function resolveBuiltinModel(
       supportsImages: selected.model.supportsImages ?? false,
       ...(selected.model.contextWindow === undefined ? {} : { contextWindow: selected.model.contextWindow }),
       ...(selected.model.maxOutput === undefined ? {} : { maxOutput: selected.model.maxOutput }),
+      ...(selected.model.price === undefined ? {} : { price: selected.model.price }),
     },
   };
 }

@@ -15,6 +15,7 @@ import { PermissionManager } from './permissions/permissions.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
+import { loadBuiltinConfig, logBuiltinConfigWarnings } from './runtimes/builtin/config.js';
 import { Scheduler } from './scheduling/scheduler.js';
 import { createRegistry } from './runtimes/registry.js';
 import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './app/runtime-info.js';
@@ -147,6 +148,9 @@ async function main(): Promise<void> {
     log.warn(`claude runtime NOT available: ${claude?.error ?? 'not found'}`);
   }
 
+  const builtinConfig = await loadBuiltinConfig(config.dataDir);
+  logBuiltinConfigWarnings(builtinConfig);
+
   const notifier = new RunNotifier();
   const ctx: AppContext = {
     config,
@@ -156,6 +160,7 @@ async function main(): Promise<void> {
     providers: new ProviderManager({
       providersFile: process.env.PABOOT_LLM_PROVIDERS_FILE?.trim() || DEFAULT_PROVIDERS_FILE(),
     }),
+    builtinConfig: builtinConfig.config,
     registry,
     permissions: new PermissionManager(
       config.permissionTimeoutMs,

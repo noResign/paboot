@@ -6,6 +6,7 @@ import type { ProviderManager } from '../providers/provider-manager.js';
 import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
+import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
 
 /**
  * Shared dependency object threaded through route registrars. Keep this the
@@ -21,6 +22,8 @@ export interface AppContext {
   attachments: AttachmentStore;
   /** Shared provider catalog + write-only credential store for builtin/Memory. */
   providers: ProviderManager;
+  /** Central builtin runtime budgets (`<dataDir>/builtin.json`, defaults in code). */
+  builtinConfig: BuiltinRuntimeConfig;
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;

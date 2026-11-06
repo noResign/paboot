@@ -43,7 +43,7 @@
 | `runtime` | `claude` / `codex` / `command` |
 | `model` / `model_parameters` | 首次创建会话时使用 |
 | `prompt` / `command` | AI prompt 或 shell 命令 |
-| `permission_mode` | 固定 `bypass`（见安全边界） |
+| `permission_mode` | 以 `bypass` 发起；`securityProfile=server-strict` 且 `allowServerBypass=false` 时降级为 `acceptEdits`（见安全边界） |
 | `cron_expr` / `timezone` | 实际求值用的时间表达式与时区 |
 | `schedule_preset` | 原始预设 JSON，仅供 UI 回显；后端只读 cron |
 | `next_run_at` | 下一次触发；停用时 `NULL` |
@@ -133,7 +133,9 @@ run / events / checkpoint / rollback / cancel 全部复用 `startSessionRun`。
 
 ## 7. 安全边界与可回滚范围
 
-- 定时 run 固定 `bypass`；创建任务时客户端必须展示「完全权限无人值守」警告并让用户确认。
+- 定时 run 以 `bypass` 发起；全局 `securityProfile=server-strict` 且未显式
+  `allowServerBypass: true` 时，run 会在 `startSessionRun` 降级为 `acceptEdits`。创建任务时
+  客户端仍必须展示无人值守风险提示。
 - 可回滚的只有**工作区内 git 仓库的文件改动**（沿用每轮 `pre..post` checkpoint）。
 - 不可回滚：gitignored 文件、外部副作用（`git push`、部署、HTTP、发消息、装包、后台进程）。
 - 命令任务等价于用户创建的 cron：命令本身在创建时就已授权，运行时不经过 AI 工具审批。

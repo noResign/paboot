@@ -1,5 +1,6 @@
 import { sanitizeErrorMessage } from '../../../llm/errors.js';
-import type { LlmProvider, LlmRequest, ToolSchema } from '../../../llm/types.js';
+import type { ModelPrice } from '../../../llm/catalog.js';
+import type { LlmProvider, LlmRequest, ToolSchema, Usage } from '../../../llm/types.js';
 import type { AgentContextAssembly } from '../context/assembly.js';
 import type { TranscriptStore } from '../transcript/store.js';
 import {
@@ -18,6 +19,7 @@ import type {
 } from '../types.js';
 import type { ToolExecutor } from '../tools/executor.js';
 import type { ToolCallRequest, ToolResult } from '../tools/types.js';
+import { estimateRequestTokens, type TokenCalibrator } from '../tokens.js';
 import { consumeAssistantStream } from './stream.js';
 
 export interface AgentKernelDeps {
@@ -29,6 +31,8 @@ export interface AgentKernelDeps {
   toolDescriptors: readonly ToolDescriptor[];
   toolExecutor: ToolExecutor;
   assembleContext: (tools: readonly ToolDescriptor[]) => Promise<AgentContextAssembly>;
+  /** Learns this model's real token density from provider usage. */
+  tokenCalibrator: TokenCalibrator;
   resolveImage?: TranscriptImageResolver;
 }
 
@@ -46,6 +50,11 @@ export class AgentKernel {
     const toolSchemas = this.deps.modelSnapshot.supportsTools
       ? this.deps.toolDescriptors.map(toToolSchema)
       : [];
+    const price = this.deps.modelSnapshot.price;
+    let sawCost = false;
+    // `usage` is the cumulative per-run total on the wire; the transcript keeps
+    // each model step's own usage separately for history/debugging.
+    const totalUsage: Usage = { inputTokens: 0, outputTokens: 0 };
 
     try {
       for (;;) {
@@ -86,17 +95,45 @@ export class AgentKernel {
           ...(this.deps.modelSnapshot.maxOutput ? { maxTokens: this.deps.modelSnapshot.maxOutput } : {}),
           signal: agent.signal,
         };
+        const requestEstimate = estimateRequestTokens({
+          system: context.system.text,
+          messages,
+          tools: toolSchemas,
+        });
 
         const step = await consumeAssistantStream(this.deps.provider.stream(request), agent.eventSink);
         usage.steps += 1;
+        let stepCostUsd: number | null = null;
         if (step.usage) {
           usage.inputTokens += step.usage.inputTokens;
           usage.outputTokens += step.usage.outputTokens;
-          usage.costUsd += step.usage.costUsd ?? 0;
+          totalUsage.inputTokens += step.usage.inputTokens;
+          totalUsage.outputTokens += step.usage.outputTokens;
+          if (step.usage.cacheReadTokens !== undefined) {
+            totalUsage.cacheReadTokens =
+              (totalUsage.cacheReadTokens ?? 0) + step.usage.cacheReadTokens;
+          }
+          if (step.usage.cacheWriteTokens !== undefined) {
+            totalUsage.cacheWriteTokens =
+              (totalUsage.cacheWriteTokens ?? 0) + step.usage.cacheWriteTokens;
+          }
+          stepCostUsd = costOfUsage(step.usage, price);
+          if (stepCostUsd !== null) {
+            usage.costUsd += stepCostUsd;
+            sawCost = true;
+          }
+          this.deps.tokenCalibrator.observe(
+            step.contextTokens ??
+              step.usage.inputTokens +
+                (step.usage.cacheReadTokens ?? 0) +
+                (step.usage.cacheWriteTokens ?? 0),
+            requestEstimate,
+          );
           agent.eventSink.emit({
             type: 'usage',
-            usage: step.usage,
-            costUsd: step.usage.costUsd ?? null,
+            usage: wireUsage(totalUsage),
+            // The wire contract is a per-run cumulative cost, not this step's.
+            costUsd: sawCost ? usage.costUsd : null,
             contextTokens: step.contextTokens,
             contextWindow: this.deps.modelSnapshot.contextWindow ?? null,
             stopReason: step.finishReason,
@@ -125,7 +162,9 @@ export class AgentKernel {
             step: usage.steps,
             provider: this.deps.provider.id,
             model: this.deps.model,
-            usage: step.usage,
+            usage: step.usage
+              ? { ...step.usage, ...(stepCostUsd === null ? {} : { costUsd: stepCostUsd }) }
+              : undefined,
           });
         }
 
@@ -136,27 +175,32 @@ export class AgentKernel {
 
         const afterStepBudget = budgetExhaustedReason(agent.budget, usage);
         if (afterStepBudget && afterStepBudget !== 'tool_calls') {
-          for (const call of step.toolCalls) {
-            this.persistSyntheticToolResult(
-              agent,
-              call,
-              `agent budget exceeded before tool execution: ${afterStepBudget}`,
-              usage.steps,
-            );
-          }
+          this.persistMissingToolResults(
+            agent,
+            step.toolCalls,
+            `agent budget exceeded before tool execution: ${afterStepBudget}`,
+            usage.steps,
+          );
           emitTurnEnd(agent.eventSink, `budget_exceeded:${afterStepBudget}`);
           return { status: 'failed', error: `agent budget exceeded: ${afterStepBudget}` };
         }
 
-        for (const call of step.toolCalls) {
+        for (let index = 0; index < step.toolCalls.length; index += 1) {
+          const call = step.toolCalls[index]!;
           if (agent.signal.aborted) {
+            this.persistMissingToolResults(
+              agent,
+              step.toolCalls.slice(index),
+              'run cancelled before this tool started',
+              usage.steps,
+            );
             emitTurnEnd(agent.eventSink, 'cancelled');
             return { status: 'cancelled', error: 'cancelled' };
           }
           if (usage.toolCalls >= agent.budget.maxToolCalls) {
-            this.persistSyntheticToolResult(
+            this.persistMissingToolResults(
               agent,
-              call,
+              step.toolCalls.slice(index),
               'agent budget exceeded before tool execution: tool_calls',
               usage.steps,
             );
@@ -191,6 +235,15 @@ export class AgentKernel {
           }
           this.appendToolResult(agent, call.id, result, usage.steps);
           if (result.interrupted || agent.signal.aborted) {
+            // The assistant message already contains every tool call in this
+            // batch. Any call that never produced a result must still get one,
+            // otherwise the next provider request rejects the transcript.
+            this.persistMissingToolResults(
+              agent,
+              step.toolCalls.slice(index + 1),
+              'run cancelled before this tool started',
+              usage.steps,
+            );
             emitTurnEnd(agent.eventSink, 'cancelled');
             return { status: 'cancelled', error: 'cancelled' };
           }
@@ -259,6 +312,17 @@ export class AgentKernel {
     });
   }
 
+  private persistMissingToolResults(
+    agent: AgentRunContext,
+    calls: readonly { id: string; name: string; arguments: string }[],
+    reason: string,
+    step: number,
+  ): void {
+    for (const call of calls) {
+      this.persistSyntheticToolResult(agent, call, `tool call was not executed: ${reason}`, step);
+    }
+  }
+
   private persistSyntheticToolResult(
     agent: AgentRunContext,
     call: { id: string; name: string; arguments: string },
@@ -296,4 +360,29 @@ function parseToolInput(raw: string): { ok: true; input: unknown } | { ok: false
 
 function emitTurnEnd(events: AgentEventSink, stopReason: string): void {
   events.emit({ type: 'turn_end', stopReason });
+}
+
+/** Cost for one model step from the catalog price, or null when unknown. */
+function costOfUsage(usage: Usage, price: ModelPrice | undefined): number | null {
+  if (!price) return null;
+  const inputTokens =
+    usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  return (
+    (inputTokens * price.inputPerMTok + usage.outputTokens * price.outputPerMTok) /
+    1_000_000
+  );
+}
+
+/** The wire `usage` blob other runtimes already emit (snake_case). */
+function wireUsage(usage: Usage): Record<string, number> {
+  return {
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    ...(usage.cacheReadTokens === undefined
+      ? {}
+      : { cache_read_input_tokens: usage.cacheReadTokens }),
+    ...(usage.cacheWriteTokens === undefined
+      ? {}
+      : { cache_creation_input_tokens: usage.cacheWriteTokens }),
+  };
 }

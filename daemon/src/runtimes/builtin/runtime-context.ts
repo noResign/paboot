@@ -9,6 +9,7 @@ import type {
   ToolDescriptor,
 } from './types.js';
 import type { AgentPromptPreset, PromptSectionSpec, SkillPolicy, ToolPolicy } from './prompt.js';
+import { estimateTokens } from './tokens.js';
 
 export type RuntimeContextKind =
   | 'environment'
@@ -75,8 +76,8 @@ export interface RuntimeContextSnapshot {
 }
 
 export interface RuntimeContextCollectionOptions {
-  /** Total cap for the rendered runtime-context body, in measure units. */
-  maxChars?: number;
+  /** Total cap for the rendered runtime-context body, in measure units (tokens). */
+  maxTokens?: number;
   measure?: (text: string) => number;
 }
 
@@ -120,7 +121,7 @@ export async function collectRuntimeContext(
     bySource.set(contribution.source, contribution);
   }
 
-  const measure = options.measure ?? ((text: string) => text.length);
+  const measure = options.measure ?? estimateTokens;
   let overBudget = false;
   const measured: RuntimeContextContribution[] = [];
   for (const contribution of bySource.values()) {
@@ -140,8 +141,8 @@ export async function collectRuntimeContext(
   }
 
   const included = [...measured];
-  if (options.maxChars !== undefined) {
-    while (measure(renderBody(included)) > options.maxChars) {
+  if (options.maxTokens !== undefined) {
+    while (measure(renderBody(included)) > options.maxTokens) {
       let dropIndex = -1;
       for (let index = included.length - 1; index >= 0; index -= 1) {
         if (!included[index]!.required) {

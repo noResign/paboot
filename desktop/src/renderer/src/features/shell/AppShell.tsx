@@ -10,6 +10,7 @@ import {
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
 import { lastSessionKey, readLastSession, writeLastSession } from '../../store/lastSession';
 import { useChat, type NewSessionOptions } from '../../store/chat';
+import { useConfig } from '../../store/config';
 import { ASIDE_MIN, useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
 import { api } from '../../ipc/client';
@@ -64,6 +65,7 @@ export function AppShell() {
   );
   const disconnectAll = useConnection((state) => state.disconnectAll);
   const scope = useScope(connectionId);
+  const loadConfig = useConfig((state) => state.load);
   const loadWorkspaces = useSessions((state) => state.loadWorkspaces);
   const loadSessions = useSessions((state) => state.loadSessions);
   const patchTitle = useSessions((state) => state.patchTitle);
@@ -151,6 +153,11 @@ export function AppShell() {
    * chat can be alive underneath it; the rail selection says what is *shown*.
    */
   const mainShowsOverview = overviewOpen || !activeChat;
+
+  // Security profile is daemon-wide and can change when the host changes.
+  useEffect(() => {
+    void loadConfig(true);
+  }, [connectionId, loadConfig]);
 
   useEffect(() => {
     setTaskFilter(null);
