@@ -25,6 +25,10 @@ data class ServerConfigDto(
 @Serializable
 data class ConfigResponse(
     val defaultPermissionMode: String = "ask",
+    /** `local` on a personal machine; `server-strict` on a deployment. */
+    val securityProfile: String = "local",
+    /** Whether the active profile honors `permissionMode=bypass`. */
+    val bypassAllowed: Boolean = true,
     val defaultWorkspaceId: String? = null,
     val workspaces: List<ConfigWorkspaceDto> = emptyList(),
     val server: ServerConfigDto = ServerConfigDto(),

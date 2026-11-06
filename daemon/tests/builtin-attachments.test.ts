@@ -157,6 +157,23 @@ describe('AttachmentStore', () => {
       code: 'attachment_corrupted',
     });
   });
+
+  it('deletes attachments together with their session and workspace', async () => {
+    const { store } = openStore();
+    const sessionAttachment = await store.saveImage(pngBytes());
+    const otherAttachment = await store.saveImage(pngBytes());
+    store.bind(sessionAttachment.id, { sessionId: 's-1', workspaceId: 'w-1' });
+    store.bind(otherAttachment.id, { sessionId: 's-2', workspaceId: 'w-1' });
+
+    expect(await store.deleteForSession('s-1')).toBe(1);
+    expect(store.get(sessionAttachment.id)).toBeUndefined();
+    expect(fs.existsSync(sessionAttachment.storagePath)).toBe(false);
+    expect(store.get(otherAttachment.id)).toBeDefined();
+
+    expect(await store.deleteForWorkspace('w-1')).toBe(1);
+    expect(store.get(otherAttachment.id)).toBeUndefined();
+    expect(fs.existsSync(otherAttachment.storagePath)).toBe(false);
+  });
 });
 
 describe('attachment -> transcript -> provider mapping', () => {

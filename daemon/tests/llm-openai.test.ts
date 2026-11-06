@@ -103,7 +103,7 @@ describe('OpenAI-compatible provider', () => {
     expect(capturedBody).toMatchObject({
       model: 'deepseek-chat',
       stream: true,
-      max_tokens: 256,
+      max_completion_tokens: 256,
       stream_options: { include_usage: true },
       tools: [
         {
@@ -120,6 +120,42 @@ describe('OpenAI-compatible provider', () => {
       { id: 'call_1', name: 'Read', arguments: '{"file_path":"x"}' },
     ]);
     expect(completion.usage).toMatchObject({ inputTokens: 8, outputTokens: 4 });
+  });
+
+  it('falls back to max_tokens when a gateway rejects max_completion_tokens', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const baseUrl = await listen((req, res) => {
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        calls += 1;
+        bodies.push(JSON.parse(body) as Record<string, unknown>);
+        if (calls === 1) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({
+            error: {
+              message: "Unsupported parameter: 'max_completion_tokens'. Use 'max_tokens' instead.",
+            },
+          }));
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        for (const frame of openAIFrames) res.write(frame);
+        res.end();
+      });
+    });
+    const provider = new OpenAIProvider({ id: 'gateway', baseUrl, apiKey: 'sk-test' });
+
+    const chunks = await collect(provider.stream(request()));
+
+    expect(calls).toBe(2);
+    expect(bodies[0]).toMatchObject({ max_completion_tokens: 256 });
+    expect(bodies[0]).not.toHaveProperty('max_tokens');
+    expect(bodies[1]).toMatchObject({ max_tokens: 256 });
+    expect(bodies[1]).not.toHaveProperty('max_completion_tokens');
+    expect(chunks.some((chunk) => chunk.type === 'text_delta')).toBe(true);
   });
 
   it('renders system, image, assistant tool_calls and tool results', () => {

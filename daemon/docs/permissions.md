@@ -93,6 +93,13 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；跨网络访问建议用组网工具放进加密内网（见 README
   「手机电脑不在同一个局域网」），内网穿透只适合自用。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见「权限审批」）。
+- **全局安全档位**：`~/.paboot/builtin.json` 的 `securityProfile`（`local` / `server-strict`）和
+  `allowLocalBypass` / `allowServerBypass` 对所有 runtime 生效；只有当前档位的开关起作用。
+  `server-strict` 默认把 `bypass` 静默降级为 `acceptEdits`；只有显式 `allowServerBypass: true`
+  才恢复。降级统一发生在 `startSessionRun`，chat / 定时任务 /
+  run-now 走同一条路径。`local` 下读不受路径限制，写仍限制在工作区 + 附加目录，并按 Session
+  权限模式审批；`server-strict` 的读写都只允许授权根，并硬拒绝 daemon 敏感文件。详见
+  [configuration.md](configuration.md) 的「安全档位」。
 - **工作目录**：显式 `--workspace` 每次启动都生效（权威值）；`PABOOT_WORKSPACE` / 无参
   （默认 `~/.paboot/defaultworkspace`）只在**工作区表为空时**注册一次（首次安装），之后不再
   自动重建——用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时
@@ -117,7 +124,9 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   TUI 会话列表时会包含落在内层 Workspace 里的会话（外层视为「其下所有内容」）。
 - **防御性超时**：run 空闲看门狗（`PABOOT_RUN_IDLE_TIMEOUT_SECONDS`，默认 900 秒、0=禁用）。
 - **审计**：所有写操作与 `browse_root` 记入 `audit_log`（清单见 [protocol.md](protocol.md) 的「数据模型」）。
-- **定时任务**：所有定时 run 固定 `bypass`，创建时客户端必须展示「完全权限无人值守」警告并让用户确认。
+- **定时任务**：任务按 `bypass` 发起；若全局 `securityProfile=server-strict` 且未显式
+  `allowServerBypass: true`，run 会降级为 `acceptEdits`（工作区编辑可无人值守，Bash/MCP 无审批人时
+  超时拒绝）。创建时客户端仍必须展示无人值守风险提示。
   可回滚的只有工作区内 git 文件改动；外部副作用（push/部署/消息等）不可撤销，详见
   [scheduled-tasks.md](scheduled-tasks.md)。agent 通过 `paboot_tasks` 的 `schedule_task` 创建任务：
   `target` 可选当前会话 / 同 workspace 的已有会话 / 首次触发新建；目标会话由 daemon 校验，

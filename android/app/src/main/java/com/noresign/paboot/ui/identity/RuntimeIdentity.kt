@@ -60,7 +60,26 @@ internal fun defaultAgentId(agents: List<AgentDto>): String? =
     agents.firstOrNull { it.available }?.id
 
 /** The same saved mode has different execution semantics in each runtime. */
-internal fun permissionModeOptions(runtime: String?): List<Pair<String, String>> = when (runtime) {
+internal fun permissionModeOptions(
+    runtime: String?,
+    bypassAllowed: Boolean = true,
+): List<Pair<String, String>> {
+    val options = buildPermissionModeOptions(runtime)
+    return if (bypassAllowed) options else options.filter { (mode, _) -> mode != "bypass" }
+}
+
+/** A server-strict daemon silently downgrades bypass; mirror that in the UI. */
+internal fun clampPermissionMode(mode: String, bypassAllowed: Boolean): String =
+    if (!bypassAllowed && mode == "bypass") "acceptEdits" else mode
+
+internal fun permissionModeLabel(mode: String): String = when (mode) {
+    "ask" -> "询问"
+    "acceptEdits" -> "自动接受编辑"
+    "bypass" -> "完全权限"
+    else -> mode
+}
+
+private fun buildPermissionModeOptions(runtime: String?): List<Pair<String, String>> = when (runtime) {
     "codex" -> listOf(
         "ask" to "工作区沙箱；不受信任的命令需要审批，工作区编辑可能自动执行",
         "acceptEdits" to "工作区沙箱内的命令和编辑可自动执行；提权由 Codex 请求审批",

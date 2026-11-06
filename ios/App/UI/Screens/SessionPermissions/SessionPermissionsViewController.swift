@@ -7,6 +7,7 @@ final class SessionPermissionsViewController: UIViewController {
     var onModeChanged: ((String) -> Void)?
 
     private let runtime: String
+    private let bypassAllowed: Bool
     private lazy var viewModel = SessionPermissionsViewModel(sessionId: sessionId)
     private let sessionId: String
     private var cancellables = Set<AnyCancellable>()
@@ -26,9 +27,10 @@ final class SessionPermissionsViewController: UIViewController {
 
     private var hasPresentedActionError = false
 
-    init(sessionId: String, runtime: String) {
+    init(sessionId: String, runtime: String, bypassAllowed: Bool) {
         self.sessionId = sessionId
         self.runtime = runtime
+        self.bypassAllowed = bypassAllowed
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -133,7 +135,10 @@ final class SessionPermissionsViewController: UIViewController {
 
         contentStack.addArrangedSubview(makeSectionTitle("权限模式"))
 
-        for option in PermissionModeOptions.options(runtime: runtime) {
+        for option in PermissionModeOptions.options(
+            runtime: runtime,
+            bypassAllowed: bypassAllowed
+        ) {
             let row = PermissionModeRow(
                 mode: option.mode,
                 title: option.title,
@@ -221,13 +226,14 @@ final class SessionPermissionsViewController: UIViewController {
     }
 
     private func render(_ state: SessionPermissionsViewModel.State) {
+        let mode = PermissionModeOptions.clamp(state.mode, bypassAllowed: bypassAllowed)
         for row in permissionRows {
-            row.setSelected(row.mode == state.mode)
+            row.setSelected(row.mode == mode)
         }
 
         rebuildGrants(state.grants)
         emptyGrantsLabel.isHidden = !state.grants.isEmpty
-        bypassNoteLabel.isHidden = state.mode != "bypass" || state.grants.isEmpty
+        bypassNoteLabel.isHidden = mode != "bypass" || state.grants.isEmpty
         revokeAllButton.isHidden = state.grants.isEmpty
 
         if state.isLoading {

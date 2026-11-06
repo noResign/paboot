@@ -108,6 +108,12 @@ export type NormalizedEvent =
     }
   | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
 
+/** Optional list price for a provider model, in USD per million tokens. */
+export interface ProviderModelPriceDto {
+  inputPerMTok: number;
+  outputPerMTok: number;
+}
+
 /** A model exposed by a configured LLM provider. */
 export interface ProviderModelDto {
   id: string;
@@ -117,6 +123,7 @@ export interface ProviderModelDto {
   supportsTools?: boolean;
   supportsImages?: boolean;
   enabled?: boolean;
+  price?: ProviderModelPriceDto;
 }
 
 /** Public provider config. Plaintext API keys never cross this boundary. */

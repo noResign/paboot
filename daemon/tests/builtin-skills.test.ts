@@ -196,6 +196,21 @@ describe('skill catalog and load_skill', () => {
     expect(onlyReview[0]?.content).not.toContain('release');
   });
 
+  it('caps long catalog descriptions', () => {
+    const { registry, workspace } = setupRegistry();
+    writeSkill(workspace, 'verbose', {
+      description: `START${'x'.repeat(600)}END`,
+    });
+
+    const catalog = new SkillsCatalogContextSource(registry, {
+      descriptionMaxChars: 100,
+    }).collect(context());
+
+    expect(catalog[0]?.content).toContain('START');
+    expect(catalog[0]?.content).toContain('…');
+    expect(catalog[0]?.content).not.toContain('END');
+  });
+
   it('loads a skill body on demand and enforces the agent allowlist', () => {
     const { registry, workspace } = setupRegistry();
     writeSkill(workspace, 'release', {

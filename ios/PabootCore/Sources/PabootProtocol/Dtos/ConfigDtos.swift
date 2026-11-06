@@ -43,6 +43,10 @@ public struct ServerConfigDto: Decodable, Equatable, Sendable {
 
 public struct ConfigResponse: Decodable, Equatable, Sendable {
     public let defaultPermissionMode: String
+    /// `local` on a personal machine; `server-strict` on a deployment.
+    public let securityProfile: String
+    /// Whether the active profile honors `permissionMode=bypass`.
+    public let bypassAllowed: Bool
     public let defaultWorkspaceId: String?
     public let workspaces: [ConfigWorkspaceDto]
     public let server: ServerConfigDto?
@@ -50,13 +54,15 @@ public struct ConfigResponse: Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         defaultPermissionMode = try container.decodeIfPresent(String.self, forKey: .defaultPermissionMode) ?? "ask"
+        securityProfile = try container.decodeIfPresent(String.self, forKey: .securityProfile) ?? "local"
+        bypassAllowed = try container.decodeIfPresent(Bool.self, forKey: .bypassAllowed) ?? true
         defaultWorkspaceId = try container.decodeIfPresent(String.self, forKey: .defaultWorkspaceId)
         workspaces = try container.decodeIfPresent([ConfigWorkspaceDto].self, forKey: .workspaces) ?? []
         server = try container.decodeIfPresent(ServerConfigDto.self, forKey: .server)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case defaultPermissionMode, defaultWorkspaceId, workspaces, server
+        case defaultPermissionMode, securityProfile, bypassAllowed, defaultWorkspaceId, workspaces, server
     }
 }
 

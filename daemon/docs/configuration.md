@@ -146,6 +146,80 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
 # PABOOT_TLS_KEY=/path/key.pem
 ```
 
+### 运行时配置（`~/.paboot/builtin.json`）
+
+内置 runtime 的上下文/工具预算和 **daemon 级安全档位**集中在 `<data-dir>/builtin.json`，
+**不是环境变量**。文件可选：不存在时全部使用代码默认值；只需写要覆盖的字段，其余按字段合并。
+坏 JSON / 非法值 / 未知 key 会打 `warn` 日志并按字段回退默认值。**修改后重启 daemon 生效。**
+
+```jsonc
+{
+  "version": 1,
+  "securityProfile": "local",                // local（默认）| server-strict
+  "allowLocalBypass": true,                  // local 档位下是否允许 bypass（默认 true）
+  "allowServerBypass": false,                // server-strict 档位下是否允许 bypass（默认 false）
+  "context": {
+    "fallbackWindowTokens": 128000,          // 模型目录没有 contextWindow 时使用
+    "systemPromptRatio": 0.04,               // 占模型窗口
+    "maxSystemPromptTokens": 8000,
+    "runtimeContextRatio": 0.10,
+    "maxRuntimeContextTokens": 24000
+  },
+  "projectDocs": {
+    "shareOfRuntimeContext": 0.5,            // 项目文档最多占 runtime-context 的一半
+    "maxTokens": 16000,
+    "maxFileBytes": 32768                    // 单文件 I/O 安全上限
+  },
+  "tools": {
+    "maxResultTokens": 8000,                 // 所有工具结果（Read / MCP / load_skill）的统一上限
+    "read": {
+      "maxFileBytes": 8388608,
+      "defaultLimit": 2000,
+      "maxLimit": 2000,
+      "maxLineChars": 4000
+    }
+  },
+  "skills": {
+    "maxFileBytes": 262144,
+    "catalogDescriptionChars": 500
+  },
+  "agent": { "maxSteps": 100, "maxToolCalls": 200 }
+}
+```
+
+每次 run 按当前模型的 `contextWindow` 推导（缺省回退 `fallbackWindowTokens`）：
+
+```
+systemTokens      = min(ceil(window × systemPromptRatio), maxSystemPromptTokens)
+runtimeTokens     = min(ceil(window × runtimeContextRatio), maxRuntimeContextTokens)
+projectDocsTokens = min(ceil(runtimeTokens × shareOfRuntimeContext), projectDocs.maxTokens)
+```
+
+- 128K 窗口：system ≈ 5,120 / runtime ≈ 12,800 / 项目文档 ≈ 6,400 tokens。
+- 预算单位是 **tokens**，不是字符；中英文混排按 CJK 感知的保守估算，并用每次模型调用
+  返回的真实 `contextTokens` 自动校准比例（按 `provider:model` 学习，进程内有效）。
+- 工具结果在写事件 / transcript 前按 `maxResultTokens` 截断（保留头尾）。
+
+#### 安全档位（daemon 全局）
+
+`securityProfile` 和两个 bypass 开关对所有 runtime 生效；只有**当前档位对应的开关**起作用，
+另一个保留下来，切换档位时不会丢失。降级统一发生在 `startSessionRun`，不依赖各 runtime 自己判断。
+旧字段 `allowBypass` 仍可读，会同时写入两个开关并打 deprecation warning。
+
+| | `local`（默认，单用户本机） | `server-strict`（服务器部署） |
+|---|---|---|
+| 读 | 不受路径限制、不审批（OS 权限边界） | 仅 workspace 根 + 知识根 |
+| 写/执行 | 仅 workspace 根 + 附加目录；**按 session 权限模式审批**（ask 询问 / acceptEdits 放行编辑 / bypass 放行） | 同左，且仅限授权根 |
+| workspace 外写入 | 路径拒绝（除非 bypass 被允许并被选中） | 路径拒绝（除非 allowServerBypass=true 且选中 bypass） |
+| `bypass` | 受 `allowLocalBypass` 控制（默认允许） | 受 `allowServerBypass` 控制（默认**静默降级为 `acceptEdits`**） |
+| daemon 敏感文件 | 不在 grant 内（写拒绝） | 硬拒绝 `token` / `paboot.sqlite*` / `providers.json` / `builtin.json` / `paboot.lock` / `attachments`，即使工作区重叠也不放行 |
+| 定时任务 | 以 bypass 运行 | 以 bypass 请求，但同样降级为 `acceptEdits`（Bash/MCP 无人审批时会超时拒绝） |
+| 外部 runtime（Claude/Codex/DeepSeek） | 按原权限模式 | 同样禁止 bypass；各自的沙箱/审批继续生效 |
+
+注意：`server-strict` 是**应用层**约束，不是完整沙箱。外部 runtime、MCP 子进程、
+未来 Bash 的 OS 级隔离仍需独立用户 / 容器 / 只读挂载；bypass 是管理员显式打开的
+全权限逃生门（`allowLocalBypass` / `allowServerBypass`），开启后不再受上面的路径硬拒绝约束。
+
 ### 定时任务
 
 定时任务没有新增环境变量，以下行为固定：

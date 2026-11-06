@@ -127,6 +127,32 @@ describe('PathPolicy', () => {
     ).toThrow(/capability/);
   });
 
+  it('local profile reads outside the workspace but keeps writes gated', () => {
+    const root = tempDir();
+    const outside = tempDir();
+    const outsideFile = path.join(outside, 'b.txt');
+    fs.writeFileSync(outsideFile, 'b');
+    const agent = makeAgent({ root, policyMode: 'local' });
+
+    expect(
+      resolvePathAccess({
+        policy: agent.pathPolicy,
+        cwd: root,
+        requestedPath: outsideFile,
+        capability: 'read',
+      }).path,
+    ).toBe(fs.realpathSync(outsideFile));
+
+    expect(() =>
+      resolvePathAccess({
+        policy: agent.pathPolicy,
+        cwd: root,
+        requestedPath: outsideFile,
+        capability: 'write',
+      }),
+    ).toThrow(/outside allowed roots/);
+  });
+
   it('rejects symlink escapes but bypass permits them', () => {
     const root = tempDir();
     const outside = tempDir();
@@ -226,6 +252,22 @@ describe('Read tool', () => {
     );
     expect(result.content).toContain('outside');
   });
+
+  it('stops at the token output budget', async () => {
+    const root = tempDir();
+    fs.writeFileSync(
+      path.join(root, 'long.txt'),
+      Array.from({ length: 50 }, (_, index) => `line-${index}-${'x'.repeat(40)}`).join('\n'),
+    );
+    const agent = makeAgent({ root });
+    const result = await createReadTool({
+      maxOutputTokens: 60,
+      measure: (text) => text.length,
+    }).call({ file_path: 'long.txt' }, { agent, signal: agent.signal, callId: 'call-1' });
+
+    expect(result.meta).toMatchObject({ truncated: true });
+    expect(result.content).toContain('[output truncated at 60 tokens]');
+  });
 });
 
 describe('ToolRegistry and executor', () => {
@@ -247,6 +289,31 @@ describe('ToolRegistry and executor', () => {
       { type: 'tool_use', id: 't1', name: 'Echo', input: { value: 1 } },
       { type: 'tool_result', toolUseId: 't1', content: 'hello', isError: false },
     ]);
+  });
+
+  it('truncates oversized tool results before emitting and returning them', async () => {
+    const root = tempDir();
+    const events: AgentEvent[] = [];
+    const agent = makeAgent({ root, events });
+    const registry = new ToolRegistry([
+      new NativeToolProvider([
+        tool('Echo', 'read', { content: `HEAD${'x'.repeat(1_000)}TAIL`, isError: false }),
+      ]),
+    ]);
+    const executor = new ToolExecutor({
+      registry,
+      maxResultTokens: 200,
+      measure: (text) => text.length,
+    });
+
+    const result = await executor.execute({ id: 't1', name: 'Echo', input: {} }, agent);
+
+    expect(result.content.length).toBeLessThanOrEqual(200);
+    expect(result.content).toContain('HEAD');
+    expect(result.content).toContain('TAIL');
+    expect(result.content).toContain('tool result truncated');
+    const emitted = events.find((event) => event.type === 'tool_result');
+    expect(emitted).toMatchObject({ content: result.content });
   });
 
   it('asks before mutations and does not execute when denied', async () => {

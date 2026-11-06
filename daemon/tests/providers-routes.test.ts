@@ -125,6 +125,39 @@ describe('provider management API', () => {
     expect(list.providers.map((provider) => provider.id)).not.toContain('local-fast');
   });
 
+  it('keeps model prices when a client edits models without sending price', async () => {
+    const h = await start({});
+    const created = await fetch(`${h.base}/api/providers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'priced',
+        kind: 'openai',
+        baseUrl: 'http://127.0.0.1:9999',
+        apiKey: 'secret-key',
+        models: [{
+          id: 'priced-model',
+          price: { inputPerMTok: 1, outputPerMTok: 2 },
+        }],
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const patched = await fetch(`${h.base}/api/providers/priced`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ models: [{ id: 'priced-model', supportsTools: true }] }),
+    });
+    expect(patched.status).toBe(200);
+    expect((await patched.json()).provider.models).toEqual([
+      {
+        id: 'priced-model',
+        supportsTools: true,
+        price: { inputPerMTok: 1, outputPerMTok: 2 },
+      },
+    ]);
+  });
+
   it('rejects duplicate ids and deleting built-in providers', async () => {
     const h = await start({});
     const duplicate = await fetch(`${h.base}/api/providers`, {

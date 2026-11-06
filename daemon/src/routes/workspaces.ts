@@ -5,9 +5,20 @@ import type { WorkspaceRow } from '../db/db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  resolveEffectivePermissionMode,
+  resolveEffectiveStoredPermissionMode,
+  type SecurityProfileConfig,
+} from '../permissions/security-profile.js';
 import { log } from '../platform/log.js';
 
-function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
+function workspaceDto(
+  w: WorkspaceRow,
+  securityProfile: SecurityProfileConfig | undefined,
+  sessionCount = 0,
+  dirs: string[] = [],
+  shortcutDirs: string[] = [],
+) {
   return {
     id: w.id,
     name: w.name,
@@ -20,7 +31,9 @@ function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], sh
     profileMode: w.profile_mode,
     lifeReadable: w.life_readable === 1,
     defaultRuntime: w.default_runtime ?? null,
-    defaultPermissionMode: w.default_permission_mode ?? null,
+    defaultPermissionMode: w.default_permission_mode
+      ? resolveEffectiveStoredPermissionMode(w.default_permission_mode, securityProfile)
+      : null,
     enabled: w.enabled === 1,
     sessionCount,
     createdAt: w.created_at,
@@ -47,6 +60,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         .map((w) =>
           workspaceDto(
             w,
+            ctx.builtinConfig,
             counts.get(w.id) ?? 0,
             dirsByWorkspace.get(w.id) ?? [],
             shortcutsByWorkspace.get(w.id) ?? [],
@@ -67,7 +81,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       const workspaces = ctx.db.listWorkspaces();
       const duplicate = workspaces.find((w) => w.path === realPath);
       if (duplicate) {
-        res.status(409).json({ error: 'workspace already exists', code: 'workspace_exists', workspace: workspaceDto(duplicate) });
+        res.status(409).json({ error: 'workspace already exists', code: 'workspace_exists', workspace: workspaceDto(duplicate, ctx.builtinConfig) });
         return;
       }
       const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : path.basename(realPath) || realPath;
@@ -76,7 +90,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       const hasUserWorkspace = workspaces.some((w) => w.is_builtin !== 1 && w.enabled === 1);
       const created = ctx.db.createWorkspace({ name, path: realPath, isDefault: !hasUserWorkspace });
       ctx.db.audit('create_workspace', JSON.stringify({ id: created.id, path: created.path }));
-      res.status(201).json({ ok: true, workspace: workspaceDto(created, 0) });
+      res.status(201).json({ ok: true, workspace: workspaceDto(created, ctx.builtinConfig, 0) });
     } catch (err) {
       sendValidationError(res, err);
     }
@@ -147,7 +161,10 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       if (body.defaultPermissionMode === null || body.defaultPermissionMode === '') {
         update.defaultPermissionMode = null;
       } else if (isProductPermissionMode(body.defaultPermissionMode)) {
-        update.defaultPermissionMode = body.defaultPermissionMode;
+        update.defaultPermissionMode = resolveEffectivePermissionMode(
+          body.defaultPermissionMode,
+          ctx.builtinConfig,
+        );
       } else {
         res.status(400).json({
           error: 'defaultPermissionMode must be ask, acceptEdits or bypass',
@@ -182,6 +199,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       ok: true,
       workspace: workspaceDto(
         updated,
+        ctx.builtinConfig,
         counts.get(updated.id) ?? 0,
         ctx.db.listWorkspaceDirs(updated.id),
         ctx.db.listWorkspaceShortcuts(updated.id),
@@ -300,7 +318,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
   //
   // 注意级联也**不会**删 `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的
   // 会话记录，删了会破坏电脑上的续接，所以同一个目录重新加成工作区后，续接列表里还能看到它们。
-  app.delete('/api/workspaces/:id', (req, res) => {
+  app.delete('/api/workspaces/:id', async (req, res) => {
     const workspace = ctx.db.getWorkspace(req.params.id);
     if (!workspace) {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
@@ -345,9 +363,11 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         const row = ctx.db.getRun(active.id);
         if (row && row.session_id === session.id) active.cancel('workspace deleted');
       }
+      await ctx.attachments?.deleteForSession(session.id);
       ctx.db.deleteSession(session.id);
       ctx.permissions.clearSession(session.id);
     }
+    await ctx.attachments?.deleteForWorkspace(workspace.id);
     // Knowledge belongs to the workspace: deleting the workspace removes its
     // knowledge root too. Best-effort so a permission/IO problem does not keep
     // the workspace alive forever.

@@ -272,6 +272,83 @@ describe('transcript request projection', () => {
     ]);
   });
 
+  it('synthesizes results for tool calls left dangling by a crash or cancellation', async () => {
+    const messages = [
+      message(1, 'user', [{ type: 'text', text: 'do two things' }], { kind: 'user' }),
+      message(
+        2,
+        'assistant',
+        [
+          { type: 'tool_call', id: 'tool-a', name: 'Read', arguments: '{"file_path":"a.ts"}' },
+          { type: 'tool_call', id: 'tool-b', name: 'Read', arguments: '{"file_path":"b.ts"}' },
+        ],
+        { kind: 'model', provider: 'anthropic', model: 'claude-sonnet-4-6' },
+      ),
+      message(
+        3,
+        'tool',
+        [{ type: 'tool_result', toolUseId: 'tool-a', content: 'a body', isError: false }],
+        { kind: 'tool', callId: 'tool-a' },
+      ),
+    ];
+
+    const rendered = await renderTranscriptMessages(messages);
+
+    expect(rendered).toHaveLength(3);
+    expect(rendered[1]).toMatchObject({ role: 'assistant' });
+    expect(rendered[2]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'tool_result', toolUseId: 'tool-a', content: 'a body' },
+        {
+          type: 'tool_result',
+          toolUseId: 'tool-b',
+          content: 'interrupted: no result was recorded for this tool call',
+          isError: true,
+        },
+      ],
+    });
+  });
+
+  it('falls back to a placeholder when an image cannot be loaded', async () => {
+    const rendered = await renderTranscriptMessages(
+      [
+        message(
+          1,
+          'user',
+          [
+            {
+              type: 'image',
+              attachmentId: 'att-missing',
+              mediaType: 'image/png',
+              bytes: 68,
+              width: 1,
+              height: 1,
+            },
+          ],
+          { kind: 'user' },
+        ),
+      ],
+      {
+        resolveImage: () => {
+          throw new Error('attachment data is missing');
+        },
+      },
+    );
+
+    expect(rendered).toEqual([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: '[image att-missing omitted: image/png, 1x1; image data is unavailable]',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('uses a text placeholder when no image resolver is available', async () => {
     const rendered = await renderTranscriptMessages([
       message(

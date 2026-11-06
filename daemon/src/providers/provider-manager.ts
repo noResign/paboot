@@ -110,13 +110,22 @@ export class ProviderManager {
     const current = await this.requireResolved(id);
     const file = await readProvidersFileEntries(this.options.providersFile);
     const currentFile = file.entries.find((entry) => entry.id === id);
+    // Clients don't send `price` (it is additive metadata), so keep the price
+    // already configured for a model when an edit replaces the model list.
+    const models = input.models
+      ? input.models.map((model) => {
+          if (model.price !== undefined) return model;
+          const previous = current.models.find((item) => item.id === model.id);
+          return previous?.price === undefined ? model : { ...model, price: previous.price };
+        })
+      : current.models;
     const entry: ProviderFileEntry = {
       id,
       kind: input.kind ?? current.kind,
       label: input.label ?? current.label,
       baseUrl: input.baseUrl ?? current.baseUrl,
       apiKeyEnv: input.apiKeyEnv !== undefined ? input.apiKeyEnv : current.apiKeyEnv,
-      models: input.models ?? current.models,
+      models,
     };
     if (input.apiKey !== undefined) {
       entry.apiKey = normalizeApiKey(input.apiKey);

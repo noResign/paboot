@@ -3,6 +3,9 @@ import type { AppContext } from '../app/context.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  resolveEffectivePermissionMode,
+} from '../permissions/security-profile.js';
 import type { RuntimeDriver } from '../runtimes/RuntimeDriver.js';
 import type { RunOutcome } from '../runtimes/engine.js';
 import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
@@ -52,7 +55,14 @@ export interface RunHandle {
  * detection) and session creation; this function owns everything after that.
  */
 export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): RunHandle {
-  const { session, workspace, prompt, driver, permissionMode, model, modelParameters } = input;
+  const { session, workspace, prompt, driver, model, modelParameters } = input;
+  // Single security boundary for every runtime and every entry point (chat,
+  // scheduled runs, run-now). A stored `bypass` is honored only when the
+  // daemon-wide policy allows it.
+  const permissionMode = resolveEffectivePermissionMode(
+    input.permissionMode,
+    ctx.builtinConfig,
+  );
   const runId = randomUUID();
 
   ctx.db.touchWorkspace(workspace.id);

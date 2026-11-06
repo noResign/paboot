@@ -10,8 +10,11 @@ import type { RuntimeDriver, RuntimeDriverRequest } from '../RuntimeDriver.js';
 import { registerActiveRun, type ManagedRun } from '../active-runs.js';
 import type { RunOutcome } from '../engine.js';
 import type { TranscriptContentBlock } from '../../types/transcript.js';
+import { DEFAULT_BUILTIN_CONFIG } from './config.js';
+import { resolveContextBudget } from './budget.js';
 import { AgentKernel } from './kernel/agent.js';
 import { resolveBuiltinModel } from './models.js';
+import { createTokenCalibrator } from './tokens.js';
 import {
   assembleAgentContext,
   builtinGlobalPromptSections,
@@ -22,7 +25,7 @@ import {
 import { SkillsCatalogContextSource } from './skills/catalog.js';
 import type { AgentContextProfile } from './runtime-context.js';
 import { createTranscriptStore } from './transcript/store.js';
-import { createAttachmentImageResolver, renderTranscriptMessages } from './transcript/render.js';
+import { createAttachmentImageResolver } from './transcript/render.js';
 import { NativeToolProvider } from './tools/native.js';
 import { createReadTool } from './tools/read.js';
 import { createLoadSkillTool } from './skills/load-tool.js';
@@ -33,13 +36,8 @@ import { ToolRegistry } from './tools/registry.js';
 import type { ToolProvider } from './tools/types.js';
 import { createPabootTasksProvider } from './mcp/tasks.js';
 import type { AgentProfile, AgentRunContext, PathGrant, ResolvedPathPolicy, ToolDescriptor } from './types.js';
-import type { AgentPromptPreset, PromptSectionSpec } from './prompt.js';
-import type { RuntimeContextSource } from './runtime-context.js';
-
-const SYSTEM_BUDGET = 16_000;
-const RUNTIME_CONTEXT_BUDGET = 8_000;
-const MAX_STEPS = 100;
-const MAX_TOOL_CALLS = 200;
+import type { AgentPromptPreset } from './prompt.js';
+import { isBypassAllowed } from '../../permissions/security-profile.js';
 
 export function createBuiltinDriver(ctx: AppContext): RuntimeDriver {
   return {
@@ -77,6 +75,14 @@ async function runBuiltin(
     if (!workspace) throw new Error('workspace not found for builtin session');
 
     const resolved = await resolveBuiltinModel(req.model, process.env);
+    const builtinConfig = ctx.builtinConfig ?? DEFAULT_BUILTIN_CONFIG;
+    const budget = resolveContextBudget(builtinConfig, resolved.snapshot.contextWindow);
+    const denyRoots =
+      builtinConfig.securityProfile === 'server-strict'
+        ? serverStrictDenyRoots(ctx.config.dataDir)
+        : [];
+    const calibrator = createTokenCalibrator(resolved.modelId);
+    const measure = calibrator.measure;
     const attachments = (req.attachmentIds ?? []).map((id) => {
       const row = ctx.attachments.get(id);
       if (!row) throw new Error(`attachment not found: ${id}`);
@@ -117,12 +123,14 @@ async function runBuiltin(
       step: 1,
     });
 
-    const skills = new SkillRegistry(skillRoots(ctx, workspace));
+    const skills = new SkillRegistry(skillRoots(ctx, workspace), {
+      maxFileBytes: builtinConfig.skills.maxFileBytes,
+    });
     const skillsAvailable = skills.list();
     const profile: AgentProfile = {
       identity: { id: 'builtin', name: 'Builtin', role: 'assistant' },
       instructions: '',
-      budgetDefaults: { maxSteps: MAX_STEPS, maxToolCalls: MAX_TOOL_CALLS },
+      budgetDefaults: { maxSteps: budget.maxSteps, maxToolCalls: budget.maxToolCalls },
     };
     const preset: AgentPromptPreset = { id: 'builtin-default', version: 1 };
     const presets = new Map([[preset.id, preset]]);
@@ -131,9 +139,15 @@ async function runBuiltin(
       promptPreset: preset,
       contextSources: [
         new EnvironmentContextSource(),
-        new ProjectDocsContextSource(),
+        new ProjectDocsContextSource({
+          maxFileBytes: builtinConfig.projectDocs.maxFileBytes,
+          maxTokens: budget.projectDocsTokens,
+          measure,
+        }),
         new WorkspaceKnowledgeContextSource(ctx.knowledge),
-        new SkillsCatalogContextSource(skills),
+        new SkillsCatalogContextSource(skills, {
+          descriptionMaxChars: builtinConfig.skills.catalogDescriptionChars,
+        }),
       ],
     };
 
@@ -143,7 +157,10 @@ async function runBuiltin(
       session,
       workspace,
       signal,
-      attachments: attachments.map((item) => item.id),
+      budget,
+      securityProfile: builtinConfig.securityProfile,
+      allowBypass: isBypassAllowed(builtinConfig),
+      denyRoots,
     });
     const permissionBroker = createPermissionBroker({
       permissions: ctx.permissions,
@@ -153,7 +170,14 @@ async function runBuiltin(
     agent.permissionBroker = permissionBroker;
 
     const nativeProvider = new NativeToolProvider([
-      createReadTool(),
+      createReadTool({
+        maxFileBytes: builtinConfig.tools.read.maxFileBytes,
+        defaultLimit: builtinConfig.tools.read.defaultLimit,
+        maxLimit: builtinConfig.tools.read.maxLimit,
+        maxLineChars: builtinConfig.tools.read.maxLineChars,
+        maxOutputTokens: budget.maxResultTokens,
+        measure,
+      }),
       createLoadSkillTool(skills, {
         allowedSkills: profile.allowedSkills,
       }),
@@ -165,12 +189,17 @@ async function runBuiltin(
     const toolsRegistry = new ToolRegistry(toolProviders);
     const toolDescriptors = await toolsRegistry.list({ agent, signal });
     const visibleTools = resolved.snapshot.supportsTools ? toolDescriptors : [];
-    executor = new ToolExecutor({ registry: toolsRegistry });
+    executor = new ToolExecutor({
+      registry: toolsRegistry,
+      maxResultTokens: budget.maxResultTokens,
+      measure,
+    });
 
     const imageResolver = resolved.snapshot.supportsImages
       ? createAttachmentImageResolver(ctx.attachments)
       : undefined;
     const startedAt = Date.now();
+    let lastContextReport: string | null = null;
     const assembleContext = async (tools: readonly ToolDescriptor[]) => {
       const promptContext = {
         agent,
@@ -199,15 +228,35 @@ async function runBuiltin(
         signal,
         now: startedAt,
       };
-      return assembleAgentContext({
+      const assembled = await assembleAgentContext({
         profile: contextProfile,
         presets,
         globalSections: builtinGlobalPromptSections(),
         promptContext,
         runtimeContextContext,
-        systemBudget: SYSTEM_BUDGET,
-        runtimeContextBudget: RUNTIME_CONTEXT_BUDGET,
+        systemTokenBudget: budget.systemPromptTokens,
+        runtimeContextTokenBudget: budget.runtimeContextTokens,
+        measure,
       });
+      // Budget drops are otherwise invisible: a whole section can disappear
+      // from the prompt with no trace anywhere. Report once per distinct set.
+      const omitted = [
+        ...assembled.system.omitted.map((item) => `system:${item.id}:${item.reason}`),
+        ...assembled.runtimeContext.omitted.map((item) => `runtime:${item.source}:${item.reason}`),
+      ];
+      if (assembled.system.overBudget || assembled.runtimeContext.overBudget || omitted.length > 0) {
+        const report = `${assembled.contextVersion}|${omitted.join(',')}`;
+        if (report !== lastContextReport) {
+          lastContextReport = report;
+          log.warn(
+            `builtin run ${req.runId} context trimmed: ` +
+              `systemOverBudget=${assembled.system.overBudget} ` +
+              `runtimeOverBudget=${assembled.runtimeContext.overBudget}` +
+              (omitted.length > 0 ? ` omitted=[${omitted.join(', ')}]` : ''),
+          );
+        }
+      }
+      return assembled;
     };
 
     const kernel = new AgentKernel({
@@ -219,6 +268,7 @@ async function runBuiltin(
       toolDescriptors: visibleTools,
       toolExecutor: executor,
       assembleContext,
+      tokenCalibrator: calibrator,
       ...(imageResolver ? { resolveImage: imageResolver } : {}),
     });
     const result = await kernel.run(agent);
@@ -245,7 +295,10 @@ function makeAgentContext(input: {
   session: SessionRow;
   workspace: WorkspaceRow;
   signal: AbortSignal;
-  attachments: string[];
+  budget: { maxSteps: number; maxToolCalls: number };
+  securityProfile: 'server-strict' | 'local';
+  allowBypass: boolean;
+  denyRoots: string[];
 }): AgentRunContext {
   const roots = unique([input.req.cwd, ...(input.req.extraDirs ?? [])]);
   const grants: PathGrant[] = roots.map((root) => ({
@@ -254,10 +307,15 @@ function makeAgentContext(input: {
   }));
   const knowledgeRoot = input.ctx.knowledge.root(input.workspace.id);
   grants.push({ root: knowledgeRoot, capabilities: ['read', 'list'] });
-  const pathPolicy: ResolvedPathPolicy =
-    input.req.permissionMode === 'bypass'
-      ? { mode: 'bypass', grants: [], denyRoots: [] }
-      : { mode: 'server-strict', grants, denyRoots: [] };
+  const bypass =
+    input.req.permissionMode === 'bypass' && input.allowBypass;
+  const pathPolicy: ResolvedPathPolicy = bypass
+    ? { mode: 'bypass', grants: [], denyRoots: [] }
+    : {
+        mode: input.securityProfile,
+        grants,
+        denyRoots: input.denyRoots,
+      };
   return {
     runId: input.req.runId,
     sessionId: input.session.id,
@@ -274,8 +332,8 @@ function makeAgentContext(input: {
     permissionMode: input.req.permissionMode,
     signal: input.signal,
     budget: {
-      maxSteps: MAX_STEPS,
-      maxToolCalls: MAX_TOOL_CALLS,
+      maxSteps: input.budget.maxSteps,
+      maxToolCalls: input.budget.maxToolCalls,
     },
     eventSink: {
       emit: (event) => input.req.onEvent(event as NormalizedEvent),
@@ -284,6 +342,24 @@ function makeAgentContext(input: {
       request: async () => ({ status: 'denied', reason: 'permission broker not configured' }),
     },
   };
+}
+
+/**
+ * Hard denies for server-strict runs. Grants normally exclude these paths, but
+ * an overlapping workspace (for example `~/.paboot` itself) must not expose the
+ * daemon's credentials, database or attachment store.
+ */
+function serverStrictDenyRoots(dataDir: string): string[] {
+  return [
+    path.join(dataDir, 'token'),
+    path.join(dataDir, 'paboot.sqlite'),
+    path.join(dataDir, 'paboot.sqlite-wal'),
+    path.join(dataDir, 'paboot.sqlite-shm'),
+    path.join(dataDir, 'providers.json'),
+    path.join(dataDir, 'builtin.json'),
+    path.join(dataDir, 'paboot.lock'),
+    path.join(dataDir, 'attachments'),
+  ];
 }
 
 function skillRoots(ctx: AppContext, workspace: WorkspaceRow): SkillRoot[] {

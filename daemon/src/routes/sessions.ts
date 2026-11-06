@@ -10,13 +10,24 @@ import {
   normalizeModelParameters,
   parseStoredModelParameters,
 } from '../db/model-selection.js';
+import {
+  resolveEffectiveStoredPermissionMode,
+} from '../permissions/security-profile.js';
 
-function sessionDto(s: SessionRow, runningRunId: string | null = null, scheduledTaskCount = 0) {
+function sessionDto(
+  ctx: AppContext,
+  s: SessionRow,
+  runningRunId: string | null = null,
+  scheduledTaskCount = 0,
+) {
   return {
     id: s.id,
     runtime: s.runtime,
     workspaceId: s.workspace_id,
-    permissionMode: s.permission_mode,
+    permissionMode: resolveEffectiveStoredPermissionMode(
+      s.permission_mode,
+      ctx.builtinConfig,
+    ),
     model: s.model,
     modelParameters: parseStoredModelParameters(s.model_parameters),
     cwd: s.cwd,
@@ -47,7 +58,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     const taskCounts = ctx.db.countScheduledTasksBySession();
     const sessions = ctx.db
       .listSessions(workspaceId)
-      .map((s) => sessionDto(s, running.get(s.id) ?? null, taskCounts.get(s.id) ?? 0));
+      .map((s) => sessionDto(ctx, s, running.get(s.id) ?? null, taskCounts.get(s.id) ?? 0));
     res.json({ sessions });
   });
 
@@ -59,7 +70,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     }
     const running = runningRunBySession(ctx);
     res.json({
-      session: sessionDto(s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
+      session: sessionDto(ctx, s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
       messages: ctx.db.listMessages(s.id),
       runs: ctx.db
         .listRuns(s.id)
@@ -84,7 +95,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('rename_session', s.id);
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, session: sessionDto(updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
+    res.json({ ok: true, session: sessionDto(ctx, updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   // Switch the model used by this session's subsequent runs. An in-flight run
@@ -120,12 +131,12 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('set_session_model', JSON.stringify({ sessionId: s.id, model, modelParameters }));
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, effective: 'next_run', session: sessionDto(updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
+    res.json({ ok: true, effective: 'next_run', session: sessionDto(ctx, updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   // Delete a session, cancelling any in-flight run first so no child process is
   // left orphaned.
-  app.delete('/api/sessions/:id', (req, res) => {
+  app.delete('/api/sessions/:id', async (req, res) => {
     const s = visibleSession(ctx, req.params.id);
     if (!s) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
@@ -137,6 +148,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
         active.cancel('session deleted');
       }
     }
+    await ctx.attachments?.deleteForSession(s.id);
     ctx.db.deleteSession(s.id);
     ctx.permissions.clearSession(s.id);
     ctx.db.audit('delete_session', s.id);

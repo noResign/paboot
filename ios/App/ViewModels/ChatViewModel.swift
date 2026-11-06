@@ -22,6 +22,8 @@ final class ChatViewModel {
         var error: String?
         var requiresReconnect = false
         var permissionMode = "ask"
+        /// Daemon-wide policy: when false, the UI must not offer bypass.
+        var bypassAllowed = true
         var model: String?
         var modelParameters: [String: String] = [:]
         var models: [ModelOptionDto] = []
@@ -79,10 +81,23 @@ final class ChatViewModel {
         guard !didStart else { return }
         didStart = true
 
+        Task { await loadSecurityPolicy() }
         if let sessionId {
             historyTask = Task { await loadHistory(sessionId: sessionId) }
         } else {
             loadModels()
+        }
+    }
+
+    private func loadSecurityPolicy() async {
+        do {
+            let config = try await repository.config()
+            state.bypassAllowed = config.bypassAllowed
+            if !config.bypassAllowed && state.permissionMode == "bypass" {
+                state.permissionMode = "acceptEdits"
+            }
+        } catch {
+            // Older daemons may not expose the field; keep the local default.
         }
     }
 
@@ -103,7 +118,10 @@ final class ChatViewModel {
             state.title = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? "会话"
             state.cwd = session.cwd
             state.runtime = session.runtime
-            state.permissionMode = session.permissionMode
+            state.permissionMode = PermissionModeOptions.clamp(
+                session.permissionMode,
+                bypassAllowed: state.bypassAllowed
+            )
             state.model = session.model
             state.modelParameters = session.modelParameters ?? [:]
             loadModels()
@@ -693,6 +711,7 @@ final class ChatViewModel {
     // MARK: - Session settings
 
     func setPermissionMode(_ mode: String) {
+        let mode = PermissionModeOptions.clamp(mode, bypassAllowed: state.bypassAllowed)
         guard mode != state.permissionMode else { return }
         state.permissionMode = mode
 
@@ -710,7 +729,10 @@ final class ChatViewModel {
     /// Applied after the permission sheet PATCHes the mode, so the header menu stays in sync
     /// without sending a second request.
     func applyPermissionMode(_ mode: String) {
-        state.permissionMode = mode
+        state.permissionMode = PermissionModeOptions.clamp(
+            mode,
+            bypassAllowed: state.bypassAllowed
+        )
     }
 
     func setModel(_ model: String?) {

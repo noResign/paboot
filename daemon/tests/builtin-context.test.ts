@@ -153,6 +153,25 @@ describe('P3.3 context sources', () => {
     expect(truncated[0]?.content).toContain('[truncated at 10 bytes]');
   });
 
+  it('caps the combined project docs so the runtime-context budget keeps them', async () => {
+    const root = tempDir();
+    fs.mkdirSync(path.join(root, '.git'));
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), 'x'.repeat(30_000));
+    const { runtime } = makeContext({ workspaceRoot: root });
+
+    const capped = await new ProjectDocsContextSource({ maxTokens: 2_500 }).collect(runtime);
+    expect(capped).toHaveLength(1);
+    expect(capped[0]?.content).toContain('[project docs truncated to fit the 2500-token budget]');
+
+    const snapshot = await collectRuntimeContext(
+      [new EnvironmentContextSource(), new ProjectDocsContextSource()],
+      runtime,
+      { maxTokens: 8_000 },
+    );
+    expect(snapshot.contributions.map((item) => item.source)).toContain('project-docs');
+    expect(snapshot.omitted.some((item) => item.source === 'project-docs')).toBe(false);
+  });
+
   it('turns K0 confirmed documents into pointer-only knowledge contributions', () => {
     const dataDir = tempDir();
     const knowledge = new KnowledgeStore(dataDir);
@@ -227,7 +246,7 @@ describe('P3.3 dual-channel assembly', () => {
       globalSections: builtinGlobalPromptSections(),
       promptContext: coderContext.prompt,
       runtimeContextContext: coderContext.runtime,
-      runtimeContextBudget: 2_000,
+      runtimeContextTokenBudget: 2_000,
     });
     const reviewer = await assembleAgentContext({
       profile: profile('reviewer'),
@@ -235,7 +254,7 @@ describe('P3.3 dual-channel assembly', () => {
       globalSections: builtinGlobalPromptSections(),
       promptContext: reviewerContext.prompt,
       runtimeContextContext: reviewerContext.runtime,
-      runtimeContextBudget: 2_000,
+      runtimeContextTokenBudget: 2_000,
     });
 
     expect(coder.system.text).toContain("paboot's builtin agent");
@@ -263,7 +282,7 @@ describe('P3.3 dual-channel assembly', () => {
         },
       ],
       ctx,
-      { maxChars: 20 },
+      { maxTokens: 20, measure: (text) => text.length },
     );
     expect(result.text).toBe('critical policy');
     expect(result.overBudget).toBe(true);
@@ -306,7 +325,7 @@ describe('P3.3 dual-channel assembly', () => {
     const snapshot = await collectRuntimeContext(
       [low, high, broken],
       makeContext({ workspaceRoot: tempDir() }).runtime,
-      { maxChars: 13 },
+      { maxTokens: 13, measure: (text) => text.length },
     );
 
     expect(snapshot.contributions.map((item) => item.source)).toEqual(['high']);

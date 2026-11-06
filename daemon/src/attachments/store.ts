@@ -167,6 +167,24 @@ export class AttachmentStore {
     return true;
   }
 
+  /** Delete every attachment bound to a session (rows + files). */
+  async deleteForSession(sessionId: string): Promise<number> {
+    return this.deleteRows(this.db.listAttachmentsForSession(sessionId));
+  }
+
+  /** Delete every attachment recorded against a workspace (rows + files). */
+  async deleteForWorkspace(workspaceId: string): Promise<number> {
+    return this.deleteRows(this.db.listAttachmentsForWorkspace(workspaceId));
+  }
+
+  private async deleteRows(rows: readonly AttachmentRow[]): Promise<number> {
+    let deleted = 0;
+    for (const row of rows) {
+      if (await this.delete(row.id)) deleted += 1;
+    }
+    return deleted;
+  }
+
   private attachmentsDir(): string {
     return path.join(this.dataDir, 'attachments');
   }

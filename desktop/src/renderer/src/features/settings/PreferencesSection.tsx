@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
-import { permissionModeOptions, PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
+import {
+  clampPermissionMode,
+  permissionModeOptions,
+  PERMISSION_MODE_LABEL,
+} from '../../../../shared/runtime-identity';
 import type { ProductPermissionMode } from '../../../../shared/contract';
 
 /**
@@ -12,6 +16,7 @@ import type { ProductPermissionMode } from '../../../../shared/contract';
  */
 export function PreferencesSection() {
   const [mode, setMode] = useState<ProductPermissionMode | null>(null);
+  const [bypassAllowed, setBypassAllowed] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +28,8 @@ export function PreferencesSection() {
         setError(`加载失败（HTTP ${res.status}）`);
         return;
       }
-      setMode(res.data.defaultPermissionMode);
+      setBypassAllowed(res.data.bypassAllowed);
+      setMode(clampPermissionMode(res.data.defaultPermissionMode, res.data.bypassAllowed));
     });
     return () => {
       live = false;
@@ -47,17 +53,19 @@ export function PreferencesSection() {
     }
   }
 
+  const effectiveMode = mode === null ? null : clampPermissionMode(mode, bypassAllowed);
+
   return (
     <section className="settings-section">
       <h3>默认偏好</h3>
       <div className="field">
         <label>新建会话的默认权限模式</label>
         <div className="mode-picker">
-          {permissionModeOptions(null).map((option) => (
+          {permissionModeOptions(null, bypassAllowed).map((option) => (
             <button
               key={option.mode}
-              className={`mode-option${option.mode === mode ? ' active' : ''}`}
-              disabled={busy || mode === null}
+              className={`mode-option${option.mode === effectiveMode ? ' active' : ''}`}
+              disabled={busy || effectiveMode === null}
               onClick={() => void choose(option.mode)}
             >
               <b>{PERMISSION_MODE_LABEL[option.mode]}</b>

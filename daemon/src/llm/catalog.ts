@@ -7,6 +7,13 @@ export const NONE_PROVIDER_ID = 'none';
 
 export type RealProviderKind = Exclude<ProviderKind, 'none'>;
 
+export interface ModelPrice {
+  /** USD per million input tokens (cache tokens are billed at this rate). */
+  inputPerMTok: number;
+  /** USD per million output tokens. */
+  outputPerMTok: number;
+}
+
 export interface ProviderModel {
   /** Bare model id; the qualified id is `<provider>:<id>`. */
   id: string;
@@ -18,6 +25,8 @@ export interface ProviderModel {
   /** Whether the model accepts image blocks (builtin runtime + vision models only). */
   supportsImages?: boolean;
   enabled?: boolean;
+  /** Optional list price, used for the per-run cost shown to clients. */
+  price?: ModelPrice;
 }
 
 export interface ProviderConfig {
@@ -260,7 +269,30 @@ function parseModel(raw: unknown, providerId: string): ProviderModel {
     }
     model.enabled = raw.enabled;
   }
+  if (raw.price !== undefined) {
+    model.price = parseModelPrice(raw.price, `${providerId}/${id}`);
+  }
   return model;
+}
+
+/** Validate a `{ inputPerMTok, outputPerMTok }` price block. */
+export function parseModelPrice(raw: unknown, label = 'model'): ModelPrice {
+  if (!isRecord(raw)) {
+    throw new LlmError('invalid_provider', `price for "${label}" must be an object`);
+  }
+  const inputPerMTok = raw['inputPerMTok'];
+  const outputPerMTok = raw['outputPerMTok'];
+  if (!isNonNegativeNumber(inputPerMTok) || !isNonNegativeNumber(outputPerMTok)) {
+    throw new LlmError(
+      'invalid_provider',
+      `price for "${label}" needs non-negative inputPerMTok and outputPerMTok`,
+    );
+  }
+  return { inputPerMTok, outputPerMTok };
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 function parseBaseUrl(value: string, providerId: string): string {

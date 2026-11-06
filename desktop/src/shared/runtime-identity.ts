@@ -44,7 +44,23 @@ export interface PermissionModeOption {
 }
 
 /** The same saved mode has different execution semantics per runtime. */
-export function permissionModeOptions(runtime: string | null | undefined): PermissionModeOption[] {
+export function permissionModeOptions(
+  runtime: string | null | undefined,
+  bypassAllowed = true,
+): PermissionModeOption[] {
+  const options = buildPermissionModeOptions(runtime);
+  return bypassAllowed ? options : options.filter((option) => option.mode !== 'bypass');
+}
+
+/** A server-strict daemon silently downgrades bypass; mirror that in the UI. */
+export function clampPermissionMode(
+  mode: ProductPermissionMode,
+  bypassAllowed: boolean,
+): ProductPermissionMode {
+  return !bypassAllowed && mode === 'bypass' ? 'acceptEdits' : mode;
+}
+
+function buildPermissionModeOptions(runtime: string | null | undefined): PermissionModeOption[] {
   switch (runtime) {
     case 'codex':
       return [
@@ -84,3 +100,8 @@ export const PERMISSION_MODE_LABEL: Record<ProductPermissionMode, string> = {
   acceptEdits: '自动放行编辑',
   bypass: '全部通过',
 };
+
+/** Labels for wire values that may be an unknown/legacy string. */
+export function permissionModeLabel(mode: string): string {
+  return PERMISSION_MODE_LABEL[mode as ProductPermissionMode] ?? mode;
+}

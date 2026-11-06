@@ -47,6 +47,15 @@ export function resolvePathAccess(request: PathAccessRequest): PathAccessResult 
     return { path: canonicalizeForAccess(absolute) };
   }
 
+  // Local product semantics (`builtin.json` securityProfile=local): reads are not
+  // gated, matching Claude/Codex; mutations stay inside the granted roots.
+  if (
+    request.policy.mode === 'local' &&
+    (request.capability === 'read' || request.capability === 'list')
+  ) {
+    return { path: canonicalizeForAccess(absolute) };
+  }
+
   const lexicalDenied = request.policy.denyRoots.some((root) =>
     isInside(path.resolve(root), absolute),
   );

@@ -9,6 +9,7 @@ import type {
   ToolDescriptor,
   WorkspaceSnapshot,
 } from './types.js';
+import { estimateTokens } from './tokens.js';
 
 export type PromptStability = 'stable' | 'dynamic';
 export type PromptTrust = 'system' | 'agent' | 'workspace' | 'external';
@@ -24,8 +25,8 @@ export interface PromptSectionSpec {
   when?: (context: PromptBuildContext) => boolean;
   /** Static template or a function of the typed build context. */
   template: string | ((context: PromptBuildContext) => string);
-  /** Whole-section cap in characters. Over-cap sections are dropped. */
-  maxChars?: number;
+  /** Whole-section cap in measure units (tokens by default). Over-cap sections are dropped. */
+  maxTokens?: number;
 }
 
 export interface ToolPolicy {
@@ -94,8 +95,8 @@ export interface PromptCompileResult {
 }
 
 export interface PromptCompileOptions {
-  /** Total cap across stable + dynamic system text. */
-  maxChars?: number;
+  /** Total cap across stable + dynamic system text, in measure units (tokens). */
+  maxTokens?: number;
   measure?: (text: string) => number;
 }
 
@@ -221,6 +222,7 @@ export function compilePromptSections(
   options: PromptCompileOptions = {},
 ): PromptCompileResult {
   const variables = promptVariables(context);
+  const measure = options.measure ?? estimateTokens;
   const sorted = [...sections].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   const seen = new Set<string>();
   const compiled: CompiledPromptSection[] = [];
@@ -242,7 +244,7 @@ export function compilePromptSections(
       omitted.push({ id: section.id, reason: 'empty' });
       continue;
     }
-    if (section.maxChars !== undefined && text.length > section.maxChars) {
+    if (section.maxTokens !== undefined && measure(text) > section.maxTokens) {
       omitted.push({ id: section.id, reason: 'section_budget' });
       continue;
     }
@@ -255,11 +257,10 @@ export function compilePromptSections(
     });
   }
 
-  const measure = options.measure ?? ((text: string) => text.length);
   const included = [...compiled];
   let overBudget = false;
-  if (options.maxChars !== undefined) {
-    while (measure(renderCompiledText(included)) > options.maxChars) {
+  if (options.maxTokens !== undefined) {
+    while (measure(renderCompiledText(included)) > options.maxTokens) {
       const dropIndex = findBudgetDropIndex(included);
       if (dropIndex < 0) {
         // The trusted system floor itself exceeds the budget. Keep it: silently

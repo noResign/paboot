@@ -13,7 +13,10 @@ import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
 import { startSessionRun, type RunSink } from '../src/runs/run-service';
 import { getActiveRun } from '../src/runtimes/active-runs';
+import { DEFAULT_BUILTIN_CONFIG, type BuiltinRuntimeConfig } from '../src/runtimes/builtin/config';
 import { createBuiltinDriver } from '../src/runtimes/builtin/driver';
+import { resetTokenCalibration } from '../src/runtimes/builtin/tokens';
+import type { ProductPermissionMode } from '../src/permissions/permission-mode';
 import { createRegistry } from '../src/runtimes/registry';
 import type { SseFrame } from '../src/types/api';
 
@@ -23,6 +26,7 @@ const dirs: string[] = [];
 const envBackup = new Map<string, string | undefined>();
 
 afterEach(async () => {
+  resetTokenCalibration();
   for (const [key, value] of envBackup) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -100,15 +104,24 @@ function finishText(res: http.ServerResponse, text: string): void {
 }
 
 function fakeToolCall(res: http.ServerResponse): void {
+  fakeToolCalls(res, [
+    { id: 'call_read', name: 'Read', arguments: '{"file_path":"hello.txt"}' },
+  ]);
+}
+
+function fakeToolCalls(
+  res: http.ServerResponse,
+  calls: Array<{ id: string; name: string; arguments: string }>,
+): void {
   sse(res, {
     choices: [{
       delta: {
-        tool_calls: [{
-          index: 0,
-          id: 'call_read',
+        tool_calls: calls.map((call, index) => ({
+          index,
+          id: call.id,
           type: 'function',
-          function: { name: 'Read', arguments: '{"file_path":"hello.txt"}' },
-        }],
+          function: { name: call.name, arguments: call.arguments },
+        })),
       },
       finish_reason: null,
     }],
@@ -128,7 +141,7 @@ interface Harness {
   root: string;
 }
 
-function harness(): Harness {
+function harness(builtinConfig?: BuiltinRuntimeConfig): Harness {
   const root = tempDir('paboot-builtin-workspace-');
   const dataDir = tempDir('paboot-builtin-data-');
   const db = new Db(':memory:');
@@ -163,6 +176,7 @@ function harness(): Harness {
     knowledge,
     attachments,
     registry,
+    builtinConfig,
     permissions,
     notifier,
     hookPath: '/missing-hook.js',
@@ -186,6 +200,7 @@ function sinkFrames(frames: SseFrame[], onFrame?: (frame: SseFrame) => void): Ru
 async function start(h: Harness, options: {
   prompt: string;
   model?: string | null;
+  permissionMode?: ProductPermissionMode;
   attachmentIds?: string[];
   frames: SseFrame[];
   onFrame?: (frame: SseFrame) => void;
@@ -198,7 +213,7 @@ async function start(h: Harness, options: {
     workspace,
     prompt: options.prompt,
     driver,
-    permissionMode: 'ask',
+    permissionMode: options.permissionMode ?? 'ask',
     model: options.model === undefined ? session.model : options.model,
     modelParameters: null,
     attachmentIds: options.attachmentIds,
@@ -219,7 +234,12 @@ describe('builtin driver E2E with fake provider', () => {
         kind: 'openai',
         baseUrl: provider.url,
         apiKey: 'fake-key',
-        models: [{ id: 'fake-model', supportsTools: true, supportsImages: true }],
+        models: [{
+          id: 'fake-model',
+          supportsTools: true,
+          supportsImages: true,
+          price: { inputPerMTok: 1, outputPerMTok: 2 },
+        }],
       }],
     }));
     setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
@@ -237,6 +257,14 @@ describe('builtin driver E2E with fake provider', () => {
     expect(eventTypes).toContain('tool_use');
     expect(eventTypes).toContain('tool_result');
     expect(eventTypes).toContain('turn_end');
+
+    const usage = frames
+      .filter((frame) => frame.event.type === 'usage')
+      .map((frame) => frame.event as Extract<SseFrame['event'], { type: 'usage' }>);
+    expect(usage[0]?.usage).toMatchObject({ input_tokens: 8, output_tokens: 2 });
+    expect(usage[0]?.costUsd).toBeCloseTo(0.000012, 9);
+    expect(usage[1]?.usage).toMatchObject({ input_tokens: 18, output_tokens: 6 });
+    expect(usage[1]?.costUsd).toBeCloseTo(0.00003, 9);
     expect(frames.find((frame) => frame.event.type === 'tool_result')?.event).toMatchObject({
       toolUseId: 'call_read',
       isError: false,
@@ -377,5 +405,223 @@ describe('builtin driver E2E with fake provider', () => {
       (frame) => frame.event.type === 'turn_end' && frame.event.stopReason === 'cancelled',
     )).toBe(true);
     expect(provider.requestCount).toBe(1);
+  });
+
+  it('pairs every tool call when a batch is cancelled, keeping the session usable', async () => {
+    const provider = await fakeProvider((_body, index, res) => {
+      if (index === 1) {
+        fakeToolCalls(res, [
+          { id: 'call_a', name: 'Read', arguments: '{"file_path":"a.txt"}' },
+          { id: 'call_b', name: 'Read', arguments: '{"file_path":"b.txt"}' },
+        ]);
+      } else {
+        finishText(res, 'continued after cancel');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', supportsTools: true, supportsImages: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness();
+    fs.writeFileSync(path.join(h.root, 'a.txt'), 'a\n');
+    fs.writeFileSync(path.join(h.root, 'b.txt'), 'b\n');
+
+    const frames: SseFrame[] = [];
+    let cancelled = false;
+    const first = await start(h, {
+      prompt: 'read both files',
+      frames,
+      onFrame: (frame) => {
+        if (!cancelled && frame.event.type === 'tool_use') {
+          cancelled = true;
+          getActiveRun(frame.runId)?.cancel('test cancel');
+        }
+      },
+    });
+    expect((await first.done).status).toBe('cancelled');
+
+    const thread = h.db.getNativeThreadForSession(h.sessionId, 'builtin')!;
+    const messages = h.db.listNativeMessages(thread.id);
+    const callIds = messages
+      .flatMap((message) => message.blocks)
+      .filter((block): block is Extract<typeof block, { type: 'tool_call' }> => block.type === 'tool_call')
+      .map((block) => block.id);
+    const resultIds = messages
+      .flatMap((message) => message.blocks)
+      .filter((block): block is Extract<typeof block, { type: 'tool_result' }> => block.type === 'tool_result')
+      .map((block) => block.toolUseId);
+    expect(callIds).toEqual(['call_a', 'call_b']);
+    expect(resultIds).toEqual(expect.arrayContaining(['call_a', 'call_b']));
+
+    const second = await start(h, { prompt: 'continue', frames: [] });
+    expect((await second.done).status).toBe('succeeded');
+    const followUp = provider.requests[1] as { messages: Array<Record<string, unknown>> };
+    const serialized = JSON.stringify(followUp.messages);
+    expect(serialized).toContain('"tool_call_id":"call_a"');
+    expect(serialized).toContain('"tool_call_id":"call_b"');
+  });
+
+  it('calibrates token estimates from real provider usage across steps', async () => {
+    const provider = await fakeProvider((_body, index, res) => {
+      if (index === 1) {
+        sse(res, {
+          choices: [{
+            delta: {
+              tool_calls: [{
+                index: 0,
+                id: 'call_read',
+                type: 'function',
+                function: { name: 'Read', arguments: '{"file_path":"hello.txt"}' },
+              }],
+            },
+            finish_reason: null,
+          }],
+        });
+        sse(res, { choices: [{ delta: {}, finish_reason: 'tool_calls' }] });
+        // Deliberately far above the text estimate so the calibrator clamps up.
+        sse(res, { choices: [], usage: { prompt_tokens: 100_000, completion_tokens: 2 } });
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else {
+        finishText(res, 'done');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{
+          id: 'fake-model',
+          contextWindow: 128_000,
+          supportsTools: true,
+          supportsImages: true,
+        }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness();
+    fs.writeFileSync(path.join(h.root, 'hello.txt'), 'hello\n');
+    fs.writeFileSync(
+      path.join(h.root, 'CLAUDE.md'),
+      `# Instructions\n${'x'.repeat(32 * 1024)}`,
+    );
+
+    const handle = await start(h, { prompt: 'Read hello.txt', frames: [] });
+    expect((await handle.done).status).toBe('succeeded');
+
+    const docsLength = (request: Record<string, unknown>): number => {
+      const messages = (request['messages'] ?? []) as Array<{ content: unknown }>;
+      for (const message of messages) {
+        const serialized = JSON.stringify(message.content);
+        if (serialized.includes('Project instructions')) return serialized.length;
+      }
+      return 0;
+    };
+    const first = docsLength(provider.requests[0] as Record<string, unknown>);
+    const second = docsLength(provider.requests[1] as Record<string, unknown>);
+    expect(first).toBeGreaterThan(0);
+    expect(second).toBeGreaterThan(0);
+    expect(second).toBeLessThan(first);
+  });
+
+  it('silently downgrades bypass under server-strict and blocks outside reads', async () => {
+    const outside = tempDir('paboot-outside-');
+    const outsideFile = path.join(outside, 'secret.txt');
+    fs.writeFileSync(outsideFile, 'OUTSIDE_MARKER');
+    const provider = await fakeProvider((_body, index, res) => {
+      if (index === 1) {
+        fakeToolCalls(res, [{
+          id: 'call_outside',
+          name: 'Read',
+          arguments: JSON.stringify({ file_path: outsideFile }),
+        }]);
+      } else {
+        finishText(res, 'done');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', contextWindow: 128_000, supportsTools: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness({
+      ...DEFAULT_BUILTIN_CONFIG,
+      securityProfile: 'server-strict',
+      allowServerBypass: false,
+    });
+    const frames: SseFrame[] = [];
+    const handle = await start(h, {
+      prompt: 'read the secret',
+      permissionMode: 'bypass',
+      frames,
+    });
+    expect((await handle.done).status).toBe('succeeded');
+
+    expect(h.db.getRun(handle.runId)?.permission_mode).toBe('acceptEdits');
+    const toolResult = frames.find((frame) => frame.event.type === 'tool_result')?.event;
+    expect(toolResult).toMatchObject({ isError: true });
+    expect(JSON.stringify(toolResult)).toContain('outside allowed roots');
+    expect(JSON.stringify(frames)).not.toContain('OUTSIDE_MARKER');
+  });
+
+  it('honours bypass on server-strict when allowServerBypass is explicitly enabled', async () => {
+    const outside = tempDir('paboot-outside-');
+    const outsideFile = path.join(outside, 'secret.txt');
+    fs.writeFileSync(outsideFile, 'OUTSIDE_MARKER');
+    const provider = await fakeProvider((_body, index, res) => {
+      if (index === 1) {
+        fakeToolCalls(res, [{
+          id: 'call_outside',
+          name: 'Read',
+          arguments: JSON.stringify({ file_path: outsideFile }),
+        }]);
+      } else {
+        finishText(res, 'done');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', contextWindow: 128_000, supportsTools: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness({
+      ...DEFAULT_BUILTIN_CONFIG,
+      securityProfile: 'server-strict',
+      allowServerBypass: true,
+    });
+    const frames: SseFrame[] = [];
+    const handle = await start(h, {
+      prompt: 'read the secret',
+      permissionMode: 'bypass',
+      frames,
+    });
+    expect((await handle.done).status).toBe('succeeded');
+
+    expect(h.db.getRun(handle.runId)?.permission_mode).toBe('bypass');
+    const toolResult = frames.find((frame) => frame.event.type === 'tool_result')?.event;
+    expect(toolResult).toMatchObject({ isError: false });
+    expect(JSON.stringify(toolResult)).toContain('OUTSIDE_MARKER');
   });
 });

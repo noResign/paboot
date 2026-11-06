@@ -1,4 +1,5 @@
 import type { LlmContentBlock, LlmMessage } from '../../../llm/types.js';
+import { log } from '../../../platform/log.js';
 import type {
   NativeMessage,
   TranscriptContentBlock,
@@ -47,16 +48,34 @@ export async function renderTranscriptMessages(
 ): Promise<LlmMessage[]> {
   const out: LlmMessage[] = [];
   let pendingToolResults: LlmContentBlock[] = [];
+  let pendingResultIds = new Set<string>();
 
   const flushToolResults = (): void => {
     if (pendingToolResults.length === 0) return;
     out.push({ role: 'user', content: pendingToolResults });
     pendingToolResults = [];
+    pendingResultIds = new Set<string>();
   };
 
-  for (const message of projectActiveMessages(messages)) {
+  /** Render tool results, deduping ids within one assistant exchange. */
+  const renderResults = async (
+    message: NativeMessage,
+    seen: Set<string>,
+  ): Promise<LlmContentBlock[]> => {
+    const blocks = await renderToolResultBlocks(message, options);
+    return blocks.filter((block) => {
+      if (block.type !== 'tool_result') return true;
+      if (seen.has(block.toolUseId)) return false;
+      seen.add(block.toolUseId);
+      return true;
+    });
+  };
+
+  const projected = projectActiveMessages(messages);
+  for (let index = 0; index < projected.length; index += 1) {
+    const message = projected[index]!;
     if (message.role === 'tool') {
-      pendingToolResults.push(...(await renderToolResultBlocks(message, options)));
+      pendingToolResults.push(...(await renderResults(message, pendingResultIds)));
       continue;
     }
     flushToolResults();
@@ -65,8 +84,32 @@ export async function renderTranscriptMessages(
       if (content.length > 0) out.push({ role: 'user', content });
       continue;
     }
+
     const content = await renderAssistantBlocks(message, options);
     if (content.length > 0) out.push({ role: 'assistant', content });
+
+    // A crashed or cancelled run can leave assistant tool calls without a
+    // result. Providers reject the whole request in that case, so synthesize a
+    // paired error result and keep the session usable.
+    const results: LlmContentBlock[] = [];
+    const answered = new Set<string>();
+    let next = index + 1;
+    while (next < projected.length && projected[next]!.role === 'tool') {
+      results.push(...(await renderResults(projected[next]!, answered)));
+      next += 1;
+    }
+    for (const block of message.blocks) {
+      if (block.type !== 'tool_call' || answered.has(block.id)) continue;
+      answered.add(block.id);
+      results.push({
+        type: 'tool_result',
+        toolUseId: block.id,
+        content: 'interrupted: no result was recorded for this tool call',
+        isError: true,
+      });
+    }
+    if (results.length > 0) out.push({ role: 'user', content: results });
+    index = next - 1;
   }
   flushToolResults();
   return out;
@@ -160,8 +203,17 @@ async function resolveImage(
   options: TranscriptRenderOptions,
 ): Promise<LlmContentBlock> {
   if (!block.offloaded && options.supportsImages !== false && options.resolveImage) {
-    const resolved = await options.resolveImage(block);
-    if (resolved) return resolved;
+    try {
+      const resolved = await options.resolveImage(block);
+      if (resolved) return resolved;
+    } catch (error) {
+      // A missing/corrupted attachment must not brick every later turn: the
+      // transcript keeps the reference forever, so degrade to a placeholder.
+      log.warn(
+        `builtin transcript: image ${block.attachmentId} could not be loaded: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
   const reason = options.supportsImages === false
     ? 'current model does not support images'

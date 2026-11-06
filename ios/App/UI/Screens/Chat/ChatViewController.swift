@@ -455,6 +455,7 @@ final class ChatViewController: UIViewController {
     private func updateMenu(_ state: ChatViewModel.State) {
         let signature = [
             state.permissionMode,
+            state.bypassAllowed ? "1" : "0",
             state.model ?? "",
             state.sessionId ?? "",
             state.models.map(\.id).joined(separator: ","),
@@ -464,20 +465,19 @@ final class ChatViewController: UIViewController {
         guard signature != menuSignature else { return }
         menuSignature = signature
 
-        let permissionLabels = [
-            ("ask", "询问"),
-            ("acceptEdits", "自动接受编辑"),
-            ("bypass", "绕过审批"),
-        ]
+        let permissionOptions = PermissionModeOptions.options(
+            runtime: state.runtime,
+            bypassAllowed: state.bypassAllowed
+        )
 
         var permissionActions: [UIMenuElement] = []
-        for (mode, label) in permissionLabels {
+        for option in permissionOptions {
             permissionActions.append(
                 UIAction(
-                    title: label,
-                    state: state.permissionMode == mode ? .on : .off
+                    title: option.title,
+                    state: state.permissionMode == option.mode ? .on : .off
                 ) { [weak self] _ in
-                    self?.viewModel.setPermissionMode(mode)
+                    self?.viewModel.setPermissionMode(option.mode)
                 }
             )
         }
@@ -587,7 +587,8 @@ final class ChatViewController: UIViewController {
 
         let permissions = SessionPermissionsViewController(
             sessionId: sessionId,
-            runtime: viewModel.state.runtime
+            runtime: viewModel.state.runtime,
+            bypassAllowed: viewModel.state.bypassAllowed
         )
         permissions.onModeChanged = { [weak self] mode in
             self?.viewModel.applyPermissionMode(mode)

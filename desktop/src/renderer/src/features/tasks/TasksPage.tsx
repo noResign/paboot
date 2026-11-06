@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../../ipc/client';
 import { useScheduledTasks } from '../../store/scheduledTasks';
 import { Icon } from '../../ui/Icon';
-import { runtimeIdentity } from '../../../../shared/runtime-identity';
+import { permissionModeLabel, runtimeIdentity } from '../../../../shared/runtime-identity';
+import { bypassAllowedOf, useConfig } from '../../store/config';
 import type {
   RunDto,
   ScheduleInput,
@@ -109,6 +110,7 @@ export function TasksPage({
   const [confirmNewTask, setConfirmNewTask] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
+  const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const tasks = scope?.tasks ?? [];
   const detail = scope?.detail && scope.detail.task.id === selectedId ? scope.detail : null;
   const filterId = taskFilter?.id;
@@ -200,8 +202,15 @@ export function TasksPage({
                   : '所有工作区'}{' '}
               · 无人值守
             </span>
-            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
-              完全权限
+            <span
+              className="perm-badge"
+              title={
+                bypassAllowed
+                  ? '定时任务以 bypass 权限运行，不再逐条审批'
+                  : '全局安全档位限制了 bypass，定时任务按授权范围运行'
+              }
+            >
+              {bypassAllowed ? permissionModeLabel('bypass') : '按授权范围'}
             </span>
           </div>
         </div>
@@ -375,8 +384,11 @@ function TaskDetail({
             <span>{task.type === 'command' ? '命令任务' : 'AI 会话任务'}</span>
             <span>·</span>
             <span>{task.schedule.label}</span>
-            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
-              完全权限
+            <span
+              className="perm-badge"
+              title={`定时任务权限：${permissionModeLabel(task.permissionMode)}`}
+            >
+              {permissionModeLabel(task.permissionMode)}
             </span>
             {task.createdBy === 'mcp' && (
               <>
@@ -598,8 +610,11 @@ function TaskEditorDialog({ connectionId, task, onClose, onSaved }: EditorProps)
         <div className="task-form">
           <div className="task-meta">
             <span>{task.type === 'command' ? '命令任务' : 'AI 会话任务'}</span>
-            <span className="perm-badge" title="定时任务以 bypass 权限运行，不再逐条审批">
-              完全权限
+            <span
+              className="perm-badge"
+              title={`定时任务权限：${permissionModeLabel(task.permissionMode)}`}
+            >
+              {permissionModeLabel(task.permissionMode)}
             </span>
           </div>
 

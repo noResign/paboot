@@ -792,6 +792,17 @@ export class Db {
       .all(sessionId) as unknown as AttachmentRow[];
   }
 
+  listAttachmentsForWorkspace(workspaceId: string): AttachmentRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, media_type AS mediaType, bytes, width, height, sha256,
+                storage_path AS storagePath, session_id AS sessionId,
+                workspace_id AS workspaceId, run_id AS runId, created_at AS createdAt
+         FROM attachments WHERE workspace_id = ? ORDER BY created_at ASC`,
+      )
+      .all(workspaceId) as unknown as AttachmentRow[];
+  }
+
   // ---- builtin transcript ----
 
   createNativeThread(input: CreateNativeThreadInput): NativeThread {

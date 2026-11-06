@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { Icon } from '../../ui/Icon';
 import { api } from '../../ipc/client';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
-import { defaultAgentId, permissionModeOptions, PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
+import {
+  clampPermissionMode,
+  defaultAgentId,
+  permissionModeOptions,
+  PERMISSION_MODE_LABEL,
+} from '../../../../shared/runtime-identity';
+import { bypassAllowedOf, useConfig } from '../../store/config';
 import type { AgentDto, ProductPermissionMode } from '../../../../shared/contract';
 import type { NewSessionOptions } from '../../store/chat';
 
@@ -38,6 +44,16 @@ export function NewSessionDialog({
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<string | null>(null);
   const [mode, setMode] = useState<ProductPermissionMode>('ask');
+  const storeBypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
+  const [bypassAllowed, setBypassAllowed] = useState(storeBypassAllowed);
+
+  useEffect(() => {
+    setBypassAllowed(storeBypassAllowed);
+  }, [storeBypassAllowed]);
+
+  useEffect(() => {
+    if (!bypassAllowed) setMode((current) => clampPermissionMode(current, false));
+  }, [bypassAllowed]);
 
   useEffect(() => {
     let live = true;
@@ -59,9 +75,14 @@ export function NewSessionDialog({
       }
       // Workspace default wins; otherwise the daemon's global default; a config
       // failure is not fatal and falls back to the hard-coded 'ask'.
+      const allowed = configRes.ok ? configRes.data.bypassAllowed : storeBypassAllowed;
+      setBypassAllowed(allowed);
       setMode(
-        defaultPermissionMode ??
-          (configRes.ok ? configRes.data.defaultPermissionMode : 'ask'),
+        clampPermissionMode(
+          defaultPermissionMode ??
+            (configRes.ok ? configRes.data.defaultPermissionMode : 'ask'),
+          allowed,
+        ),
       );
     });
     return () => {
@@ -86,7 +107,7 @@ export function NewSessionDialog({
     onCreate({ runtime, workspaceId: null, permissionMode: mode });
   }
 
-  const modes = permissionModeOptions(runtime);
+  const modes = permissionModeOptions(runtime, bypassAllowed);
   const canSubmit = Boolean(runtime) && !noneAvailable;
 
   return (

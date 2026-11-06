@@ -1,3 +1,4 @@
+import type { ModelPrice } from '../../llm/catalog.js';
 import type { NormalizedEvent, ProductPermissionMode } from '../../types/api.js';
 
 /**
@@ -97,6 +98,8 @@ export interface ModelSnapshot {
   supportsImages: boolean;
   contextWindow?: number;
   maxOutput?: number;
+  /** Optional catalog price, for the run-cumulative `costUsd` event field. */
+  price?: ModelPrice;
 }
 
 export interface ToolPermissionDecision {
