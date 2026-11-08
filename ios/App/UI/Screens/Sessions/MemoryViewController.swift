@@ -392,7 +392,10 @@ private final class MemoryDetailViewController: UIViewController {
         } else {
             for item in claim.evidence {
                 let quote = UILabel()
-                quote.text = "“\(item.quote ?? "（无原话）"）”"
+                // Keep the fallback out of the interpolation: a nested string
+                // literal there terminates the outer one in the Swift lexer.
+                let quoted = item.quote ?? "（无原话）"
+                quote.text = "“\(quoted)”"
                 quote.font = Typography.body
                 quote.textColor = Theme.Colors.textSecondary
                 quote.numberOfLines = 0
