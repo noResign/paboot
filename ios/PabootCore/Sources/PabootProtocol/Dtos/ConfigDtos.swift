@@ -65,7 +65,8 @@ public struct ConfigResponse: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case defaultPermissionMode, securityProfile, bypassAllowed, defaultWorkspaceId, workspaces, server
+        case defaultPermissionMode, securityProfile, bypassAllowed, defaultWorkspaceId, memoryModel
+        case workspaces, server
     }
 }
 
