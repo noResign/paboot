@@ -26,13 +26,19 @@ Windows 上 npm 安装的 CLI 是 `claude.cmd` / `codex.cmd` / `dsh.cmd`。
 `platform/shell.ts` 的解析顺序：
 
 1. 非 Windows：`/bin/sh`
-2. Windows + Git Bash：`CLAUDE_CODE_GIT_BASH_PATH` →
-   `%ProgramFiles%\Git\bin\bash.exe` → `%ProgramFiles(x86)%\...` →
-   `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`
-3. 都没有：`%ComSpec%`（`cmd.exe`）兜底 —— POSIX 语法（管道、`$VAR` 等）不保证可用
+2. Windows 默认：`%ComSpec%`（通常是 `cmd.exe`）—— 原生命令、`%VAR%` 语法；
+3. **显式配置** `CLAUDE_CODE_GIT_BASH_PATH` 且文件存在时，才改用 Git Bash，
+   此时适用 POSIX 语法（管道、`$VAR` 等）。
 
-刻意不用 `where bash`：装了 WSL 时它可能命中 `System32\bash.exe`，那是 Linux shell，
-会把 Windows 工作区路径当成外部路径。
+Git 装在机器上并不等于要使用它：不自动探测 `%ProgramFiles%`、也不查 `where bash`。
+后者在装了 WSL 时可能命中 `System32\bash.exe`，那是 Linux shell，会把 Windows
+工作区路径当成外部路径。
+
+想让命令任务跑 POSIX 脚本时，在启动 daemon 的环境里设置：
+
+```powershell
+$env:CLAUDE_CODE_GIT_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
+```
 
 ### 取消与进程树
 

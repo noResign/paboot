@@ -40,14 +40,16 @@ pnpm clean:cache      # 删全局 Electron 下载缓存（见下，影响别的�
 
 ## Windows
 
-- 安装 Node >= 24.9；建议同时安装 **Git for Windows**（命令类定时任务需要一个
-  POSIX shell，Claude Code 的 Bash 工具也依赖它）。
+- 安装 Node >= 24.9。**Git for Windows 只在需要时安装**：Claude Code 的 Bash
+  工具依赖它，命令类定时任务想在 Windows 上跑 POSIX 语法也需要它。
+- 命令任务和环境捕获**默认走 `cmd.exe`**；只有显式设置
+  `CLAUDE_CODE_GIT_BASH_PATH` 才使用 Git Bash（装了 Git 不会自动启用）。
 - 本机 daemon 由应用内置（`extraResources`），启动时用 Electron 充当 Node，
   不需要另装 daemon。
 - 「停止本机 daemon」在 Windows 上先走 HTTP 优雅停机
   （`POST /api/system/shutdown`），失败才 `taskkill /T /F`。
-- 本机 PATH 由应用环境继承；若 CLI 只写在 Git Bash 的 rc 文件里，应用会通过
-  Git Bash 捕获登录环境。
+- 本机 PATH 由应用环境继承；若 CLI 只写在 Git Bash 的 rc 文件里，设置
+  `CLAUDE_CODE_GIT_BASH_PATH` 后应用会通过 Git Bash 捕获登录环境。
 
 更多平台差异见 [../daemon/docs/windows.md](../daemon/docs/windows.md)。
 
