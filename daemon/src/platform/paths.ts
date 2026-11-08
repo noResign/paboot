@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -15,4 +16,36 @@ export function expandHome(raw: string): string {
   if (raw === '~') return os.homedir();
   if (raw.startsWith('~/') || raw.startsWith('~\\')) return path.join(os.homedir(), raw.slice(2));
   return raw;
+}
+
+export interface ListWindowsDrivesOptions {
+  /** Injected for tests. */
+  platform?: NodeJS.Platform;
+  exists?: (candidate: string) => boolean;
+}
+
+/**
+ * Drive roots on Windows (`C:\`, `D:\`, …), A:–Z:.
+ *
+ * The directory picker is rooted at the user's home (`C:\Users\…`), and
+ * `path.dirname('C:\\') === 'C:\\'`, so there is nowhere above C: to navigate.
+ * Listing the other roots is the only way a client can reach D:/F: at all.
+ * Empty optical drives report `exists === false` and are skipped.
+ *
+ * Always empty off Windows — drives are a property of the daemon's host, not
+ * the client's, so a remote Linux daemon must not advertise the client's.
+ */
+export function listWindowsDrives(options: ListWindowsDrivesOptions = {}): string[] {
+  if ((options.platform ?? process.platform) !== 'win32') return [];
+  const exists = options.exists ?? fs.existsSync;
+  const drives: string[] = [];
+  for (let code = 65; code <= 90; code++) {
+    const root = `${String.fromCharCode(code)}:\\`;
+    try {
+      if (exists(root)) drives.push(root);
+    } catch {
+      // A drive that throws on probe is simply not browsable.
+    }
+  }
+  return drives;
 }
