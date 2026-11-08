@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
-import { expandHome } from '../platform/paths.js';
+import { expandHome, listWindowsDrives } from '../platform/paths.js';
 import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 
 function listDirectories(dir: string): { name: string; path: string }[] {
@@ -39,6 +39,9 @@ export function registerFsRoutes(app: Express, ctx: AppContext): void {
         path: dir,
         parent: path.dirname(dir) === dir ? null : path.dirname(dir),
         entries,
+        // Windows has no path above `C:\`, so a home-rooted picker can never
+        // reach D:/F: without an explicit list. Empty on other platforms.
+        drives: listWindowsDrives(),
       });
     } catch (err) {
       if (err instanceof WorkspaceValidationError) {

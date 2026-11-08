@@ -1653,6 +1653,11 @@ kbd {
   min-width: 0;
   font-size: 12px;
 }
+.dir-drives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .dir-list {
   border: 1px solid var(--border);
   border-radius: 8px;

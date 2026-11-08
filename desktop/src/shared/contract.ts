@@ -100,9 +100,15 @@ export interface DirectoryEntryDto {
 /** `GET /api/fs/directories` — one level of a tree, folders only. */
 export interface DirectoriesResponse {
   path: string;
-  /** null at the filesystem root (`/`). */
+  /** null at the filesystem root (`/`, or a Windows drive root). */
   parent: string | null;
   entries: DirectoryEntryDto[];
+  /**
+   * Drive roots of the **daemon's** host (`C:\`, `D:\`, …). Absent from older
+   * daemons and empty off Windows; nothing above a drive root exists, so this
+   * is the only way to cross drives in a picker rooted at the user's home.
+   */
+  drives?: string[];
 }
 
 /** `GET/PATCH /api/config` — daemon-side defaults. */

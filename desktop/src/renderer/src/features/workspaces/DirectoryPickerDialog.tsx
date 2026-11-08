@@ -103,6 +103,25 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
           </button>
         </div>
 
+        {/* Windows drive roots. The browser starts at the user's home on C:, and
+            nothing exists above `C:\` — without these buttons D:/F: are
+            unreachable no matter how far「上一级」goes. */}
+        {listing?.drives && listing.drives.length > 0 && (
+          <div className="dir-drives">
+            {listing.drives.map((drive) => (
+              <button
+                key={drive}
+                type="button"
+                className="btn ghost"
+                title={drive}
+                onClick={() => setCwd(drive)}
+              >
+                {drive.replace(/\\$/, '')}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="dir-list">
           {loading && <div className="hint">加载中…</div>}
           {!loading && listing && listing.entries.length === 0 && <div className="hint">这个目录下没有子文件夹。</div>}
