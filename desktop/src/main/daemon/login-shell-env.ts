@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 
 /**
  * Capture the environment the user's **login shell** would hand a child process.
@@ -17,11 +16,12 @@ import path from 'node:path';
  * non-interactive — because the two can disagree (many users only set `PATH` in
  * `.zshrc`, which non-interactive shells skip), then merge.
  *
- * Windows has no login shell in the POSIX sense. Git Bash is the closest thing
- * (and is already required by Claude Code there), so it is used when installed;
- * otherwise `cmd.exe`'s `set` is the fallback. Git Bash prints POSIX paths, so
- * the script converts `PATH`/`HOME` back to Windows form before dumping the env —
- * a daemon spawning native `.exe` CLIs cannot use `/c/Users/...` entries.
+ * Windows has no login shell in the POSIX sense, and `cmd.exe`'s `set` is the
+ * default: it reflects the Windows user environment the app was launched from.
+ * Git Bash is opt-in via `CLAUDE_CODE_GIT_BASH_PATH`, for users whose CLI PATH
+ * only exists in a bash rc file. Git Bash prints POSIX paths, so that script
+ * converts `PATH`/`HOME` back to Windows form before dumping the env — a daemon
+ * spawning native `.exe` CLIs cannot use `/c/Users/...` entries.
  */
 
 /** Values with newlines are common (`PS1`, function exports) — NUL is the safe separator. */
@@ -86,32 +86,21 @@ function runShell(shell: string, args: string[], timeoutMs: number): Promise<str
   });
 }
 
-function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
-  const win = path.win32;
-  const candidates: Array<string | undefined> = [env['CLAUDE_CODE_GIT_BASH_PATH']];
-  const localPrograms =
-    env['LOCALAPPDATA']?.trim() ? win.join(env['LOCALAPPDATA'].trim(), 'Programs') : undefined;
-  for (const root of [env['ProgramFiles'], env['ProgramFiles(x86)'], localPrograms]) {
-    if (root?.trim()) candidates.push(win.join(root.trim(), 'Git', 'bin', 'bash.exe'));
-  }
-  return candidates.filter(
-    (candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '',
-  );
-}
-
 /**
- * `where bash` is deliberately not used: with WSL installed it can resolve to
- * `C:\Windows\System32\bash.exe`, which is a Linux shell and sees Windows paths
- * as foreign.
+ * Git Bash is opt-in on Windows: cmd.exe is the default, and a machine that
+ * merely has Git installed keeps Windows environment semantics. The same
+ * variable Claude Code uses is the switch.
+ *
+ * `where bash` is deliberately not consulted: with WSL installed it can resolve
+ * to `C:\Windows\System32\bash.exe`, which is a Linux shell and sees Windows
+ * paths as foreign.
  */
 export function findGitBash(
   env: NodeJS.ProcessEnv = process.env,
   exists: (candidate: string) => boolean = existsSync,
 ): string | null {
-  for (const candidate of gitBashCandidates(env)) {
-    if (exists(candidate)) return candidate;
-  }
-  return null;
+  const configured = env['CLAUDE_CODE_GIT_BASH_PATH']?.trim();
+  return configured && exists(configured) ? configured : null;
 }
 
 /** Git Bash prints POSIX paths; native CLIs need Windows ones. */

@@ -1,19 +1,21 @@
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 
 /**
  * The shell used for command tasks (`runtimes/command.ts`).
  *
- * POSIX has `/bin/sh`. Windows has no such path — and `node:child_process` does
- * not translate it through MSYS — so a Windows host needs an explicit choice:
+ * POSIX has `/bin/sh`. Windows has no such path, and `node:child_process` does
+ * not translate it through MSYS:
  *
- * 1. Git Bash, which is already a requirement for Claude Code on Windows and
- *    gives us the POSIX commands users put in scheduled tasks;
- * 2. `cmd.exe` as a last resort, where POSIX syntax simply will not work.
+ * 1. **`cmd.exe` is the default** — it is what a Windows user expects from a
+ *    scheduled command, and it needs no extra install;
+ * 2. Git Bash is used **only when explicitly configured** through
+ *    `CLAUDE_CODE_GIT_BASH_PATH` (the same variable Claude Code uses). That is
+ *    the opt-in for POSIX syntax; it is never auto-detected, so a machine that
+ *    merely has Git installed keeps cmd semantics.
  *
- * Git Bash is looked up by known paths rather than `where bash`: with WSL
- * installed, PATH may contain `C:\Windows\System32\bash.exe`, which is a Linux
- * shell and would see Windows workspace paths as foreign.
+ * `where bash` is deliberately not consulted: with WSL installed it can resolve
+ * to `C:\Windows\System32\bash.exe`, which is a Linux shell and would see
+ * Windows workspace paths as foreign.
  */
 
 export type ShellKind = 'posix' | 'git-bash' | 'cmd';
@@ -34,17 +36,6 @@ export interface ResolveShellOptions {
   exists?: (candidate: string) => boolean;
 }
 
-function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
-  const win = path.win32;
-  const candidates: Array<string | undefined> = [env['CLAUDE_CODE_GIT_BASH_PATH']];
-  const localPrograms =
-    env['LOCALAPPDATA']?.trim() ? win.join(env['LOCALAPPDATA'].trim(), 'Programs') : undefined;
-  for (const root of [env['ProgramFiles'], env['ProgramFiles(x86)'], localPrograms]) {
-    if (root?.trim()) candidates.push(win.join(root.trim(), 'Git', 'bin', 'bash.exe'));
-  }
-  return candidates.filter((candidate): candidate is string => typeof candidate === 'string' && candidate.trim() !== '');
-}
-
 export function resolveShell(options: ResolveShellOptions = {}): ShellSpec {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -58,16 +49,16 @@ export function resolveShell(options: ResolveShellOptions = {}): ShellSpec {
     };
   }
 
+  // Explicit opt-in only: having Git installed is not a request to use it.
   const exists = options.exists ?? existsSync;
-  for (const candidate of gitBashCandidates(env)) {
-    if (exists(candidate)) {
-      return {
-        kind: 'git-bash',
-        command: candidate,
-        args: (script) => ['-c', script],
-        windowsVerbatimArguments: false,
-      };
-    }
+  const gitBash = env['CLAUDE_CODE_GIT_BASH_PATH']?.trim();
+  if (gitBash && exists(gitBash)) {
+    return {
+      kind: 'git-bash',
+      command: gitBash,
+      args: (script) => ['-c', script],
+      windowsVerbatimArguments: false,
+    };
   }
 
   return {

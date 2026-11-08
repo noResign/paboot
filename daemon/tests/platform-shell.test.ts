@@ -19,14 +19,14 @@ describe('resolveShell', () => {
     expect(shell.args('echo hi')).toEqual(['-c', 'echo hi']);
   });
 
-  it('finds Git in Program Files when the override is not set', () => {
-    const bash = 'C:\\Program Files\\Git\\bin\\bash.exe';
+  it('keeps cmd.exe even when Git for Windows is installed', () => {
+    // Having Git installed is not a request to run commands through it.
     const shell = resolveShell({
       platform: 'win32',
       env: { ProgramFiles: 'C:\\Program Files' },
-      exists: (candidate) => candidate === bash,
+      exists: () => true,
     });
-    expect(shell.command).toBe(bash);
+    expect(shell.kind).toBe('cmd');
   });
 
   it('falls back to ComSpec and passes the script verbatim', () => {
@@ -44,8 +44,7 @@ describe('resolveShell', () => {
   });
 
   it('does not mistake a WSL bash on PATH for Git Bash', () => {
-    // Only known Git locations are probed; `where bash` would find WSL's
-    // System32\bash.exe, which cannot run a Windows workspace command.
+    // Nothing on PATH is consulted; only the explicit env override is.
     const shell = resolveShell({
       platform: 'win32',
       env: { PATH: 'C:\\Windows\\System32' },

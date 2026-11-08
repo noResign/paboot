@@ -81,7 +81,7 @@ describe('captureLoginShellEnv', () => {
     expect(calls).toContain('-i -l -c env -0');
   });
 
-  it('uses Git Bash on Windows and asks it for Windows-style paths', async () => {
+  it('uses Git Bash on Windows when it is explicitly configured', async () => {
     const bash = 'C:\\Program Files\\Git\\bin\\bash.exe';
     const shell = run({
       nonInteractive: 'PATH=C:\\fallback\0',
@@ -89,7 +89,7 @@ describe('captureLoginShellEnv', () => {
     });
     const env = await captureLoginShellEnv({
       platform: 'win32',
-      env: { ProgramFiles: 'C:\\Program Files' },
+      env: { CLAUDE_CODE_GIT_BASH_PATH: bash },
       exists: (candidate) => candidate === bash,
       run: shell,
       baseEnv: {},
@@ -101,7 +101,23 @@ describe('captureLoginShellEnv', () => {
     expect(env['PATH']).toBe('C:\\user-bin');
   });
 
-  it('falls back to cmd.exe `set` when Git Bash is not installed', async () => {
+  it('uses cmd.exe by default even when Git is installed', async () => {
+    const comspec = 'C:\\Windows\\system32\\cmd.exe';
+    const shell = vi.fn(async (_command: string, _args: string[]) => 'PATH=C:\\bin\r\n');
+
+    await captureLoginShellEnv({
+      platform: 'win32',
+      env: { ComSpec: comspec, ProgramFiles: 'C:\\Program Files' },
+      exists: () => true, // Git's bash.exe exists, but nobody opted into it
+      run: shell,
+      baseEnv: {},
+    });
+
+    expect(shell).toHaveBeenCalledTimes(1);
+    expect(shell.mock.calls[0]?.[0]).toBe(comspec);
+  });
+
+  it('falls back to cmd.exe `set` when Git Bash is not configured', async () => {
     const comspec = 'C:\\Windows\\system32\\cmd.exe';
     const shell = vi.fn(async (_command: string, args: string[]) => {
       expect(args).toEqual(['/d', '/s', '/c', 'chcp 65001 >nul && set']);
