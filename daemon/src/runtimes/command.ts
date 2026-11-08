@@ -33,8 +33,8 @@ export function createCommandDriver(options: { idleTimeoutMs?: number } = {}): R
       req.onEvent({ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command: req.prompt } });
 
       // POSIX: `/bin/sh` in a dedicated process group so cancellation can take
-      // the command's own children down. Windows: Git Bash when installed,
-      // otherwise `cmd.exe`; `taskkill /T` replaces the process group.
+      // the command's own children down. Windows: `cmd.exe` by default; Git Bash
+      // only when explicitly configured. `taskkill /T` replaces the process group.
       const shell = resolveShell();
       const child = spawnExecutable(shell.command, shell.args(req.prompt), {
         cwd: req.cwd,

@@ -1,6 +1,8 @@
 import { registerActiveRun } from './active-runs.js';
 export { getActiveRun, listActiveRuns } from './active-runs.js';
 import type { ChildProcess } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { NormalizedEvent } from '../types/api.js';
 import { spawnExecutable } from '../platform/executable.js';
 import { log } from '../platform/log.js';
@@ -38,6 +40,15 @@ export interface RunRequest {
   systemContext?: string;
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
+  /** Daemon data dir; per-run files (the hook settings) are written here. */
+  dataDir: string;
+  /**
+   * Called once the runtime confirms the native session id. A host-picking
+   * runtime (Claude `--session-id`) only proves the conversation exists when it
+   * emits its init event; writing the id earlier leaves a ghost that a later
+   * resume cannot attach to.
+   */
+  onNativeSessionId?: (id: string) => void;
   onEvent: (ev: NormalizedEvent) => void;
 }
 
@@ -69,9 +80,9 @@ export function startRun(req: RunRequest): ActiveRun {
     if (child.stdin && !child.stdin.destroyed) child.stdin.end();
   };
 
-  const hookSettings = req.permissionHook && req.capabilities.permissionHook
-    ? {
-        settingsJson: JSON.stringify({
+  const settingsJson =
+    req.permissionHook && req.capabilities.permissionHook
+      ? JSON.stringify({
           // Omitting reads from the hook does not grant CLI permission to read
           // outside the working directories. Explicit allow rules do that;
           // user/managed deny and ask rules still take precedence.
@@ -97,9 +108,28 @@ export function startRun(req: RunRequest): ActiveRun {
               },
             ],
           },
-        }),
-      }
-    : undefined;
+        })
+      : null;
+
+  // Hand Claude a file instead of inline JSON. A Windows npm `.cmd` shim goes
+  // through cmd.exe a second time, and the matcher's `|` separators would be
+  // read as pipes there. The file lives in the daemon data dir (not os.tmpdir)
+  // and is removed when the run ends, including spawn failures and cancels.
+  let settingsPath: string | undefined;
+  if (settingsJson !== null) {
+    const safeId = req.id.replace(/[^A-Za-z0-9._-]/g, '_');
+    const candidate = path.join(req.dataDir, `.run-${safeId}-settings.json`);
+    try {
+      fs.writeFileSync(candidate, settingsJson, { mode: 0o600 });
+      settingsPath = candidate;
+    } catch (err) {
+      log.warn(`run ${req.id}: could not write the hook settings file; falling back to inline JSON`, err);
+    }
+  }
+  const hookSettings =
+    settingsJson !== null
+      ? { settingsJson, ...(settingsPath ? { settingsPath } : {}) }
+      : undefined;
 
   const spawnEnv: NodeJS.ProcessEnv = { ...req.env };
   if (hookSettings && req.permissionHook) {
@@ -139,6 +169,7 @@ export function startRun(req: RunRequest): ActiveRun {
   // stream is always well-formed: an unmatched `tool_use` renders as a
   // forever-spinning card, and that state survives into the persisted replay.
   const openTools = new Set<string>();
+  let nativeIdReported = false;
 
   const emit = (ev: NormalizedEvent): void => {
     lastActivity = Date.now();
@@ -146,6 +177,16 @@ export function startRun(req: RunRequest): ActiveRun {
       openTools.add(ev.id);
     } else if (ev.type === 'tool_result' && ev.toolUseId) {
       openTools.delete(ev.toolUseId);
+    } else if (!nativeIdReported && ev.type === 'status' && ev.sessionId) {
+      // Claude's `system/init` is the first proof that the conversation exists.
+      // Persisting the generated id before this point leaves a ghost id when the
+      // CLI never starts, which every later resume then fails against.
+      nativeIdReported = true;
+      try {
+        req.onNativeSessionId?.(ev.sessionId);
+      } catch (err) {
+        log.warn(`run ${req.id}: failed to persist the native session id`, err);
+      }
     }
     req.onEvent(ev);
     // A clean turn boundary (non tool_use stop_reason) means the runtime is
@@ -263,8 +304,19 @@ export function startRun(req: RunRequest): ActiveRun {
 
   const run: ActiveRun = { id: req.id, promise, cancel, writeUserMessage };
   registerActiveRun(run);
-  void promise.finally(() => {
-    if (watchdog) clearInterval(watchdog);
-  });
+  void promise
+    .finally(() => {
+      if (watchdog) clearInterval(watchdog);
+      if (settingsPath) {
+        try {
+          fs.rmSync(settingsPath, { force: true });
+        } catch (err) {
+          log.warn(`run ${req.id}: could not remove the hook settings file`, err);
+        }
+      }
+    })
+    // The cleanup itself must not surface as an unhandled rejection; the run
+    // outcome is delivered through `promise` to the caller.
+    .catch(() => {});
   return run;
 }

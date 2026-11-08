@@ -39,7 +39,10 @@ export const claudeAdapter: RuntimeAdapter = {
     }
     args.push('--permission-mode', ctx.permissionMode);
     if (ctx.permissionHook) {
-      args.push('--settings', ctx.permissionHook.settingsJson);
+      // Prefer the file: the inline JSON contains a matcher such as
+      // `Bash|WebSearch|WebFetch`, and a Windows `.cmd` shim parses cmd
+      // metacharacters a second time — `|` would be read as a pipe.
+      args.push('--settings', ctx.permissionHook.settingsPath ?? ctx.permissionHook.settingsJson);
     }
     if (c.nativeSystemPrompt && ctx.systemContext) {
       // Stable across runs when the knowledge index is unchanged, which keeps

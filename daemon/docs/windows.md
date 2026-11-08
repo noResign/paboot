@@ -8,7 +8,7 @@
 | 项 | 要求 |
 |---|---|
 | Node | >= 24.9（`node:sqlite`） |
-| Git for Windows | **建议安装**。命令类定时任务需要一个 POSIX shell；Claude Code 的 Bash 工具本身也依赖它 |
+| Git for Windows | **可选**。命令任务默认 `cmd.exe`；只有需要 POSIX 语法或使用 Claude Code 的 Bash 工具时才安装 |
 | Windows | 10 / 11；无原生模块，不需要 Visual Studio Build Tools |
 
 ## 平台差异
@@ -34,7 +34,7 @@ Git 装在机器上并不等于要使用它：不自动探测 `%ProgramFiles%`�
 后者在装了 WSL 时可能命中 `System32\bash.exe`，那是 Linux shell，会把 Windows
 工作区路径当成外部路径。
 
-想让命令任务跑 POSIX 脚本时，在启动 daemon 的环境里设置：
+如果想继续用 POSIX 语法（包括升级前已有的命令任务），在启动 daemon 的环境里显式设置：
 
 ```powershell
 $env:CLAUDE_CODE_GIT_BASH_PATH = "C:\Program Files\Git\bin\bash.exe"
@@ -63,7 +63,8 @@ Claude Code 的 PreToolUse hook 命令里的可执行文件与脚本路径现在
 ## 已知限制
 
 - `POST /api/deploy` 在 Windows 上返回 `501`：它依赖 `systemctl` 与 shell 脚本。
-- 没装 Git for Windows 时，命令任务回退到 `cmd.exe`，只能跑 Windows 原生命令。
+- 命令任务默认 `cmd.exe`，只能跑 Windows 原生命令；要 POSIX 语法必须显式设置
+  `CLAUDE_CODE_GIT_BASH_PATH`，否则升级前依赖 `bash` 的命令任务会失败。
 - 工作区/Session 路径按 Windows 文件系统语义做大小写不敏感比较。
 
 ## 验证清单

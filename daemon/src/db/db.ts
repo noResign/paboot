@@ -709,6 +709,11 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET native_session_id = ? WHERE id = ?`).run(nativeSessionId, id);
   }
 
+  /** Forget a native id the runtime no longer recognizes; the next run starts fresh. */
+  clearNativeSessionId(id: string): void {
+    this.db.prepare(`UPDATE sessions SET native_session_id = NULL WHERE id = ?`).run(id);
+  }
+
   setSessionPermissionMode(id: string, mode: string): void {
     this.db.prepare(`UPDATE sessions SET permission_mode = ? WHERE id = ?`).run(mode, id);
   }

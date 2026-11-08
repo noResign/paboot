@@ -14,6 +14,7 @@ import { registerRunRoutes } from '../src/routes/runs';
 import { RunNotifier } from '../src/runs/run-notifier';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerActiveRun } from '../src/runtimes/active-runs';
+import type { RunOutcome } from '../src/runtimes/engine';
 
 // Control the git boundary to exercise requests arriving during each snapshot.
 vi.mock('../src/workspaces/checkpoints', () => ({ captureCheckpoint: vi.fn(), repoRootFor: vi.fn() }));
@@ -22,7 +23,7 @@ function deferred<T>() {
   const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
 }
-const finished = { status: 'succeeded', exitCode: 0, error: null };
+const finished: RunOutcome = { status: 'succeeded', exitCode: 0, error: null };
 const cleanups: Array<() => Promise<void>> = [];
 beforeEach(() => {
   vi.mocked(repoRootFor).mockResolvedValue('/tmp');
@@ -35,13 +36,15 @@ async function setup(detecting = false) {
   const db = new Db(':memory:');
   const workspace = db.seedDefaultWorkspace(dir, 'ask')!;
   db.createSession({ id: 's', runtime: 'claude', workspaceId: workspace.id, permissionMode: 'ask', cwd: dir });
-  const outcome = deferred<typeof finished>();
+  const outcome = deferred<RunOutcome>();
   const detection = deferred<{ available: boolean }>();
-  const start = vi.fn((req: { runId: string; onEvent(event: NormalizedEvent): void }) => {
-    const run = { id: req.runId, promise: outcome.promise, cancel: () => {} };
-    registerActiveRun(run);
-    return run;
-  });
+  const start = vi.fn(
+    (req: { runId: string; resumeNativeSessionId?: string; onEvent(event: NormalizedEvent): void }) => {
+      const run = { id: req.runId, promise: outcome.promise, cancel: () => {} };
+      registerActiveRun(run);
+      return run;
+    },
+  );
   const detect = vi.fn(() => detection.promise);
   const ctx = {
     db, registry: { driver: () => ({ start }), detection: () => detecting ? undefined : { available: true }, detect },
@@ -215,5 +218,30 @@ describe('chat lifecycle serialization', () => {
 
     outcome.resolve(finished);
     await (await pending).text();
+  });
+
+  it('clears a native session the runtime no longer has, and asks for a resend', async () => {
+    const { db, post, start, outcome } = await setup();
+    db.setNativeSessionId('s', 'dead-native');
+
+    const response = await post('resume-dead');
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    expect(start.mock.calls[0][0].resumeNativeSessionId).toBe('dead-native');
+
+    outcome.resolve({
+      status: 'failed',
+      exitCode: 1,
+      error: 'No conversation found with session ID: dead-native',
+    });
+    const text = await response.text();
+
+    expect(text).toContain('会话记录已不存在，已重置；请重新发送');
+    // The next run must start a fresh conversation instead of resuming the id
+    // that the runtime no longer knows.
+    expect(db.getSession('s')?.native_session_id).toBeNull();
+    expect(db.listRuns('s')[0]).toMatchObject({
+      status: 'failed',
+      error: '会话记录已不存在，已重置；请重新发送',
+    });
   });
 });

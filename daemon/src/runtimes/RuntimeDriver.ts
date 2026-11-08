@@ -20,10 +20,10 @@ export interface RuntimeDriverRequest {
   /** Native session/thread id to resume, if the session already has one. */
   resumeNativeSessionId?: string;
   /**
-   * Record the session's native id once it is known. A host-picking runtime
-   * (Claude `--session-id`) calls this immediately with an id it generated; a
-   * runtime that allocates its own (Codex) calls it when the provider reports
-   * the id.
+   * Record the session's native id once the provider confirms the conversation
+   * exists: Claude only after its init event, Codex/DeepSeek when the provider
+   * reports the thread/session id. Calling it earlier would persist an id that
+   * a failed start never created.
    */
   onNativeSessionId: (id: string) => void;
   /** Workspace dirs beyond `cwd` this run may touch. */

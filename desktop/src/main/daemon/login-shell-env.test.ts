@@ -97,7 +97,14 @@ describe('captureLoginShellEnv', () => {
 
     expect(shell.mock.calls.every(([command]) => command === bash)).toBe(true);
     // Git Bash prints POSIX paths; native .exe CLIs need the converted form.
-    expect(shell.mock.calls.every(([, args]) => String(args[args.length - 1]).includes('cygpath -wp'))).toBe(true);
+    const script = String(shell.mock.calls[0]?.[1].at(-1));
+    // Every other path variable is converted BEFORE PATH: a bare cygpath would
+    // no longer resolve after the Windows-style rewrite.
+    expect(script).toContain('/usr/bin/cygpath -w "$HOME"');
+    expect(script).toContain('/usr/bin/cygpath -w "$TMP"');
+    expect(script.indexOf('/usr/bin/cygpath -w "$HOME"')).toBeLessThan(
+      script.indexOf('/usr/bin/cygpath -wp "$PATH"'),
+    );
     expect(env['PATH']).toBe('C:\\user-bin');
   });
 

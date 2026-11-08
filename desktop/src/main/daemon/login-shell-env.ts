@@ -103,9 +103,20 @@ export function findGitBash(
   return configured && exists(configured) ? configured : null;
 }
 
-/** Git Bash prints POSIX paths; native CLIs need Windows ones. */
+/**
+ * Git Bash prints POSIX paths; native CLIs need Windows ones.
+ *
+ * Every path variable is converted **before** PATH: after the rewrite, a bare
+ * `cygpath` may no longer resolve through the Windows-style PATH, which silently
+ * emptied HOME and left TMP as `/tmp`. `/usr/bin/cygpath` is used so lookup never
+ * depends on PATH at all.
+ */
 const GIT_BASH_ENV_SCRIPT =
-  'PATH="$(cygpath -wp "$PATH")"; [ -n "$HOME" ] && HOME="$(cygpath -w "$HOME")"; /usr/bin/env -0';
+  '[ -n "$HOME" ] && HOME="$(/usr/bin/cygpath -w "$HOME")"; ' +
+  '[ -n "$TMP" ] && TMP="$(/usr/bin/cygpath -w "$TMP")"; ' +
+  '[ -n "$TEMP" ] && TEMP="$(/usr/bin/cygpath -w "$TEMP")"; ' +
+  '[ -n "$TMPDIR" ] && TMPDIR="$(/usr/bin/cygpath -w "$TMPDIR")"; ' +
+  'PATH="$(/usr/bin/cygpath -wp "$PATH")"; /usr/bin/env -0';
 
 /**
  * `-l` for a login shell, `-i` additionally interactive; `env -0` prints the

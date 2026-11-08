@@ -16,6 +16,10 @@ import { mergePreludes } from '../context/prelude.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
 
+/** Claude's resume failure when the conversation is gone from its own storage. */
+const MISSING_NATIVE_SESSION_RE = /No conversation found with session ID/i;
+const RESET_NATIVE_SESSION_MESSAGE = '会话记录已不存在，已重置；请重新发送';
+
 /**
  * The transport side of a run. The chat route writes SSE frames; the scheduler
  * and the command runner pass a sink that drops frames (persistence and
@@ -215,6 +219,23 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       });
 
       const outcome = await active.promise;
+      // A resume can fail because the runtime no longer has that conversation
+      // (deleted outside paboot, or a ghost id left by a run that never started).
+      // Forget the id so the next message opens a fresh conversation instead of
+      // failing against the same dead one forever.
+      let finalOutcome = outcome;
+      if (
+        outcome.status === 'failed' &&
+        session.native_session_id &&
+        MISSING_NATIVE_SESSION_RE.test(outcome.error ?? '') &&
+        ctx.db.getRun(runId)
+      ) {
+        ctx.db.clearNativeSessionId(sessionId);
+        finalOutcome = { ...outcome, error: RESET_NATIVE_SESSION_MESSAGE };
+        log.warn(
+          `run ${runId}: native session ${session.native_session_id} no longer exists; reset for the next run`,
+        );
+      }
       if (!ctx.db.getRun(runId)) {
         // 会话/工作区在运行期间被删了：清掉从 cancel 到进程退出之间迟到写入的事件，
         // 并跳过收尾持久化（会话行都没了，写消息只会留下孤儿行）。
@@ -247,16 +268,16 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       // Keep the session busy until its post-checkpoint is durable. A new run
       // must not edit files while the previous run is still taking its snapshot.
       ctx.db.updateRun(runId, {
-        status: outcome.status,
+        status: finalOutcome.status,
         endedAt: Date.now(),
-        exitCode: outcome.exitCode,
-        error: outcome.error,
+        exitCode: finalOutcome.exitCode,
+        error: finalOutcome.error,
       });
-      if (outcome.error && outcome.status === 'failed') {
-        send({ type: 'error', code: 'run_failed', message: outcome.error, terminal: true });
+      if (finalOutcome.error && finalOutcome.status === 'failed') {
+        send({ type: 'error', code: 'run_failed', message: finalOutcome.error, terminal: true });
       }
-      send({ type: 'status', label: outcome.status, terminal: true });
-      return outcome;
+      send({ type: 'status', label: finalOutcome.status, terminal: true });
+      return finalOutcome;
     } catch (err) {
       log.error('run failed unexpectedly', err);
       const message = err instanceof Error ? err.message : String(err);
