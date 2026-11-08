@@ -88,6 +88,23 @@ export function ChatView({
     };
   }, [chat?.sessionId, chat?.runtime]);
 
+  // This component outlives the session switch (it reads the active chat from
+  // the store), so local rollback state would otherwise follow the user to the
+  // next session. A confirmation/notice belongs to the session it was raised in.
+  useEffect(() => {
+    setRollback(null);
+    setRollbackBusy(false);
+    setRollbackNotice(null);
+  }, [chat?.key]);
+
+  // The success notice is informational — it should not sit above the
+  // transcript forever.
+  useEffect(() => {
+    if (!rollbackNotice) return;
+    const timer = setTimeout(() => setRollbackNotice(null), 6_000);
+    return () => clearTimeout(timer);
+  }, [rollbackNotice]);
+
   // Hooks must run before the early return below.
   const { ref: scrollRef, showJump, jumpToBottom, onScroll } = useStickToBottom({
     resetKey: chat?.key ?? null,
@@ -147,10 +164,14 @@ export function ChatView({
   async function doRollback(): Promise<void> {
     const target = rollback?.runId;
     if (!target) return;
+    const sessionKey = useChat.getState().activeKey;
     setRollbackBusy(true);
     setRollbackNotice(null);
     const res = await api.runRollback(target, rollback.needForce);
     setRollbackBusy(false);
+    // The user may have switched sessions while the request was in flight; the
+    // result must not be painted onto the newly opened one.
+    if (useChat.getState().activeKey !== sessionKey) return;
     if (res.ok) {
       setRollback(null);
       setRollbackNotice('已回滚（agent 对话未回退）');
