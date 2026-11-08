@@ -1,8 +1,11 @@
 import { registerActiveRun } from './active-runs.js';
 export { getActiveRun, listActiveRuns } from './active-runs.js';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import type { NormalizedEvent } from '../types/api.js';
+import { spawnExecutable } from '../platform/executable.js';
 import { log } from '../platform/log.js';
+import { killProcessTree } from '../platform/process-tree.js';
+import { quoteCommandArg } from '../platform/shell.js';
 import type { RuntimeAdapter, RuntimeCapabilities, StreamParser, SpawnContext, ToolServerSpec } from './types.js';
 
 export type RunStatus = 'succeeded' | 'failed' | 'cancelled';
@@ -85,7 +88,9 @@ export function startRun(req: RunRequest): ActiveRun {
                 hooks: [
                   {
                     type: 'command',
-                    command: `${process.execPath} ${req.permissionHook.hookPath}`,
+                    // Quoted: the daemon's install path (or the user name) may
+                    // contain spaces, and Claude runs this through a shell.
+                    command: `${quoteCommandArg(process.execPath)} ${quoteCommandArg(req.permissionHook.hookPath)}`,
                     timeout: Math.ceil((req.permissionHook.timeoutMs + 30_000) / 1000),
                   },
                 ],
@@ -172,7 +177,7 @@ export function startRun(req: RunRequest): ActiveRun {
   };
 
   const promise = new Promise<RunOutcome>((resolve) => {
-    const p = spawn(req.adapter.bin, args, {
+    const p = spawnExecutable(req.adapter.bin, args, {
       cwd: req.cwd,
       env: spawnEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -226,9 +231,11 @@ export function startRun(req: RunRequest): ActiveRun {
     cancelled = true;
     cancelReason = reason;
     if (child && child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
+      killProcessTree(child, { signal: 'SIGTERM' });
       setTimeout(() => {
-        if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        if (child && child.exitCode === null && child.signalCode === null) {
+          killProcessTree(child, { signal: 'SIGKILL' });
+        }
       }, 3000).unref();
     }
   };

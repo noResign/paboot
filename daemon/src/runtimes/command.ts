@@ -1,5 +1,7 @@
-import { spawn } from 'node:child_process';
+import { spawnExecutable } from '../platform/executable.js';
 import { log } from '../platform/log.js';
+import { killProcessGroup } from '../platform/process-tree.js';
+import { resolveShell } from '../platform/shell.js';
 import { registerActiveRun, type ManagedRun } from './active-runs.js';
 import type { RunOutcome } from './engine.js';
 import type { RuntimeDriver } from './RuntimeDriver.js';
@@ -30,14 +32,16 @@ export function createCommandDriver(options: { idleTimeoutMs?: number } = {}): R
 
       req.onEvent({ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command: req.prompt } });
 
-      const child = spawn('/bin/sh', ['-c', req.prompt], {
+      // POSIX: `/bin/sh` in a dedicated process group so cancellation can take
+      // the command's own children down. Windows: Git Bash when installed,
+      // otherwise `cmd.exe`; `taskkill /T` replaces the process group.
+      const shell = resolveShell();
+      const child = spawnExecutable(shell.command, shell.args(req.prompt), {
         cwd: req.cwd,
         env: process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
-        // A shell runs the command as its own child; killing only the shell
-        // leaves that child holding the pipes open. A dedicated process group
-        // lets cancellation take the whole tree down.
-        detached: true,
+        detached: process.platform !== 'win32',
+        ...(shell.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
@@ -47,11 +51,7 @@ export function createCommandDriver(options: { idleTimeoutMs?: number } = {}): R
           child.kill(signal);
           return;
         }
-        try {
-          process.kill(-child.pid, signal);
-        } catch {
-          child.kill(signal);
-        }
+        killProcessGroup(child.pid, { signal });
       };
 
       const cancel = (reason = 'cancelled'): void => {

@@ -123,6 +123,13 @@ async function refreshDeployJob(ctx: AppContext, row: DeployJobRow): Promise<Dep
 
 export function registerDeployRoutes(app: Express, ctx: AppContext): void {
   app.post('/api/deploy', async (req, res) => {
+    if (process.platform === 'win32') {
+      res.status(501).json({
+        error: 'deploy is not supported on Windows (it drives systemctl and shell scripts)',
+        code: 'unsupported_platform',
+      });
+      return;
+    }
     if (!ctx.config.allowDeploy) {
       res.status(403).json({
         error: 'deploy is disabled; set PABOOT_ALLOW_DEPLOY=1 to enable',

@@ -77,7 +77,14 @@ describe('run event stream', () => {
     expect(settings.hooks.PreToolUse).toEqual([
       {
         matcher,
-        hooks: [{ type: 'command', command: `${process.execPath} /tmp/permission-hook.js`, timeout: 150 }],
+        hooks: [
+          {
+            type: 'command',
+            // Quoted so install paths containing spaces survive cmd.exe/Git Bash.
+            command: `"${process.execPath}" "/tmp/permission-hook.js"`,
+            timeout: 150,
+          },
+        ],
       },
     ]);
     expect(claudeArgs[claudeArgs.indexOf('--permission-mode') + 1]).toBe(permissionMode);

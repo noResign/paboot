@@ -23,9 +23,12 @@ import { registerSessionPermissionRoutes } from '../routes/session-permissions.j
 import { registerSessionRoutes } from '../routes/sessions.js';
 import { registerScheduledTaskRoutes } from '../routes/scheduled-tasks.js';
 import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
+import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
 import { registerWorkspaceRoutes } from '../routes/workspaces.js';
 
-export function createApp(ctx: AppContext): Express {
+export type ServerHooks = SystemRouteHooks;
+
+export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(corsMiddleware());
@@ -63,6 +66,7 @@ export function createApp(ctx: AppContext): Express {
   registerScheduledTaskRoutes(app, ctx);
   registerMcpTaskRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
+  registerSystemRoutes(app, hooks);
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not found', code: 'not_found' });
@@ -71,8 +75,8 @@ export function createApp(ctx: AppContext): Express {
   return app;
 }
 
-export function startServer(ctx: AppContext): http.Server | https.Server {
-  const app = createApp(ctx);
+export function startServer(ctx: AppContext, hooks: ServerHooks = {}): http.Server | https.Server {
+  const app = createApp(ctx, hooks);
 
   if (ctx.config.tls) {
     const server = https.createServer(

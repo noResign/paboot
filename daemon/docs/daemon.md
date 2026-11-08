@@ -14,10 +14,11 @@
 | [permissions.md](permissions.md) | 权限审批 · 安全模型 |
 | [configuration.md](configuration.md) | 配置参数参考 |
 | [docker.md](docker.md) | Docker 部署（镜像只含 daemon；默认工作区隔离，可选挂宿主机项目） |
+| [windows.md](windows.md) | Windows 兼容：shell / `.cmd` 解析 / 进程树 / 停机 |
 
 ## 概述
 
-`daemon` 是一个跑在 macOS/Linux 本机的守护进程：它 `spawn` 本机已安装的编码
+`daemon` 是一个跑在 macOS/Linux/Windows 本机的守护进程：它 `spawn` 本机已安装的编码
 agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方式执行，把输出解析成统一的
 流式事件，通过 HTTP/SSE 推给客户端（Android / iOS / 桌面），并支持会话续接、断线重连、
 取消、工具审批、多 agent 并发。
@@ -65,7 +66,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `permission-hook.ts` | 独立可执行入口：PreToolUse hook（被按路径 spawn） |
 | `app/` | 组合根与进程生命周期：`cli`（参数解析）、`config`（env+CLI 合并、token）、`context`（`AppContext`）、`data-dir-lock`、`runtime-info`、`server`（Express 组合根） |
 | `http/` | HTTP/SSE 传输原语：`auth`（Bearer 鉴权 + 按来源失败冷却）、`cors`、`sse`（帧写入 + 终态判断） |
-| `platform/` | 无领域依赖的共享原语：`log`、`network`（监听地址翻译）、`paths` |
+| `platform/` | 无领域依赖的共享原语：`log`、`network`（监听地址翻译）、`paths`、`executable`（跨平台 spawn / `.cmd` 解析）、`shell`（命令任务 shell）、`process-tree`（进程树终止） |
 | `db/` | 持久化：`db.ts`（`node:sqlite`）、`dto.ts`（run DTO 映射）、`model-selection.ts`、`server-id.ts` |
 | `workspaces/` | 工作区领域：`workspace` / `workspace-service`（路径校验、目录选择）、`changes`（git 改动/diff）、`checkpoints`（run 前后快照）、`file-browser`（目录懒加载与文件读取） |
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
@@ -93,7 +94,7 @@ daemon/
 │  │  ├─ data-dir-lock.ts / runtime-info.ts
 │  │  └─ server.ts        Express 组合根
 │  ├─ http/               auth / cors / sse
-│  ├─ platform/           log / network / paths（无领域依赖）
+│  ├─ platform/           log / executable / shell / process-tree / network / paths（无领域依赖）
 │  ├─ db/                 db / dto / model-selection / server-id
 │  ├─ workspaces/         workspace / workspace-service / changes / checkpoints / file-browser
 │  ├─ runs/               run-service / run-notifier / session-runs / session-title

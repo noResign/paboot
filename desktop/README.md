@@ -38,6 +38,19 @@ pnpm clean:cache      # 删全局 Electron 下载缓存（见下，影响别的�
 （直接调 `tsc` 而不是 `pnpm -C ../daemon build`：daemon 的 `packageManager`
 锁在 pnpm 10，本机 corepack 跑的是 11，会直接报版本不匹配。）
 
+## Windows
+
+- 安装 Node >= 24.9；建议同时安装 **Git for Windows**（命令类定时任务需要一个
+  POSIX shell，Claude Code 的 Bash 工具也依赖它）。
+- 本机 daemon 由应用内置（`extraResources`），启动时用 Electron 充当 Node，
+  不需要另装 daemon。
+- 「停止本机 daemon」在 Windows 上先走 HTTP 优雅停机
+  （`POST /api/system/shutdown`），失败才 `taskkill /T /F`。
+- 本机 PATH 由应用环境继承；若 CLI 只写在 Git Bash 的 rc 文件里，应用会通过
+  Git Bash 捕获登录环境。
+
+更多平台差异见 [../daemon/docs/windows.md](../daemon/docs/windows.md)。
+
 ## 打包
 
 配置在 `electron-builder.yml`：linux `AppImage`+`deb`、mac `dmg`+`zip`、win `nsis`。
