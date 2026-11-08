@@ -114,6 +114,8 @@ export interface ConfigResponse {
   /** Whether the active profile honors `permissionMode=bypass`. */
   bypassAllowed: boolean;
   defaultWorkspaceId: string | null;
+  /** `<provider>:<model>` used for background memory extraction; null = record-only. */
+  memoryModel: string | null;
   workspaces: Array<{ id: string; name: string; path: string; isDefault: boolean; enabled: boolean }>;
   server: { host: string; port: number; dataDir: string; tls: boolean; restartRequired: string[] };
 }

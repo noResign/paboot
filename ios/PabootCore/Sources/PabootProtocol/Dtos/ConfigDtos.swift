@@ -48,6 +48,8 @@ public struct ConfigResponse: Decodable, Equatable, Sendable {
     /// Whether the active profile honors `permissionMode=bypass`.
     public let bypassAllowed: Bool
     public let defaultWorkspaceId: String?
+    /// `<provider>:<model>`; nil = record-only.
+    public let memoryModel: String?
     public let workspaces: [ConfigWorkspaceDto]
     public let server: ServerConfigDto?
 
@@ -57,6 +59,7 @@ public struct ConfigResponse: Decodable, Equatable, Sendable {
         securityProfile = try container.decodeIfPresent(String.self, forKey: .securityProfile) ?? "local"
         bypassAllowed = try container.decodeIfPresent(Bool.self, forKey: .bypassAllowed) ?? true
         defaultWorkspaceId = try container.decodeIfPresent(String.self, forKey: .defaultWorkspaceId)
+        memoryModel = try container.decodeIfPresent(String.self, forKey: .memoryModel)
         workspaces = try container.decodeIfPresent([ConfigWorkspaceDto].self, forKey: .workspaces) ?? []
         server = try container.decodeIfPresent(ServerConfigDto.self, forKey: .server)
     }

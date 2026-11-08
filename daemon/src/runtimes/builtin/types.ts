@@ -89,6 +89,10 @@ export interface SessionSnapshot {
   agentId: string;
   /** Primary end for end-scoped knowledge; null/absent for workspace scope. */
   endId?: string | null;
+  /** Session-level memory policy. Missing means no memory injection. */
+  memoryMode?: 'normal' | 'no_injection' | 'off' | string | null;
+  /** Internal authoring sessions must never receive memory context. */
+  purpose?: string | null;
 }
 
 export interface ModelSnapshot {

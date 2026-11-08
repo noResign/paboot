@@ -28,6 +28,13 @@ import type {
   KnowledgeDocsResponse,
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
+  MemoryBriefDto,
+  MemoryClaimResponse,
+  MemoryClaimsResponse,
+  MemoryCorrectClaimRequest,
+  MemoryRememberRequest,
+  MemorySessionModeRequest,
+  MemoryStatusDto,
   PermissionDecision,
   PermissionDto,
   PermissionGrantDto,
@@ -150,7 +157,11 @@ export const api = {
     }),
   workspaces: () => request<WorkspacesResponse>({ method: 'GET', path: ROUTES.workspaces }),
   config: () => request<ConfigResponse>({ method: 'GET', path: ROUTES.config }),
-  updateConfig: (patch: { defaultPermissionMode?: ProductPermissionMode; defaultWorkspaceId?: string }) =>
+  updateConfig: (patch: {
+    defaultPermissionMode?: ProductPermissionMode;
+    defaultWorkspaceId?: string;
+    memoryModel?: string | null;
+  }) =>
     request<{ ok: boolean; config: ConfigResponse }>({ method: 'PATCH', path: ROUTES.config, body: patch }),
   createWorkspace: (path: string, name?: string) =>
     request<WorkspaceResponse>({
@@ -305,5 +316,45 @@ export const api = {
     request<DeleteKnowledgeDocResponse>({
       method: 'DELETE',
       path: ROUTES.knowledgeDoc(workspaceId, kid),
+    }),
+  memoryBrief: (scope: string) =>
+    request<MemoryBriefDto>({ method: 'GET', path: ROUTES.memoryBrief, query: { scope } }),
+  memoryClaims: (scope: string) =>
+    request<MemoryClaimsResponse>({ method: 'GET', path: ROUTES.memoryClaims, query: { scope } }),
+  memoryClaim: (scope: string, id: string) =>
+    request<MemoryClaimResponse>({
+      method: 'GET',
+      path: ROUTES.memoryClaim(id),
+      query: { scope },
+    }),
+  correctMemoryClaim: (scope: string, id: string, body: MemoryCorrectClaimRequest) =>
+    request<MemoryClaimResponse>({
+      method: 'PATCH',
+      path: ROUTES.memoryClaim(id),
+      query: { scope },
+      body,
+    }),
+  forgetMemoryClaim: (scope: string, id: string) =>
+    request<{ ok: true; id: string }>({
+      method: 'DELETE',
+      path: ROUTES.memoryClaim(id),
+      query: { scope },
+    }),
+  memoryStatus: (scope: string) =>
+    request<MemoryStatusDto>({ method: 'GET', path: ROUTES.memoryStatus, query: { scope } }),
+  memoryFeedback: (scope: string, body: { targetId: string; action: string; note?: string }) =>
+    request<{ ok: true }>({
+      method: 'POST',
+      path: ROUTES.memoryFeedback,
+      query: { scope },
+      body: { targetType: 'claim', ...body },
+    }),
+  rememberMessage: (body: MemoryRememberRequest) =>
+    request<{ ok: true; sourceId: string }>({ method: 'POST', path: ROUTES.memoryRemember, body }),
+  setSessionMemoryMode: (body: MemorySessionModeRequest) =>
+    request<{ sessionId: string; mode: string }>({
+      method: 'PATCH',
+      path: ROUTES.memorySession,
+      body,
     }),
 };

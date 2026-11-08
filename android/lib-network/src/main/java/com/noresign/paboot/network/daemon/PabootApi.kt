@@ -16,6 +16,13 @@ import com.noresign.paboot.network.daemon.dto.KnowledgeDocResponse
 import com.noresign.paboot.network.daemon.dto.KnowledgeDocsResponse
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyRequest
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyResponse
+import com.noresign.paboot.network.daemon.dto.MemoryBriefDto
+import com.noresign.paboot.network.daemon.dto.MemoryClaimResponse
+import com.noresign.paboot.network.daemon.dto.MemoryClaimsResponse
+import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
+import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
+import com.noresign.paboot.network.daemon.dto.MemorySessionModeResponse
+import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.OkResponse
 import com.noresign.paboot.network.daemon.dto.ProviderResponse
 import com.noresign.paboot.network.daemon.dto.ProviderTestResponse
@@ -269,4 +276,32 @@ interface PabootApi {
         @Path("kid") kid: String,
         @Body body: KnowledgeVerifyRequest,
     ): KnowledgeVerifyResponse
+
+    @GET("api/memory/claims")
+    suspend fun memoryClaims(
+        @Query("scope") scope: String,
+        @Query("status") status: String? = null,
+    ): MemoryClaimsResponse
+
+    @PATCH("api/memory/claims/{id}")
+    suspend fun correctMemoryClaim(
+        @Path("id") id: String,
+        @Query("scope") scope: String,
+        @Body body: MemoryCorrectClaimRequest,
+    ): MemoryClaimResponse
+
+    @DELETE("api/memory/claims/{id}")
+    suspend fun forgetMemoryClaim(
+        @Path("id") id: String,
+        @Query("scope") scope: String,
+    ): OkResponse
+
+    @GET("api/memory/status")
+    suspend fun memoryStatus(@Query("scope") scope: String): MemoryStatusDto
+
+    @GET("api/memory/brief")
+    suspend fun memoryBrief(@Query("scope") scope: String): MemoryBriefDto
+
+    @PATCH("api/memory/session")
+    suspend fun setMemorySessionMode(@Body body: MemorySessionModeRequest): MemorySessionModeResponse
 }

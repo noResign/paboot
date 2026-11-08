@@ -193,6 +193,8 @@ export interface SessionDto {
   scheduledTaskCount?: number;
   /** `task_config` for the reusable AI authoring chat; null otherwise. */
   purpose?: string | null;
+  /** Memory capture/injection mode (M0); older daemons omit it. */
+  memoryMode?: 'normal' | 'no_injection' | 'off';
 }
 
 export interface WorkspaceDto {
@@ -635,4 +637,95 @@ export interface KnowledgeVerifyRequest {
 export interface DeleteKnowledgeDocResponse {
   ok: true;
   id: string;
+}
+
+// ---- memory (M0) ----
+
+export type MemoryScopeDto = 'user' | `workspace:${string}`;
+export type MemorySensitivityDto = 'normal' | 'private' | 'secret';
+export type MemoryClaimKindDto = 'fact' | 'preference' | 'relation' | 'profile';
+export type MemoryClaimAuthorityDto = 'derived' | 'user_confirmed';
+export type MemoryClaimStatusDto = 'active' | 'superseded' | 'disputed' | 'archived';
+export type MemoryEvidenceRelationDto = 'supports' | 'contradicts' | 'corrects';
+export type MemorySessionModeDto = 'normal' | 'no_injection' | 'off';
+
+export interface MemoryClaimEvidenceDto {
+  sourceId: string;
+  quote: string | null;
+  relation: MemoryEvidenceRelationDto;
+}
+
+export interface MemoryClaimDto {
+  id: string;
+  scope: MemoryScopeDto;
+  endId: string | null;
+  predicate: string;
+  objectText: string | null;
+  kind: MemoryClaimKindDto;
+  summary: string;
+  authority: MemoryClaimAuthorityDto;
+  validFrom: number | null;
+  validTo: number | null;
+  timePrecision: 'exact' | 'day' | 'month' | 'year' | 'unknown';
+  confidence: number;
+  importance: number;
+  sensitivity: MemorySensitivityDto;
+  status: MemoryClaimStatusDto;
+  evidence: MemoryClaimEvidenceDto[];
+  updatedAt: number;
+}
+
+export interface MemoryBriefDto {
+  scope: MemoryScopeDto;
+  markdown: string;
+  charCount: number;
+  usedClaimIds: string[];
+  truncated: boolean;
+  builtAt: number;
+}
+
+export interface MemoryStatusDto {
+  scope: MemoryScopeDto;
+  pendingSources: number;
+  lastConsolidatedAt: number | null;
+  lastSuccessAt: number | null;
+  consecutiveFailures: number;
+  /** `none` = record-only; otherwise the configured `<provider>:<model>`. */
+  extractionModel: string | null;
+  /**
+   * Whether the configured provider still has a key and an enabled model.
+   * The string above is configuration; this flag is the runtime reality.
+   */
+  modelAvailable: boolean;
+  enabled: boolean;
+}
+
+export interface MemoryClaimsResponse {
+  claims: MemoryClaimDto[];
+}
+
+export interface MemoryClaimResponse {
+  claim: MemoryClaimDto;
+}
+
+export interface MemoryFeedbackRequest {
+  targetType: 'claim';
+  targetId: string;
+  action: 'helpful' | 'wrong' | 'stale' | 'not_relevant' | 'corrected';
+  note?: string | null;
+}
+
+export interface MemoryCorrectClaimRequest {
+  summary?: string;
+  objectText?: string;
+}
+
+export interface MemoryRememberRequest {
+  sessionId: string;
+  messageId: number;
+}
+
+export interface MemorySessionModeRequest {
+  sessionId: string;
+  mode: MemorySessionModeDto;
 }

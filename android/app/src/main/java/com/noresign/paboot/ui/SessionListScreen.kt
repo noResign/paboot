@@ -30,26 +30,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -89,7 +84,6 @@ import com.noresign.paboot.model.session.SessionListModel
 import com.noresign.paboot.ui.component.AgentBadge
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.RunningIndicator
-import com.noresign.paboot.ui.component.TopBarActionButton
 import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.SessionListUiState
@@ -122,8 +116,9 @@ fun SessionListScreen(
         selectedWorkspace?.isBuiltin == true -> "内置工作区"
         else -> workspacePath
     }
-    // 概览只读展示当前工作区的主目录 / 附加目录；没有真实工作区时入口隐藏（与切换菜单一致）。
-    val currentWorkspace = selectedWorkspace
+    val workspaceChipLabel = workspaceDisplayName(selectedWorkspace) ?: "工作区"
+    // Avoid repeating the workspace name in both the chip and the subtitle.
+    val topBarSubtitle = shownWorkspacePath?.takeIf { it != workspaceChipLabel }
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
@@ -154,78 +149,16 @@ fun SessionListScreen(
             TopAppBar(
                 actions = {
                     if (shownWorkspaces.isNotEmpty()) {
-                        Box {
-                            TopBarActionButton(
-                                icon = Icons.Rounded.Folder,
-                                contentDescription = "工作区",
-                                onClick = { workspaceMenuOpen = true },
-                            )
-                            DropdownMenu(
-                                expanded = workspaceMenuOpen,
-                                onDismissRequest = { workspaceMenuOpen = false },
-                            ) {
-                                Text(
-                                    "工作区",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                )
-                                shownWorkspaces.forEach { workspace ->
-                                    val selected = workspace.id == selectedWorkspaceId
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column(modifier = Modifier.widthIn(max = 280.dp)) {
-                                                Text(
-                                                    workspace.name.ifBlank { workspace.path },
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                )
-                                                if (workspace.name.isNotBlank() &&
-                                                    workspace.name != workspace.path
-                                                ) {
-                                                    Text(
-                                                        workspace.path,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        trailingIcon = {
-                                            if (selected) {
-                                                Icon(
-                                                    Icons.Rounded.Check,
-                                                    contentDescription = "当前工作区",
-                                                )
-                                            }
-                                        },
-                                        onClick = {
-                                            workspaceMenuOpen = false
-                                            viewModel.selectWorkspace(workspace)
-                                        },
-                                    )
-                                }
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text("工作区概览") },
-                                    leadingIcon = {
-                                        Icon(Icons.Rounded.Info, contentDescription = null)
-                                    },
-                                    onClick = {
-                                        workspaceMenuOpen = false
-                                        currentWorkspace?.let { onOpenWorkspaceOverview(it.id) }
-                                    },
-                                )
-                            }
-                        }
+                        WorkspaceSwitcherChip(
+                            label = workspaceChipLabel,
+                            onClick = { workspaceMenuOpen = true },
+                        )
                     }
                 },
                 title = {
                     Column {
                         Text("会话")
-                        shownWorkspacePath?.let {
+                        topBarSubtitle?.let {
                             Text(
                                 it,
                                 style = MaterialTheme.typography.labelSmall,
@@ -299,6 +232,22 @@ fun SessionListScreen(
                 }
             }
         }
+    }
+
+    if (workspaceMenuOpen) {
+        WorkspaceSwitcherSheet(
+            workspaces = shownWorkspaces,
+            selectedWorkspaceId = selectedWorkspaceId,
+            onSelect = { workspace ->
+                workspaceMenuOpen = false
+                viewModel.selectWorkspace(workspace)
+            },
+            onOpenOverview = { workspace ->
+                workspaceMenuOpen = false
+                onOpenWorkspaceOverview(workspace.id)
+            },
+            onDismiss = { workspaceMenuOpen = false },
+        )
     }
 
     pendingRename?.let { session ->

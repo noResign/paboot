@@ -9,6 +9,7 @@ import {
 } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
+import { MemoryPanel } from '../memory/MemoryPanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { Icon } from '../../ui/Icon';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
@@ -57,6 +58,7 @@ export function WorkspaceOverview({
   const [pickerError, setPickerError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -255,6 +257,39 @@ export function WorkspaceOverview({
         </p>
       </section>
 
+      {isLife && (
+        <section className="settings-section">
+          <div className="section-head">
+            <h3>关于你</h3>
+          </div>
+          <button
+            type="button"
+            className="wo-knowledge"
+            onClick={() => setMemoryOpen(true)}
+            aria-label="查看关于你"
+          >
+            <span className="wo-knowledge-icon">
+              <Icon name="eye" size={18} />
+            </span>
+            <span className="wo-knowledge-copy">
+              <b>关于你</b>
+              <span className="hint">
+                生活会话里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。
+              </span>
+              <span className="wo-knowledge-meta">
+                <span className="wo-knowledge-chip">自动整理</span>
+                <span className="wo-knowledge-chip">来源可追溯</span>
+                <span className="wo-knowledge-chip">secret 不注入</span>
+              </span>
+            </span>
+            <span className="wo-knowledge-action">
+              查看记忆
+              <Icon name="chevron-right" size={14} />
+            </span>
+          </button>
+        </section>
+      )}
+
       {!isLife && (
         <section className="settings-section">
           <div className="section-head">
@@ -336,6 +371,13 @@ export function WorkspaceOverview({
           workspaceId={workspace.id}
           workspaceName={workspaceLabel(workspace) ?? workspace.name}
           onClose={() => setKnowledgeOpen(false)}
+        />
+      )}
+      {memoryOpen && (
+        <MemoryPanel
+          workspaceId={workspace.id}
+          workspaceName={workspaceLabel(workspace) ?? workspace.name}
+          onClose={() => setMemoryOpen(false)}
         />
       )}
       {notice && <div className="ws-notice">{notice}</div>}

@@ -23,6 +23,13 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/knowledge/${encodeURIComponent(kid)}/verify`,
   knowledgeExport: (id: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/knowledge/export`,
+  memoryBrief: '/api/memory/brief',
+  memoryClaims: '/api/memory/claims',
+  memoryClaim: (id: string) => `/api/memory/claims/${encodeURIComponent(id)}`,
+  memoryStatus: '/api/memory/status',
+  memoryFeedback: '/api/memory/feedback',
+  memoryRemember: '/api/memory/remember',
+  memorySession: '/api/memory/session',
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',

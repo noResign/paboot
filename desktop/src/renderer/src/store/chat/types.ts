@@ -76,6 +76,8 @@ export interface ChatSessionState {
   cwd: string | null;
   runtime: string | null;
   permissionMode: string | null;
+  /** Memory capture/injection mode; null = older daemon / unknown. */
+  memoryMode?: 'normal' | 'no_injection' | 'off' | null;
   /** Explicit model for subsequent runs; null = the machine's CLI default. */
   model: string | null;
   /** Generic model knobs (e.g. reasoningEffort); empty = defaults. */

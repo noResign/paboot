@@ -7,17 +7,20 @@ import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppContext } from '../src/app/context';
+import { Db } from '../src/db/db';
 import { ProviderManager } from '../src/providers/provider-manager';
 import { registerProviderRoutes } from '../src/routes/providers';
 
 const servers: Server[] = [];
 const dirs: string[] = [];
+const dbs: Db[] = [];
 afterEach(async () => {
   for (const server of servers.splice(0)) {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const db of dbs.splice(0)) db.close();
 });
 
 function tempFile(): string {
@@ -35,9 +38,12 @@ async function start(options: { providersFile?: string; fetch?: typeof fetch }) 
     testTimeoutMs: 1_000,
   });
   const invalidate = vi.fn();
+  const db = new Db(':memory:');
+  dbs.push(db);
   const app = express();
   app.use(express.json());
   registerProviderRoutes(app, {
+    db,
     providers: manager,
     registry: { invalidate },
   } as unknown as AppContext);
@@ -49,6 +55,7 @@ async function start(options: { providersFile?: string; fetch?: typeof fetch }) 
     providersFile,
     manager,
     invalidate,
+    db,
   };
 }
 
@@ -123,6 +130,26 @@ describe('provider management API', () => {
       providers: Array<{ id: string }>;
     };
     expect(list.providers.map((provider) => provider.id)).not.toContain('local-fast');
+  });
+
+  it('clears the memory model setting when a provider edit makes it unusable', async () => {
+    const h = await start({});
+    await h.manager.create({
+      id: 'memory-provider',
+      kind: 'openai',
+      baseUrl: 'https://memory.example',
+      apiKey: 'secret-key',
+      models: [{ id: 'memory-model' }],
+    });
+    h.db.setSetting('memory_model', 'memory-provider:memory-model');
+
+    const cleared = await fetch(`${h.base}/api/providers/memory-provider`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ apiKey: null }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(h.db.getSetting('memory_model')).toBeNull();
   });
 
   it('keeps model prices when a client edits models without sending price', async () => {
