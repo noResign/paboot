@@ -46,8 +46,14 @@ export interface SessionRow {
   purpose: string | null;
   /** Primary end; P0 only adds the column, so it stays NULL until S1/S2. */
   end_id: string | null;
-  /** `normal` | `no_injection` | `off`; P0 only adds the column. */
+  /** `normal` | `no_injection` | `off`; capture/injection policy. */
   memory_mode: string;
+  /**
+   * Messages at or below this id are before the current capture window. Set
+   * when a session transitions out of `off`, so disabled-period messages are
+   * never retroactively captured.
+   */
+  memory_capture_after_message_id: number;
   created_at: number;
   last_active_at: number;
 }
@@ -553,6 +559,7 @@ export class Db {
     this.ensureColumn('workspaces', 'default_permission_mode', 'TEXT');
     this.ensureColumn('sessions', 'end_id', 'TEXT');
     this.ensureColumn('sessions', 'memory_mode', "TEXT NOT NULL DEFAULT 'normal'");
+    this.ensureColumn('sessions', 'memory_capture_after_message_id', 'INTEGER NOT NULL DEFAULT 0');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
 
     // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
@@ -662,6 +669,26 @@ export class Db {
 
   touchSession(id: string): void {
     this.db.prepare(`UPDATE sessions SET last_active_at = ? WHERE id = ?`).run(Date.now(), id);
+  }
+
+  /** `normal` | `no_injection` | `off`; the capture pipeline reads this. */
+  setSessionMemoryMode(id: string, mode: 'normal' | 'no_injection' | 'off'): void {
+    this.db.prepare(`UPDATE sessions SET memory_mode = ? WHERE id = ?`).run(mode, id);
+  }
+
+  /** Highest message id currently stored for a session (0 when empty). */
+  maxMessageId(sessionId: string): number {
+    const row = this.db
+      .prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM messages WHERE session_id = ?`)
+      .get(sessionId) as { id: number } | undefined;
+    return Number(row?.id ?? 0);
+  }
+
+  /** Exclude messages at/below this id from automatic memory capture. */
+  setSessionMemoryCaptureAfterMessageId(id: string, messageId: number): void {
+    this.db
+      .prepare(`UPDATE sessions SET memory_capture_after_message_id = ? WHERE id = ?`)
+      .run(Math.max(0, Math.trunc(messageId)), id);
   }
 
   setSessionTitle(id: string, title: string): void {
@@ -1473,6 +1500,10 @@ export class Db {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       )
       .run(key, value, Date.now());
+  }
+
+  deleteSetting(key: string): void {
+    this.db.prepare(`DELETE FROM settings WHERE key = ?`).run(key);
   }
 
   listSettings(): SettingRow[] {

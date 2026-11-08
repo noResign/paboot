@@ -38,6 +38,7 @@ function sessionDto(
     runningRunId,
     scheduledTaskCount,
     purpose: s.purpose ?? null,
+    memoryMode: s.memory_mode,
   };
 }
 

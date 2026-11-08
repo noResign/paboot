@@ -26,6 +26,8 @@ data class SessionDto(
     val scheduledTaskCount: Int = 0,
     /** `task_config` 表示每 workspace 复用的 AI 任务配置会话。 */
     val purpose: String? = null,
+    /** normal | no_injection | off（旧 daemon 可能缺省） */
+    val memoryMode: String? = null,
 )
 
 @Serializable

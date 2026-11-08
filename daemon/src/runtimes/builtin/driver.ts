@@ -19,6 +19,7 @@ import {
   assembleAgentContext,
   builtinGlobalPromptSections,
   EnvironmentContextSource,
+  MemoryBriefContextSource,
   ProjectDocsContextSource,
   WorkspaceKnowledgeContextSource,
 } from './context/index.js';
@@ -145,6 +146,7 @@ async function runBuiltin(
           measure,
         }),
         new WorkspaceKnowledgeContextSource(ctx.knowledge),
+        ...(ctx.memory ? [new MemoryBriefContextSource(ctx.memory)] : []),
         new SkillsCatalogContextSource(skills, {
           descriptionMaxChars: builtinConfig.skills.catalogDescriptionChars,
         }),
@@ -210,6 +212,8 @@ async function runBuiltin(
           workspaceId: workspace.id,
           agentId: 'builtin',
           endId: session.end_id,
+          memoryMode: session.memory_mode,
+          purpose: session.purpose,
         },
         workspace: agent.workspace,
         model: resolved.snapshot,

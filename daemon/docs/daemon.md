@@ -10,6 +10,7 @@
 | [context.md](context.md) | 上下文装配契约（ContextAssembler）：顺序 / 归属 / 去重 / 预算 / runtime 规则 |
 | [llm.md](llm.md) | 共享 LLM 层：类型契约 / provider 目录 / 凭据（只写不读）/ registry / `none` |
 | [knowledge.md](knowledge.md) | K0 curated 知识：磁盘布局 / `.meta.json` 治理 / 扫描 / API / 首轮指针注入 |
+| [memory.md](memory.md) | Memory M0：life 捕获 / 抽取 / brief / API / 配置与边界 |
 | [permissions.md](permissions.md) | 权限审批 · 安全模型 |
 | [configuration.md](configuration.md) | 配置参数参考 |
 | [docker.md](docker.md) | Docker 部署（镜像只含 daemon；默认工作区隔离，可选挂宿主机项目） |
@@ -70,7 +71,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
-| `memory/` | P0.5 的 Memory scope 解析 helper（`sessionId` 或显式 `scope`，未知 400）；完整 Memory 见 P4 |
+| `memory/` | Memory M0：`memory.db` schema / store、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、brief / 字符预算；见 [memory.md](memory.md) |
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
 | `knowledge/` | K0 curated 知识：`paths`（根 / slug / containment）、`manifest`（`.meta.json` 原子读写 / hash）、`store`（扫描 / 读写 / verify / 永久删除 / export）、`index`（confirmed → ContextSection）、`zip`（无依赖导出） |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |

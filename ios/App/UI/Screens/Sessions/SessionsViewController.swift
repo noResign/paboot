@@ -33,7 +33,8 @@ final class SessionsViewController: UIViewController {
     /// The task section starts expanded; directory/older sections start collapsed.
     private var expandedSections: Set<String> = ["tasks"]
     private var lastWorkspaceID: String?
-    private var workspaceMenuSignature: String?
+    private let workspaceChip = WorkspaceChipControl()
+    private lazy var workspaceChipItem = UIBarButtonItem(customView: workspaceChip)
     private var hasLoaded = false
     private var hasRenderedOnce = false
 
@@ -42,6 +43,11 @@ final class SessionsViewController: UIViewController {
         view.backgroundColor = Theme.Colors.background
 
         configureNavigationTitle()
+        workspaceChip.addTarget(
+            self,
+            action: #selector(openWorkspaceSwitcher),
+            for: .touchUpInside
+        )
         configureTable()
         configureRefreshIndicator()
         configureStateContainer()
@@ -77,9 +83,9 @@ final class SessionsViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // A long workspace path must not widen the title into the right menu's
-        // space. Recalculate for rotation and split-screen resizing.
-        let width = min(360, max(100, view.bounds.width - 140))
+        // A long workspace path must not widen the title into the workspace
+        // chip's space. Recalculate for rotation and split-screen resizing.
+        let width = min(280, max(100, view.bounds.width - 230))
         if titleWidthConstraint.constant != width {
             titleWidthConstraint.constant = width
         }
@@ -128,7 +134,7 @@ final class SessionsViewController: UIViewController {
         bar.addSubview(titleContainer)
         let widthCap = titleContainer.widthAnchor.constraint(
             lessThanOrEqualTo: bar.widthAnchor,
-            constant: -140
+            constant: -220
         )
         // The exact width comes from `titleWidthConstraint`; this is a guard.
         widthCap.priority = .defaultHigh
@@ -310,15 +316,17 @@ final class SessionsViewController: UIViewController {
         }
 
         let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID })
-        let selectedLabel: String?
-        if selectedWorkspace?.family == "life" {
-            selectedLabel = selectedWorkspace?.displayName
+        let chipLabel = selectedWorkspace?.displayName ?? "工作区"
+        workspaceChip.configure(label: chipLabel)
+        let subtitle: String?
+        if selectedWorkspace?.family == "life" || selectedWorkspace?.isBuiltin == true {
+            subtitle = nil
         } else {
-            selectedLabel = selectedWorkspace?.isBuiltin == true ? "内置工作区" : state.selectedWorkspacePath
+            subtitle = state.selectedWorkspacePath
         }
-        pathLabel.text = selectedLabel
-        pathLabel.isHidden = selectedLabel == nil
-        updateWorkspaceMenu(state)
+        pathLabel.text = subtitle
+        pathLabel.isHidden = subtitle == nil
+        updateWorkspaceSwitcher(state)
 
         if state.model.isEmpty {
             tableView.isHidden = true
@@ -463,62 +471,60 @@ final class SessionsViewController: UIViewController {
         tableView.reloadData()
     }
 
-    private func updateWorkspaceMenu(_ state: SessionListViewModel.State) {
+    private func updateWorkspaceSwitcher(_ state: SessionListViewModel.State) {
         // The built-in fallback still scopes sessions/files, but is not a row the
-        // user can switch to.
-        // family=life is a builtin the client must still render (as「生活」);
-        // only the dev fallback is hidden.
+        // user can switch to. family=life is a builtin the client must still render.
         let shown = state.workspaces.filter { $0.family == "life" || !$0.isBuiltin }
-        let signature = shown.map(\.id).joined(separator: ",")
-            + "|" + (state.selectedWorkspaceID ?? "")
-        guard signature != workspaceMenuSignature else { return }
-        workspaceMenuSignature = signature
-
         guard !shown.isEmpty else {
             navigationItem.rightBarButtonItem = nil
             return
         }
+        navigationItem.rightBarButtonItem = workspaceChipItem
+    }
 
-        let actions = shown.map { workspace in
-            let name = workspace.name.isEmpty ? workspace.path : workspace.name
-            return UIAction(
-                title: "\(name) — \(workspace.path)",
-                state: workspace.id == state.selectedWorkspaceID ? .on : .off
-            ) { [weak self] _ in
-                Task { await self?.viewModel.selectWorkspace(workspace) }
+    @objc private func openWorkspaceSwitcher() {
+        let state = viewModel.state
+        let shown = state.workspaces.filter { $0.family == "life" || !$0.isBuiltin }
+        guard !shown.isEmpty else { return }
+
+        let switcher = WorkspaceSwitcherViewController(
+            workspaces: shown,
+            selectedWorkspaceId: state.selectedWorkspaceID
+        )
+        switcher.onSelect = { [weak self] workspace in
+            guard let self else { return }
+            let alreadySelected = workspace.id == self.viewModel.state.selectedWorkspaceID
+            self.dismiss(animated: true) {
+                guard !alreadySelected else { return }
+                Task { await self.viewModel.selectWorkspace(workspace) }
             }
         }
-
-        // Read-only overview for the current workspace (docs/ui/mobile/pages/sessions.md §6.2).
-        let overview = UIAction(
-            title: "工作区概览",
-            image: UIImage(systemName: "info.circle")
-        ) { [weak self] _ in
-            self?.presentWorkspaceOverview()
+        switcher.onOpenOverview = { [weak self] workspace in
+            guard let self else { return }
+            self.dismiss(animated: true) {
+                self.presentWorkspaceOverview(workspace: workspace)
+            }
         }
-
-        let item = UIBarButtonItem(
-            title: nil,
-            image: UIImage(systemName: "folder"),
-            primaryAction: nil,
-            menu: UIMenu(
-                title: "工作区",
-                children: [
-                    UIMenu(options: .displayInline, children: actions),
-                    overview,
-                ]
-            )
-        )
-        item.accessibilityLabel = "工作区"
-        navigationItem.rightBarButtonItem = item
+        switcher.onDismiss = { [weak self] in
+            self?.dismiss(animated: true)
+        }
+        switcher.modalPresentationStyle = .pageSheet
+        if let sheet = switcher.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.selectedDetentIdentifier = shown.count > 5 ? .large : .medium
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = Radius.sheet
+        }
+        present(switcher, animated: true)
     }
 
     /// The overview is read-only: dirs are added/removed from workspace management
     /// (settings) or on desktop, never here. It is a normal pushed page, not a
     /// sheet, so knowledge opens as another full page on top of it.
-    private func presentWorkspaceOverview() {
+    private func presentWorkspaceOverview(workspace explicitWorkspace: WorkspaceDto? = nil) {
         let state = viewModel.state
-        guard let workspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID }) else {
+        guard let workspace = explicitWorkspace
+            ?? state.workspaces.first(where: { $0.id == state.selectedWorkspaceID }) else {
             return
         }
         let overview = WorkspaceOverviewViewController(
@@ -933,6 +939,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
         if workspace.family != "life" {
             contentStack.addArrangedSubview(knowledgeCard())
+        } else {
+            contentStack.addArrangedSubview(memoryCard())
         }
 
         if workspace.isBuiltin && workspace.family != "life" {
@@ -1207,6 +1215,62 @@ private final class WorkspaceOverviewViewController: UIViewController {
             workspaceName: workspace.displayName
         )
         navigationController?.pushViewController(controller, animated: true)
+    }
+
+    @objc private func openMemory() {
+        let controller = MemoryViewController(
+            workspaceId: workspace.id,
+            workspaceName: workspace.displayName
+        )
+        navigationController?.pushViewController(controller, animated: true)
+    }
+
+    private func memoryCard() -> UIView {
+        let card = makeCard()
+        card.isUserInteractionEnabled = true
+        card.isAccessibilityElement = true
+        card.accessibilityTraits = .button
+        card.accessibilityLabel = "关于你"
+        card.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(openMemory))
+        )
+
+        let iconBox = makeIconBox(systemName: "person.crop.circle", boxSize: 38, iconSize: 19)
+        let title = UILabel()
+        title.text = "关于你"
+        title.font = Typography.cardTitle
+        title.textColor = Theme.Colors.textPrimary
+        let hint = UILabel()
+        hint.text = "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textSecondary
+        hint.numberOfLines = 2
+        let textStack = UIStackView(arrangedSubviews: [title, hint])
+        textStack.axis = .vertical
+        textStack.spacing = 2
+
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right"))
+        chevron.tintColor = Theme.Colors.textMuted
+        chevron.contentMode = .scaleAspectFit
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+            chevron.heightAnchor.constraint(equalToConstant: 16),
+        ])
+
+        let row = UIStackView(arrangedSubviews: [iconBox, textStack, chevron])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = Spacing.sm
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.md),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.md),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
+        ])
+        return card
     }
 
     private func makeCard() -> UIView {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { Icon } from '../../ui/Icon';
-import type { ProviderDto, ProviderModelDto } from '../../../../shared/contract';
+import type { ConfigResponse, ProviderDto, ProviderModelDto } from '../../../../shared/contract';
 
 type ProviderKind = 'anthropic' | 'openai';
 
@@ -78,6 +78,10 @@ function editDraft(provider: ProviderDto): ProviderDraft {
  */
 export function ProviderSection() {
   const [providers, setProviders] = useState<ProviderDto[]>([]);
+  /** Persisted global setting from /api/config. */
+  const [memoryModel, setMemoryModel] = useState<string | null>(null);
+  /** Checkbox state inside the currently open provider editor. */
+  const [draftMemoryModel, setDraftMemoryModel] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProviderDraft | null>(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -105,28 +109,34 @@ export function ProviderSection() {
   function closeEditor(): void {
     if (busy) return;
     setDraft(null);
+    setDraftMemoryModel(memoryModel);
     setError(null);
   }
 
   async function refresh(): Promise<void> {
-    const res = await api.providers();
+    const [res, configRes] = await Promise.all([api.providers(), api.config()]);
     if (!res.ok) {
       const { apiCode, message } = apiErrorOf(res.data);
       setError(friendlyMessage(apiCode, res.status, message, '加载 Provider 失败'));
       return;
     }
     setProviders(res.data.providers);
+    if (configRes.ok) {
+      setMemoryModel((configRes.data as ConfigResponse).memoryModel ?? null);
+    }
   }
 
   function openCreate(): void {
     setEditing(false);
     setDraft({ ...EMPTY_DRAFT, models: [] });
+    setDraftMemoryModel(memoryModel);
     setError(null);
   }
 
   function openEdit(provider: ProviderDto): void {
     setEditing(true);
     setDraft(editDraft(provider));
+    setDraftMemoryModel(memoryModel);
     setError(null);
   }
 
@@ -178,6 +188,19 @@ export function ProviderSection() {
       const { apiCode, message } = apiErrorOf(res.data);
       setError(friendlyMessage(apiCode, res.status, message, '保存 Provider 失败'));
       return;
+    }
+    if (editing && draftMemoryModel !== memoryModel) {
+      // Only persist an explicit selection change. Unrelated provider edits
+      // must not overwrite a setting that failed to load or was not touched.
+      // The daemon separately clears the setting if this provider edit made it
+      // invalid (removed/disabled model, cleared key, deleted provider).
+      const configRes = await api.updateConfig({ memoryModel: draftMemoryModel });
+      if (!configRes.ok) {
+        const { apiCode, message } = apiErrorOf(configRes.data);
+        setError(friendlyMessage(apiCode, configRes.status, message, '保存记忆模型失败'));
+      } else {
+        setMemoryModel(draftMemoryModel);
+      }
     }
     setDraft(null);
     await refresh();
@@ -250,6 +273,10 @@ export function ProviderSection() {
       </div>
       <div className="hint">
         内置 Provider 点击「编辑」即可覆盖 Base URL、Key 和模型；「新增」用于自定义网关或额外 Provider。
+      </div>
+      <div className="hint">
+        在模型目录里勾选「用于记忆」，该模型会负责后台整理生活会话；只能勾选一个。
+        未勾选时只记录消息，不调用模型。勾选后保存 Provider 生效。
       </div>
 
       <div className="provider-list">
@@ -414,6 +441,21 @@ export function ProviderSection() {
                     <label><input type="checkbox" checked={model.supportsTools !== false} onChange={(event) => patchModel(index, { supportsTools: event.target.checked })} /> Tools</label>
                     <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
                     <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
+                    {editing && (
+                      <label title="负责后台整理生活会话；只能勾选一个">
+                        <input
+                          type="checkbox"
+                          checked={draftMemoryModel === `${draft.id}:${model.id.trim()}`}
+                          disabled={!model.id.trim() || model.enabled === false || (!draft.hasApiKey && !draft.apiKey.trim())}
+                          onChange={(event) => {
+                            const id = `${draft.id}:${model.id.trim()}`;
+                            if (event.target.checked) setDraftMemoryModel(id);
+                            else if (draftMemoryModel === id) setDraftMemoryModel(null);
+                          }}
+                        />{' '}
+                        用于记忆
+                      </label>
+                    )}
                   </div>
                   <button
                     className="btn danger provider-model-delete"

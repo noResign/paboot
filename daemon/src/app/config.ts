@@ -60,6 +60,12 @@ export interface Config {
   allowDeploy: boolean;
   /** 部署脚本绝对路径（PABOOT_DEPLOY_SCRIPT 可覆盖）。 */
   deployScript: string;
+  /**
+   * `<provider>:<model>` used only for background memory extraction.
+   * Unset = record-only (`none`): sources stay pending until configured.
+   * This is separate from the agent model on purpose (D35).
+   */
+  memoryModel: string | null;
 }
 
 /**
@@ -201,5 +207,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     deployScript: path.resolve(
       env.PABOOT_DEPLOY_SCRIPT ?? path.join(process.cwd(), '..', '.claude/skills/deploy/scripts/deploy.sh'),
     ),
+    memoryModel: env.PABOOT_MEMORY_MODEL?.trim() || null,
   };
 }

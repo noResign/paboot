@@ -16,6 +16,9 @@ object AppRoutes {
     /** K0 knowledge list/detail. A full page, not a bottom sheet. */
     const val KNOWLEDGE = "knowledge/{workspaceId}"
 
+    /** Memory M0「关于你」：life claims read + correct / forget. */
+    const val MEMORY = "memory/{workspaceId}"
+
     /** 聊天详情；`sessionId` 为空 = 新会话。 */
     const val CONVERSATION = "conversation?sessionId={sessionId}"
 
@@ -27,6 +30,9 @@ object AppRoutes {
 
     fun knowledge(workspaceId: String): String =
         "knowledge/${Uri.encode(workspaceId)}"
+
+    fun memory(workspaceId: String): String =
+        "memory/${Uri.encode(workspaceId)}"
 }
 
 fun NavController.navigateToMain() {
@@ -60,4 +66,8 @@ fun NavController.navigateToWorkspaceOverview(workspaceId: String) {
 
 fun NavController.navigateToKnowledge(workspaceId: String) {
     navigate(AppRoutes.knowledge(workspaceId))
+}
+
+fun NavController.navigateToMemory(workspaceId: String) {
+    navigate(AppRoutes.memory(workspaceId))
 }

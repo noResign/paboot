@@ -20,6 +20,8 @@ public struct SessionDto: Decodable, Equatable, Sendable {
     public let scheduledTaskCount: Int
     /// `task_config` marks the reusable AI authoring chat.
     public let purpose: String?
+    /// `normal` | `no_injection` | `off`; nil on older daemons.
+    public let memoryMode: String?
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -37,12 +39,13 @@ public struct SessionDto: Decodable, Equatable, Sendable {
         runningRunId = try container.decodeIfPresent(String.self, forKey: .runningRunId)
         scheduledTaskCount = try container.decodeIfPresent(Int.self, forKey: .scheduledTaskCount) ?? 0
         purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
+        memoryMode = try container.decodeIfPresent(String.self, forKey: .memoryMode)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, runtime, workspaceId, permissionMode, model, modelParameters
         case cwd, title, createdAt, lastActiveAt, running, runningRunId
-        case scheduledTaskCount, purpose
+        case scheduledTaskCount, purpose, memoryMode
     }
 }
 

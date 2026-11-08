@@ -1,0 +1,89 @@
+package com.noresign.paboot.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.noresign.paboot.data.repository.MemoryRepository
+import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
+import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
+import com.noresign.paboot.network.http.NetworkResult
+import com.noresign.paboot.util.friendlyError
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+sealed class MemoryUiState {
+    object Loading : MemoryUiState()
+    data class Content(
+        val claims: List<MemoryClaimDto>,
+        val status: MemoryStatusDto?,
+    ) : MemoryUiState()
+    data class Error(val message: String) : MemoryUiState()
+}
+
+/** Memory M0：只读 + 改正 / 忘记。 */
+class MemoryViewModel(
+    private val repository: MemoryRepository = MemoryRepository(),
+) : ViewModel() {
+
+    private val _state = MutableStateFlow<MemoryUiState>(MemoryUiState.Loading)
+    val state = _state.asStateFlow()
+
+    private val _busy = MutableStateFlow(false)
+    val busy = _busy.asStateFlow()
+
+    private val _message = MutableStateFlow<String?>(null)
+    val message = _message.asStateFlow()
+
+    private var workspaceId: String? = null
+
+    fun load(workspaceId: String, refresh: Boolean = false) {
+        this.workspaceId = workspaceId
+        if (!refresh && _state.value is MemoryUiState.Content) return
+        _state.value = MemoryUiState.Loading
+        viewModelScope.launch {
+            val claims = repository.list(workspaceId)
+            val status = repository.status(workspaceId)
+            when {
+                claims is NetworkResult.Error -> _state.value = MemoryUiState.Error(friendlyError(claims))
+                claims is NetworkResult.Success -> _state.value = MemoryUiState.Content(
+                    claims = claims.data,
+                    status = (status as? NetworkResult.Success)?.data,
+                )
+            }
+        }
+    }
+
+    fun correct(id: String, summary: String, objectText: String) {
+        val workspaceId = workspaceId ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            when (val result = repository.correct(workspaceId, id, summary, objectText)) {
+                is NetworkResult.Success -> {
+                    _message.value = "已改正，之后以你确认的为准"
+                    load(workspaceId, refresh = true)
+                }
+                is NetworkResult.Error -> _message.value = friendlyError(result)
+            }
+            _busy.value = false
+        }
+    }
+
+    fun forget(id: String) {
+        val workspaceId = workspaceId ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            when (val result = repository.forget(workspaceId, id)) {
+                is NetworkResult.Success -> {
+                    _message.value = "已忘记"
+                    load(workspaceId, refresh = true)
+                }
+                is NetworkResult.Error -> _message.value = friendlyError(result)
+            }
+            _busy.value = false
+        }
+    }
+
+    fun clearMessage() {
+        _message.value = null
+    }
+}

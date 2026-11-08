@@ -3,6 +3,8 @@ import type { AppContext } from '../app/context.js';
 import { parseModelPrice, type ProviderModel, type RealProviderKind } from '../llm/catalog.js';
 import { LlmError } from '../llm/types.js';
 import { ProviderManagerError, type ProviderCreateInput, type ProviderUpdateInput } from '../providers/provider-manager.js';
+import { normalizeMemoryModelSelection, SETTING_MEMORY_MODEL } from '../memory/model.js';
+import { log } from '../platform/log.js';
 
 export function registerProviderRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/providers', async (_req, res) => {
@@ -32,6 +34,7 @@ export function registerProviderRoutes(app: Express, ctx: AppContext): void {
       }
       const provider = await ctx.providers.update(req.params.id, input);
       ctx.registry.invalidate('builtin');
+      await clearInvalidMemoryModelSetting(ctx);
       res.json({ ok: true, provider });
     } catch (error) {
       sendProviderError(res, error);
@@ -42,6 +45,7 @@ export function registerProviderRoutes(app: Express, ctx: AppContext): void {
     try {
       await ctx.providers.delete(req.params.id);
       ctx.registry.invalidate('builtin');
+      await clearInvalidMemoryModelSetting(ctx);
       res.json({ ok: true, id: req.params.id });
     } catch (error) {
       sendProviderError(res, error);
@@ -61,11 +65,34 @@ export function registerProviderRoutes(app: Express, ctx: AppContext): void {
     try {
       const provider = await ctx.providers.refreshModels(req.params.id);
       ctx.registry.invalidate('builtin');
+      await clearInvalidMemoryModelSetting(ctx);
       res.json({ ok: true, provider });
     } catch (error) {
       sendProviderError(res, error);
     }
   });
+}
+
+/**
+ * Provider edits can invalidate the configured memory model (deleted provider,
+ * disabled model, cleared API key). Drop that setting so the env fallback can
+ * take over and `/api/memory/status` stops claiming extraction is available.
+ * This is best-effort: a provider write already succeeded and must not be
+ * reported as failed because the cleanup setting could not be read.
+ */
+async function clearInvalidMemoryModelSetting(ctx: AppContext): Promise<void> {
+  if (!ctx.db) return;
+  try {
+    const configured = ctx.db.getSetting(SETTING_MEMORY_MODEL)?.trim();
+    if (!configured) return;
+    const providers = await ctx.providers.list();
+    if (normalizeMemoryModelSelection(configured, providers) === null) {
+      ctx.db.deleteSetting(SETTING_MEMORY_MODEL);
+      log.info('memory: cleared stale model setting after provider change');
+    }
+  } catch (err) {
+    log.warn('memory: could not revalidate model setting after provider change', err);
+  }
 }
 
 function parseCreate(body: unknown): ProviderCreateInput {

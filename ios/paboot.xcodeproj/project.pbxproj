@@ -63,6 +63,9 @@ F20000000000000000000003 /* ProviderManagementViewController.swift in Sources */
 		C00000000000000000000018 /* DirectoryPickerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000008 /* DirectoryPickerViewController.swift */; };
 		C0000000000000000000002B /* KnowledgeRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000002A /* KnowledgeRepository.swift */; };
 		C0000000000000000000002D /* KnowledgeSheetViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000002C /* KnowledgeSheetViewController.swift */; };
+		C0000000000000000000002F /* MemoryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000002E /* MemoryRepository.swift */; };
+		C00000000000000000000031 /* MemoryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000030 /* MemoryViewController.swift */; };
+		C00000000000000000000033 /* WorkspaceSwitcherViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000032 /* WorkspaceSwitcherViewController.swift */; };
 		C00000000000000000000019 /* SessionPermissionsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000009 /* SessionPermissionsViewController.swift */; };
 		C0000000000000000000001A /* PermissionModeRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000000A /* PermissionModeRow.swift */; };
 		C0000000000000000000001B /* PermissionModeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0000000000000000000000B /* PermissionModeOptions.swift */; };
@@ -138,6 +141,9 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 		C00000000000000000000008 /* DirectoryPickerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryPickerViewController.swift; sourceTree = "<group>"; };
 		C0000000000000000000002A /* KnowledgeRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeRepository.swift; sourceTree = "<group>"; };
 		C0000000000000000000002C /* KnowledgeSheetViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeSheetViewController.swift; sourceTree = "<group>"; };
+		C0000000000000000000002E /* MemoryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRepository.swift; sourceTree = "<group>"; };
+		C00000000000000000000030 /* MemoryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryViewController.swift; sourceTree = "<group>"; };
+		C00000000000000000000032 /* WorkspaceSwitcherViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSwitcherViewController.swift; sourceTree = "<group>"; };
 		C00000000000000000000009 /* SessionPermissionsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPermissionsViewController.swift; sourceTree = "<group>"; };
 		C0000000000000000000000A /* PermissionModeRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionModeRow.swift; sourceTree = "<group>"; };
 		C0000000000000000000000B /* PermissionModeOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionModeOptions.swift; sourceTree = "<group>"; };
@@ -251,6 +257,8 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 			children = (
 				AAAA00000000000000000023 /* SessionsViewController.swift */,
 				C0000000000000000000002C /* KnowledgeSheetViewController.swift */,
+				C00000000000000000000030 /* MemoryViewController.swift */,
+				C00000000000000000000032 /* WorkspaceSwitcherViewController.swift */,
 			);
 			path = Sessions;
 			sourceTree = "<group>";
@@ -347,6 +355,7 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 				C00000000000000000000001 /* WorkspaceRepository.swift */,
 				C00000000000000000000002 /* SessionPermissionRepository.swift */,
 				C0000000000000000000002A /* KnowledgeRepository.swift */,
+				C0000000000000000000002E /* MemoryRepository.swift */,
 				D00000000000000000000001 /* FilesRepository.swift */,
 				F20000000000000000000011 /* ProviderRepository.swift */,
 			);
@@ -575,6 +584,9 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 				C00000000000000000000018 /* DirectoryPickerViewController.swift in Sources */,
 				C0000000000000000000002B /* KnowledgeRepository.swift in Sources */,
 				C0000000000000000000002D /* KnowledgeSheetViewController.swift in Sources */,
+				C0000000000000000000002F /* MemoryRepository.swift in Sources */,
+				C00000000000000000000031 /* MemoryViewController.swift in Sources */,
+				C00000000000000000000033 /* WorkspaceSwitcherViewController.swift in Sources */,
 				C00000000000000000000019 /* SessionPermissionsViewController.swift in Sources */,
 				C0000000000000000000001A /* PermissionModeRow.swift in Sources */,
 				C0000000000000000000001B /* PermissionModeOptions.swift in Sources */,

@@ -118,6 +118,70 @@ public final class PabootAPI {
         )
     }
 
+    // MARK: - Memory (M0)
+
+    public func memoryClaims(scope: String, status: String? = nil) async throws -> MemoryClaimsResponse {
+        var items = [URLQueryItem(name: "scope", value: scope)]
+        if let status, !status.isEmpty {
+            items.append(URLQueryItem(name: "status", value: status))
+        }
+        return try await get("api/memory/claims", query: items, authenticated: true, as: MemoryClaimsResponse.self)
+    }
+
+    public func correctMemoryClaim(
+        id: String,
+        scope: String,
+        summary: String?,
+        objectText: String?
+    ) async throws -> MemoryClaimResponse {
+        try await request(
+            "PATCH",
+            path: "api/memory/claims/\(id)",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            body: try encode(MemoryCorrectClaimRequest(summary: summary, objectText: objectText)),
+            authenticated: true,
+            as: MemoryClaimResponse.self
+        )
+    }
+
+    public func forgetMemoryClaim(id: String, scope: String) async throws -> OkResponse {
+        try await request(
+            "DELETE",
+            path: "api/memory/claims/\(id)",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
+    public func memoryStatus(scope: String) async throws -> MemoryStatusDto {
+        try await get(
+            "api/memory/status",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            authenticated: true,
+            as: MemoryStatusDto.self
+        )
+    }
+
+    public func memoryBrief(scope: String) async throws -> MemoryBriefDto {
+        try await get(
+            "api/memory/brief",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            authenticated: true,
+            as: MemoryBriefDto.self
+        )
+    }
+
+    public func setMemorySessionMode(_ body: MemorySessionModeRequest) async throws -> MemorySessionModeResponse {
+        try await request(
+            "PATCH",
+            path: "api/memory/session",
+            body: try encode(body),
+            authenticated: true,
+            as: MemorySessionModeResponse.self
+        )
+    }
+
     public func addWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
         try await request(
             "POST",

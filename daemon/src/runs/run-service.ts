@@ -11,7 +11,10 @@ import type { RunOutcome } from '../runtimes/engine.js';
 import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
+import { captureRunMessages } from '../memory/ingest.js';
+import { mergePreludes } from '../context/prelude.js';
 import { knowledgeContext } from './knowledge-context.js';
+import { memoryContext } from './memory-context.js';
 
 /**
  * The transport side of a run. The chat route writes SSE frames; the scheduler
@@ -168,9 +171,11 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     //     cache warm;
     //   otherwise → first-message prelude only (K0 behavior), never on resume.
     const knowledge = knowledgeContext(ctx, session, workspace);
+    const memory = memoryContext(ctx, session, workspace);
+    const injected = mergePreludes(knowledge, memory);
     const nativeSystemPrompt =
-      knowledge !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
-    const usePrelude = knowledge !== null && !nativeSystemPrompt && !session.native_session_id;
+      injected !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
+    const usePrelude = injected !== null && !nativeSystemPrompt && !session.native_session_id;
     if (knowledge) {
       const mode = nativeSystemPrompt
         ? 'system prompt'
@@ -191,7 +196,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       const active = driver.start({
         runId,
         sessionId,
-        prompt: usePrelude && knowledge ? `${knowledge.prefix}\n\n${prompt}` : prompt,
+        prompt: usePrelude && injected ? `${injected.prefix}\n\n${prompt}` : prompt,
         cwd: session.cwd,
         model: model ?? undefined,
         modelParameters: modelParameters ?? undefined,
@@ -203,7 +208,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
         attachmentIds: input.attachmentIds,
-        systemContext: nativeSystemPrompt && knowledge ? knowledge.prefix : undefined,
+        systemContext: nativeSystemPrompt && injected ? injected.prefix : undefined,
         // The service owns the terminal frame: provider errors may arrive before
         // exit, while the final checkpoint and run metadata are not ready yet.
         onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),
@@ -223,6 +228,9 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         if (assistantText.trim()) {
           ctx.db.addMessage(sessionId, 'assistant', assistantText.trim());
         }
+        // Memory capture is post-run and best-effort: the SSE stream and the
+        // terminal frame must never wait for memory.db or an extraction call.
+        scheduleMemoryCapture(ctx, session, workspace, runId);
         // Close the checkpoint pair so the run's diff (pre..post) is available.
         // Cancelled runs converge here too, so they stay diffable/rollback-able.
         if (repoRoot) {
@@ -263,4 +271,44 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   })();
 
   return { runId, done };
+}
+
+/**
+ * Copy the run's visible messages into L0 after the terminal state is durable.
+ * The snapshot is taken synchronously (cheap) and the insert runs on the next
+ * turn so capture failures cannot affect the run outcome.
+ */
+function scheduleMemoryCapture(
+  ctx: AppContext,
+  session: SessionRow,
+  workspace: WorkspaceRow,
+  runId: string,
+): void {
+  const memory = ctx.memory;
+  if (!memory) return;
+  const ends = ctx.db.listEnds(workspace.id);
+  const messages = ctx.db.listMessages(session.id);
+  setImmediate(() => {
+    try {
+      // Re-read policy at capture time: if the user turned memory off while the
+      // run was finishing, the stale run-start snapshot must not win.
+      const latestSession = ctx.db.getSession(session.id);
+      const latestWorkspace = ctx.db.getWorkspace(workspace.id);
+      if (!latestSession || !latestWorkspace) return;
+      const captured = captureRunMessages({
+        store: memory,
+        session: latestSession,
+        workspace: latestWorkspace,
+        ends,
+        messages,
+        runId,
+      });
+      if (captured > 0) {
+        log.info(`run ${runId}: captured ${captured} memory source(s)`);
+        ctx.memoryWorker?.kick();
+      }
+    } catch (err) {
+      log.warn(`memory capture failed for run ${runId}`, err);
+    }
+  });
 }

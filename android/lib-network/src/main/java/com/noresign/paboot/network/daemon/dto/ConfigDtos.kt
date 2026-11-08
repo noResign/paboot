@@ -30,6 +30,8 @@ data class ConfigResponse(
     /** Whether the active profile honors `permissionMode=bypass`. */
     val bypassAllowed: Boolean = true,
     val defaultWorkspaceId: String? = null,
+    /** `<provider>:<model>`；null = 仅记录。 */
+    val memoryModel: String? = null,
     val workspaces: List<ConfigWorkspaceDto> = emptyList(),
     val server: ServerConfigDto = ServerConfigDto(),
 )

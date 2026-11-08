@@ -31,6 +31,7 @@ Android 与 iOS **共用同一套**页面规格与交互；平台差异只体现
 | [mobile/pages/files.md](mobile/pages/files.md) | ⑤ 文件浏览 + ⑥ Diff / 文件查看器（§6.5） |
 | [mobile/pages/settings.md](mobile/pages/settings.md) | ⑦ 设置 + ⑧ 工作区管理 + ⑨ 目录选择器 + ⑩ 会话权限（§6.6） |
 | [mobile/pages/tasks.md](mobile/pages/tasks.md) | ⑪ 定时任务（列表 / 详情 / 新建，第四个 Tab） |
+| [mobile/pages/memory.md](mobile/pages/memory.md) | ⑬ 关于你（生活记忆：分组 / 搜索 / 详情 / 改正） |
 | [mobile/pages/permission-approval.md](mobile/pages/permission-approval.md) | Ⓟ 权限审批浮层（§6.7，安全边界） |
 | [mobile/platforms/android.md](mobile/platforms/android.md) | Android 落地：Design Token → Jetpack Compose 的对应关系 |
 | [mobile/platforms/ios.md](mobile/platforms/ios.md) | iOS 落地：UIKit（P0–P4 已实现，文件 / 设置待做） |

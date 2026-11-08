@@ -76,6 +76,8 @@ interface ChatStore {
   decide(decision: 'allow' | 'deny' | 'allow_all', reason?: string, response?: unknown): Promise<void>;
   applyStreamEvent(event: StreamEvent): void;
   setPermissionMode(mode: string): void;
+  /** Persist the session memory mode (`normal` | `no_injection` | `off`). */
+  setMemoryMode(mode: 'normal' | 'no_injection' | 'off'): Promise<void>;
   /** Persist a model/parameter switch on the daemon; it applies from the next run. */
   setSessionSelection(model: string | null, modelParameters: Record<string, string>): Promise<void>;
   /** Session id of the chat currently on screen (M1 shows exactly one). */
@@ -131,6 +133,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         cwd: session.cwd,
         runtime: session.runtime,
         permissionMode: session.permissionMode,
+        memoryMode: session.memoryMode ?? 'normal',
         model: session.model,
         modelParameters: session.modelParameters ?? {},
         messages: rebuilt.messages,
@@ -350,6 +353,20 @@ export const useChat = create<ChatStore>((set, get) => ({
     const key = get().activeKey;
     if (!key) return;
     set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, permissionMode: mode })) }));
+  },
+
+  async setMemoryMode(mode) {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    if (!key || !chat?.sessionId) return;
+    const res = await api.setSessionMemoryMode({ sessionId: chat.sessionId, mode });
+    if (!res.ok) {
+      const data = res.data as { error?: string; message?: string };
+      const message = data?.message ?? data?.error ?? `保存记忆设置失败（HTTP ${res.status}）`;
+      set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, error: message })) }));
+      return;
+    }
+    set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, memoryMode: mode })) }));
   },
 
   async setSessionSelection(model, modelParameters) {

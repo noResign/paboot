@@ -4702,3 +4702,399 @@ a.btn {
 .provider-modal .modal-actions {
   margin-top: 16px;
 }
+
+/* Memory / 关于你 (M0) */
+.mem-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mem-status {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.mem-status b {
+  display: block;
+  margin-bottom: 4px;
+}
+.mem-status .hint {
+  margin: 0;
+}
+.mem-status-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.mem-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.mem-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 54px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.mem-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mem-claim {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.mem-claim-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mem-claim-id {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mem-claim-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.mem-quote {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mem-claim-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mem-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mem-actions .hint {
+  margin: 0;
+}
+.mem-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mem-edit label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mem-edit input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-solid);
+  color: var(--text-primary);
+}
+
+/* Memory「关于你」: grouped list + detail (M0 redesign) */
+.mem-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+}
+.mem-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+.mem-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mem-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.mem-dot.is-on {
+  background: var(--success);
+}
+.mem-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mem-spacer {
+  flex: 1;
+}
+.mem-status-hint {
+  margin: 6px 16px 0;
+}
+.mem-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 12px 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-solid);
+}
+.mem-search {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.mem-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 8px 20px;
+}
+.mem-group + .mem-group {
+  margin-top: 4px;
+}
+.mem-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.mem-group-head:hover {
+  background: var(--surface-2);
+}
+.mem-group-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.mem-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mem-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: var(--text-primary);
+}
+.mem-row:hover {
+  background: var(--surface-2);
+}
+.mem-row.is-active {
+  border-color: var(--border);
+  background: var(--surface-solid);
+}
+.mem-row-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mem-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mem-tag {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.mem-tag.is-confirmed {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.mem-row-date {
+  margin-left: auto;
+}
+.mem-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 26px 30px;
+}
+.mem-detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 80px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.mem-detail-notice {
+  margin-bottom: 12px;
+}
+.mem-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 760px;
+}
+.mem-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mem-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.mem-claim-id {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mem-detail-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.mem-detail-object {
+  margin: -6px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.mem-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.mem-meta-grid > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.mem-meta-grid dt {
+  margin: 0 0 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mem-meta-grid dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.mem-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.mem-evidence h4 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mem-evidence blockquote {
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 2px solid var(--border);
+  border-radius: 0 7px 7px 0;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.mem-detail-actions {
+  padding-top: 4px;
+}
+.mem-detail .mem-edit textarea {
+  min-height: 64px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-solid);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+.mem-sidebar .mem-empty {
+  padding: 40px 16px;
+}
+@media (max-width: 900px) {
+  .mem-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(220px, 42%) minmax(0, 1fr);
+  }
+  .mem-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .mem-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

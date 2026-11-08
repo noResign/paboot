@@ -10,6 +10,7 @@ import androidx.navigation.navArgument
 import com.noresign.paboot.ui.ChatScreen
 import com.noresign.paboot.ui.KnowledgeScreen
 import com.noresign.paboot.ui.MainScreen
+import com.noresign.paboot.ui.MemoryScreen
 import com.noresign.paboot.ui.ProviderManagementScreen
 import com.noresign.paboot.ui.WorkspaceManagementScreen
 import com.noresign.paboot.ui.WorkspaceOverviewScreen
@@ -41,6 +42,18 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
             viewModel = sessionViewModel,
             onBack = { navController.popBackStack() },
             onOpenKnowledge = { id -> navController.navigateToKnowledge(id) },
+            onOpenMemory = { id -> navController.navigateToMemory(id) },
+        )
+    }
+
+    composable(
+        route = AppRoutes.MEMORY,
+        arguments = listOf(navArgument("workspaceId") { type = NavType.StringType }),
+    ) { entry ->
+        val workspaceId = entry.arguments?.getString("workspaceId").orEmpty()
+        MemoryScreen(
+            workspaceId = workspaceId,
+            onBack = { navController.popBackStack() },
         )
     }
 

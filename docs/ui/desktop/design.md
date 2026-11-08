@@ -224,6 +224,7 @@ surface 模型**（移动端不变，见 shared §4.1 的桌面注记）。品�
 | 6.8 | ⑤ 文件 / ⑥ Diff（→ 两级分栏） | [pages/files.md](pages/files.md) | `pages/files.md` | M3 |
 | 6.9 | ⑧⑨⑩ 工作区 / 目录选择器 / 会话权限 | [pages/settings.md](pages/settings.md) | `pages/settings.md` | M2 |
 | 6.10 | ⑪ 定时任务 | [pages/tasks.md](pages/tasks.md) | `pages/tasks.md` | M3 |
+| 6.11 | ⑬ 关于你（Memory） | [pages/memory.md](pages/memory.md) | `pages/memory.md` | M0 |
 
 **与移动端的分页差异**（有意为之，不是遗漏）：
 

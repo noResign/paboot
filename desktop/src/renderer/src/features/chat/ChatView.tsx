@@ -48,6 +48,7 @@ export function ChatView({
   const patchSessionTitle = useSessions((state) => state.patchTitle);
   const patchChatTitle = useChat((state) => state.patchTitle);
   const setPermissionMode = useChat((state) => state.setPermissionMode);
+  const setMemoryMode = useChat((state) => state.setMemoryMode);
   const setSessionSelection = useChat((state) => state.setSessionSelection);
 
   const [renaming, setRenaming] = useState(false);
@@ -114,6 +115,12 @@ export function ChatView({
     ];
     if (current.sessionId) {
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
+      const memoryOff = (current.memoryMode ?? 'normal') === 'off';
+      items.push({
+        id: 'memory',
+        label: memoryOff ? '恢复记忆写入' : '本会话不用记忆',
+        run: () => void setMemoryMode(memoryOff ? 'normal' : 'off'),
+      });
       if (onOpenTasks) {
         items.push({
           id: 'tasks',

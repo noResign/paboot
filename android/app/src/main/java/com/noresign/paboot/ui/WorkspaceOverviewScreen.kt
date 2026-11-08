@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,6 +65,7 @@ fun WorkspaceOverviewScreen(
     viewModel: SessionListViewModel,
     onBack: () -> Unit,
     onOpenKnowledge: (String) -> Unit,
+    onOpenMemory: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val workspaces by viewModel.workspaces.collectAsState()
@@ -102,6 +104,8 @@ fun WorkspaceOverviewScreen(
                     DirectorySection(dirs)
                     if (workspace.family != "life") {
                         KnowledgeCard(workspace, onOpenKnowledge)
+                    } else {
+                        MemoryCard(workspace, onOpenMemory)
                     }
                     if (workspace.isBuiltin && workspace.family != "life") {
                         Text(
@@ -378,6 +382,56 @@ private fun KnowledgeCard(workspace: WorkspaceDto, onOpenKnowledge: (String) -> 
                 Text("知识", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "项目约定、决策与踩坑；自动收录，新会话按路径注入。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemoryCard(workspace: WorkspaceDto, onOpenMemory: (String) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenMemory(workspace.id) },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("关于你", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

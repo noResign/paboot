@@ -15,6 +15,7 @@ import { registerDeployRoutes } from '../routes/deploy.js';
 import { registerFileRoutes } from '../routes/files.js';
 import { registerFsRoutes } from '../routes/fs.js';
 import { registerKnowledgeRoutes } from '../routes/knowledge.js';
+import { registerMemoryRoutes } from '../routes/memory.js';
 import { registerPermissionRoutes } from '../routes/permissions.js';
 import { registerProviderRoutes } from '../routes/providers.js';
 import { registerRunRoutes } from '../routes/runs.js';
@@ -54,6 +55,7 @@ export function createApp(ctx: AppContext): Express {
   registerFsRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
   registerKnowledgeRoutes(app, ctx);
+  registerMemoryRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerRunRoutes(app, ctx);
   registerSessionPermissionRoutes(app, ctx);

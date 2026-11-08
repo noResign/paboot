@@ -8,6 +8,9 @@ import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
 import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
+import { configuredMemoryModel, resolveMemoryModel } from './memory/model.js';
+import { MemoryStore } from './memory/store.js';
+import { MemoryWorker } from './memory/worker.js';
 import { AttachmentStore } from './attachments/store.js';
 import { DEFAULT_PROVIDERS_FILE } from './llm/credentials.js';
 import { ProviderManager } from './providers/provider-manager.js';
@@ -152,10 +155,12 @@ async function main(): Promise<void> {
   logBuiltinConfigWarnings(builtinConfig);
 
   const notifier = new RunNotifier();
+  const memory = new MemoryStore(config.dataDir);
   const ctx: AppContext = {
     config,
     db,
     knowledge: new KnowledgeStore(config.dataDir),
+    memory,
     attachments: new AttachmentStore(db, config.dataDir),
     providers: new ProviderManager({
       providersFile: process.env.PABOOT_LLM_PROVIDERS_FILE?.trim() || DEFAULT_PROVIDERS_FILE(),
@@ -191,6 +196,24 @@ async function main(): Promise<void> {
     ),
   };
 
+  const memoryWorker = new MemoryWorker({
+    store: memory,
+    // Settings saved from the desktop pick a model; the env var is the
+    // headless fallback. Neither = record-only.
+    resolveModel: () =>
+      resolveMemoryModel(configuredMemoryModel((key) => ctx.db.getSetting(key), config.memoryModel)),
+  });
+  ctx.memoryWorker = memoryWorker;
+  const effectiveMemoryModel = configuredMemoryModel(
+    (key) => ctx.db.getSetting(key),
+    config.memoryModel,
+  );
+  if (effectiveMemoryModel) {
+    log.info(`memory: extraction model ${effectiveMemoryModel}`);
+  } else {
+    log.info('memory: record-only (pick a model in Settings → Providers)');
+  }
+
   // Register the execution driver for each runtime (argv and RPC alike) now
   // that the daemon services they depend on exist.
   registerRuntimeDrivers(registry, ctx);
@@ -210,24 +233,32 @@ async function main(): Promise<void> {
       log.info(`runtime info: ${info.listen} (serverId ${info.serverId})`);
     }
     scheduler.start();
+    memoryWorker.start();
   });
 
   // Until now a signal simply killed the process; now it also retracts the
   // runtime info file so clients stop dialing us. Every event is committed
   // before it reaches a socket, so exiting immediately is safe.
   let stopping = false;
-  const shutdown = (signal: string): void => {
+  const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
     log.info(`${signal} received, shutting down`);
-    scheduler.stop();
-    stopHeartbeat?.();
-    clearRuntimeInfo(config.dataDir);
-    lock.release();
-    process.exit(0);
+    try {
+      scheduler.stop();
+      await memoryWorker.stop();
+      stopHeartbeat?.();
+      memory.close();
+    } catch (err) {
+      log.warn('shutdown cleanup failed', err);
+    } finally {
+      clearRuntimeInfo(config.dataDir);
+      lock.release();
+      process.exit(0);
+    }
   };
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
 
   log.info(`operator token: ${config.token}`);
   log.info(`  (${config.tokenGenerated ? 'generated and persisted at' : 'loaded from'} ${config.tokenPath})`);
