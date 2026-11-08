@@ -315,7 +315,10 @@ export function ConnectPage() {
             等同于那台电脑上的远程 shell 权限。
           </div>
         )}
-        {error && !insecureWarning && <div className="error-text">{error}</div>}
+        {/* 警告和失败原因是两件事：不能用 `!insecureWarning` 把 error 顶掉，
+            否则非回环 + HTTP 的地址一旦连接失败，界面上就只剩警告，看起来像
+            「点了没反应」。 */}
+        {error && <div className="error-text">{error}</div>}
         {errorCode === 'token_required' && (
           <div className="hint">
             这个 daemon 的 token 来自环境变量或启动参数，客户端读不到，请手动粘贴。
