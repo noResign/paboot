@@ -1,5 +1,7 @@
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawnExecutable } from '../platform/executable.js';
 import { log } from '../platform/log.js';
+import { killProcessTree } from '../platform/process-tree.js';
 
 /**
  * Generic newline-delimited JSON-RPC transport over a child process's stdio.
@@ -203,10 +205,10 @@ export class StdioRpcConnection {
     if (!this.child.stdin.destroyed) this.child.stdin.end();
     if (await waitForExit(this.child, GRACEFUL_SHUTDOWN_TIMEOUT_MS)) return;
 
-    this.child.kill('SIGTERM');
+    killProcessTree(this.child, { signal: 'SIGTERM' });
     if (await waitForExit(this.child, FORCE_SHUTDOWN_TIMEOUT_MS)) return;
 
-    this.child.kill('SIGKILL');
+    killProcessTree(this.child, { signal: 'SIGKILL' });
   }
 
   // ---- internals ----
@@ -363,7 +365,7 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
 
 /** Spawn a child and wrap it in a connection. Does not handshake. */
 export function spawnStdioRpc(options: StdioRpcOptions): StdioRpcConnection {
-  const child = spawn(options.command, options.args ?? [], {
+  const child = spawnExecutable(options.command, options.args ?? [], {
     cwd: options.cwd,
     env: options.env,
     stdio: ['pipe', 'pipe', 'pipe'],

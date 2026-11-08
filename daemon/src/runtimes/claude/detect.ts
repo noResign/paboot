@@ -1,29 +1,9 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { runExecutable, type CommandResult } from '../../platform/executable.js';
 import type { RuntimeCapabilities, RuntimeDetection } from '../types.js';
 import { CLAUDE_MODELS } from './models.js';
 
-const execFileP = promisify(execFile);
-
-interface CommandResult {
-  ok: boolean;
-  stdout: string;
-  stderr: string;
-  code: number | null;
-}
-
-async function run(bin: string, args: string[], timeoutMs = 15000): Promise<CommandResult> {
-  try {
-    const { stdout, stderr } = await execFileP(bin, args, {
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return { ok: true, stdout: String(stdout), stderr: String(stderr), code: 0 };
-  } catch (err) {
-    const e = err as { code?: number | string; stdout?: string | Buffer; stderr?: string | Buffer };
-    const code = typeof e.code === 'number' ? e.code : null;
-    return { ok: false, stdout: String(e.stdout ?? ''), stderr: String(e.stderr ?? ''), code };
-  }
+function run(bin: string, args: string[], timeoutMs = 15000): Promise<CommandResult> {
+  return runExecutable(bin, args, { timeoutMs });
 }
 
 function parseVersion(stdout: string): string | null {
@@ -75,7 +55,7 @@ export async function detectClaude(bin: string, env: NodeJS.ProcessEnv): Promise
       authed: null,
       capabilities: FALLBACK_CAPS,
       models: [],
-      error: versionRes.stderr.trim() || `claude not found (${versionRes.code})`,
+      error: versionRes.stderr.trim() || versionRes.error || `claude not found (${versionRes.code})`,
     };
   }
   const version = parseVersion(versionRes.stdout);

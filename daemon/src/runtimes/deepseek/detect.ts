@@ -1,35 +1,19 @@
-import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { runExecutable, type CommandResult } from '../../platform/executable.js';
 import type { RuntimeCapabilities, RuntimeDetection } from '../types.js';
-
-const execFileP = promisify(execFile);
 
 /** The npm-installed CLI, found through the daemon's PATH like `claude`/`codex`. */
 export const DEEPSEEK_BIN = 'dsh';
 
-interface CommandResult {
-  ok: boolean;
-  stdout: string;
-  stderr: string;
-  code: number | null;
-}
-
-async function run(bin: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs = 15000): Promise<CommandResult> {
-  try {
-    const { stdout, stderr } = await execFileP(bin, args, { env, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 });
-    return { ok: true, stdout: String(stdout), stderr: String(stderr), code: 0 };
-  } catch (err) {
-    const e = err as { code?: number | string; stdout?: string | Buffer; stderr?: string | Buffer };
-    return {
-      ok: false,
-      stdout: String(e.stdout ?? ''),
-      stderr: String(e.stderr ?? ''),
-      code: typeof e.code === 'number' ? e.code : null,
-    };
-  }
+function run(
+  bin: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 15000,
+): Promise<CommandResult> {
+  return runExecutable(bin, args, { env, timeoutMs });
 }
 
 function parseVersion(stdout: string): string | null {
@@ -100,7 +84,9 @@ export async function detectDeepSeek(bin: string, env: NodeJS.ProcessEnv): Promi
       models: [],
       error:
         versionRes.stderr.trim() ||
-        `dsh not found (${bin}); install with \`npm install -g @deepseek-ai/dsh\` (Node >= 24.9)`,
+        `dsh not found (${bin}); install with \`npm install -g @deepseek-ai/dsh\` (Node >= 24.9)${
+          versionRes.error ? ` (${versionRes.error})` : ''
+        }`,
     };
   }
 

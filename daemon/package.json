@@ -41,12 +41,12 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist && echo 'cleaned: dist/'",
-    "clean:all": "rm -rf dist node_modules && echo 'cleaned: dist/ node_modules/ — run pnpm install next'",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && echo 'cleaned: dist/'",
+    "clean:all": "node -e \"for (const d of ['dist', 'node_modules']) require('node:fs').rmSync(d, { recursive: true, force: true })\" && echo 'cleaned: dist/ node_modules/ — run pnpm install next'",
     "prepack": "npm run build"
   },
   "engines": {
@@ -54,9 +54,11 @@
   },
   "dependencies": {
     "cron-parser": "^5.10.2",
+    "cross-spawn": "^7.0.6",
     "express": "^4.21.2"
   },
   "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
     "@types/express": "^4.17.21",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",

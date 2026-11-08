@@ -12,7 +12,11 @@ import { expandHome } from '../platform/paths.js';
 export function resolveWorkspaceCwd(raw: string, root: string): string | null {
   const target = path.resolve(expandHome(raw));
   const r = path.resolve(root);
-  if (target === r || target.startsWith(r + path.sep)) {
+  // `path.relative` is case-insensitive on win32 and case-sensitive elsewhere,
+  // which is what each platform's filesystem actually does; a `startsWith`
+  // comparison would reject `C:\Work` for a root of `c:\work`.
+  const rel = path.relative(r, target);
+  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
     return target;
   }
   return null;

@@ -1,8 +1,16 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import crossSpawn from 'cross-spawn';
 import { loginShellEnv } from './login-shell-env';
 import type { ManagedDaemonRecord } from '../settings';
+
+/**
+ * Spawning goes through `cross-spawn` so a Windows user command such as
+ * `pnpm exec paboot` resolves the `.cmd` shim; `node:child_process` alone only
+ * appends `.exe`.
+ */
+type SpawnLike = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 
 /**
  * Runs a daemon **we** own. Attaching to someone else's daemon is
@@ -147,7 +155,7 @@ export interface SupervisorDeps {
   /** Overridable for tests; defaults to the real clock and fs. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
-  spawnImpl?: typeof spawn;
+  spawnImpl?: SpawnLike;
   env?: () => Promise<Record<string, string>>;
   /**
    * Persisted record of the daemon we spawned (`settings.loadManagedDaemon` /
@@ -172,7 +180,7 @@ export class DaemonSupervisor {
   private logFd: number | null = null;
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly spawnImpl: typeof spawn;
+  private readonly spawnImpl: SpawnLike;
   private readonly env: () => Promise<Record<string, string>>;
   private readonly loadRecord: () => ManagedDaemonRecord | null;
   private readonly saveRecord: (record: ManagedDaemonRecord | null) => void;
@@ -183,7 +191,7 @@ export class DaemonSupervisor {
   constructor(private readonly dataDir: string, deps: SupervisorDeps = {}) {
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-    this.spawnImpl = deps.spawnImpl ?? spawn;
+    this.spawnImpl = deps.spawnImpl ?? crossSpawn;
     this.env = deps.env ?? loginShellEnv;
     this.loadRecord = deps.loadRecord ?? (() => null);
     this.saveRecord = deps.saveRecord ?? (() => {});
@@ -360,7 +368,12 @@ export class DaemonSupervisor {
   }
 
   /**
-   * SIGTERM → wait for the daemon to exit → SIGKILL.
+   * Graceful stop → wait for the daemon to exit → force-kill its tree.
+   *
+   * On POSIX SIGTERM reaches the daemon's own handler. Windows has no SIGTERM:
+   * `process.kill(pid, 'SIGTERM')` is a hard TerminateProcess that skips that
+   * cleanup, so the daemon is asked to shut down over HTTP first and only the
+   * fallback uses `taskkill /T /F`.
    *
    * Stops whichever daemon holds the data dir, not only one we spawned: a
    * daemon left running by an earlier app run is one we *did* start, and a
@@ -374,10 +387,18 @@ export class DaemonSupervisor {
       this.cleanupFd();
       return true;
     }
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch (err) {
-      this.log(`SIGTERM to ${pid} failed: ${describe(err)}`);
+    const win32 = process.platform === 'win32';
+    if (win32) {
+      const graceful = await this.requestGracefulShutdown(pid);
+      // No HTTP path (older daemon, token mismatch, TLS): stop waiting and take
+      // the tree down now rather than burning the whole timeout first.
+      if (!graceful) this.killWindowsTree(pid);
+    } else {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch (err) {
+        this.log(`SIGTERM to ${pid} failed: ${describe(err)}`);
+      }
     }
     const deadline = this.now() + timeoutMs;
     while (this.now() < deadline) {
@@ -390,17 +411,62 @@ export class DaemonSupervisor {
     if (stopped) {
       this.log(`stopped pid ${pid}`);
     } else {
-      this.log(`stop timed out, sending SIGKILL to ${pid}`);
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch (err) {
-        this.log(`SIGKILL failed: ${describe(err)}`);
+      this.log(`stop timed out, force-killing pid ${pid}`);
+      if (win32) {
+        this.killWindowsTree(pid);
+      } else {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch (err) {
+          this.log(`SIGKILL failed: ${describe(err)}`);
+        }
       }
     }
     this.child = null;
     this.forgetOwnership();
     this.cleanupFd();
     return stopped;
+  }
+
+  /**
+   * Windows: `SIGTERM` cannot be delivered to another process. Ask the daemon
+   * to run the same shutdown path a signal would (`POST /api/system/shutdown`,
+   * operator token, loopback only). A refusal leaves the caller to taskkill.
+   */
+  private async requestGracefulShutdown(pid: number): Promise<boolean> {
+    try {
+      const raw = fs.readFileSync(this.runtimePath, 'utf8');
+      const info = JSON.parse(raw) as { pid?: unknown; listen?: unknown; tls?: unknown };
+      if (info.pid !== pid || typeof info.listen !== 'string' || !info.listen) return false;
+      // A self-signed TLS daemon cannot be verified with fetch; taskkill it.
+      if (info.tls === true) return false;
+      const token = fs.readFileSync(path.join(this.dataDir, 'token'), 'utf8').trim();
+      if (!token) return false;
+      const res = await fetch(`http://${info.listen}/api/system/shutdown`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(2_000),
+      });
+      this.log(`graceful shutdown request: HTTP ${res.status}`);
+      return res.ok;
+    } catch (err) {
+      this.log(`graceful shutdown request failed: ${describe(err)}`);
+      return false;
+    }
+  }
+
+  /** Windows has no process groups: taskkill walks the child tree. */
+  private killWindowsTree(pid: number): void {
+    try {
+      const killer = this.spawnImpl('taskkill', ['/PID', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      killer.on('error', (err) => this.log(`taskkill ${pid} failed: ${describe(err)}`));
+      killer.unref();
+    } catch (err) {
+      this.log(`taskkill ${pid} threw: ${describe(err)}`);
+    }
   }
 
   /**

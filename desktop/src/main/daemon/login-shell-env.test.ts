@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { captureLoginShellEnv, mergeEnvs, parseEnvOutput } from './login-shell-env';
+import { captureLoginShellEnv, mergeEnvs, parseEnvOutput, parseSetOutput } from './login-shell-env';
 
 describe('parseEnvOutput', () => {
   it('splits on NUL, not newlines', () => {
@@ -16,6 +16,15 @@ describe('parseEnvOutput', () => {
 
   it('keeps an empty value', () => {
     expect(parseEnvOutput('EMPTY=\0')).toEqual({ EMPTY: '' });
+  });
+});
+
+describe('parseSetOutput', () => {
+  it('parses cmd.exe `set` output, including CRLF', () => {
+    expect(parseSetOutput('A=1\r\nPATH=C:\\bin\r\n=C:=C:\\dir\r\n')).toEqual({
+      A: '1',
+      PATH: 'C:\\bin',
+    });
   });
 });
 
@@ -70,5 +79,45 @@ describe('captureLoginShellEnv', () => {
     const calls = shell.mock.calls.map(([, args]) => args.join(' '));
     expect(calls).toContain('-l -c env -0');
     expect(calls).toContain('-i -l -c env -0');
+  });
+
+  it('uses Git Bash on Windows and asks it for Windows-style paths', async () => {
+    const bash = 'C:\\Program Files\\Git\\bin\\bash.exe';
+    const shell = run({
+      nonInteractive: 'PATH=C:\\fallback\0',
+      interactive: 'PATH=C:\\user-bin\0',
+    });
+    const env = await captureLoginShellEnv({
+      platform: 'win32',
+      env: { ProgramFiles: 'C:\\Program Files' },
+      exists: (candidate) => candidate === bash,
+      run: shell,
+      baseEnv: {},
+    });
+
+    expect(shell.mock.calls.every(([command]) => command === bash)).toBe(true);
+    // Git Bash prints POSIX paths; native .exe CLIs need the converted form.
+    expect(shell.mock.calls.every(([, args]) => String(args[args.length - 1]).includes('cygpath -wp'))).toBe(true);
+    expect(env['PATH']).toBe('C:\\user-bin');
+  });
+
+  it('falls back to cmd.exe `set` when Git Bash is not installed', async () => {
+    const comspec = 'C:\\Windows\\system32\\cmd.exe';
+    const shell = vi.fn(async (_command: string, args: string[]) => {
+      expect(args).toEqual(['/d', '/s', '/c', 'chcp 65001 >nul && set']);
+      return 'A=1\r\nPATH=C:\\bin\r\n';
+    });
+
+    const env = await captureLoginShellEnv({
+      platform: 'win32',
+      env: { ComSpec: comspec },
+      exists: () => false,
+      run: shell,
+      baseEnv: {},
+    });
+
+    expect(shell).toHaveBeenCalledTimes(1);
+    expect(shell.mock.calls[0]?.[0]).toBe(comspec);
+    expect(env).toMatchObject({ A: '1', PATH: 'C:\\bin' });
   });
 });

@@ -220,30 +220,21 @@ async function main(): Promise<void> {
 
   const scheduler = new Scheduler(ctx);
 
-  const server = startServer(ctx);
-  printConnectInfo(config);
-
   // Publish where we are — but only once the socket is actually accepting, so
   // a client that reads the file can connect to what it names.
   let stopHeartbeat: (() => void) | null = null;
-  server.once('listening', () => {
-    const info = writeRuntimeInfo(config, resolveServerId(db));
-    if (info) {
-      stopHeartbeat = startHeartbeat(config.dataDir);
-      log.info(`runtime info: ${info.listen} (serverId ${info.serverId})`);
-    }
-    scheduler.start();
-    memoryWorker.start();
-  });
 
   // Until now a signal simply killed the process; now it also retracts the
   // runtime info file so clients stop dialing us. Every event is committed
   // before it reaches a socket, so exiting immediately is safe.
+  //
+  // Windows has no SIGTERM, so an owning client can ask for this same path over
+  // HTTP (`POST /api/system/shutdown`); see `routes/system.ts`.
   let stopping = false;
-  const shutdown = async (signal: string): Promise<void> => {
+  const shutdown = async (reason: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
-    log.info(`${signal} received, shutting down`);
+    log.info(`${reason} received, shutting down`);
     try {
       scheduler.stop();
       await memoryWorker.stop();
@@ -257,8 +248,27 @@ async function main(): Promise<void> {
       process.exit(0);
     }
   };
+
+  const server = startServer(ctx, { requestShutdown: (reason) => void shutdown(reason) });
+  printConnectInfo(config);
+
+  server.once('listening', () => {
+    const info = writeRuntimeInfo(config, resolveServerId(db));
+    if (info) {
+      stopHeartbeat = startHeartbeat(config.dataDir);
+      log.info(`runtime info: ${info.listen} (serverId ${info.serverId})`);
+    }
+    scheduler.start();
+    memoryWorker.start();
+  });
+
   process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
   process.once('SIGINT', () => { void shutdown('SIGINT'); });
+  // Windows consoles deliver Ctrl+Break as SIGBREAK. Registering it elsewhere
+  // throws ERR_UNKNOWN_SIGNAL, so this must stay platform-gated.
+  if (process.platform === 'win32') {
+    process.once('SIGBREAK', () => { void shutdown('SIGBREAK'); });
+  }
 
   log.info(`operator token: ${config.token}`);
   log.info(`  (${config.tokenGenerated ? 'generated and persisted at' : 'loaded from'} ${config.tokenPath})`);

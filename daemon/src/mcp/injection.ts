@@ -21,6 +21,11 @@ export function taskToolServer(ctx: AppContext, runId: string): ToolServerSpec {
     command: process.execPath,
     args: [ctx.mcpServerPath],
     env: {
+      // `process.execPath` is Electron's binary when the daemon is the one the
+      // desktop bundled. An in-process MCP spawn (the builtin runtime) passes
+      // exactly this env map, so the flag must travel with the spec or the
+      // child would start a second GUI instead of a Node process.
+      ...(process.env['ELECTRON_RUN_AS_NODE'] ? { ELECTRON_RUN_AS_NODE: process.env['ELECTRON_RUN_AS_NODE'] } : {}),
       PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
       // MCP servers only get the internal server token; the agent's own
       // environment carries the read-only agent token instead.
