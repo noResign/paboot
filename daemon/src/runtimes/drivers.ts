@@ -48,11 +48,11 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
     start(req) {
       const capabilities = deps.capabilities(adapter.id);
       // Host-picking runtimes (Claude `--session-id`) name the session up front
-      // so it can be resumed later; a runtime that allocates its own id reports
-      // it through `onNativeSessionId` instead.
+      // so it can be resumed later. The id is NOT persisted here: only the CLI's
+      // init event proves the conversation exists (see `engine.ts`), otherwise a
+      // run that fails to start leaves a ghost id behind.
       const newSessionId =
         !req.resumeNativeSessionId && capabilities.sessionId ? randomUUID() : undefined;
-      if (newSessionId) req.onNativeSessionId(newSessionId);
 
       return startRun({
         id: req.runId,
@@ -68,6 +68,8 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
         env: process.env,
         extraDirs: req.extraDirs,
         systemContext: req.systemContext,
+        dataDir: deps.ctx.config.dataDir,
+        onNativeSessionId: req.onNativeSessionId,
         toolServers: [taskToolServer(deps.ctx, req.runId)],
         permissionHook:
           req.permissionMode === 'bypass'

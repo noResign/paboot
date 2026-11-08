@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startRun } from '../src/runtimes/engine';
 import { claudeAdapter } from '../src/runtimes/claude/adapter';
 import { defaultCapabilities, type RuntimeAdapter } from '../src/runtimes/types';
@@ -41,16 +44,32 @@ const fakeAdapter: RuntimeAdapter = {
 };
 
 describe('run event stream', () => {
+  const tempDirs: string[] = [];
+  function tempDataDir(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-engine-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it.each([
     ['default', 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*'],
     ['acceptEdits', 'Bash|WebSearch|WebFetch|mcp__.*'],
   ])('passes read grants and remote approval hooks to Claude in %s mode', async (permissionMode, matcher) => {
+    const hookPath = path.join(os.tmpdir(), 'permission-hook.js');
     let claudeArgs: string[] = [];
+    let settingsPath: string | undefined;
+    let settings: { permissions: unknown; hooks: { PreToolUse: unknown } };
     const run = startRun({
       id: `read-grants-${permissionMode}`,
+      dataDir: tempDataDir(),
       adapter: {
         ...fakeAdapter,
         buildArgs: (ctx) => {
+          settingsPath = ctx.permissionHook?.settingsPath;
+          if (settingsPath) settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
           claudeArgs = claudeAdapter.buildArgs(ctx);
           return ['-e', 'process.exit(0)'];
         },
@@ -61,7 +80,7 @@ describe('run event stream', () => {
       capabilities: { ...defaultCapabilities, permissionHook: true },
       env: process.env,
       permissionHook: {
-        hookPath: '/tmp/permission-hook.js',
+        hookPath,
         daemonUrl: 'http://127.0.0.1:1',
         token: 'test-token',
         timeoutMs: 120_000,
@@ -72,21 +91,25 @@ describe('run event stream', () => {
     expect((await run.promise).status).toBe('succeeded');
     const settingsIndex = claudeArgs.indexOf('--settings');
     expect(settingsIndex).toBeGreaterThan(-1);
-    const settings = JSON.parse(claudeArgs[settingsIndex + 1]);
-    expect(settings.permissions).toEqual({ allow: ['Read', 'Grep'] });
-    expect(settings.hooks.PreToolUse).toEqual([
+    // The adapter receives the file path, never the inline JSON.
+    expect(settingsPath).toBeTruthy();
+    expect(claudeArgs[settingsIndex + 1]).toBe(settingsPath);
+    expect(settings!.permissions).toEqual({ allow: ['Read', 'Grep'] });
+    expect(settings!.hooks.PreToolUse).toEqual([
       {
         matcher,
         hooks: [
           {
             type: 'command',
             // Quoted so install paths containing spaces survive cmd.exe/Git Bash.
-            command: `"${process.execPath}" "/tmp/permission-hook.js"`,
+            command: `"${process.execPath}" "${hookPath}"`,
             timeout: 150,
           },
         ],
       },
     ]);
+    // Cleaned up once the run ends.
+    expect(fs.existsSync(settingsPath!)).toBe(false);
     expect(claudeArgs[claudeArgs.indexOf('--permission-mode') + 1]).toBe(permissionMode);
   });
 
@@ -95,6 +118,7 @@ describe('run event stream', () => {
     const run = startRun({
       id: 'run-1',
       adapter: fakeAdapter,
+      dataDir: tempDataDir(),
       prompt: 'hi',
       cwd: process.cwd(),
       permissionMode: 'default',
@@ -120,5 +144,59 @@ describe('run event stream', () => {
     const result = events.findIndex((e) => e.type === 'tool_result');
     expect(events[result]).toMatchObject({ toolUseId: 'tool-1', interrupted: true, isError: true });
     expect(result).toBeGreaterThan(events.findIndex((e) => e.type === 'tool_use'));
+  });
+
+  it('persists the native session id only after the runtime emits init', async () => {
+    const onNativeSessionId = vi.fn();
+    const adapter: RuntimeAdapter = {
+      ...fakeAdapter,
+      buildArgs: () => ['-e', 'console.log("ready")'],
+      createParser: (onEvent) => ({
+        feed: () => onEvent({ type: 'status', label: 'initializing', sessionId: 'native-1' }),
+        flush: () => {},
+      }),
+    };
+    const run = startRun({
+      id: 'native-init',
+      adapter,
+      dataDir: tempDataDir(),
+      prompt: 'hi',
+      cwd: process.cwd(),
+      newSessionId: 'generated-id',
+      permissionMode: 'default',
+      capabilities: defaultCapabilities,
+      env: process.env,
+      onNativeSessionId,
+      onEvent: () => {},
+    });
+
+    expect(await run.promise).toMatchObject({ status: 'succeeded' });
+    expect(onNativeSessionId).toHaveBeenCalledTimes(1);
+    expect(onNativeSessionId).toHaveBeenCalledWith('native-1');
+  });
+
+  it('does not leave a native id behind when the run fails before init', async () => {
+    const onNativeSessionId = vi.fn();
+    const adapter: RuntimeAdapter = {
+      ...fakeAdapter,
+      buildArgs: () => ['-e', 'process.exit(1)'],
+      createParser: () => ({ feed: () => {}, flush: () => {} }),
+    };
+    const run = startRun({
+      id: 'native-init-missing',
+      adapter,
+      dataDir: tempDataDir(),
+      prompt: 'hi',
+      cwd: process.cwd(),
+      newSessionId: 'generated-id',
+      permissionMode: 'default',
+      capabilities: defaultCapabilities,
+      env: process.env,
+      onNativeSessionId,
+      onEvent: () => {},
+    });
+
+    expect((await run.promise).status).toBe('failed');
+    expect(onNativeSessionId).not.toHaveBeenCalled();
   });
 });

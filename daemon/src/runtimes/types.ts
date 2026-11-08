@@ -106,8 +106,12 @@ export interface SpawnContext {
    * permission hook so in-scope reads skip the daemon round-trip.
    */
   extraDirs?: string[];
-  /** When set, the adapter wires tool-permission asks to a PreToolUse hook. */
-  permissionHook?: { settingsJson: string };
+  /**
+   * When set, the adapter wires tool-permission asks to a PreToolUse hook.
+   * `settingsPath` wins when present: inline JSON is re-parsed by `cmd.exe` for
+   * npm `.cmd` shims, which splits the matcher on its `|` separators.
+   */
+  permissionHook?: { settingsJson: string; settingsPath?: string };
   /** External tool servers the runtime should expose to the agent. */
   toolServers?: ToolServerSpec[];
   /**
