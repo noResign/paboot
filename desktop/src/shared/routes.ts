@@ -35,6 +35,9 @@ export const ROUTES = {
   memoryDuplicates: '/api/memory/duplicates',
   memoryDuplicate: (id: string) =>
     `/api/memory/duplicates/${encodeURIComponent(id)}`,
+  memoryDisputes: '/api/memory/disputes',
+  memoryDisputeResolve: (newId: string) =>
+    `/api/memory/disputes/${encodeURIComponent(newId)}/resolve`,
   memoryEntities: '/api/memory/entities',
   memoryEntity: (id: string) => `/api/memory/entities/${encodeURIComponent(id)}`,
   memoryEntityUnmerge: (id: string) =>

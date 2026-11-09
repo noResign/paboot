@@ -197,6 +197,73 @@ public struct MemoryDuplicatesResponse: Decodable, Equatable, Sendable {
     }
 }
 
+public struct MemoryDisputeClaimDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let summary: String
+    public let objectText: String?
+    public let authority: String
+    public let updatedAt: Int
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        objectText = try container.decodeIfPresent(String.self, forKey: .objectText)
+        authority = try container.decodeIfPresent(String.self, forKey: .authority) ?? "derived"
+        updatedAt = try container.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, summary, objectText, authority, updatedAt
+    }
+
+    private init() {
+        id = ""
+        summary = ""
+        objectText = nil
+        authority = "derived"
+        updatedAt = 0
+    }
+
+    static let empty = MemoryDisputeClaimDto()
+}
+
+public struct MemoryDisputeDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let scope: String
+    public let predicate: String
+    public let newClaim: MemoryDisputeClaimDto
+    public let oldClaim: MemoryDisputeClaimDto
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        predicate = try container.decodeIfPresent(String.self, forKey: .predicate) ?? ""
+        newClaim = try container.decodeIfPresent(MemoryDisputeClaimDto.self, forKey: .newClaim)
+            ?? MemoryDisputeClaimDto.empty
+        oldClaim = try container.decodeIfPresent(MemoryDisputeClaimDto.self, forKey: .oldClaim)
+            ?? MemoryDisputeClaimDto.empty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, scope, predicate, newClaim, oldClaim
+    }
+}
+
+public struct MemoryDisputesResponse: Decodable, Equatable, Sendable {
+    public let disputes: [MemoryDisputeDto]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        disputes = try container.decodeIfPresent([MemoryDisputeDto].self, forKey: .disputes) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case disputes
+    }
+}
+
 public struct MemoryEntityDto: Decodable, Equatable, Sendable {
     public let id: String
     public let scope: String

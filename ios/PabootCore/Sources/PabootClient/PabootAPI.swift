@@ -194,6 +194,15 @@ public final class PabootAPI {
         )
     }
 
+    public func memoryDisputes(scope: String) async throws -> MemoryDisputesResponse {
+        try await get(
+            "api/memory/disputes",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            authenticated: true,
+            as: MemoryDisputesResponse.self
+        )
+    }
+
     public func memoryEntities(scope: String) async throws -> MemoryEntitiesResponse {
         try await get(
             "api/memory/entities",

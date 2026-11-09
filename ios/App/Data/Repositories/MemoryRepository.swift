@@ -46,6 +46,15 @@ final class MemoryRepository {
         }
     }
 
+    func disputes(workspaceId: String) async throws -> [MemoryDisputeDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.memoryDisputes(scope: scope(workspaceId)).disputes
+        } catch {
+            throw map(error)
+        }
+    }
+
     func entities(workspaceId: String) async throws -> [MemoryEntityDto] {
         let client = try clientOrThrow()
         do {

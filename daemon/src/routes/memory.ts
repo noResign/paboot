@@ -3,9 +3,11 @@ import type { AppContext } from '../app/context.js';
 import type { Db, WorkspaceRow } from '../db/db.js';
 import { filterCaptureText } from '../memory/capture-filter.js';
 import {
+  DisputeOperationError,
   EntityOperationError,
   hashContent,
   type EntityWithCounts,
+  type MemoryDisputePair,
 } from '../memory/store.js';
 import { buildMemoryBrief } from '../memory/brief.js';
 import { configuredMemoryModel, normalizeMemoryModelSelection } from '../memory/model.js';
@@ -36,6 +38,9 @@ import type {
   MemoryDuplicatesResponse,
   MemoryClaimStatusDto,
   MemoryClaimsResponse,
+  MemoryDisputeDto,
+  MemoryDisputesResponse,
+  MemoryDisputeResolveResponse,
   MemoryEntitiesResponse,
   MemoryEntityDto,
   MemoryEntityResponse,
@@ -95,6 +100,23 @@ function entityDtoFromList(
 ): MemoryEntityDto | undefined {
   const entity = ctx.memory!.listEntitiesWithCounts(scope, status).find((item) => item.id === id);
   return entity ? toEntityDto(entity) : undefined;
+}
+
+function toDisputeDto(pair: MemoryDisputePair): MemoryDisputeDto {
+  const slim = (claim: MemoryClaim) => ({
+    id: claim.id,
+    summary: claim.summary,
+    objectText: claim.objectText,
+    authority: claim.authority,
+    updatedAt: claim.updatedAt,
+  });
+  return {
+    id: pair.id,
+    scope: pair.scope as MemoryDisputeDto['scope'],
+    predicate: pair.predicate,
+    newClaim: slim(pair.newClaim),
+    oldClaim: slim(pair.oldClaim),
+  };
 }
 
 interface MemoryTarget {
@@ -623,6 +645,56 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const dto: MemoryEntityResponse = { ok: true, entity };
+    res.json(dto);
+  });
+
+  app.get('/api/memory/disputes', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const disputes = ctx.memory!.listDisputes(target.scope).map(toDisputeDto);
+    const dto: MemoryDisputesResponse = { disputes };
+    res.json(dto);
+  });
+
+  app.post('/api/memory/disputes/:newId/resolve', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const oldId = req.body?.['oldId'];
+    const keep = req.body?.['keep'];
+    if (typeof oldId !== 'string' || oldId === '' || (keep !== 'new' && keep !== 'old')) {
+      res.status(400).json({ error: 'oldId and keep are required', code: 'bad_request' });
+      return;
+    }
+    const newId = req.params['newId']!;
+    const newClaim = ctx.memory!.getClaim(newId);
+    const oldClaim = ctx.memory!.getClaim(oldId);
+    if (
+      !newClaim ||
+      !oldClaim ||
+      newClaim.scope !== target.scope ||
+      oldClaim.scope !== target.scope ||
+      newClaim.sensitivity === 'secret' ||
+      oldClaim.sensitivity === 'secret'
+    ) {
+      res.status(404).json({ error: 'dispute not found', code: 'dispute_not_found' });
+      return;
+    }
+    try {
+      ctx.memory!.resolveDispute(newId, oldId, keep, 'operator');
+    } catch (err) {
+      if (err instanceof DisputeOperationError) {
+        res
+          .status(err.code === 'dispute_resolved' ? 409 : 404)
+          .json({ error: 'dispute cannot be resolved', code: err.code });
+        return;
+      }
+      throw err;
+    }
+    ctx.db.audit(
+      'memory_dispute_resolve',
+      JSON.stringify({ newId, oldId, keep }),
+    );
+    const dto: MemoryDisputeResolveResponse = { ok: true };
     res.json(dto);
   });
 

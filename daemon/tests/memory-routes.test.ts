@@ -729,3 +729,87 @@ describe('memory entity routes', () => {
     expect(((await again.json()) as { code: string }).code).toBe('entity_merged');
   });
 });
+
+describe('memory dispute routes', () => {
+  it('lists and resolves disputed claims', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}`;
+    const old = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'lives_in',
+      objectText: '上海',
+      kind: 'fact',
+      summary: '住在上海',
+      authority: 'user_confirmed',
+      validFrom: 1_000,
+      confidence: 1,
+      importance: 0.9,
+    });
+    const incoming = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'lives_in',
+      objectText: '杭州',
+      kind: 'fact',
+      summary: '住在杭州',
+      validFrom: 2_000,
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    const list = (await (
+      await fetch(`${url}/api/memory/disputes?sessionId=${session.id}`)
+    ).json()) as {
+      disputes: { id: string; predicate: string; newClaim: { id: string } }[];
+    };
+    expect(list.disputes).toEqual([
+      expect.objectContaining({
+        id: `${incoming.id}:${old.id}`,
+        predicate: 'lives_in',
+      }),
+    ]);
+
+    const resolved = await fetch(
+      `${url}/api/memory/disputes/${incoming.id}/resolve?sessionId=${session.id}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldId: old.id, keep: 'old' }),
+      },
+    );
+    expect(resolved.status).toBe(200);
+    expect(store.getClaim(old.id)?.status).toBe('active');
+    expect(store.getClaim(incoming.id)?.status).toBe('archived');
+
+    const after = (await (
+      await fetch(`${url}/api/memory/disputes?sessionId=${session.id}`)
+    ).json()) as { disputes: unknown[] };
+    expect(after.disputes).toHaveLength(0);
+
+    const again = await fetch(
+      `${url}/api/memory/disputes/${incoming.id}/resolve?sessionId=${session.id}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldId: old.id, keep: 'new' }),
+      },
+    );
+    expect(again.status).toBe(409);
+
+    const invalid = await fetch(
+      `${url}/api/memory/disputes/${incoming.id}/resolve?sessionId=${session.id}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldId: old.id, keep: 'maybe' }),
+      },
+    );
+    expect(invalid.status).toBe(400);
+
+    const otherScope = (await (
+      await fetch(`${url}/api/memory/disputes?scope=user`)
+    ).json()) as { disputes: unknown[] };
+    expect(otherScope.disputes).toHaveLength(0);
+  });
+});

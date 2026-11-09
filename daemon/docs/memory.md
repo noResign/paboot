@@ -158,6 +158,8 @@
 | `/api/memory/entities` | GET | 同 scope 实体（`status=active\|merged`）+ 关联 active claim 数（不含 secret） |
 | `/api/memory/entities/:id` | PATCH | `{ mergeInto }` 同 scope 同 kind 显式合并（operator）；`mem_ops` 记录来源名/别名与迁移 claim id |
 | `/api/memory/entities/:id/unmerge` | POST | 撤销一次合并（operator）；按 `mem_ops` 线索恢复 claim / 别名 / link |
+| `/api/memory/disputes` | GET | 待裁决的冲突对（来自 `mem_ops` 的 dispute 记录） |
+| `/api/memory/disputes/:newId/resolve` | POST | `{ oldId, keep: 'new'\|'old' }` 裁决冲突；保留方标记 `user_confirmed`（operator） |
 | `/api/memory/feedback` | POST | 记录 helpful / wrong / stale / corrected |
 | `/api/memory/remember` | POST | 客户端「记住这个」（`sessionId` + `messageId`） |
 | `/api/memory/search` | GET | `q` + `sessionId`/`scope`（可选 `files`）；D31 检索阶梯，返回 claim / source / observation / summary / document 命中 |

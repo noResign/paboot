@@ -21,6 +21,7 @@ import com.noresign.paboot.network.daemon.dto.MemoryClaimResponse
 import com.noresign.paboot.network.daemon.dto.MemoryClaimsResponse
 import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
+import com.noresign.paboot.network.daemon.dto.MemoryDisputesResponse
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicatesResponse
 import com.noresign.paboot.network.daemon.dto.MemoryEntitiesResponse
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeResponse
@@ -320,6 +321,9 @@ interface PabootApi {
 
     @GET("api/memory/entities")
     suspend fun memoryEntities(@Query("scope") scope: String): MemoryEntitiesResponse
+
+    @GET("api/memory/disputes")
+    suspend fun memoryDisputes(@Query("scope") scope: String): MemoryDisputesResponse
 
     @GET("api/workspaces/{id}/memory")
     suspend fun workspaceMemory(@Path("id") id: String): WorkspaceMemoryDto

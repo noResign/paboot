@@ -108,6 +108,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var timeline: [MemoryTimelineItemDto] = []
     private var duplicates: [MemoryDuplicateDto] = []
     private var entities: [MemoryEntityDto] = []
+    private var disputes: [MemoryDisputeDto] = []
     private var statusUnavailable = false
     private var query = ""
     private var hasLoaded = false
@@ -252,6 +253,11 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 timeline = items
                 UIView.performWithoutAnimation { tableView.reloadData() }
             }
+            if let items = try? await repository.disputes(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                disputes = items
+                UIView.performWithoutAnimation { tableView.reloadData() }
+            }
             if let items = try? await repository.duplicates(workspaceId: workspaceId) {
                 guard generation == loadGeneration else { return }
                 duplicates = items
@@ -300,7 +306,8 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     private func rebuildGroups() {
         groups = groupedMemory(claims, query: query)
-        emptyLabel.isHidden = !groups.isEmpty || showsTimeline || showsDuplicates || showsEntities
+        emptyLabel.isHidden =
+            !groups.isEmpty || showsTimeline || showsDisputes || showsDuplicates || showsEntities
         emptyLabel.text = query.isEmpty
             ? (family == "life"
                 ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
@@ -315,18 +322,24 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     }
 
     private var showsTimeline: Bool { !timeline.isEmpty }
+    private var showsDisputes: Bool { !disputes.isEmpty }
     private var showsDuplicates: Bool { !duplicates.isEmpty }
     private var showsEntities: Bool { !entities.isEmpty }
     private var fixedSections: Int {
-        (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0)
+        (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0) +
+            (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0)
+    }
+    private var disputesSection: Int? {
+        guard showsDisputes else { return nil }
+        return showsTimeline ? 1 : 0
     }
     private var duplicatesSection: Int? {
         guard showsDuplicates else { return nil }
-        return showsTimeline ? 1 : 0
+        return (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0)
     }
     private var entitiesSection: Int? {
         guard showsEntities else { return nil }
-        return (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0)
+        return (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0) + (showsDuplicates ? 1 : 0)
     }
 
     private func groupIndex(for section: Int) -> Int {
@@ -339,6 +352,9 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if showsTimeline && section == 0 { return "最近工作（只读）" }
+        if let disputesSection, section == disputesSection {
+            return "待裁决（只读，共 \(disputes.count)）"
+        }
         if let duplicatesSection, section == duplicatesSection {
             return "重复候选（只读，共 \(duplicates.count)）"
         }
@@ -351,6 +367,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if showsTimeline && section == 0 { return timeline.count }
+        if let disputesSection, section == disputesSection { return disputes.count }
         if let duplicatesSection, section == duplicatesSection { return duplicates.count }
         if let entitiesSection, section == entitiesSection { return entities.count }
         return groups[groupIndex(for: section)].claims.count
@@ -372,6 +389,22 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 "\(item.kind == "summary" ? "摘要" : "观察") · \(memoryDateLabel(item.at))" +
                 sessionHint +
                 (item.files.isEmpty ? "" : " · \(item.files.count) 个文件")
+            cell.detailTextLabel?.font = Typography.caption
+            cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
+            cell.accessoryType = .none
+            cell.backgroundColor = Theme.Colors.surface
+            return cell
+        }
+        if let disputesSection, indexPath.section == disputesSection {
+            let item = disputes[indexPath.row]
+            let cell = tableView.dequeueReusableCell(withIdentifier: "memory-dispute")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-dispute")
+            cell.textLabel?.text = "新：\(item.newClaim.summary)"
+            cell.textLabel?.numberOfLines = 2
+            cell.textLabel?.font = Typography.body
+            cell.textLabel?.textColor = Theme.Colors.textPrimary
+            cell.detailTextLabel?.text =
+                "旧：\(item.oldClaim.summary) · \(item.predicate) · 请在桌面端裁决"
             cell.detailTextLabel?.font = Typography.caption
             cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
             cell.accessoryType = .none

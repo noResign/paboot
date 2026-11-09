@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.repository.MemoryRepository
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
+import com.noresign.paboot.network.daemon.dto.MemoryDisputeDto
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
@@ -24,6 +25,7 @@ sealed class MemoryUiState {
         val timeline: List<MemoryTimelineItemDto> = emptyList(),
         val duplicates: List<MemoryDuplicateDto> = emptyList(),
         val entities: List<MemoryEntityDto> = emptyList(),
+        val disputes: List<MemoryDisputeDto> = emptyList(),
     ) : MemoryUiState()
     data class Error(val message: String) : MemoryUiState()
 }
@@ -55,6 +57,7 @@ class MemoryViewModel(
             val timeline = repository.timeline(workspaceId)
             val duplicates = repository.duplicates(workspaceId)
             val entities = repository.entities(workspaceId)
+            val disputes = repository.disputes(workspaceId)
             val currentSettings = (settings as? NetworkResult.Success)?.data
             when {
                 claims is NetworkResult.Error &&
@@ -66,6 +69,7 @@ class MemoryViewModel(
                     timeline = emptyList(),
                     duplicates = emptyList(),
                     entities = emptyList(),
+                    disputes = emptyList(),
                 )
                 claims is NetworkResult.Error -> _state.value = MemoryUiState.Error(friendlyError(claims))
                 claims is NetworkResult.Success -> _state.value = MemoryUiState.Content(
@@ -75,6 +79,7 @@ class MemoryViewModel(
                     timeline = (timeline as? NetworkResult.Success)?.data ?: emptyList(),
                     duplicates = (duplicates as? NetworkResult.Success)?.data ?: emptyList(),
                     entities = (entities as? NetworkResult.Success)?.data ?: emptyList(),
+                    disputes = (disputes as? NetworkResult.Success)?.data ?: emptyList(),
                 )
             }
         }

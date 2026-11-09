@@ -240,4 +240,82 @@ describe('memory entities', () => {
       expect((err as EntityOperationError).code).toBe('source_not_merged');
     }
   });
+
+  it('lists disputed pairs and resolves them in either direction', () => {
+    const store = openStore();
+    const scope = 'workspace:life-1';
+    const old = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'lives_in',
+      objectText: '上海',
+      kind: 'fact',
+      summary: '住在上海',
+      authority: 'user_confirmed',
+      validFrom: 1_000,
+      confidence: 1,
+      importance: 0.9,
+    });
+    const incoming = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'lives_in',
+      objectText: '杭州',
+      kind: 'fact',
+      summary: '住在杭州',
+      validFrom: 2_000,
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    expect(incoming.status).toBe('disputed');
+
+    const [pair] = store.listDisputes(scope);
+    expect(pair).toMatchObject({
+      id: `${incoming.id}:${old.id}`,
+      predicate: 'lives_in',
+    });
+
+    store.resolveDispute(incoming.id, old.id, 'old', 'test');
+    expect(store.getClaim(old.id)).toMatchObject({
+      status: 'active',
+      authority: 'user_confirmed',
+      supersededBy: null,
+    });
+    expect(store.getClaim(incoming.id)?.status).toBe('archived');
+    expect(store.listDisputes(scope)).toHaveLength(0);
+
+    const secondOld = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'works_at',
+      objectText: '甲公司',
+      kind: 'fact',
+      summary: '在甲公司工作',
+      authority: 'user_confirmed',
+      validFrom: 1_000,
+      confidence: 1,
+      importance: 0.9,
+    });
+    const secondNew = store.insertClaim({
+      scope,
+      endId: null,
+      predicate: 'works_at',
+      objectText: '乙公司',
+      kind: 'fact',
+      summary: '在乙公司工作',
+      validFrom: 2_000,
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    store.resolveDispute(secondNew.id, secondOld.id, 'new', 'test');
+    expect(store.getClaim(secondNew.id)).toMatchObject({
+      status: 'active',
+      authority: 'user_confirmed',
+    });
+    expect(store.getClaim(secondOld.id)).toMatchObject({
+      status: 'superseded',
+      supersededBy: secondNew.id,
+      validTo: 2_000,
+    });
+  });
 });
