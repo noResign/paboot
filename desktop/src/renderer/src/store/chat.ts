@@ -76,6 +76,8 @@ interface ChatStore {
   decide(decision: 'allow' | 'deny' | 'allow_all', reason?: string, response?: unknown): Promise<void>;
   applyStreamEvent(event: StreamEvent): void;
   setPermissionMode(mode: string): void;
+  /** Dismiss the current chat's transient error banner. */
+  clearError(): void;
   /** Persist the session memory mode (`normal` | `no_injection` | `off`). */
   setMemoryMode(mode: 'normal' | 'no_injection' | 'off'): Promise<void>;
   /** Persist a model/parameter switch on the daemon; it applies from the next run. */
@@ -355,14 +357,25 @@ export const useChat = create<ChatStore>((set, get) => ({
     set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, permissionMode: mode })) }));
   },
 
+  clearError() {
+    const key = get().activeKey;
+    if (!key) return;
+    set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, error: null })) }));
+  },
+
   async setMemoryMode(mode) {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
     if (!key || !chat?.sessionId) return;
     const res = await api.setSessionMemoryMode({ sessionId: chat.sessionId, mode });
     if (!res.ok) {
-      const data = res.data as { error?: string; message?: string };
-      const message = data?.message ?? data?.error ?? `保存记忆设置失败（HTTP ${res.status}）`;
+      const data = res.data as { error?: string; message?: string; code?: string };
+      const message =
+        data?.code === 'session_not_chat'
+          ? '这个会话不支持记忆开关'
+          : data?.code === 'memory_not_enabled'
+            ? '该工作区未启用记忆'
+            : (data?.message ?? data?.error ?? `保存记忆设置失败（HTTP ${res.status}）`);
       set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, error: message })) }));
       return;
     }

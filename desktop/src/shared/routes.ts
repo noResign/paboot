@@ -30,6 +30,12 @@ export const ROUTES = {
   memoryFeedback: '/api/memory/feedback',
   memoryRemember: '/api/memory/remember',
   memorySession: '/api/memory/session',
+  memorySearch: '/api/memory/search',
+  memoryTimeline: '/api/memory/timeline',
+  memorySource: (id: string) => `/api/memory/sources/${encodeURIComponent(id)}`,
+  memoryClaimPromote: (id: string) =>
+    `/api/memory/claims/${encodeURIComponent(id)}/promote`,
+  workspaceMemory: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/memory`,
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',

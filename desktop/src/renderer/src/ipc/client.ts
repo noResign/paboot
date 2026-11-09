@@ -33,8 +33,11 @@ import type {
   MemoryClaimsResponse,
   MemoryCorrectClaimRequest,
   MemoryRememberRequest,
+  MemorySearchResponse,
   MemorySessionModeRequest,
   MemoryStatusDto,
+  MemoryTimelineResponse,
+  WorkspaceMemoryDto,
   PermissionDecision,
   PermissionDto,
   PermissionGrantDto,
@@ -356,5 +359,37 @@ export const api = {
       method: 'PATCH',
       path: ROUTES.memorySession,
       body,
+    }),
+  memorySearch: (scope: string, q: string, files?: string) =>
+    request<MemorySearchResponse>({
+      method: 'GET',
+      path: ROUTES.memorySearch,
+      query: files ? { scope, q, files } : { scope, q },
+    }),
+  memoryTimeline: (scope: string) =>
+    request<MemoryTimelineResponse>({ method: 'GET', path: ROUTES.memoryTimeline, query: { scope } }),
+  promoteMemoryClaim: (scope: string, id: string, shareClass: 'portable' | 'personal' | 'life_only') =>
+    request<MemoryClaimResponse>({
+      method: 'POST',
+      path: ROUTES.memoryClaimPromote(id),
+      query: { scope },
+      body: { shareClass },
+    }),
+  workspaceMemory: (id: string) =>
+    request<WorkspaceMemoryDto>({ method: 'GET', path: ROUTES.workspaceMemory(id) }),
+  updateWorkspaceMemory: (
+    id: string,
+    patch: {
+      enabled?: boolean;
+      injectionEnabled?: boolean;
+      profileMode?: 'off' | 'portable' | 'full';
+      lifeReadable?: boolean;
+      providerOverride?: string | null;
+    },
+  ) =>
+    request<WorkspaceMemoryDto>({
+      method: 'PATCH',
+      path: ROUTES.workspaceMemory(id),
+      body: patch,
     }),
 };

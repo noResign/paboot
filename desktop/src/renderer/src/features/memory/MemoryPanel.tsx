@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../ipc/client';
 import { Icon } from '../../ui/Icon';
-import type { MemoryClaimDto, MemoryStatusDto } from '../../../../shared/contract';
+import type {
+  MemoryClaimDto,
+  MemorySearchHitDto,
+  MemoryStatusDto,
+  MemoryTimelineItemDto,
+  WorkspaceMemoryDto,
+} from '../../../../shared/contract';
 
 interface Props {
   workspaceId: string;
   workspaceName: string;
+  family?: 'dev' | 'life';
   onClose(): void;
 }
+
+type Tab = 'claims' | 'timeline' | 'search';
 
 const GROUPS: Array<{ kind: MemoryClaimDto['kind']; label: string }> = [
   { kind: 'fact', label: '关于你' },
@@ -54,6 +63,16 @@ function dateLabel(timestamp: number | null): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+/** `validFrom` is when the fact started; null `validTo` means still valid. */
+function validityLabel(claim: MemoryClaimDto): string {
+  if (claim.validFrom === null && claim.validTo === null) return '未知';
+  if (claim.validFrom !== null && claim.validTo !== null) {
+    return `${dateLabel(claim.validFrom)} – ${dateLabel(claim.validTo)}`;
+  }
+  if (claim.validFrom !== null) return `${dateLabel(claim.validFrom)} 起`;
+  return `至 ${dateLabel(claim.validTo)}`;
+}
+
 function compareClaims(a: MemoryClaimDto, b: MemoryClaimDto): number {
   const authority = (claim: MemoryClaimDto) => (claim.authority === 'user_confirmed' ? 1 : 0);
   return (
@@ -68,10 +87,12 @@ function compareClaims(a: MemoryClaimDto, b: MemoryClaimDto): number {
  * list expanded every source quote inline, which made scanning dozens of
  * claims slow; source and actions now live in the selected item's detail.
  */
-export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
+export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Props) {
   const scope = `workspace:${workspaceId}`;
+  const [tab, setTab] = useState<Tab>('claims');
   const [claims, setClaims] = useState<MemoryClaimDto[]>([]);
   const [status, setStatus] = useState<MemoryStatusDto | null>(null);
+  const [settings, setSettings] = useState<WorkspaceMemoryDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,24 +102,103 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [timeline, setTimeline] = useState<MemoryTimelineItemDto[]>([]);
+  const [selectedTimelineId, setSelectedTimelineId] = useState<string | null>(null);
+  const [serverQuery, setServerQuery] = useState('');
+  const [searchHits, setSearchHits] = useState<MemorySearchHitDto[]>([]);
+  const [selectedHitId, setSelectedHitId] = useState<string | null>(null);
+  const [promoteClass, setPromoteClass] = useState<'portable' | 'personal' | 'life_only'>('portable');
 
   const load = useCallback(async () => {
-    const [claimsRes, statusRes] = await Promise.all([
+    const [claimsRes, statusRes, settingsRes] = await Promise.all([
       api.memoryClaims(scope),
       api.memoryStatus(scope),
+      api.workspaceMemory(workspaceId),
     ]);
     setLoading(false);
+    // Settings load independently: an opt-in workspace must still render the
+    // enable switch while claims/status legitimately return 400.
+    if (settingsRes.ok) setSettings(settingsRes.data as WorkspaceMemoryDto);
     if (!claimsRes.ok) {
+      const code = (claimsRes.data as { code?: string } | null)?.code;
+      if (code === 'memory_not_enabled') {
+        setClaims([]);
+        setStatus(null);
+        setError(null);
+        return;
+      }
       setError(errorMessage(claimsRes.data, claimsRes.status));
       return;
     }
+    setError(null);
     if (statusRes.ok) setStatus(statusRes.data as MemoryStatusDto);
     setClaims((claimsRes.data as { claims: MemoryClaimDto[] }).claims);
-  }, [scope]);
+  }, [scope, workspaceId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab !== 'timeline') return;
+    void api.memoryTimeline(scope).then((res) => {
+      if (res.ok) {
+        const items = (res.data as { items: MemoryTimelineItemDto[] }).items;
+        setTimeline(items);
+        setSelectedTimelineId((current) =>
+          current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+        );
+      }
+    });
+  }, [tab, scope]);
+
+  async function updateSettings(patch: Partial<WorkspaceMemoryDto>): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.updateWorkspaceMemory(workspaceId, {
+      enabled: patch.enabled,
+      injectionEnabled: patch.injectionEnabled,
+      profileMode: patch.profileMode,
+      lifeReadable: patch.lifeReadable,
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setSettings(res.data as WorkspaceMemoryDto);
+    setNotice('记忆设置已更新');
+    void load();
+  }
+
+  async function searchMemory(): Promise<void> {
+    const q = serverQuery.trim();
+    if (!q) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.memorySearch(scope, q);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    const hits = (res.data as { hits: MemorySearchHitDto[] }).hits;
+    setSearchHits(hits);
+    setSelectedHitId(hits[0]?.id ?? null);
+  }
+
+  async function promote(claim: MemoryClaimDto): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.promoteMemoryClaim(scope, claim.id, promoteClass);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('已提升为全局记忆');
+    void load();
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -128,6 +228,21 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
     () => claims.find((claim) => claim.id === selectedId) ?? null,
     [claims, selectedId],
   );
+  const selectedTimeline = useMemo(
+    () => timeline.find((item) => item.id === selectedTimelineId) ?? null,
+    [timeline, selectedTimelineId],
+  );
+  const selectedHit = useMemo(
+    () => searchHits.find((hit) => hit.id === selectedHitId) ?? null,
+    [searchHits, selectedHitId],
+  );
+  const groupSpecs = useMemo(
+    () =>
+      family === 'life'
+        ? GROUPS
+        : GROUPS.map((group) => (group.kind === 'fact' ? { ...group, label: '事实' } : group)),
+    [family],
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -147,11 +262,11 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
 
   const groups = useMemo(
     () =>
-      GROUPS.map((group) => ({
+      groupSpecs.map((group) => ({
         ...group,
         claims: filtered.filter((claim) => claim.kind === group.kind).sort(compareClaims),
       })).filter((group) => group.claims.length > 0),
-    [filtered],
+    [filtered, groupSpecs],
   );
 
   function select(claim: MemoryClaimDto): void {
@@ -214,6 +329,7 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
 
   const pending = status?.pendingSources ?? 0;
   const statusUnavailable = status === null;
+  const memoryDisabled = settings !== null && !settings.enabled;
   const model = status?.extractionModel;
   const modelAvailable = status?.modelAvailable === true && Boolean(model);
   const total = claims.length;
@@ -232,12 +348,14 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
         <header className="kn-head">
           <div className="kn-head-copy">
             <div className="kn-head-title">
-              <h2>关于你</h2>
+              <h2>{family === 'life' ? '关于你' : '项目记忆'}</h2>
               <span className="kn-workspace-chip">{workspaceName}</span>
               {total > 0 && <span className="badge subtle">{total} 条</span>}
             </div>
             <p className="hint">
-              自动整理的生活记忆；选中一条查看来源、改正或忘记。
+              {family === 'life'
+                ? '自动整理的生活记忆；选中一条查看来源、改正或忘记。'
+                : '这个工作区的长期记忆默认关闭；在上方启用后开始捕获与注入。'}
             </p>
           </div>
           <div className="kn-head-actions">
@@ -247,33 +365,110 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
           </div>
         </header>
 
+        <div className="mem-tabs">
+          <button className={`btn${tab === 'claims' ? ' primary' : ''}`} onClick={() => setTab('claims')}>
+            记忆
+          </button>
+          <button className={`btn${tab === 'timeline' ? ' primary' : ''}`} onClick={() => setTab('timeline')}>
+            时间线
+          </button>
+          <button className={`btn${tab === 'search' ? ' primary' : ''}`} onClick={() => setTab('search')}>
+            搜索
+          </button>
+          <span className="mem-spacer" />
+          {settings && (
+            <label className="mem-switch">
+              <input
+                type="checkbox"
+                checked={settings.enabled}
+                disabled={busy}
+                onChange={(event) => void updateSettings({ enabled: event.target.checked })}
+              />
+              启用记忆
+            </label>
+          )}
+          {settings?.enabled && (
+            <label className="mem-switch">
+              <input
+                type="checkbox"
+                checked={settings.injectionEnabled}
+                disabled={busy}
+                onChange={(event) =>
+                  void updateSettings({ injectionEnabled: event.target.checked })
+                }
+              />
+              注入
+            </label>
+          )}
+          {settings?.enabled && family === 'life' && (
+            <select
+              className="mem-select"
+              value={settings.profileMode ?? 'portable'}
+              disabled={busy}
+              onChange={(event) =>
+                void updateSettings({
+                  profileMode: event.target.value as 'off' | 'portable' | 'full',
+                })
+              }
+            >
+              <option value="off">画像关</option>
+              <option value="portable">画像 portable</option>
+              <option value="full">画像 full</option>
+            </select>
+          )}
+          {settings?.enabled && family !== 'life' && (
+            <label className="mem-switch">
+              <input
+                type="checkbox"
+                checked={settings.lifeReadable === true}
+                disabled={busy}
+                onChange={(event) =>
+                  void updateSettings({ lifeReadable: event.target.checked })
+                }
+              />
+              允许生活读取
+            </label>
+          )}
+        </div>
+
         <div className="mem-layout">
           <aside className="mem-sidebar">
             <div className="mem-status-line">
               <span className={`mem-dot${modelAvailable ? ' is-on' : ''}`} />
               <span>
-                {statusUnavailable
-                  ? '状态不可用'
-                  : modelAvailable
-                    ? '自动整理'
-                    : model
-                      ? '配置不可用'
-                      : '仅记录'}
+                {memoryDisabled
+                  ? '记忆未启用'
+                  : statusUnavailable
+                    ? '状态不可用'
+                    : modelAvailable
+                      ? '自动整理'
+                      : model
+                        ? '配置不可用'
+                        : '仅记录'}
               </span>
-              {model && <span className="mem-model mono">{model}</span>}
+              {!memoryDisabled && model && <span className="mem-model mono">{model}</span>}
               <span className="mem-spacer" />
-              <span className={`badge${pending > 0 ? '' : ' subtle'}`}>{pending} 待整理</span>
+              {!memoryDisabled && (
+                <span className={`badge${pending > 0 ? '' : ' subtle'}`}>{pending} 待整理</span>
+              )}
             </div>
-            {!modelAvailable && (
+            {memoryDisabled ? (
               <p className="hint mem-status-hint">
-                {statusUnavailable
-                  ? '记忆状态加载失败；列表仍可正常浏览。'
-                  : model
-                    ? '当前记忆模型不可用：请检查 Provider 的 Key、启用状态和模型目录。'
-                    : '到「模型 Provider」勾选「用于记忆」后自动整理。'}
+                勾选上方「启用记忆」后开始捕获、整理与注入。
               </p>
+            ) : (
+              !modelAvailable && (
+                <p className="hint mem-status-hint">
+                  {statusUnavailable
+                    ? '记忆状态加载失败；列表仍可正常浏览。'
+                    : model
+                      ? '当前记忆模型不可用：请检查 Provider 的 Key、启用状态和模型目录。'
+                      : '到「模型 Provider」勾选「用于记忆」后自动整理。'}
+                </p>
+              )
             )}
 
+            <div className="mem-claims-pane" hidden={tab !== 'claims'}>
             <div className="mem-search-wrap">
               <Icon name="search" size={14} />
               <input
@@ -293,7 +488,13 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
                 <div className="mem-empty">
                   <Icon name="eye" size={20} />
                   <b>还没有记忆</b>
-                  <span className="hint">在「生活」里正常聊天即可，消息会在后台自动整理。</span>
+                  <span className="hint">
+                    {memoryDisabled
+                      ? '先在顶部勾选「启用记忆」，再正常聊天。'
+                      : family === 'life'
+                        ? '在「生活」里正常聊天即可，消息会在后台自动整理。'
+                        : '正常聊天即可，消息会在后台自动整理。'}
+                  </span>
                 </div>
               ) : groups.length === 0 ? (
                 <p className="hint">没有匹配的记忆。</p>
@@ -345,10 +546,84 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
                 })
               )}
             </div>
+            </div>
+
+            {tab === 'timeline' && (
+              <div className="mem-groups">
+                {timeline.length === 0 ? (
+                  <p className="hint">还没有时间线记录；跑完一个会记忆的会话后出现。</p>
+                ) : (
+                  timeline.map((item) => (
+                    <button
+                      key={`${item.kind}-${item.id}`}
+                      className={`mem-row${selectedTimelineId === item.id ? ' is-active' : ''}`}
+                      onClick={() => setSelectedTimelineId(item.id)}
+                    >
+                      <span className="mem-row-summary">{item.title}</span>
+                      <span className="mem-row-meta">
+                        <span className="mem-tag">
+                          {item.kind === 'observation' ? '观察' : '摘要'}
+                        </span>
+                        {item.sessionId && (
+                          <span className="mem-tag">
+                            会话 {item.sessionId.replace(/-/g, '').slice(0, 4)}
+                          </span>
+                        )}
+                        <span className="mem-row-date">
+                          {relativeTime(item.at)}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {tab === 'search' && (
+              <>
+                <div className="mem-search-wrap">
+                  <Icon name="search" size={14} />
+                  <input
+                    className="mem-search"
+                    placeholder="搜索全部记忆与知识"
+                    value={serverQuery}
+                    onChange={(event) => setServerQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void searchMemory();
+                    }}
+                  />
+                </div>
+                <button className="btn" onClick={() => void searchMemory()} disabled={busy}>
+                  搜索
+                </button>
+                <div className="mem-groups">
+                  {searchHits.length === 0 ? (
+                    <p className="hint">输入关键词后回车。</p>
+                  ) : (
+                    searchHits.map((hit) => (
+                      <button
+                        key={`${hit.kind}-${hit.id}`}
+                        className={`mem-row${selectedHitId === hit.id ? ' is-active' : ''}`}
+                        onClick={() => setSelectedHitId(hit.id)}
+                      >
+                        <span className="mem-row-summary">{hit.title}</span>
+                        <span className="mem-row-meta">
+                          <span className="mem-tag">{hit.kind}</span>
+                          {hit.files && hit.files.length > 0 && (
+                            <span className="mem-tag">{hit.files.length} files</span>
+                          )}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </aside>
 
           <section className="mem-detail">
             {notice && <div className="ws-notice mem-detail-notice">{notice}</div>}
+            <div hidden={tab !== 'claims'}>
             {!selected ? (
               <div className="mem-detail-empty">
                 <Icon name="eye" size={24} />
@@ -360,7 +635,7 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
                 <div className="mem-detail-head">
                   <div className="mem-badges">
                     <span className="badge subtle">
-                      {GROUPS.find((group) => group.kind === selected.kind)?.label ?? selected.kind}
+                      {groupSpecs.find((group) => group.kind === selected.kind)?.label ?? selected.kind}
                     </span>
                     <span
                       className={`badge${selected.authority === 'user_confirmed' ? '' : ' subtle'}`}
@@ -420,8 +695,8 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
                         <dd>{dateLabel(selected.updatedAt)}</dd>
                       </div>
                       <div>
-                        <dt>有效期</dt>
-                        <dd>{dateLabel(selected.validFrom)}</dd>
+                        <dt>生效</dt>
+                        <dd>{validityLabel(selected)}</dd>
                       </div>
                     </dl>
 
@@ -465,6 +740,104 @@ export function MemoryPanel({ workspaceId, workspaceName, onClose }: Props) {
                       )}
                     </div>
                   </>
+                )}
+                {family === 'life' && selected.scope.startsWith('workspace:') && (
+                  <div className="mem-actions mem-detail-actions">
+                    <select
+                      className="mem-select"
+                      value={promoteClass}
+                      disabled={busy}
+                      onChange={(event) =>
+                        setPromoteClass(
+                          event.target.value as 'portable' | 'personal' | 'life_only',
+                        )
+                      }
+                    >
+                      <option value="portable">portable</option>
+                      <option value="personal">personal</option>
+                      <option value="life_only">life_only</option>
+                    </select>
+                    <button className="btn" disabled={busy} onClick={() => void promote(selected)}>
+                      提升为全局记忆
+                    </button>
+                  </div>
+                )}
+                {family !== 'life' && selected.scope.startsWith('workspace:') && (
+                  <p className="hint mem-detail-actions">
+                    项目记忆只属于当前工作区，不能提升为全局画像。
+                  </p>
+                )}
+              </article>
+            )}
+            </div>
+
+            {tab === 'timeline' && (
+              <article className="mem-detail-body">
+                {selectedTimeline ? (
+                  <>
+                    <div className="mem-detail-head">
+                      <div className="mem-badges">
+                        <span className="badge subtle">
+                          {selectedTimeline.kind === 'observation' ? '观察' : '会话摘要'}
+                        </span>
+                      </div>
+                      <span className="mem-claim-id mono">
+                        {relativeTime(selectedTimeline.at)}
+                      </span>
+                    </div>
+                    <h3 className="mem-detail-title">{selectedTimeline.title}</h3>
+                    {selectedTimeline.subtitle && (
+                      <p className="mem-detail-object">{selectedTimeline.subtitle}</p>
+                    )}
+                    <section className="mem-evidence">
+                      <h4>相关文件</h4>
+                      {selectedTimeline.files.length === 0 ? (
+                        <p className="hint">没有文件记录。</p>
+                      ) : (
+                        selectedTimeline.files.map((file) => (
+                          <p key={file} className="mono">{file}</p>
+                        ))
+                      )}
+                    </section>
+                  </>
+                ) : (
+                  <div className="mem-detail-empty">
+                    <Icon name="eye" size={24} />
+                    <b>选择一条时间线</b>
+                  </div>
+                )}
+              </article>
+            )}
+
+            {tab === 'search' && (
+              <article className="mem-detail-body">
+                {selectedHit ? (
+                  <>
+                    <div className="mem-detail-head">
+                      <div className="mem-badges">
+                        <span className="badge subtle">{selectedHit.kind}</span>
+                      </div>
+                      <span className="mem-claim-id mono">{relativeTime(Date.now())}</span>
+                    </div>
+                    <h3 className="mem-detail-title">{selectedHit.title}</h3>
+                    <p className="mem-detail-object">{selectedHit.snippet}</p>
+                    {selectedHit.path && (
+                      <p className="mono hint">{selectedHit.path}</p>
+                    )}
+                    {selectedHit.files && selectedHit.files.length > 0 && (
+                      <section className="mem-evidence">
+                        <h4>相关文件</h4>
+                        {selectedHit.files.map((file) => (
+                          <p key={file} className="mono">{file}</p>
+                        ))}
+                      </section>
+                    )}
+                  </>
+                ) : (
+                  <div className="mem-detail-empty">
+                    <Icon name="eye" size={24} />
+                    <b>选择一条搜索结果</b>
+                  </div>
                 )}
               </article>
             )}
