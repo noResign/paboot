@@ -754,29 +754,84 @@ export class MemoryStore {
   listClaimDuplicates(
     scope: MemoryScope,
     status = 'pending',
-  ): {
-    id: string;
-    claimId: string;
-    duplicateOf: string;
-    score: number;
-    method: string;
-    status: string;
-  }[] {
+  ): ClaimDuplicateRow[] {
     return this.db
       .prepare(
-        `SELECT id, claim_id AS claimId, duplicate_of AS duplicateOf, score,
+        `SELECT id, claim_id AS claimId, duplicate_of AS duplicateOf, scope, score,
                 method, status
          FROM mem_claim_duplicates WHERE scope = ? AND status = ?
          ORDER BY score DESC`,
       )
-      .all(scope, status) as unknown as {
-      id: string;
-      claimId: string;
-      duplicateOf: string;
-      score: number;
-      method: string;
-      status: string;
-    }[];
+      .all(scope, status) as unknown as ClaimDuplicateRow[];
+  }
+
+  getClaimDuplicate(id: string): ClaimDuplicateRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, claim_id AS claimId, duplicate_of AS duplicateOf, scope, score,
+                method, status
+         FROM mem_claim_duplicates WHERE id = ?`,
+      )
+      .get(id) as unknown as ClaimDuplicateRow | undefined;
+  }
+
+  /**
+   * Accept a Tier-1 candidate: move evidence to the surviving claim, reinforce
+   * it, archive the duplicate, and mark the candidate merged. `user_confirmed`
+   * always wins (the target is upgraded; it is never downgraded).
+   */
+  mergeClaimDuplicate(id: string, actor: string): MemoryClaim | undefined {
+    const candidate = this.getClaimDuplicate(id);
+    if (!candidate || candidate.status !== 'pending') return undefined;
+    const source = this.getClaim(candidate.claimId);
+    const target = this.getClaim(candidate.duplicateOf);
+    if (!source || !target || source.id === target.id) return undefined;
+    const now = Date.now();
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO mem_claim_evidence (claim_id, source_id, relation, quote)
+           SELECT ?, source_id, relation, quote FROM mem_claim_evidence WHERE claim_id = ?`,
+        )
+        .run(target.id, source.id);
+      this.db.prepare(`DELETE FROM mem_claim_evidence WHERE claim_id = ?`).run(source.id);
+      if (source.authority === 'user_confirmed' && target.authority !== 'user_confirmed') {
+        this.db
+          .prepare(
+            `UPDATE mem_claims SET authority = 'user_confirmed', confidence = 1.0,
+               updated_at = ? WHERE id = ?`,
+          )
+          .run(now, target.id);
+      }
+      this.db
+        .prepare(
+          `UPDATE mem_claims SET status = 'archived', superseded_by = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(target.id, now, source.id);
+      this.db
+        .prepare(`DELETE FROM mem_search WHERE kind = 'claim' AND ref_id = ?`)
+        .run(source.id);
+      this.db
+        .prepare(`UPDATE mem_claim_duplicates SET status = 'merged' WHERE id = ?`)
+        .run(id);
+      this.reinforceClaim(target.id);
+      this.refreshClaimIndex(this.getClaim(target.id)!);
+      this.recordOp({
+        batchKey: `merge-claim:${source.id}:${target.id}`,
+        opIndex: 0,
+        op: 'merge_claim',
+        targetType: 'claim',
+        targetId: target.id,
+        payload: { merged: source.id, actor },
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return this.getClaim(target.id);
   }
 
   setClaimDuplicateStatus(id: string, status: 'merged' | 'distinct' | 'dismissed'): boolean {
@@ -1584,6 +1639,16 @@ export interface SearchMemoryInput {
   scopes: readonly MemoryScope[];
   query: string;
   limit?: number;
+}
+
+export interface ClaimDuplicateRow {
+  id: string;
+  claimId: string;
+  duplicateOf: string;
+  scope: MemoryScope;
+  score: number;
+  method: string;
+  status: string;
 }
 
 interface RawSearchRow {
