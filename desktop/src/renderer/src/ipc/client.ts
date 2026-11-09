@@ -29,10 +29,12 @@ import type {
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
   MemoryBriefDto,
+  MemoryClaimDto,
   MemoryClaimResponse,
   MemoryClaimsResponse,
   MemoryCorrectClaimRequest,
   MemoryRememberRequest,
+  MemoryDuplicatesResponse,
   MemorySearchResponse,
   MemorySessionModeRequest,
   MemoryStatusDto,
@@ -368,6 +370,23 @@ export const api = {
     }),
   memoryTimeline: (scope: string) =>
     request<MemoryTimelineResponse>({ method: 'GET', path: ROUTES.memoryTimeline, query: { scope } }),
+  memoryDuplicates: (scope: string, status = 'pending') =>
+    request<MemoryDuplicatesResponse>({
+      method: 'GET',
+      path: ROUTES.memoryDuplicates,
+      query: { scope, status },
+    }),
+  resolveMemoryDuplicate: (
+    scope: string,
+    id: string,
+    action: 'merge' | 'distinct' | 'dismiss',
+  ) =>
+    request<{ ok: boolean; claim?: MemoryClaimDto }>({
+      method: 'POST',
+      path: ROUTES.memoryDuplicate(id),
+      query: { scope },
+      body: { action },
+    }),
   promoteMemoryClaim: (scope: string, id: string, shareClass: 'portable' | 'personal' | 'life_only') =>
     request<MemoryClaimResponse>({
       method: 'POST',

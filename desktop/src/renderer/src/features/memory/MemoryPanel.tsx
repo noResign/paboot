@@ -3,6 +3,7 @@ import { api } from '../../ipc/client';
 import { Icon } from '../../ui/Icon';
 import type {
   MemoryClaimDto,
+  MemoryDuplicateDto,
   MemorySearchHitDto,
   MemoryStatusDto,
   MemoryTimelineItemDto,
@@ -16,7 +17,7 @@ interface Props {
   onClose(): void;
 }
 
-type Tab = 'claims' | 'timeline' | 'search';
+type Tab = 'claims' | 'timeline' | 'search' | 'duplicates';
 
 const GROUPS: Array<{ kind: MemoryClaimDto['kind']; label: string }> = [
   { kind: 'fact', label: '关于你' },
@@ -108,6 +109,8 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [searchHits, setSearchHits] = useState<MemorySearchHitDto[]>([]);
   const [selectedHitId, setSelectedHitId] = useState<string | null>(null);
   const [promoteClass, setPromoteClass] = useState<'portable' | 'personal' | 'life_only'>('portable');
+  const [duplicates, setDuplicates] = useState<MemoryDuplicateDto[]>([]);
+  const [selectedDuplicateId, setSelectedDuplicateId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [claimsRes, statusRes, settingsRes] = await Promise.all([
@@ -151,6 +154,37 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
       }
     });
   }, [tab, scope]);
+
+  useEffect(() => {
+    if (tab !== 'duplicates') return;
+    void api.memoryDuplicates(scope).then((res) => {
+      if (res.ok) {
+        const items = (res.data as { duplicates: MemoryDuplicateDto[] }).duplicates;
+        setDuplicates(items);
+        setSelectedDuplicateId((current) =>
+          current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+        );
+      }
+    });
+  }, [tab, scope]);
+
+  async function resolveDuplicate(
+    duplicate: MemoryDuplicateDto,
+    action: 'merge' | 'distinct' | 'dismiss',
+  ): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.resolveMemoryDuplicate(scope, duplicate.id, action);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(action === 'merge' ? '已合并重复记忆' : action === 'distinct' ? '已确认不是重复' : '已忽略');
+    setDuplicates((current) => current.filter((item) => item.id !== duplicate.id));
+    setSelectedDuplicateId((current) => (current === duplicate.id ? null : current));
+    if (action === 'merge') void load();
+  }
 
   async function updateSettings(patch: Partial<WorkspaceMemoryDto>): Promise<void> {
     setBusy(true);
@@ -235,6 +269,10 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const selectedHit = useMemo(
     () => searchHits.find((hit) => hit.id === selectedHitId) ?? null,
     [searchHits, selectedHitId],
+  );
+  const selectedDuplicate = useMemo(
+    () => duplicates.find((item) => item.id === selectedDuplicateId) ?? null,
+    [duplicates, selectedDuplicateId],
   );
   const groupSpecs = useMemo(
     () =>
@@ -374,6 +412,13 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
           </button>
           <button className={`btn${tab === 'search' ? ' primary' : ''}`} onClick={() => setTab('search')}>
             搜索
+          </button>
+          <button
+            className={`btn${tab === 'duplicates' ? ' primary' : ''}`}
+            onClick={() => setTab('duplicates')}
+          >
+            重复
+            {duplicates.length > 0 && <span className="badge subtle">{duplicates.length}</span>}
           </button>
           <span className="mem-spacer" />
           {settings && (
@@ -619,6 +664,28 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                 </div>
               </>
             )}
+
+            {tab === 'duplicates' && (
+              <div className="mem-groups">
+                {duplicates.length === 0 ? (
+                  <p className="hint">没有待审核的重复候选。</p>
+                ) : (
+                  duplicates.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`mem-row${selectedDuplicateId === item.id ? ' is-active' : ''}`}
+                      onClick={() => setSelectedDuplicateId(item.id)}
+                    >
+                      <span className="mem-row-summary">{item.claimSummary}</span>
+                      <span className="mem-row-meta">
+                        <span className="mem-tag">相似 {Math.round(item.score * 100)}%</span>
+                        <span className="mem-row-date">与「{item.duplicateSummary}」</span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </aside>
 
           <section className="mem-detail">
@@ -837,6 +904,56 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                   <div className="mem-detail-empty">
                     <Icon name="eye" size={24} />
                     <b>选择一条搜索结果</b>
+                  </div>
+                )}
+              </article>
+            )}
+
+            {tab === 'duplicates' && (
+              <article className="mem-detail-body">
+                {selectedDuplicate ? (
+                  <>
+                    <div className="mem-detail-head">
+                      <div className="mem-badges">
+                        <span className="badge subtle">重复候选</span>
+                        <span className="badge subtle">
+                          相似 {Math.round(selectedDuplicate.score * 100)}%
+                        </span>
+                      </div>
+                      <span className="mem-claim-id mono">{selectedDuplicate.method}</span>
+                    </div>
+                    <h3 className="mem-detail-title">{selectedDuplicate.claimSummary}</h3>
+                    <p className="mem-detail-object">
+                      与已有记忆「{selectedDuplicate.duplicateSummary}」可能重复。
+                    </p>
+                    <div className="mem-actions mem-detail-actions">
+                      <button
+                        className="btn primary"
+                        disabled={busy}
+                        onClick={() => void resolveDuplicate(selectedDuplicate, 'merge')}
+                      >
+                        合并
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => void resolveDuplicate(selectedDuplicate, 'distinct')}
+                      >
+                        不是重复
+                      </button>
+                      <button
+                        className="btn ghost"
+                        disabled={busy}
+                        onClick={() => void resolveDuplicate(selectedDuplicate, 'dismiss')}
+                      >
+                        忽略
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mem-detail-empty">
+                    <Icon name="eye" size={24} />
+                    <b>选择一条候选</b>
                   </div>
                 )}
               </article>

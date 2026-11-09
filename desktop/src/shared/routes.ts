@@ -32,6 +32,9 @@ export const ROUTES = {
   memorySession: '/api/memory/session',
   memorySearch: '/api/memory/search',
   memoryTimeline: '/api/memory/timeline',
+  memoryDuplicates: '/api/memory/duplicates',
+  memoryDuplicate: (id: string) =>
+    `/api/memory/duplicates/${encodeURIComponent(id)}`,
   memorySource: (id: string) => `/api/memory/sources/${encodeURIComponent(id)}`,
   memoryClaimPromote: (id: string) =>
     `/api/memory/claims/${encodeURIComponent(id)}/promote`,

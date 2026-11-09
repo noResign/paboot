@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.repository.MemoryRepository
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
+import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -20,6 +21,7 @@ sealed class MemoryUiState {
         val status: MemoryStatusDto?,
         val settings: WorkspaceMemoryDto? = null,
         val timeline: List<MemoryTimelineItemDto> = emptyList(),
+        val duplicates: List<MemoryDuplicateDto> = emptyList(),
     ) : MemoryUiState()
     data class Error(val message: String) : MemoryUiState()
 }
@@ -49,6 +51,7 @@ class MemoryViewModel(
             val status = repository.status(workspaceId)
             val settings = repository.settings(workspaceId)
             val timeline = repository.timeline(workspaceId)
+            val duplicates = repository.duplicates(workspaceId)
             val currentSettings = (settings as? NetworkResult.Success)?.data
             when {
                 claims is NetworkResult.Error &&
@@ -58,6 +61,7 @@ class MemoryViewModel(
                     status = null,
                     settings = currentSettings,
                     timeline = emptyList(),
+                    duplicates = emptyList(),
                 )
                 claims is NetworkResult.Error -> _state.value = MemoryUiState.Error(friendlyError(claims))
                 claims is NetworkResult.Success -> _state.value = MemoryUiState.Content(
@@ -65,6 +69,7 @@ class MemoryViewModel(
                     status = (status as? NetworkResult.Success)?.data,
                     settings = currentSettings,
                     timeline = (timeline as? NetworkResult.Success)?.data ?: emptyList(),
+                    duplicates = (duplicates as? NetworkResult.Success)?.data ?: emptyList(),
                 )
             }
         }

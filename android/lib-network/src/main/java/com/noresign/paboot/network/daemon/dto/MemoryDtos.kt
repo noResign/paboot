@@ -104,6 +104,24 @@ data class MemorySearchResponse(
 )
 
 @Serializable
+data class MemoryDuplicateDto(
+    val id: String = "",
+    val scope: String = "",
+    val claimId: String = "",
+    val duplicateOf: String = "",
+    val claimSummary: String = "",
+    val duplicateSummary: String = "",
+    val score: Double = 0.0,
+    val method: String = "",
+    val status: String = "pending",
+)
+
+@Serializable
+data class MemoryDuplicatesResponse(
+    val duplicates: List<MemoryDuplicateDto> = emptyList(),
+)
+
+@Serializable
 data class WorkspaceMemoryDto(
     val workspaceId: String = "",
     val enabled: Boolean = false,
