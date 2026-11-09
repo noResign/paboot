@@ -66,9 +66,9 @@ export function capabilityToolServer(
 }
 
 /**
- * Read-only memory tools. They call public GET endpoints, so this server gets
- * the agent token (not the internal server token); write tools will move to
- * internal endpoints + the operator-gated approval path in a later step.
+ * Memory tools call internal endpoints with the server token (the agent must
+ * not be able to bypass the MCP gate by calling them directly). Read tools are
+ * ungated; write tools ask the operator through `gate.ts`.
  */
 export function memoryToolServer(
   ctx: AppContext,
@@ -83,7 +83,7 @@ export function memoryToolServer(
     env: {
       ...(process.env['ELECTRON_RUN_AS_NODE'] ? { ELECTRON_RUN_AS_NODE: process.env['ELECTRON_RUN_AS_NODE'] } : {}),
       PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
-      PABOOT_TOKEN: ctx.config.agentToken,
+      PABOOT_TOKEN: ctx.config.serverToken,
       PABOOT_RUN_ID: runId,
       PABOOT_SESSION_ID: sessionId,
       PABOOT_RUNTIME: runtime,

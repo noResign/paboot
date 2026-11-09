@@ -16,6 +16,6 @@ export const memoryTimelineTool: McpTool = {
   async run(args, ctx) {
     const params = new URLSearchParams(sessionQuery(ctx));
     if (typeof args.limit === 'number') params.set('limit', String(args.limit));
-    return ctx.callDaemon('GET', `/api/memory/timeline?${params.toString()}`);
+    return ctx.callDaemon('GET', `/api/internal/memory/timeline?${params.toString()}`);
   },
 };

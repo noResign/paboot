@@ -171,18 +171,26 @@
   跨 workspace 读到的 dev claim 是只读的。
 - 设置端点按 family 校验字段：`profileMode` 仅 life，`lifeReadable` 仅 dev。
 
-## 7. MCP 工具（只读）
+## 7. MCP 工具
 
-`paboot_memory` 随每个 run 注入（external + builtin），env 带 `PABOOT_SESSION_ID` 与
-**agent token**；scope 由 daemon 从 session 解析，模型不能指定。
+`paboot_memory` 随每个 run 注入（external + builtin），env 带 `PABOOT_RUN_ID` /
+`PABOOT_SESSION_ID` 与 **server token**；scope 由 daemon 从 run → session 解析，模型不能指定。
+工具走 `/api/internal/memory/*`，agent token 不能直接调用这些端点。
+
+只读（不额外审批）：
 
 - `search_memory(query, limit?, files?)`
 - `memory_timeline(limit?)`
 - `memory_source(sourceId)`
 - `list_open_loops()`
 
-只读工具不额外弹审批（agent token 本来就只能读）；`remember / forget / complete_loop`
-等写工具需要走 operator + 逐次审批，尚未实现。
+写工具（server 自 gate / builtin 由 ToolExecutor 审批；operator 逐次确认）：
+
+- `remember(text)` — 当前 workspace 的 note source
+- `forget(claimId)` — 只能删当前 workspace claim，写 tombstone
+- `complete_loop(loopId)` — open → done
+
+内部端点：`/api/internal/memory/{search,timeline,sources/:id,loops,remember,forget,loops/:id/complete}`。
 
 ## 8. 已知限制
 
@@ -191,7 +199,8 @@
 - claim 主语仍是 user；relation 可带 object entity，但还没有按 entity 检索 / 加权。
 - entity 跨 scope 只有 link + 显式 merge，没有 UI / 自动 link。
 - Tier-1 候选只落库；没有合并 / distinct / dismissed 的操作 API 或 UI。
-- memory MCP 只读工具已接；`remember / forget / complete_loop` 写工具待做。
+- memory MCP 读 / 写工具已接；`remember` 只写当前 workspace note，跨 workspace `target=life`
+  仍未提供；loop 完成匹配仍靠模型显式调用 `complete_loop`。
 - 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度待接入；builtin 暂未接按轮召回。
 - loop 候选只落库，没有完成匹配 / 提醒 / UI。
 - 观察压缩与 claim 共用一次 LLM 调用；超长事件的 `<elided>` 二次压缩尚未实现。

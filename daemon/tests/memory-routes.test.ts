@@ -78,7 +78,12 @@ async function setup(): Promise<{
   return { url: `http://127.0.0.1:${port}`, db, store, workspace, endId: end.id, session, ctx };
 }
 
-function claimIn(store: MemoryStore, workspaceId: string, endId: string, summary = '住在上海') {
+function claimIn(
+  store: MemoryStore,
+  workspaceId: string,
+  endId: string | null,
+  summary = '住在上海',
+) {
   return store.insertClaim({
     scope: `workspace:${workspaceId}`,
     endId,
@@ -282,6 +287,51 @@ describe('memory routes (M0)', () => {
     });
     expect(rejected.status).toBe(400);
     expect(((await rejected.json()) as { code: string }).code).toBe('session_not_chat');
+  });
+
+  it('supports internal remember / forget / complete-loop by run id', async () => {
+    const { url, db, store, workspace, session } = await setup();
+    db.createRun({
+      id: 'run-internal',
+      sessionId: session.id,
+      runtime: 'claude',
+      model: null,
+      prompt: 'x',
+      status: 'running',
+      permissionMode: 'ask',
+    });
+    const remembered = await fetch(
+      `${url}/api/internal/memory/remember?runId=run-internal`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: '记住我喜欢咖啡' }),
+      },
+    );
+    expect(remembered.status).toBe(200);
+    expect(store.listSources(`workspace:${workspace.id}`).some((source) => source.content.includes('咖啡')))
+      .toBe(true);
+
+    const claim = claimIn(store, workspace.id, null, '喜欢咖啡');
+    const forgotten = await fetch(`${url}/api/internal/memory/forget?runId=run-internal`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ claimId: claim.id }),
+    });
+    expect(forgotten.status).toBe(200);
+    expect(store.getClaim(claim.id)).toBeUndefined();
+
+    const loop = store.upsertLoopCandidate({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      title: '补测试',
+    });
+    const completed = await fetch(
+      `${url}/api/internal/memory/loops/${loop}/complete?runId=run-internal`,
+      { method: 'POST' },
+    );
+    expect(completed.status).toBe(200);
+    expect(store.listOpenLoops(`workspace:${workspace.id}`)).toEqual([]);
   });
 
   it('lists open loops for the session scope', async () => {
