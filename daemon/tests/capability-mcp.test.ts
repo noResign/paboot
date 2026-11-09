@@ -149,6 +149,30 @@ describe('paboot_capability MCP server', () => {
     client.stop();
   });
 
+  it('does not execute a device mutation when approval is denied', async () => {
+    permissionStatus = 'denied';
+    const client = startClient(daemonEnv(await fakeDaemon()));
+    const response = await client.rpc('tools/call', {
+      name: 'android_tap',
+      arguments: { x: 1, y: 2 },
+    });
+    expect(response.result.isError).toBe(true);
+    expect(calls.some((call) => call.path === '/api/internal/capability/device/tap')).toBe(false);
+    client.stop();
+  });
+
+  it('dispatches an approved device mutation with the run id', async () => {
+    const client = startClient(daemonEnv(await fakeDaemon()));
+    const response = await client.rpc('tools/call', {
+      name: 'android_tap',
+      arguments: { x: 1, y: 2 },
+    });
+    expect(response.result.isError).toBeUndefined();
+    const call = calls.find((item) => item.path === '/api/internal/capability/device/tap');
+    expect(call?.body).toMatchObject({ runId: 'run-1', x: 1, y: 2 });
+    client.stop();
+  });
+
   it('gates the tool through the internal permission API', async () => {
     const client = startClient(daemonEnv(await fakeDaemon()));
     const response = await client.rpc('tools/call', { name: 'echo', arguments: { text: 'hi' } });
