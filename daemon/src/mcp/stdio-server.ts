@@ -7,7 +7,7 @@
  * daemon/transport failure is returned as an MCP tool error (fail closed).
  */
 import { createToolContext } from './context.js';
-import type { McpTool } from './types.js';
+import type { McpTool, McpToolResult } from './types.js';
 
 const DEFAULT_PROTOCOL_VERSION = '2024-11-05';
 
@@ -47,14 +47,23 @@ export function serveStdioMcp(options: StdioMcpServerOptions): void {
     };
   };
 
-  const callTool = async (
-    name: string,
-    args: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> => {
+  const isToolResult = (value: unknown): value is McpToolResult => {
+    if (!value || typeof value !== 'object') return false;
+    const content = (value as { content?: unknown }).content;
+    if (!Array.isArray(content)) return false;
+    return content.every((block) => {
+      if (!block || typeof block !== 'object') return false;
+      const type = (block as { type?: unknown }).type;
+      return type === 'text' || type === 'image';
+    });
+  };
+
+  const callTool = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
     try {
       const tool = toolsByName.get(name);
       if (!tool) return toolResult(`unknown tool: ${name}`, true);
-      return toolResult(await tool.run(args, toolContext));
+      const value = await tool.run(args, toolContext);
+      return isToolResult(value) ? value : toolResult(value);
     } catch (err) {
       return toolResult(err instanceof Error ? err.message : String(err), true);
     }

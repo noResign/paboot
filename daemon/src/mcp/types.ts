@@ -19,6 +19,15 @@ export interface ToolContext {
   callDaemon(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown>;
 }
 
+export type McpContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
+export interface McpToolResult {
+  content: McpContentBlock[];
+  isError?: boolean;
+}
+
 export interface McpTool {
   definition: McpToolDefinition;
   run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> | unknown;

@@ -11,6 +11,7 @@
 | [llm.md](llm.md) | 共享 LLM 层：类型契约 / provider 目录 / 凭据（只写不读）/ registry / `none` |
 | [knowledge.md](knowledge.md) | K0 curated 知识：磁盘布局 / `.meta.json` 治理 / 扫描 / API / 首轮指针注入 |
 | [memory.md](memory.md) | Memory M0：life 捕获 / 抽取 / brief / API / 配置与边界 |
+| [capabilities.md](capabilities.md) | Dev Space 能力：registry / bindings / Android device provider / MCP 工具与审批 |
 | [permissions.md](permissions.md) | 权限审批 · 安全模型 |
 | [configuration.md](configuration.md) | 配置参数参考 |
 | [docker.md](docker.md) | Docker 部署（镜像只含 daemon；默认工作区隔离，可选挂宿主机项目） |
@@ -73,6 +74,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
 | `memory/` | Memory M0 + M1.1：`memory.db` schema / store、`settings`（workspace 开关）、`read-policy`（dev / life 跨读）、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、brief / 字符预算；见 [memory.md](memory.md) |
+| `capabilities/` | Dev Space 能力：`registry`（能力族）、`scope`（binding / 端解析）、`providers/android`（adb / ui dump / device tools）；见 [capabilities.md](capabilities.md) |
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
 | `knowledge/` | K0 curated 知识：`paths`（根 / slug / containment）、`manifest`（`.meta.json` 原子读写 / hash）、`store`（扫描 / 读写 / verify / 永久删除 / export）、`index`（confirmed → ContextSection）、`zip`（无依赖导出） |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |

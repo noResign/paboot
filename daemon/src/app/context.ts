@@ -10,6 +10,7 @@ import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
 import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
+import type { DeviceProvider } from '../capabilities/types.js';
 
 /**
  * Shared dependency object threaded through route registrars. Keep this the
@@ -47,4 +48,6 @@ export interface AppContext {
   mcpServerPath: string;
   /** Absolute path to the compiled `paboot_capability` MCP server entry. */
   capabilityMcpServerPath: string;
+  /** Device provider shared by capability routes; optional in partial tests. */
+  deviceProvider?: DeviceProvider;
 }

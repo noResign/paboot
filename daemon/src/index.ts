@@ -8,6 +8,8 @@ import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
 import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
+import { AdbRunner } from './capabilities/providers/android/adb.js';
+import { AndroidDeviceProvider } from './capabilities/providers/android/index.js';
 import { MemoryKnowledgeIndexer } from './memory/knowledge-index.js';
 import { configuredMemoryModel, resolveMemoryModel } from './memory/model.js';
 import { MemoryStore } from './memory/store.js';
@@ -210,6 +212,7 @@ async function main(): Promise<void> {
       'server.js',
     ),
   };
+  ctx.deviceProvider = new AndroidDeviceProvider(new AdbRunner());
 
   // K2 lives in memory.db but the files stay authoritative; rebuild the mirror
   // for every known workspace at boot, then keep it fresh from knowledge routes.
