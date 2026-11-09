@@ -26,6 +26,7 @@ import { registerCapabilityDeviceRoutes } from '../routes/capability-device.js';
 import { registerDeviceRoutes } from '../routes/device.js';
 import { registerEndRoutes } from '../routes/ends.js';
 import { registerMcpCapabilityRoutes } from '../routes/mcp-capability.js';
+import { registerMockRoutes } from '../routes/mock.js';
 import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
 import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
 import { registerWorkspaceRoutes } from '../routes/workspaces.js';
@@ -73,6 +74,7 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerCapabilityDeviceRoutes(app, ctx);
   registerDeviceRoutes(app, ctx);
   registerEndRoutes(app, ctx);
+  registerMockRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
   registerSystemRoutes(app, hooks);
 
