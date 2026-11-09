@@ -88,6 +88,23 @@ export class EntityOperationError extends Error {
   }
 }
 
+export type DisputeOperationErrorCode = 'dispute_not_found' | 'dispute_resolved';
+
+export class DisputeOperationError extends Error {
+  constructor(readonly code: DisputeOperationErrorCode) {
+    super(code);
+    this.name = 'DisputeOperationError';
+  }
+}
+
+export interface MemoryDisputePair {
+  id: string;
+  scope: MemoryScope;
+  predicate: string;
+  newClaim: MemoryClaim;
+  oldClaim: MemoryClaim;
+}
+
 export interface EntityWithCounts extends MemoryEntity {
   claimCount: number;
   mergedIntoName: string | null;
@@ -670,6 +687,110 @@ export class MemoryStore {
       throw err;
     }
     return this.getEntity(sourceId)!;
+  }
+
+  /** Unresolved conflict pairs recorded by `resolveClaimConflicts`. */
+  listDisputes(scope: MemoryScope): MemoryDisputePair[] {
+    const rows = this.db
+      .prepare(
+        `SELECT target_id AS newId, payload_json AS payload
+         FROM mem_ops WHERE op = 'dispute' ORDER BY created_at DESC`,
+      )
+      .all() as Array<{ newId: string; payload: string }>;
+    const seen = new Set<string>();
+    const out: MemoryDisputePair[] = [];
+    for (const row of rows) {
+      let oldId: string | undefined;
+      try {
+        oldId = (JSON.parse(row.payload) as { supersedes?: string }).supersedes;
+      } catch {
+        continue;
+      }
+      if (!oldId) continue;
+      const key = `${row.newId}:${oldId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const newClaim = this.getClaim(row.newId);
+      const oldClaim = this.getClaim(oldId);
+      if (!newClaim || !oldClaim) continue;
+      if (newClaim.scope !== scope || oldClaim.scope !== scope) continue;
+      if (newClaim.status !== 'disputed' && oldClaim.status !== 'disputed') continue;
+      out.push({ id: key, scope, predicate: newClaim.predicate, newClaim, oldClaim });
+    }
+    return out;
+  }
+
+  /** Explicit user decision: keep one side, retire the other. */
+  resolveDispute(
+    newId: string,
+    oldId: string,
+    keep: 'new' | 'old',
+    createdBy: string,
+  ): MemoryDisputePair {
+    const newClaim = this.getClaim(newId);
+    const oldClaim = this.getClaim(oldId);
+    if (
+      !newClaim ||
+      !oldClaim ||
+      newClaim.scope !== oldClaim.scope ||
+      newClaim.sensitivity === 'secret' ||
+      oldClaim.sensitivity === 'secret'
+    ) {
+      throw new DisputeOperationError('dispute_not_found');
+    }
+    if (newClaim.status !== 'disputed' && oldClaim.status !== 'disputed') {
+      throw new DisputeOperationError('dispute_resolved');
+    }
+    const now = Date.now();
+    this.db.exec('BEGIN');
+    try {
+      if (keep === 'new') {
+        this.db
+          .prepare(
+            `UPDATE mem_claims SET status = 'active', authority = 'user_confirmed',
+               confidence = 1, superseded_by = NULL, updated_at = ? WHERE id = ?`,
+          )
+          .run(now, newId);
+        this.db
+          .prepare(
+            `UPDATE mem_claims SET status = 'superseded', superseded_by = ?, valid_to = ?,
+               updated_at = ? WHERE id = ?`,
+          )
+          .run(newId, newClaim.validFrom ?? now, now, oldId);
+      } else {
+        this.db
+          .prepare(
+            `UPDATE mem_claims SET status = 'active', authority = 'user_confirmed',
+               confidence = 1, superseded_by = NULL, updated_at = ? WHERE id = ?`,
+          )
+          .run(now, oldId);
+        this.db
+          .prepare(
+            `UPDATE mem_claims SET status = 'archived', superseded_by = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .run(oldId, now, newId);
+      }
+      this.recordOp({
+        batchKey: `resolve-dispute:${newId}:${oldId}`,
+        opIndex: 0,
+        op: 'resolve_dispute',
+        targetType: 'claim',
+        targetId: newId,
+        payload: { keep, createdBy, at: now },
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return {
+      id: `${newId}:${oldId}`,
+      scope: newClaim.scope,
+      predicate: newClaim.predicate,
+      newClaim: this.getClaim(newId)!,
+      oldClaim: this.getClaim(oldId)!,
+    };
   }
 
   // ---- claims ----

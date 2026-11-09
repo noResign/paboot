@@ -803,6 +803,30 @@ export interface MemoryEntityResponse {
   entity: MemoryEntityDto;
 }
 
+export interface MemoryDisputeClaimDto {
+  id: string;
+  summary: string;
+  objectText: string | null;
+  authority: MemoryClaimAuthorityDto;
+  updatedAt: number;
+}
+
+export interface MemoryDisputeDto {
+  id: string;
+  scope: MemoryScopeDto;
+  predicate: string;
+  newClaim: MemoryDisputeClaimDto;
+  oldClaim: MemoryDisputeClaimDto;
+}
+
+export interface MemoryDisputesResponse {
+  disputes: MemoryDisputeDto[];
+}
+
+export interface MemoryDisputeResolveResponse {
+  ok: boolean;
+}
+
 /** L0 原文；`memory_source` 三层披露的最底层。 */
 export interface MemorySourceDto {
   id: string;

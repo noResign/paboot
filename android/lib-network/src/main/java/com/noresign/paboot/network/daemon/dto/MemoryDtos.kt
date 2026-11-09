@@ -122,6 +122,29 @@ data class MemoryDuplicatesResponse(
 )
 
 @Serializable
+data class MemoryDisputeClaimDto(
+    val id: String = "",
+    val summary: String = "",
+    val objectText: String? = null,
+    val authority: String = "derived",
+    val updatedAt: Long = 0L,
+)
+
+@Serializable
+data class MemoryDisputeDto(
+    val id: String = "",
+    val scope: String = "",
+    val predicate: String = "",
+    val newClaim: MemoryDisputeClaimDto = MemoryDisputeClaimDto(),
+    val oldClaim: MemoryDisputeClaimDto = MemoryDisputeClaimDto(),
+)
+
+@Serializable
+data class MemoryDisputesResponse(
+    val disputes: List<MemoryDisputeDto> = emptyList(),
+)
+
+@Serializable
 data class MemoryEntityDto(
     val id: String = "",
     val scope: String = "",

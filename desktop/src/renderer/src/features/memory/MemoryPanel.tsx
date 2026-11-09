@@ -3,6 +3,7 @@ import { api } from '../../ipc/client';
 import { Icon } from '../../ui/Icon';
 import type {
   MemoryClaimDto,
+  MemoryDisputeDto,
   MemoryDuplicateDto,
   MemoryEntityDto,
   MemorySearchHitDto,
@@ -18,7 +19,7 @@ interface Props {
   onClose(): void;
 }
 
-type Tab = 'claims' | 'timeline' | 'search' | 'duplicates' | 'entities';
+type Tab = 'claims' | 'timeline' | 'search' | 'duplicates' | 'entities' | 'disputes';
 
 const GROUPS: Array<{ kind: MemoryClaimDto['kind']; label: string }> = [
   { kind: 'fact', label: '关于你' },
@@ -125,6 +126,8 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
   const [entityStatus, setEntityStatus] = useState<'active' | 'merged'>('active');
+  const [disputes, setDisputes] = useState<MemoryDisputeDto[]>([]);
+  const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [claimsRes, statusRes, settingsRes] = await Promise.all([
@@ -182,6 +185,19 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     });
   }, [tab, scope]);
 
+  useEffect(() => {
+    if (tab !== 'disputes') return;
+    void api.memoryDisputes(scope).then((res) => {
+      if (res.ok) {
+        const items = res.data.disputes;
+        setDisputes(items);
+        setSelectedDisputeId((current) =>
+          current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+        );
+      }
+    });
+  }, [tab, scope]);
+
   const loadEntities = useCallback(
     async (status: 'active' | 'merged' = 'active') => {
       const res = await api.memoryEntities(scope, status);
@@ -216,6 +232,31 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     setDuplicates((current) => current.filter((item) => item.id !== duplicate.id));
     setSelectedDuplicateId((current) => (current === duplicate.id ? null : current));
     if (action === 'merge') void load();
+  }
+
+  async function resolveDispute(dispute: MemoryDisputeDto, keep: 'new' | 'old'): Promise<void> {
+    const chosen = keep === 'new' ? dispute.newClaim : dispute.oldClaim;
+    const confirmed = window.confirm(
+      `以「${chosen.summary}」为准？另一条会被归档，此决定会标记为你已确认。`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.resolveMemoryDispute(
+      scope,
+      dispute.newClaim.id,
+      dispute.oldClaim.id,
+      keep,
+    );
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(`已裁决，保留「${chosen.summary}」`);
+    setDisputes((current) => current.filter((item) => item.id !== dispute.id));
+    setSelectedDisputeId((current) => (current === dispute.id ? null : current));
+    void load();
   }
 
   async function mergeEntity(entity: MemoryEntityDto, targetId: string): Promise<void> {
@@ -350,6 +391,10 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const selectedDuplicate = useMemo(
     () => duplicates.find((item) => item.id === selectedDuplicateId) ?? null,
     [duplicates, selectedDuplicateId],
+  );
+  const selectedDispute = useMemo(
+    () => disputes.find((item) => item.id === selectedDisputeId) ?? null,
+    [disputes, selectedDisputeId],
   );
   const selectedEntity = useMemo(
     () => entities.find((item) => item.id === selectedEntityId) ?? null,
@@ -502,6 +547,13 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
           </button>
           <button className={`btn${tab === 'search' ? ' primary' : ''}`} onClick={() => setTab('search')}>
             搜索
+          </button>
+          <button
+            className={`btn${tab === 'disputes' ? ' primary' : ''}`}
+            onClick={() => setTab('disputes')}
+          >
+            待裁决
+            {disputes.length > 0 && <span className="badge subtle">{disputes.length}</span>}
           </button>
           <button
             className={`btn${tab === 'duplicates' ? ' primary' : ''}`}
@@ -760,6 +812,28 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                   )}
                 </div>
               </>
+            )}
+
+            {tab === 'disputes' && (
+              <div className="mem-groups">
+                {disputes.length === 0 ? (
+                  <p className="hint">没有待裁决的冲突。</p>
+                ) : (
+                  disputes.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`mem-row${selectedDisputeId === item.id ? ' is-active' : ''}`}
+                      onClick={() => setSelectedDisputeId(item.id)}
+                    >
+                      <span className="mem-row-summary">新：{item.newClaim.summary}</span>
+                      <span className="mem-row-meta">
+                        <span className="mem-tag">{item.predicate}</span>
+                        <span className="mem-row-date">旧：{item.oldClaim.summary}</span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
             )}
 
             {tab === 'duplicates' && (
@@ -1114,6 +1188,52 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                   <div className="mem-detail-empty">
                     <Icon name="eye" size={24} />
                     <b>选择一条候选</b>
+                  </div>
+                )}
+              </article>
+            )}
+
+            {tab === 'disputes' && (
+              <article className="mem-detail-body">
+                {selectedDispute ? (
+                  <>
+                    <div className="mem-detail-head">
+                      <div className="mem-badges">
+                        <span className="badge subtle">冲突待裁决</span>
+                        <span className="badge subtle">{selectedDispute.predicate}</span>
+                      </div>
+                    </div>
+                    <h3 className="mem-detail-title">{selectedDispute.newClaim.summary}</h3>
+                    <p className="mem-detail-object">
+                      新：{selectedDispute.newClaim.objectText ?? selectedDispute.newClaim.summary}
+                      （{AUTHORITY_LABEL[selectedDispute.newClaim.authority]}）
+                    </p>
+                    <p className="mem-detail-object">
+                      旧：{selectedDispute.oldClaim.objectText ?? selectedDispute.oldClaim.summary}
+                      （{AUTHORITY_LABEL[selectedDispute.oldClaim.authority]}）
+                    </p>
+                    <div className="mem-actions mem-detail-actions">
+                      <button
+                        className="btn primary"
+                        disabled={busy}
+                        onClick={() => void resolveDispute(selectedDispute, 'new')}
+                      >
+                        以新为准
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => void resolveDispute(selectedDispute, 'old')}
+                      >
+                        以旧为准
+                      </button>
+                    </div>
+                    <p className="hint">保留的一方会被标记为你已确认，另一方归档。</p>
+                  </>
+                ) : (
+                  <div className="mem-detail-empty">
+                    <Icon name="eye" size={24} />
+                    <b>选择一条冲突</b>
                   </div>
                 )}
               </article>
