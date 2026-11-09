@@ -205,7 +205,11 @@ public struct MemoryEntityDto: Decodable, Equatable, Sendable {
     public let aliases: [String]
     public let importance: Double
     public let sensitivity: String
+    public let status: String
+    public let mergedInto: String?
+    public let mergedIntoName: String?
     public let claimCount: Int
+    public let linkCount: Int
     public let createdAt: Int
     public let updatedAt: Int
 
@@ -218,13 +222,18 @@ public struct MemoryEntityDto: Decodable, Equatable, Sendable {
         aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
         importance = try container.decodeIfPresent(Double.self, forKey: .importance) ?? 0
         sensitivity = try container.decodeIfPresent(String.self, forKey: .sensitivity) ?? "normal"
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "active"
+        mergedInto = try container.decodeIfPresent(String.self, forKey: .mergedInto)
+        mergedIntoName = try container.decodeIfPresent(String.self, forKey: .mergedIntoName)
         claimCount = try container.decodeIfPresent(Int.self, forKey: .claimCount) ?? 0
+        linkCount = try container.decodeIfPresent(Int.self, forKey: .linkCount) ?? 0
         createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt) ?? 0
         updatedAt = try container.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, scope, kind, canonicalName, aliases, importance, sensitivity, claimCount, createdAt, updatedAt
+        case id, scope, kind, canonicalName, aliases, importance, sensitivity, status
+        case mergedInto, mergedIntoName, claimCount, linkCount, createdAt, updatedAt
     }
 }
 

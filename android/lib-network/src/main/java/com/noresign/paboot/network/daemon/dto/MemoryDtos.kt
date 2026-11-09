@@ -130,7 +130,11 @@ data class MemoryEntityDto(
     val aliases: List<String> = emptyList(),
     val importance: Double = 0.0,
     val sensitivity: String = "normal",
+    val status: String = "active",
+    val mergedInto: String? = null,
+    val mergedIntoName: String? = null,
     val claimCount: Int = 0,
+    val linkCount: Int = 0,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )

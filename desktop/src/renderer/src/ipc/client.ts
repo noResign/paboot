@@ -389,11 +389,11 @@ export const api = {
       query: { scope },
       body: { action },
     }),
-  memoryEntities: (scope: string) =>
+  memoryEntities: (scope: string, status: 'active' | 'merged' = 'active') =>
     request<MemoryEntitiesResponse>({
       method: 'GET',
       path: ROUTES.memoryEntities,
-      query: { scope },
+      query: { scope, status },
     }),
   mergeMemoryEntity: (scope: string, id: string, mergeInto: string) =>
     request<MemoryEntityResponse>({
@@ -401,6 +401,12 @@ export const api = {
       path: ROUTES.memoryEntity(id),
       query: { scope },
       body: { mergeInto },
+    }),
+  unmergeMemoryEntity: (scope: string, id: string) =>
+    request<MemoryEntityResponse>({
+      method: 'POST',
+      path: ROUTES.memoryEntityUnmerge(id),
+      query: { scope },
     }),
   promoteMemoryClaim: (scope: string, id: string, shareClass: 'portable' | 'personal' | 'life_only') =>
     request<MemoryClaimResponse>({
