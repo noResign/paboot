@@ -23,6 +23,8 @@ export interface AppContext {
   knowledge: KnowledgeStore;
   /** K2 mirror into memory.db; optional in partial test contexts. */
   knowledgeIndex?: MemoryKnowledgeIndexer;
+  /** `paboot_memory` MCP entry; set by the composition root. */
+  memoryMcpServerPath?: string;
   /**
    * Long-term memory (`<dataDir>/memory/memory.db`). Optional in partial test
    * contexts; production always wires it and run capture degrades to a no-op.

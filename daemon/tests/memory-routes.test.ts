@@ -284,6 +284,19 @@ describe('memory routes (M0)', () => {
     expect(((await rejected.json()) as { code: string }).code).toBe('session_not_chat');
   });
 
+  it('lists open loops for the session scope', async () => {
+    const { url, store, workspace, session } = await setup();
+    store.upsertLoopCandidate({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      title: '补集成测试',
+    });
+    const response = await fetch(`${url}/api/memory/loops?sessionId=${session.id}`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { loops: { title: string }[] };
+    expect(body.loops.map((loop) => loop.title)).toContain('补集成测试');
+  });
+
   it('corrects a claim and marks it user_confirmed', async () => {
     const { url, store, workspace, endId, session } = await setup();
     const claim = claimIn(store, workspace.id, endId);

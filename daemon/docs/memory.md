@@ -77,6 +77,10 @@
 - 不自动挑选第一个可用 provider，避免生活数据被发到用户没选的模型。
 - 严格 JSON + 受控 predicate；未知 predicate / 无 evidence / quote 回源失败 / `secret`
   一律丢弃。
+- **实体（M2）**：抽取可返回 `entities{tempId,kind,name,aliases}`；worker 在 scope 内按
+  canonical / alias 精确 upsert，claim 可用 `subjectEntity` / `objectEntity` 引用 tempId。
+  跨 scope 只建 `mem_entity_links`，不自动 merge；显式 merge 会把 claim 引用改指目标实体并
+  保留 `merged_into` / `mem_ops`。
 - 会话级 scope 由服务端解析，模型只产 candidate。
 - **Tier-0 精确**：`dedupKey` 相同或 `(scope, end, predicate, normalized object)` 相同 →
   合并证据、追加 `reinforcement_dates`；不新增行。`derived` 重复不会降级
@@ -153,6 +157,7 @@
 | `/api/memory/remember` | POST | 客户端「记住这个」（`sessionId` + `messageId`） |
 | `/api/memory/search` | GET | `q` + `sessionId`/`scope`（可选 `files`）；D31 检索阶梯，返回 claim / source / observation / summary / document 命中 |
 | `/api/memory/timeline` | GET | observation + session summary 时间线 |
+| `/api/memory/loops` | GET | 当前可读 scope 的 open loops |
 | `/api/memory/sources/:id` | GET | L0 原文（read-policy 过滤） |
 | `/api/memory/status` | GET | pending / 最近整理 / 失败次数 / extraction model / modelAvailable |
 | `/api/memory/session` | PATCH | 会话级 `memory_mode` |
@@ -166,14 +171,28 @@
   跨 workspace 读到的 dev claim 是只读的。
 - 设置端点按 family 校验字段：`profileMode` 仅 life，`lifeReadable` 仅 dev。
 
-## 7. 已知限制
+## 7. MCP 工具（只读）
+
+`paboot_memory` 随每个 run 注入（external + builtin），env 带 `PABOOT_SESSION_ID` 与
+**agent token**；scope 由 daemon 从 session 解析，模型不能指定。
+
+- `search_memory(query, limit?, files?)`
+- `memory_timeline(limit?)`
+- `memory_source(sourceId)`
+- `list_open_loops()`
+
+只读工具不额外弹审批（agent token 本来就只能读）；`remember / forget / complete_loop`
+等写工具需要走 operator + 逐次审批，尚未实现。
+
+## 8. 已知限制
 
 - `provider_override` 已持久化，但 worker 仍使用全局 `memory_model`；按 workspace 选 provider
   留到后续。
-- claim 只有 user 主语；relation 以 object text 表示；entity / entity_links 尚未写入。
+- claim 主语仍是 user；relation 可带 object entity，但还没有按 entity 检索 / 加权。
+- entity 跨 scope 只有 link + 显式 merge，没有 UI / 自动 link。
 - Tier-1 候选只落库；没有合并 / distinct / dismissed 的操作 API 或 UI。
-- memory MCP 工具（search / timeline / source / remember / forget / loops）尚未实现。
-- 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度要等 M2；builtin 暂未接按轮召回。
+- memory MCP 只读工具已接；`remember / forget / complete_loop` 写工具待做。
+- 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度待接入；builtin 暂未接按轮召回。
 - loop 候选只落库，没有完成匹配 / 提醒 / UI。
 - 观察压缩与 claim 共用一次 LLM 调用；超长事件的 `<elided>` 二次压缩尚未实现。
 - 客户端「记住这个」按钮尚未接线（API 已就绪）；会话级记忆三档已接桌面 / Android / iOS；

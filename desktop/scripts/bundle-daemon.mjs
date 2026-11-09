@@ -41,6 +41,7 @@ const entries = [
   'permission-hook.js',
   'mcp/servers/paboot_tasks/server.js',
   'mcp/servers/paboot_capability/server.js',
+  'mcp/servers/paboot_memory/server.js',
 ];
 for (const entry of entries) {
   if (!fs.existsSync(path.join(from, entry))) {

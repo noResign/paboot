@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { LlmProvider } from '../llm/types.js';
 import type {
   ClaimKind,
+  EntityKind,
   MemorySource,
   ObservationType,
   Sensitivity,
@@ -32,6 +33,13 @@ export interface ExtractedEvidence {
   quote: string;
 }
 
+export interface ExtractedEntity {
+  tempId: string;
+  kind: EntityKind;
+  name: string;
+  aliases: string[];
+}
+
 export interface ExtractedClaim {
   predicate: MemoryPredicate;
   objectText: string;
@@ -42,6 +50,9 @@ export interface ExtractedClaim {
   confidence: number;
   importance: number;
   sensitivity: Sensitivity;
+  /** Scope-local entity refs resolved against `entities[].tempId`. */
+  subjectEntityTempId: string | null;
+  objectEntityTempId: string | null;
   evidence: ExtractedEvidence[];
 }
 
@@ -67,6 +78,7 @@ export interface ExtractedSummary {
 
 export interface ExtractionResult {
   claims: ExtractedClaim[];
+  entities: ExtractedEntity[];
   observations: ExtractedObservation[];
   summary: ExtractedSummary | null;
 }
@@ -84,6 +96,7 @@ export class MemoryExtractionError extends Error {
 }
 
 const CLAIM_KINDS = new Set<ClaimKind>(['fact', 'preference', 'relation', 'profile']);
+const ENTITY_KINDS = new Set<EntityKind>(['person', 'place', 'org', 'pet', 'project', 'thing']);
 const SENSITIVITIES = new Set<Sensitivity>(['normal', 'private', 'secret']);
 const OBSERVATION_TYPES = new Set<ObservationType>([
   'bugfix',
@@ -119,8 +132,11 @@ export function extractionSystemPrompt(): string {
     '   没有可记的工作内容就省略或输出空数组。',
     '10. 可选输出 summary：{request, investigated, learned, completed, nextSteps, notes}；',
     '    nextSteps 写下一步计划（没有就空字符串）。',
+    '11. 可选输出 entities：{tempId, kind: person|place|org|pet|project|thing, name, aliases}；',
+    '    claim 可用 subjectEntity/objectEntity 填 tempId；用户本人不需要建实体。',
     '输出格式：',
-    '{"claims":[{"predicate":"lives_in","object":"上海","kind":"fact",',
+    '{"entities":[{"tempId":"e1","kind":"person","name":"张女士","aliases":["我妈"]}],',
+    '"claims":[{"predicate":"lives_in","object":"上海","kind":"fact",',
     '"summary":"住在上海","validFrom":"2026-09","timePrecision":"month",',
     '"confidence":0.9,"importance":0.8,"sensitivity":"normal",',
     '"evidence":[{"sourceId":"<source id>","quote":"我上个月搬到上海了"}]}],',
@@ -176,17 +192,24 @@ export function parseExtractionResult(
   }
   const record = document as Record<string, unknown>;
   if (record['skip'] === true) {
-    return { claims: [], observations: [], summary: null };
+    return { claims: [], entities: [], observations: [], summary: null };
   }
   const rawClaims = record['claims'];
   if (rawClaims !== undefined && !Array.isArray(rawClaims)) {
     throw new MemoryExtractionError('claims must be an array', 'invalid_schema');
   }
 
+  const entities: ExtractedEntity[] = [];
+  for (const item of arrayValue(record['entities'])) {
+    const entity = parseEntity(item);
+    if (entity) entities.push(entity);
+  }
+  const entityTempIds = new Set(entities.map((entity) => entity.tempId));
+
   const byId = new Map(sources.map((source) => [source.id, source]));
   const claims: ExtractedClaim[] = [];
   for (const item of arrayValue(rawClaims)) {
-    const claim = parseClaim(item, byId);
+    const claim = parseClaim(item, byId, entityTempIds);
     if (claim) claims.push(claim);
   }
   const observations: ExtractedObservation[] = [];
@@ -196,6 +219,7 @@ export function parseExtractionResult(
   }
   return {
     claims,
+    entities,
     observations,
     summary: parseSummary(record['summary']),
   };
@@ -251,6 +275,7 @@ export function claimDedupKey(predicate: string, objectText: string): string {
 function parseClaim(
   item: unknown,
   sources: Map<string, MemorySource>,
+  entityTempIds: Set<string>,
 ): ExtractedClaim | null {
   if (item === null || typeof item !== 'object' || Array.isArray(item)) return null;
   const record = item as Record<string, unknown>;
@@ -285,8 +310,30 @@ function parseClaim(
     confidence,
     importance,
     sensitivity,
+    subjectEntityTempId: parseEntityRef(record['subjectEntity'], entityTempIds),
+    objectEntityTempId: parseEntityRef(record['objectEntity'], entityTempIds),
     evidence,
   };
+}
+
+function parseEntityRef(raw: unknown, tempIds: Set<string>): string | null {
+  const tempId = stringValue(raw);
+  return tempId && tempIds.has(tempId) ? tempId : null;
+}
+
+function parseEntity(item: unknown): ExtractedEntity | null {
+  if (item === null || typeof item !== 'object' || Array.isArray(item)) return null;
+  const record = item as Record<string, unknown>;
+  const tempId = stringValue(record['tempId']);
+  const kind = stringValue(record['kind']) as EntityKind | null;
+  const name = stringValue(record['name']);
+  if (!tempId || !kind || !ENTITY_KINDS.has(kind) || !name) return null;
+  const aliases = Array.isArray(record['aliases'])
+    ? record['aliases']
+        .map((value) => (typeof value === 'string' ? value.trim() : ''))
+        .filter((value) => value !== '')
+    : [];
+  return { tempId, kind, name, aliases };
 }
 
 function parseObservation(item: unknown): ExtractedObservation | null {

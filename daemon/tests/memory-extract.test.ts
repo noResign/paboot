@@ -163,6 +163,29 @@ describe('extraction validation', () => {
     expect(() => parseExtraction('not json', [source])).toThrowError(MemoryExtractionError);
   });
 
+  it('parses entities and claim references', () => {
+    const result = parseExtractionResult(
+      JSON.stringify({
+        entities: [{ tempId: 'e1', kind: 'person', name: '张女士', aliases: ['我妈'] }],
+        claims: [
+          {
+            predicate: 'relation',
+            object: '张女士',
+            kind: 'relation',
+            summary: '张女士是妈妈',
+            objectEntity: 'e1',
+            evidence: [{ sourceId: source.id, quote: '我上个月搬到上海了' }],
+          },
+        ],
+      }),
+      [source],
+    );
+    expect(result.entities).toEqual([
+      { tempId: 'e1', kind: 'person', name: '张女士', aliases: ['我妈'] },
+    ]);
+    expect(result.claims[0]?.objectEntityTempId).toBe('e1');
+  });
+
   it('parses optional observations and a session summary', () => {
     const result = parseExtractionResult(
       JSON.stringify({
@@ -564,5 +587,33 @@ describe('memory worker', () => {
     // A second run must not duplicate the open follow-up.
     await worker.runOnce();
     expect(store.listOpenLoops('workspace:life-1')).toHaveLength(1);
+  });
+
+  it('upserts extracted entities and links claims to them', async () => {
+    const store = openStore();
+    const source = addSource(store, '我妈张女士下周来上海。', 1, 'r-1');
+    const provider = fakeProvider(() =>
+      JSON.stringify({
+        entities: [{ tempId: 'e1', kind: 'person', name: '张女士', aliases: ['我妈'] }],
+        claims: [
+          {
+            predicate: 'relation',
+            object: '张女士',
+            objectEntity: 'e1',
+            kind: 'relation',
+            summary: '张女士是妈妈',
+            evidence: [{ sourceId: source.id, quote: '我妈张女士下周来上海' }],
+          },
+        ],
+      }),
+    );
+    const worker = new MemoryWorker({ store, resolveModel: async () => model(provider) });
+
+    await worker.runOnce();
+    const entities = store.listEntities('workspace:life-1');
+    expect(entities).toHaveLength(1);
+    expect(entities[0]).toMatchObject({ canonicalName: '张女士', aliases: ['我妈'] });
+    const claim = store.listClaims('workspace:life-1')[0]!;
+    expect(claim.objectEntityId).toBe(entities[0]!.id);
   });
 });

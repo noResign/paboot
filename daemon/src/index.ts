@@ -202,6 +202,13 @@ async function main(): Promise<void> {
       'paboot_capability',
       'server.js',
     ),
+    memoryMcpServerPath: path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'mcp',
+      'servers',
+      'paboot_memory',
+      'server.js',
+    ),
   };
 
   // K2 lives in memory.db but the files stay authoritative; rebuild the mirror

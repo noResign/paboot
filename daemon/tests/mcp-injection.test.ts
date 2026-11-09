@@ -18,6 +18,7 @@ function ctx(overrides: Partial<AppContext> = {}): AppContext {
     },
     mcpServerPath: '/opt/paboot/mcp/servers/paboot_tasks/server.js',
     capabilityMcpServerPath: '/opt/paboot/mcp/servers/paboot_capability/server.js',
+    memoryMcpServerPath: '/opt/paboot/mcp/servers/paboot_memory/server.js',
     ...overrides,
   } as unknown as AppContext;
 }
@@ -46,17 +47,26 @@ describe('capabilityToolServer', () => {
 });
 
 describe('perRunToolServers', () => {
-  it('mounts tasks and capability for every runtime', () => {
-    const specs = perRunToolServers(ctx(), 'run-1', 'builtin');
-    expect(specs.map((spec) => spec.name)).toEqual(['paboot_tasks', 'paboot_capability']);
+  it('mounts tasks, capability and memory for every runtime', () => {
+    const specs = perRunToolServers(ctx(), 'run-1', 'builtin', 'session-1');
+    expect(specs.map((spec) => spec.name)).toEqual([
+      'paboot_tasks',
+      'paboot_capability',
+      'paboot_memory',
+    ]);
     expect(specs[1]?.env.PABOOT_RUNTIME).toBe('builtin');
+    expect(specs[2]?.env).toMatchObject({
+      PABOOT_SESSION_ID: 'session-1',
+      PABOOT_TOKEN: 'agent-token',
+    });
   });
 
   it('omits entries whose path is not wired (partial test contexts)', () => {
     const specs = perRunToolServers(
-      ctx({ mcpServerPath: '', capabilityMcpServerPath: '' }),
+      ctx({ mcpServerPath: '', capabilityMcpServerPath: '', memoryMcpServerPath: '' }),
       'run-1',
       'claude',
+      'session-1',
     );
     expect(specs).toEqual([]);
   });

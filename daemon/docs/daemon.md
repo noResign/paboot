@@ -76,7 +76,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
 | `knowledge/` | K0 curated 知识：`paths`（根 / slug / containment）、`manifest`（`.meta.json` 原子读写 / hash）、`store`（扫描 / 读写 / verify / 永久删除 / export）、`index`（confirmed → ContextSection）、`zip`（无依赖导出） |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |
-| `mcp/` | MCP 模块：`injection.ts`（每 run 的 `ToolServerSpec` 组装 + 各 runtime 注入参数）、`stdio-server.ts`（通用 stdio server loop）、`gate.ts`（capability / memory 自 gate）、`context.ts` / `types.ts`、`servers/paboot_tasks/`、`servers/paboot_capability/`；后续 MCP server 按真实名称建同名目录 |
+| `mcp/` | MCP 模块：`injection.ts`（每 run 的 `ToolServerSpec` 组装 + 各 runtime 注入参数）、`stdio-server.ts`（通用 stdio server loop）、`gate.ts`（capability / memory 自 gate）、`context.ts` / `types.ts`、`servers/paboot_tasks/`、`servers/paboot_capability/`、`servers/paboot_memory/`；后续 MCP server 按真实名称建同名目录 |
 | `routes/*.ts` | HTTP/SSE 边界，按域拆分（完整清单见 [protocol.md](protocol.md) 的端点表） |
 | `runtimes/` | runtime 插件层：`engine`（argv 通用生命周期）、`registry`、`drivers`（driver 装配点）、`active-runs`、`stdio-rpc`、`claude/`、`codex/`、`deepseek/`、`command` |
 | `types/api.ts` | 传输契约：`NormalizedEvent` 事件 union + DTO |
@@ -110,7 +110,8 @@ daemon/
 │  │  ├─ gate.ts          capability / memory 的内部审批 gate
 │  │  ├─ context.ts / types.ts
 │  │  ├─ servers/paboot_tasks/        → dist/mcp/servers/paboot_tasks/server.js
-│  │  └─ servers/paboot_capability/   → dist/mcp/servers/paboot_capability/server.js
+│  │  ├─ servers/paboot_capability/   → dist/mcp/servers/paboot_capability/server.js
+│  │  └─ servers/paboot_memory/       → dist/mcp/servers/paboot_memory/server.js
 │  ├─ routes/             HTTP/SSE 边界（按域拆）
 │  ├─ runtimes/           engine / registry / drivers / active-runs / stdio-rpc + claude/ · codex/ · deepseek/ · command
 │  └─ types/api.ts        传输契约

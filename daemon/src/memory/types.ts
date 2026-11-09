@@ -167,6 +167,32 @@ export interface UpsertSessionSummaryInput {
   sensitivity?: Sensitivity;
 }
 
+export type EntityKind = 'person' | 'place' | 'org' | 'pet' | 'project' | 'thing';
+
+/** Scope-local entity; cross-scope identity is a link, never a merge by default. */
+export interface MemoryEntity {
+  id: string;
+  scope: MemoryScope;
+  kind: EntityKind;
+  canonicalName: string;
+  aliases: string[];
+  importance: number;
+  sensitivity: Sensitivity;
+  status: 'active' | 'merged';
+  mergedInto: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UpsertEntityInput {
+  scope: MemoryScope;
+  kind: EntityKind;
+  name: string;
+  aliases?: string[];
+  importance?: number;
+  sensitivity?: Sensitivity;
+}
+
 /** K2 mirror of one curated knowledge document (body stays in the file). */
 export interface MemoryDocument {
   id: string;

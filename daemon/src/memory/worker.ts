@@ -277,14 +277,30 @@ export class MemoryWorker {
         model,
         controller.signal,
       );
+      const entityIds = new Map<string, string>();
+      for (const entity of extraction.entities) {
+        const row = this.store.upsertEntity({
+          scope: first.scope,
+          kind: entity.kind,
+          name: entity.name,
+          aliases: entity.aliases,
+        });
+        entityIds.set(entity.tempId, row.id);
+      }
       const claims = extraction.claims;
       for (const [index, claim] of claims.entries()) {
         const claimRow = this.store.insertClaim(
           {
             scope: first.scope,
             endId: first.endId,
+            entityId: claim.subjectEntityTempId
+              ? entityIds.get(claim.subjectEntityTempId) ?? null
+              : null,
             predicate: claim.predicate,
             objectText: claim.objectText,
+            objectEntityId: claim.objectEntityTempId
+              ? entityIds.get(claim.objectEntityTempId) ?? null
+              : null,
             kind: claim.kind,
             summary: claim.summary,
             authority: 'derived',
