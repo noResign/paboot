@@ -202,7 +202,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     ctx.notifier.register(runId, send);
     // One list for every runtime: argv/RPC drivers translate these specs into
     // their own MCP config, the builtin driver consumes them in-process.
-    const toolServers = perRunToolServers(ctx, runId, session.runtime);
+    const toolServers = perRunToolServers(ctx, runId, session.runtime, session.id);
 
     try {
       const active = driver.start({

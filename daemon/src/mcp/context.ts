@@ -12,6 +12,7 @@ export function createToolContext(env: NodeJS.ProcessEnv = process.env): ToolCon
 
   return {
     runId,
+    sessionId: env.PABOOT_SESSION_ID ?? '',
     async callDaemon(method, path, body) {
       if (!daemonUrl || !token || !runId) {
         throw new Error(

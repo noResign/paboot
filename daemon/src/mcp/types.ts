@@ -14,6 +14,8 @@ export interface McpToolDefinition {
 export interface ToolContext {
   /** The run that spawned this MCP server (`PABOOT_RUN_ID`). */
   runId: string;
+  /** Session bound to the run (`PABOOT_SESSION_ID`), when the server needs it. */
+  sessionId: string;
   callDaemon(method: 'GET' | 'POST', path: string, body?: unknown): Promise<unknown>;
 }
 

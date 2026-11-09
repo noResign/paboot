@@ -490,6 +490,18 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
     res.json(dto);
   });
 
+  app.get('/api/memory/loops', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const loops = target.policy.scopes.flatMap((readScope) =>
+      ctx.memory!.listOpenLoops(readScope.scope).map((loop) => ({
+        ...loop,
+        scope: readScope.scope,
+      })),
+    );
+    res.json({ loops });
+  });
+
   app.get('/api/memory/sources/:id', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;

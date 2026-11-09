@@ -10,6 +10,7 @@ import type { ToolServerSpec } from '../runtimes/types.js';
  */
 export const TASK_TOOL_SERVER = 'paboot_tasks';
 export const CAPABILITY_TOOL_SERVER = 'paboot_capability';
+export const MEMORY_TOOL_SERVER = 'paboot_memory';
 
 export function daemonUrlFor(config: AppContext['config']): string {
   const host = ['0.0.0.0', '::'].includes(config.host) ? '127.0.0.1' : config.host;
@@ -65,17 +66,45 @@ export function capabilityToolServer(
 }
 
 /**
+ * Read-only memory tools. They call public GET endpoints, so this server gets
+ * the agent token (not the internal server token); write tools will move to
+ * internal endpoints + the operator-gated approval path in a later step.
+ */
+export function memoryToolServer(
+  ctx: AppContext,
+  runId: string,
+  sessionId: string,
+  runtime: string,
+): ToolServerSpec {
+  return {
+    name: MEMORY_TOOL_SERVER,
+    command: process.execPath,
+    args: [ctx.memoryMcpServerPath ?? ''],
+    env: {
+      ...(process.env['ELECTRON_RUN_AS_NODE'] ? { ELECTRON_RUN_AS_NODE: process.env['ELECTRON_RUN_AS_NODE'] } : {}),
+      PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
+      PABOOT_TOKEN: ctx.config.agentToken,
+      PABOOT_RUN_ID: runId,
+      PABOOT_SESSION_ID: sessionId,
+      PABOOT_RUNTIME: runtime,
+    },
+  };
+}
+
+/**
  * Tool servers every run gets. Paths are optional only for partial test
- * contexts; production always wires both entries.
+ * contexts; production always wires all entries.
  */
 export function perRunToolServers(
   ctx: AppContext,
   runId: string,
   runtime: string,
+  sessionId: string,
 ): ToolServerSpec[] {
   const servers: ToolServerSpec[] = [];
   if (ctx.mcpServerPath) servers.push(taskToolServer(ctx, runId));
   if (ctx.capabilityMcpServerPath) servers.push(capabilityToolServer(ctx, runId, runtime));
+  if (ctx.memoryMcpServerPath) servers.push(memoryToolServer(ctx, runId, sessionId, runtime));
   return servers;
 }
 

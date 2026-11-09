@@ -10,12 +10,14 @@ import type {
   ClaimEvidenceInput,
   MemoryClaim,
   MemoryDocument,
+  MemoryEntity,
   MemoryObservation,
   MemoryScope,
   MemorySessionSummary,
   MemorySource,
   SourceStatus,
   UpsertDocumentInput,
+  UpsertEntityInput,
   UpsertObservationInput,
   UpsertSessionSummaryInput,
 } from './types.js';
@@ -43,6 +45,11 @@ const FUNCTIONAL_PREDICATES = new Set(['lives_in', 'works_at', 'name', 'birthday
 const TIER1_MIN_CORPUS = 20;
 const TIER1_THRESHOLD = 0.72;
 const TIER1_POSTING_LIMIT = 200;
+
+const ENTITY_COLUMNS = `
+  id, scope, kind, canonical_name AS canonicalName, aliases_json AS aliasesJson,
+  importance, sensitivity, status, merged_into AS mergedInto,
+  created_at AS createdAt, updated_at AS updatedAt`;
 
 const DOCUMENT_COLUMNS = `
   id, scope, end_id AS endId, kind, title, summary, tags_json AS tagsJson,
@@ -333,6 +340,144 @@ export class MemoryStore {
       )
       .get(scope, endId ?? '', contentHash);
     return row !== undefined;
+  }
+
+  // ---- entities ----
+
+  /**
+   * Exact canonical/alias match inside the scope. Cross-scope identity stays a
+   * link (`mem_entity_links`), never an implicit merge (D7 / M2).
+   */
+  upsertEntity(input: UpsertEntityInput): MemoryEntity {
+    const canonical = normalizeEntityName(input.name);
+    if (canonical === '') throw new Error('entity name is empty');
+    const rows = this.db
+      .prepare(
+        `SELECT ${ENTITY_COLUMNS} FROM mem_entities
+         WHERE scope = ? AND kind = ? AND status = 'active'`,
+      )
+      .all(input.scope, input.kind) as unknown as RawEntity[];
+    const match = rows
+      .map(mapEntity)
+      .find(
+        (entity) =>
+          normalizeEntityName(entity.canonicalName) === canonical ||
+          entity.aliases.some((alias) => normalizeEntityName(alias) === canonical),
+      );
+    if (match) {
+      const aliases = new Set([
+        match.canonicalName,
+        ...match.aliases,
+        input.name,
+        ...(input.aliases ?? []),
+      ]);
+      aliases.delete(match.canonicalName);
+      this.db
+        .prepare(
+          `UPDATE mem_entities SET aliases_json = ?, importance = MAX(importance, ?),
+             updated_at = ? WHERE id = ?`,
+        )
+        .run(JSON.stringify([...aliases]), input.importance ?? match.importance, Date.now(), match.id);
+      return this.getEntity(match.id)!;
+    }
+    const id = randomUUID();
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO mem_entities
+           (id, scope, kind, canonical_name, aliases_json, attributes_json, importance,
+            sensitivity, status, merged_into, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, '{}', ?, ?, 'active', NULL, ?, ?)`,
+      )
+      .run(
+        id,
+        input.scope,
+        input.kind,
+        input.name.trim(),
+        JSON.stringify(input.aliases ?? []),
+        input.importance ?? 0.5,
+        input.sensitivity ?? 'normal',
+        now,
+        now,
+      );
+    return this.getEntity(id)!;
+  }
+
+  getEntity(id: string): MemoryEntity | undefined {
+    const row = this.db
+      .prepare(`SELECT ${ENTITY_COLUMNS} FROM mem_entities WHERE id = ?`)
+      .get(id) as unknown as RawEntity | undefined;
+    return row ? mapEntity(row) : undefined;
+  }
+
+  listEntities(scope: MemoryScope): MemoryEntity[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${ENTITY_COLUMNS} FROM mem_entities
+         WHERE scope = ? AND status = 'active' ORDER BY importance DESC, created_at ASC`,
+      )
+      .all(scope) as unknown as RawEntity[];
+    return rows.map(mapEntity);
+  }
+
+  /** Cross-scope / cross-family identity link; ordered to satisfy the CHECK. */
+  linkEntities(a: string, b: string, relation: string, createdBy: string): void {
+    if (a === b) return;
+    const [first, second] = a < b ? [a, b] : [b, a];
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO mem_entity_links (entity_a, entity_b, relation, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(first, second, relation, createdBy, Date.now());
+  }
+
+  /** Explicit merge with rollback trail: aliases + claims move, source is marked. */
+  mergeEntities(sourceId: string, targetId: string, createdBy: string): MemoryEntity | undefined {
+    if (sourceId === targetId) return this.getEntity(targetId);
+    const source = this.getEntity(sourceId);
+    const target = this.getEntity(targetId);
+    if (!source || !target) return undefined;
+    const now = Date.now();
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(`UPDATE mem_claims SET entity_id = ? WHERE entity_id = ?`)
+        .run(targetId, sourceId);
+      this.db
+        .prepare(`UPDATE mem_claims SET object_entity_id = ? WHERE object_entity_id = ?`)
+        .run(targetId, sourceId);
+      const aliases = new Set([
+        target.canonicalName,
+        ...target.aliases,
+        source.canonicalName,
+        ...source.aliases,
+      ]);
+      aliases.delete(target.canonicalName);
+      this.db
+        .prepare(`UPDATE mem_entities SET aliases_json = ?, updated_at = ? WHERE id = ?`)
+        .run(JSON.stringify([...aliases]), now, targetId);
+      this.db
+        .prepare(
+          `UPDATE mem_entities SET status = 'merged', merged_into = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(targetId, now, sourceId);
+      this.linkEntities(sourceId, targetId, 'merged', createdBy);
+      this.recordOp({
+        batchKey: `merge-entity:${sourceId}:${targetId}`,
+        opIndex: 0,
+        op: 'merge_entity',
+        targetType: 'entity',
+        targetId,
+        payload: { merged: sourceId, createdBy },
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return this.getEntity(targetId);
   }
 
   // ---- claims ----
@@ -1545,6 +1690,18 @@ export function observationHash(input: UpsertObservationInput): string {
       filesModified: input.filesModified ?? [],
     }),
   );
+}
+
+interface RawEntity extends Omit<MemoryEntity, 'aliases'> {
+  aliasesJson: string;
+}
+
+function mapEntity(row: RawEntity): MemoryEntity {
+  return { ...row, aliases: parseStringArray(row.aliasesJson) };
+}
+
+function normalizeEntityName(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
 }
 
 interface RawDocument extends Omit<MemoryDocument, 'tags'> {
