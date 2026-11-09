@@ -28,6 +28,24 @@ final class MemoryRepository {
         }
     }
 
+    func settings(workspaceId: String) async throws -> WorkspaceMemoryDto {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.workspaceMemory(id: workspaceId)
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func timeline(workspaceId: String) async throws -> [MemoryTimelineItemDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.memoryTimeline(scope: scope(workspaceId)).items
+        } catch {
+            throw map(error)
+        }
+    }
+
     func correct(
         workspaceId: String,
         id: String,

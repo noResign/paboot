@@ -68,6 +68,52 @@ data class MemoryStatusDto(
 )
 
 @Serializable
+data class MemoryTimelineItemDto(
+    val kind: String = "observation",
+    val id: String = "",
+    val scope: String = "",
+    val endId: String? = null,
+    val sessionId: String? = null,
+    val title: String = "",
+    val subtitle: String? = null,
+    val at: Long = 0,
+    val files: List<String> = emptyList(),
+)
+
+@Serializable
+data class MemoryTimelineResponse(
+    val items: List<MemoryTimelineItemDto> = emptyList(),
+)
+
+@Serializable
+data class MemorySearchHitDto(
+    val kind: String = "claim",
+    val id: String = "",
+    val scope: String = "",
+    val endId: String? = null,
+    val title: String = "",
+    val snippet: String = "",
+    val score: Double = 0.0,
+    val path: String? = null,
+    val files: List<String> = emptyList(),
+)
+
+@Serializable
+data class MemorySearchResponse(
+    val hits: List<MemorySearchHitDto> = emptyList(),
+)
+
+@Serializable
+data class WorkspaceMemoryDto(
+    val workspaceId: String = "",
+    val enabled: Boolean = false,
+    val injectionEnabled: Boolean = true,
+    val profileMode: String? = null,
+    val lifeReadable: Boolean? = null,
+    val providerOverride: String? = null,
+)
+
+@Serializable
 data class MemoryCorrectClaimRequest(
     val summary: String? = null,
     val objectText: String? = null,

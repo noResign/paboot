@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
+import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
+import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.viewmodel.MemoryUiState
 import com.noresign.paboot.viewmodel.MemoryViewModel
 import kotlinx.coroutines.delay
@@ -99,6 +101,18 @@ private fun authorityLabel(claim: MemoryClaimDto): String =
 private fun dateLabel(timestamp: Long?): String {
     if (timestamp == null || timestamp <= 0) return "—"
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
+}
+
+/** validFrom = 事实开始生效；validTo 为空表示仍然有效。 */
+private fun validityLabel(claim: MemoryClaimDto): String {
+    val from = claim.validFrom?.takeIf { it > 0 }
+    val to = claim.validTo?.takeIf { it > 0 }
+    return when {
+        from == null && to == null -> "未知"
+        from != null && to != null -> "${dateLabel(from)} – ${dateLabel(to)}"
+        from != null -> "${dateLabel(from)} 起"
+        else -> "至 ${dateLabel(to)}"
+    }
 }
 
 private fun matchesQuery(claim: MemoryClaimDto, query: String): Boolean {
@@ -215,6 +229,19 @@ fun MemoryScreen(
                         item(key = "notice") { NoticeBanner(it) }
                     }
                     item(key = "status") { StatusCard(current.status, current.claims.size) }
+                    item(key = "settings") { MemorySettingsCard(current.settings) }
+                    if (current.settings?.enabled == false) {
+                        item(key = "disabled-hint") {
+                            Text(
+                                "记忆未启用；请在桌面端打开这个工作区的记忆。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (current.timeline.isNotEmpty()) {
+                        item(key = "timeline") { MemoryTimelineCard(current.timeline.take(6)) }
+                    }
                     item(key = "search") {
                         SearchField(query = query, onQueryChange = { query = it })
                     }
@@ -457,6 +484,95 @@ private fun StatusCard(status: MemoryStatusDto?, totalClaims: Int) {
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemorySettingsCard(settings: WorkspaceMemoryDto?) {
+    if (settings == null) return
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("记忆设置（只读）", style = MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (settings.enabled) "已启用" else "未启用",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (settings.enabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                if (settings.enabled) {
+                    Text(
+                        if (settings.injectionEnabled) "注入开" else "只记录",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                settings.profileMode?.let {
+                    Text(
+                        "画像 $it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                settings.lifeReadable?.let {
+                    Text(
+                        if (it) "允许生活读取" else "生活不可读",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                "开关和画像范围请在桌面端修改。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemoryTimelineCard(items: List<MemoryTimelineItemDto>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("最近工作", style = MaterialTheme.typography.titleSmall)
+            items.forEach { item ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${if (item.kind == "summary") "摘要" else "观察"} · ${dateLabel(item.at)}" +
+                            (item.sessionId?.let { " · 会话 ${it.replace("-", "").take(4)}" } ?: "") +
+                            if (item.files.isEmpty()) "" else " · ${item.files.size} 个文件",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -781,8 +897,8 @@ private fun MemoryDetail(
                     modifier = Modifier.weight(1f),
                 )
                 MetricTile(
-                    label = "有效期",
-                    value = dateLabel(claim.validFrom),
+                    label = "生效",
+                    value = validityLabel(claim),
                     modifier = Modifier.weight(1f),
                 )
             }

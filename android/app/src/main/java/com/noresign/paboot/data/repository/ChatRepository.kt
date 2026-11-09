@@ -6,6 +6,7 @@ import com.noresign.paboot.network.daemon.PabootStream
 import com.noresign.paboot.network.daemon.ChatStreamEvent
 import com.noresign.paboot.network.daemon.dto.ChatRequest
 import com.noresign.paboot.network.daemon.dto.EventsResponse
+import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
 import com.noresign.paboot.network.daemon.dto.PermissionDecisionRequest
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
@@ -94,6 +95,18 @@ class ChatRepository(
     suspend fun cancelRun(runId: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.cancelRun(runId) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun setSessionMemoryMode(sessionId: String, mode: String): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (
+            val r = safeApiCall {
+                api.setMemorySessionMode(MemorySessionModeRequest(sessionId = sessionId, mode = mode))
+            }
+        ) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }

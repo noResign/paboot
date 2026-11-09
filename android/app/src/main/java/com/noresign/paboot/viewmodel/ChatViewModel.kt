@@ -123,6 +123,9 @@ class ChatViewModel(
     private val _sessionPermissionMode = MutableStateFlow("ask")
     val sessionPermissionMode = _sessionPermissionMode.asStateFlow()
 
+    private val _sessionMemoryMode = MutableStateFlow("normal")
+    val sessionMemoryMode = _sessionMemoryMode.asStateFlow()
+
     /** Global policy: when false, the UI must not offer bypass. */
     private val _bypassAllowed = MutableStateFlow(true)
     val bypassAllowed = _bypassAllowed.asStateFlow()
@@ -202,6 +205,7 @@ class ChatViewModel(
         _sessionModel.value = null
         _sessionModelParameters.value = emptyMap()
         _sessionPermissionMode.value = "ask"
+        _sessionMemoryMode.value = "normal"
         _models.value = emptyList()
         _modelsError.value = null
         modelsRuntime = null
@@ -234,6 +238,7 @@ class ChatViewModel(
                             session.permissionMode,
                             _bypassAllowed.value,
                         )
+                        _sessionMemoryMode.value = session.memoryMode ?: "normal"
                         _sessionModel.value = session.model
                         _sessionModelParameters.value = session.modelParameters ?: emptyMap()
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
@@ -626,6 +631,17 @@ class ChatViewModel(
                     _sessionModel.value = r.data.model
                     _sessionModelParameters.value = r.data.modelParameters ?: emptyMap()
                 }
+                is NetworkResult.Error -> _error.value = friendlyError(r)
+            }
+        }
+    }
+
+    fun updateSessionMemoryMode(mode: String) {
+        if (mode != "normal" && mode != "no_injection" && mode != "off") return
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = repository.setSessionMemoryMode(id, mode)) {
+                is NetworkResult.Success -> _sessionMemoryMode.value = mode
                 is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }

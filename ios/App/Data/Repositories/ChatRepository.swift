@@ -33,6 +33,7 @@ protocol ChatRepositoryProtocol {
     func decidePermission(id: String, decision: String, response: JSONValue?) async throws
     func updateModel(sessionId: String, model: String?, parameters: [String: String]?) async throws -> SessionDto?
     func updatePermissionMode(sessionId: String, mode: String) async throws
+    func updateMemoryMode(sessionId: String, mode: String) async throws
     func models(agentId: String) async throws -> [ModelOptionDto]
 }
 
@@ -134,6 +135,17 @@ final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
         let client = try clientOrThrow()
         do {
             _ = try await client.api.updateSessionPermissions(id: sessionId, mode: mode)
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func updateMemoryMode(sessionId: String, mode: String) async throws {
+        let client = try clientOrThrow()
+        do {
+            _ = try await client.api.setMemorySessionMode(
+                MemorySessionModeRequest(sessionId: sessionId, mode: mode)
+            )
         } catch {
             throw map(error)
         }

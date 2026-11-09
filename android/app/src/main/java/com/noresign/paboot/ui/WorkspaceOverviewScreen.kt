@@ -104,9 +104,8 @@ fun WorkspaceOverviewScreen(
                     DirectorySection(dirs)
                     if (workspace.family != "life") {
                         KnowledgeCard(workspace, onOpenKnowledge)
-                    } else {
-                        MemoryCard(workspace, onOpenMemory)
                     }
+                    MemoryCard(workspace, onOpenMemory)
                     if (workspace.isBuiltin && workspace.family != "life") {
                         Text(
                             "内置工作区只是临时目录，建议先在设置里添加真实工作区。",
@@ -429,9 +428,17 @@ private fun MemoryCard(workspace: WorkspaceDto, onOpenMemory: (String) -> Unit) 
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text("关于你", style = MaterialTheme.typography.titleSmall)
+                val life = workspace.family == "life"
                 Text(
-                    "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。",
+                    if (life) "关于你" else "项目记忆",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    if (life) {
+                        "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+                    } else {
+                        "默认关闭；打开后可启用记忆、查看时间线、搜索与改正。"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

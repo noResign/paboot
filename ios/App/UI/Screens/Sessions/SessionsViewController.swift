@@ -939,9 +939,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
         if workspace.family != "life" {
             contentStack.addArrangedSubview(knowledgeCard())
-        } else {
-            contentStack.addArrangedSubview(memoryCard())
         }
+        contentStack.addArrangedSubview(memoryCard())
 
         if workspace.isBuiltin && workspace.family != "life" {
             let builtin = UILabel()
@@ -1220,7 +1219,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
     @objc private func openMemory() {
         let controller = MemoryViewController(
             workspaceId: workspace.id,
-            workspaceName: workspace.displayName
+            workspaceName: workspace.displayName,
+            family: workspace.family
         )
         navigationController?.pushViewController(controller, animated: true)
     }
@@ -1230,18 +1230,21 @@ private final class WorkspaceOverviewViewController: UIViewController {
         card.isUserInteractionEnabled = true
         card.isAccessibilityElement = true
         card.accessibilityTraits = .button
-        card.accessibilityLabel = "关于你"
+        let life = workspace.family == "life"
+        card.accessibilityLabel = life ? "关于你" : "项目记忆"
         card.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(openMemory))
         )
 
         let iconBox = makeIconBox(systemName: "person.crop.circle", boxSize: 38, iconSize: 19)
         let title = UILabel()
-        title.text = "关于你"
+        title.text = life ? "关于你" : "项目记忆"
         title.font = Typography.cardTitle
         title.textColor = Theme.Colors.textPrimary
         let hint = UILabel()
-        hint.text = "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+        hint.text = life
+            ? "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+            : "默认关闭；打开后可启用记忆、查看时间线、搜索与改正。"
         hint.font = Typography.caption
         hint.textColor = Theme.Colors.textSecondary
         hint.numberOfLines = 2

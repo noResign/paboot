@@ -22,6 +22,7 @@ final class ChatViewModel {
         var error: String?
         var requiresReconnect = false
         var permissionMode = "ask"
+        var memoryMode = "normal"
         /// Daemon-wide policy: when false, the UI must not offer bypass.
         var bypassAllowed = true
         var model: String?
@@ -122,6 +123,7 @@ final class ChatViewModel {
                 session.permissionMode,
                 bypassAllowed: state.bypassAllowed
             )
+            state.memoryMode = session.memoryMode ?? "normal"
             state.model = session.model
             state.modelParameters = session.modelParameters ?? [:]
             loadModels()
@@ -719,6 +721,21 @@ final class ChatViewModel {
         Task {
             do {
                 try await repository.updatePermissionMode(sessionId: sessionId, mode: mode)
+            } catch {
+                state.error = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+            }
+        }
+    }
+
+    func setMemoryMode(_ mode: String) {
+        guard ["normal", "no_injection", "off"].contains(mode) else { return }
+        guard mode != state.memoryMode else { return }
+        state.memoryMode = mode
+        guard let sessionId else { return }
+        Task {
+            do {
+                try await repository.updateMemoryMode(sessionId: sessionId, mode: mode)
             } catch {
                 state.error = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
