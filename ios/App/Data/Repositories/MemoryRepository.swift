@@ -37,6 +37,15 @@ final class MemoryRepository {
         }
     }
 
+    func duplicates(workspaceId: String) async throws -> [MemoryDuplicateDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.memoryDuplicates(scope: scope(workspaceId)).duplicates
+        } catch {
+            throw map(error)
+        }
+    }
+
     func timeline(workspaceId: String) async throws -> [MemoryTimelineItemDto] {
         let client = try clientOrThrow()
         do {

@@ -155,6 +155,48 @@ public struct MemoryTimelineResponse: Decodable, Equatable, Sendable {
     }
 }
 
+public struct MemoryDuplicateDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let scope: String
+    public let claimId: String
+    public let duplicateOf: String
+    public let claimSummary: String
+    public let duplicateSummary: String
+    public let score: Double
+    public let method: String
+    public let status: String
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        claimId = try container.decodeIfPresent(String.self, forKey: .claimId) ?? ""
+        duplicateOf = try container.decodeIfPresent(String.self, forKey: .duplicateOf) ?? ""
+        claimSummary = try container.decodeIfPresent(String.self, forKey: .claimSummary) ?? ""
+        duplicateSummary = try container.decodeIfPresent(String.self, forKey: .duplicateSummary) ?? ""
+        score = try container.decodeIfPresent(Double.self, forKey: .score) ?? 0
+        method = try container.decodeIfPresent(String.self, forKey: .method) ?? ""
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "pending"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, scope, claimId, duplicateOf, claimSummary, duplicateSummary, score, method, status
+    }
+}
+
+public struct MemoryDuplicatesResponse: Decodable, Equatable, Sendable {
+    public let duplicates: [MemoryDuplicateDto]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        duplicates = try container.decodeIfPresent([MemoryDuplicateDto].self, forKey: .duplicates) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case duplicates
+    }
+}
+
 public struct WorkspaceMemoryDto: Decodable, Equatable, Sendable {
     public let workspaceId: String
     public let enabled: Bool

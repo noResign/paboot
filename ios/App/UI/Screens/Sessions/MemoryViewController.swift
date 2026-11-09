@@ -94,6 +94,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var status: MemoryStatusDto?
     private var settings: WorkspaceMemoryDto?
     private var timeline: [MemoryTimelineItemDto] = []
+    private var duplicates: [MemoryDuplicateDto] = []
     private var statusUnavailable = false
     private var query = ""
     private var hasLoaded = false
@@ -238,6 +239,11 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 timeline = items
                 UIView.performWithoutAnimation { tableView.reloadData() }
             }
+            if let items = try? await repository.duplicates(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                duplicates = items
+                UIView.performWithoutAnimation { tableView.reloadData() }
+            }
         }
     }
 
@@ -276,7 +282,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     private func rebuildGroups() {
         groups = groupedMemory(claims, query: query)
-        emptyLabel.isHidden = !groups.isEmpty || showsTimeline
+        emptyLabel.isHidden = !groups.isEmpty || showsTimeline || showsDuplicates
         emptyLabel.text = query.isEmpty
             ? (family == "life"
                 ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
@@ -291,23 +297,33 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     }
 
     private var showsTimeline: Bool { !timeline.isEmpty }
+    private var showsDuplicates: Bool { !duplicates.isEmpty }
+    private var fixedSections: Int { (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0) }
+    private var duplicatesSection: Int? {
+        guard showsDuplicates else { return nil }
+        return showsTimeline ? 1 : 0
+    }
 
     private func groupIndex(for section: Int) -> Int {
-        showsTimeline ? section - 1 : section
+        section - fixedSections
     }
 
     func numberOfSections(in tableView: UITableView) -> Int {
-        groups.count + (showsTimeline ? 1 : 0)
+        groups.count + fixedSections
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         if showsTimeline && section == 0 { return "最近工作（只读）" }
+        if let duplicatesSection, section == duplicatesSection {
+            return "重复候选（只读，共 \(duplicates.count)）"
+        }
         let group = groups[groupIndex(for: section)]
         return "\(group.label)（\(group.claims.count)）"
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if showsTimeline && section == 0 { return timeline.count }
+        if let duplicatesSection, section == duplicatesSection { return duplicates.count }
         return groups[groupIndex(for: section)].claims.count
     }
 
@@ -333,6 +349,23 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             cell.backgroundColor = Theme.Colors.surface
             return cell
         }
+        if let duplicatesSection, indexPath.section == duplicatesSection {
+            let item = duplicates[indexPath.row]
+            let cell = tableView.dequeueReusableCell(withIdentifier: "memory-duplicate")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-duplicate")
+            cell.textLabel?.text = item.claimSummary
+            cell.textLabel?.numberOfLines = 2
+            cell.textLabel?.font = Typography.body
+            cell.textLabel?.textColor = Theme.Colors.textPrimary
+            cell.detailTextLabel?.text =
+                "与「\(item.duplicateSummary)」相似 \(Int((item.score * 100).rounded()))%" +
+                " · 请在桌面端合并或忽略"
+            cell.detailTextLabel?.font = Typography.caption
+            cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
+            cell.accessoryType = .none
+            cell.backgroundColor = Theme.Colors.surface
+            return cell
+        }
         let claim = groups[groupIndex(for: indexPath.section)].claims[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "memory-row")
             ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-row")
@@ -352,7 +385,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        if showsTimeline && indexPath.section == 0 { return }
+        if indexPath.section < fixedSections { return }
         let claim = groups[groupIndex(for: indexPath.section)].claims[indexPath.row]
         let detail = MemoryDetailViewController(
             claim: claim,

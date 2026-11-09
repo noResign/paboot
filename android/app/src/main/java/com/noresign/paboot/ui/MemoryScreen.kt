@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
+import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -241,6 +242,9 @@ fun MemoryScreen(
                     }
                     if (current.timeline.isNotEmpty()) {
                         item(key = "timeline") { MemoryTimelineCard(current.timeline.take(6)) }
+                    }
+                    if (current.duplicates.isNotEmpty()) {
+                        item(key = "duplicates") { MemoryDuplicatesCard(current.duplicates.take(5)) }
                     }
                     item(key = "search") {
                         SearchField(query = query, onQueryChange = { query = it })
@@ -574,6 +578,45 @@ private fun MemoryTimelineCard(items: List<MemoryTimelineItemDto>) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MemoryDuplicatesCard(items: List<MemoryDuplicateDto>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("重复候选（只读）", style = MaterialTheme.typography.titleSmall)
+            items.forEach { item ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        item.claimSummary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "与「${item.duplicateSummary}」相似 ${(item.score * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                "合并 / 忽略请在桌面端处理。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

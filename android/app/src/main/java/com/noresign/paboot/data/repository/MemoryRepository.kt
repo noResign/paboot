@@ -5,6 +5,7 @@ import com.noresign.paboot.network.daemon.PabootApi
 import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
+import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -38,6 +39,14 @@ class MemoryRepository(
     suspend fun settings(workspaceId: String): NetworkResult<WorkspaceMemoryDto> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return safeApiCall { api.workspaceMemory(workspaceId) }
+    }
+
+    suspend fun duplicates(workspaceId: String): NetworkResult<List<MemoryDuplicateDto>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.memoryDuplicates(scope(workspaceId)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.duplicates)
+            is NetworkResult.Error -> r
+        }
     }
 
     suspend fun timeline(workspaceId: String): NetworkResult<List<MemoryTimelineItemDto>> {

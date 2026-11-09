@@ -182,6 +182,18 @@ public final class PabootAPI {
         )
     }
 
+    public func memoryDuplicates(scope: String, status: String = "pending") async throws -> MemoryDuplicatesResponse {
+        try await get(
+            "api/memory/duplicates",
+            query: [
+                URLQueryItem(name: "scope", value: scope),
+                URLQueryItem(name: "status", value: status),
+            ],
+            authenticated: true,
+            as: MemoryDuplicatesResponse.self
+        )
+    }
+
     public func memoryTimeline(scope: String) async throws -> MemoryTimelineResponse {
         try await get(
             "api/memory/timeline",
