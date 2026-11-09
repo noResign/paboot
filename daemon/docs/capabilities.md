@@ -90,6 +90,17 @@ paboot-capability android logcat --workspace <id> --lines 50
 环境变量：`PABOOT_DAEMON_URL`、`PABOOT_TOKEN`（operator）。CLI 不自行审批；它经 Bash
 调用时已受现有 Bash 审批约束。
 
+## 3.3 Mock 模型（S2）
+
+- 存储：`<dataDir>/workspaces/<id>/mock/apis/*.json` + `rules.yaml`，文件即 fixture。
+- `GET /api/workspaces/:id/mock` → `{ model: { apis, rules } }`。
+- `PUT /api/workspaces/:id/mock`：`{ apis, rules, remove? }`，按 `id` upsert；`remove` 删除文件。
+  id 只允许 `[A-Za-z0-9._-]`，防止目录逃逸；仅 dev workspace。
+- `GET /api/workspaces/:id/mock/stream`：`fs.watch` 防抖后的 `{type:'changed'}` SSE。
+- 桌面工作区概览 →「Mock API」面板：接口列表 + JSON 编辑器（baseline / scenarios）+ rules；
+  每 3 秒感知 agent 对文件的修改，保存写回文件。
+- S2 只做 mock 文件模型；代理 / 抓包 / 命中信号属 C1。
+
 ## 4. MCP 工具与审批
 
 `paboot_capability` 暴露 10 个 `android_*` 工具。审批策略：

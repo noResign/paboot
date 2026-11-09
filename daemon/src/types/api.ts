@@ -880,6 +880,21 @@ export interface CapabilityDeviceListDto {
   devices: CapabilityDeviceDto[];
 }
 
+/** One mock API file (`<dataDir>/workspaces/<id>/mock/apis/<id>.json`). */
+export interface MockApiDto {
+  id: string;
+  [key: string]: unknown;
+}
+
+export interface MockModelDto {
+  apis: MockApiDto[];
+  rules: string;
+}
+
+export interface MockModelResponse {
+  model: MockModelDto;
+}
+
 export interface MemoryDisputeClaimDto {
   id: string;
   summary: string;

@@ -11,6 +11,7 @@ import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
 import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
 import type { DeviceStreamHub } from '../capabilities/device-stream.js';
+import type { MockStore } from '../capabilities/mock-store.js';
 import type { DeviceProvider } from '../capabilities/types.js';
 
 /**
@@ -53,4 +54,6 @@ export interface AppContext {
   deviceProvider?: DeviceProvider;
   /** On-demand screenshot mirror loops for the desktop device tab. */
   deviceStream?: DeviceStreamHub;
+  /** File-backed workspace mock model (Dev Space S2). */
+  mockStore?: MockStore;
 }

@@ -59,6 +59,7 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/device/select`,
   workspaceDeviceAction: (id: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/device/action`,
+  workspaceMock: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/mock`,
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',

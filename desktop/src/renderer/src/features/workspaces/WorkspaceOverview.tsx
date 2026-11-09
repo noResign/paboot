@@ -10,6 +10,7 @@ import {
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
 import { DevicePanel } from '../device/DevicePanel';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
+import { MockPanel } from '../mock/MockPanel';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { Icon } from '../../ui/Icon';
@@ -61,6 +62,7 @@ export function WorkspaceOverview({
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [deviceOpen, setDeviceOpen] = useState(false);
+  const [mockOpen, setMockOpen] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -386,6 +388,32 @@ export function WorkspaceOverview({
               <Icon name="chevron-right" size={14} />
             </span>
           </button>
+          <button
+            type="button"
+            className="wo-knowledge"
+            onClick={() => setMockOpen(true)}
+            aria-label="打开 Mock API"
+          >
+            <span className="wo-knowledge-icon">
+              <Icon name="file" size={18} />
+            </span>
+            <span className="wo-knowledge-copy">
+              <b>Mock API</b>
+              <span className="hint">
+                一条接口一个 JSON；agent 直接改文件，面板保存后立即生效，可编辑 baseline /
+                scenarios / rules。
+              </span>
+              <span className="wo-knowledge-meta">
+                <span className="wo-knowledge-chip">文件即 fixture</span>
+                <span className="wo-knowledge-chip">热更新</span>
+                <span className="wo-knowledge-chip">dev 专用</span>
+              </span>
+            </span>
+            <span className="wo-knowledge-action">
+              编辑 Mock
+              <Icon name="chevron-right" size={14} />
+            </span>
+          </button>
         </section>
       )}
 
@@ -410,6 +438,13 @@ export function WorkspaceOverview({
           workspaceId={workspace.id}
           workspaceName={workspaceLabel(workspace) ?? workspace.name}
           onClose={() => setDeviceOpen(false)}
+        />
+      )}
+      {mockOpen && (
+        <MockPanel
+          workspaceId={workspace.id}
+          workspaceName={workspaceLabel(workspace) ?? workspace.name}
+          onClose={() => setMockOpen(false)}
         />
       )}
       {notice && <div className="ws-notice">{notice}</div>}

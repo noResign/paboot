@@ -34,6 +34,8 @@ import type {
   CapabilityDeviceListDto,
   MemoryBriefDto,
   MemoryClaimDto,
+  MockModelDto,
+  MockModelResponse,
   MemoryClaimResponse,
   MemoryClaimsResponse,
   MemoryCorrectClaimRequest,
@@ -497,6 +499,14 @@ export const api = {
       method: 'POST',
       path: ROUTES.workspaceDeviceAction(id),
       body,
+    }),
+  workspaceMock: (id: string) =>
+    request<MockModelResponse>({ method: 'GET', path: ROUTES.workspaceMock(id) }),
+  saveWorkspaceMock: (id: string, model: MockModelDto, remove: string[] = []) =>
+    request<MockModelResponse>({
+      method: 'PUT',
+      path: ROUTES.workspaceMock(id),
+      body: { ...model, remove },
     }),
   updateWorkspaceMemory: (
     id: string,

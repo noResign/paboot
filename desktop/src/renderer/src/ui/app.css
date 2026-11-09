@@ -5203,3 +5203,51 @@ a.btn {
   border-radius: 10px;
   background: var(--surface);
 }
+
+/* ---- mock editor (Dev Space S2) ---- */
+.mock-panel {
+  width: min(1100px, 94vw);
+  max-height: 88vh;
+}
+.mock-body {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px 20px;
+  overflow: auto;
+  min-height: 0;
+}
+.mock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-content: start;
+}
+.mock-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.mock-textarea {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mock-textarea.rules {
+  min-height: 90px;
+}
+@media (max-width: 900px) {
+  .mock-body {
+    grid-template-columns: 1fr;
+  }
+}

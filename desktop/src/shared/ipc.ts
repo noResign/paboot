@@ -38,7 +38,7 @@ export const IPC = {
   knowledgeExport: 'app:knowledge-export',
 } as const;
 
-export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 /** A request the renderer asks main to replay against the daemon. */
 export interface DaemonRequest {
