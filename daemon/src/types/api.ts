@@ -664,6 +664,10 @@ export interface MemoryClaimDto {
   kind: MemoryClaimKindDto;
   summary: string;
   authority: MemoryClaimAuthorityDto;
+  /** User-scope claims only. */
+  shareClass?: 'portable' | 'personal' | 'life_only' | null;
+  /** Set when this user claim was promoted from a workspace claim. */
+  promotedFrom?: string | null;
   validFrom: number | null;
   validTo: number | null;
   timePrecision: 'exact' | 'day' | 'month' | 'year' | 'unknown';
@@ -684,6 +688,20 @@ export interface MemoryBriefDto {
   builtAt: number;
 }
 
+export type MemoryProfileModeDto = 'off' | 'portable' | 'full';
+
+/** Per-workspace memory switches; effective values include product defaults. */
+export interface WorkspaceMemoryDto {
+  workspaceId: string;
+  enabled: boolean;
+  injectionEnabled: boolean;
+  /** Life only; defaults to `portable`. */
+  profileMode?: MemoryProfileModeDto;
+  /** Dev only; defaults to false. */
+  lifeReadable?: boolean;
+  providerOverride: string | null;
+}
+
 export interface MemoryStatusDto {
   scope: MemoryScopeDto;
   pendingSources: number;
@@ -702,6 +720,56 @@ export interface MemoryStatusDto {
 
 export interface MemoryClaimsResponse {
   claims: MemoryClaimDto[];
+}
+
+export type MemorySearchKindDto = 'source' | 'claim' | 'observation' | 'summary' | 'document';
+
+export interface MemorySearchHitDto {
+  kind: MemorySearchKindDto;
+  id: string;
+  scope: MemoryScopeDto;
+  endId: string | null;
+  title: string;
+  snippet: string;
+  score: number;
+  /** Knowledge documents: the file the agent should Read for the body. */
+  path?: string;
+  /** Observation / summary hits: files read or modified by the run. */
+  files?: string[];
+}
+
+export interface MemoryTimelineItemDto {
+  kind: 'observation' | 'summary';
+  id: string;
+  scope: MemoryScopeDto;
+  endId: string | null;
+  sessionId: string | null;
+  title: string;
+  subtitle: string | null;
+  at: number;
+  files: string[];
+}
+
+export interface MemoryTimelineResponse {
+  items: MemoryTimelineItemDto[];
+}
+
+export interface MemorySearchResponse {
+  hits: MemorySearchHitDto[];
+}
+
+/** L0 原文；`memory_source` 三层披露的最底层。 */
+export interface MemorySourceDto {
+  id: string;
+  scope: MemoryScopeDto;
+  endId: string | null;
+  kind: string;
+  sessionId: string | null;
+  runId: string | null;
+  occurredAt: number;
+  content: string;
+  sensitivity: MemorySensitivityDto;
+  status: string;
 }
 
 export interface MemoryClaimResponse {

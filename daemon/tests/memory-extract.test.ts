@@ -6,6 +6,7 @@ import type { LlmProvider, LlmRequest } from '../src/llm/types';
 import {
   MemoryExtractionError,
   parseExtraction,
+  parseExtractionResult,
 } from '../src/memory/extract';
 import type { MemoryModelSelection } from '../src/memory/model';
 import { MemoryStore } from '../src/memory/store';
@@ -160,6 +161,48 @@ describe('extraction validation', () => {
 
   it('throws a retryable error for malformed JSON', () => {
     expect(() => parseExtraction('not json', [source])).toThrowError(MemoryExtractionError);
+  });
+
+  it('parses optional observations and a session summary', () => {
+    const result = parseExtractionResult(
+      JSON.stringify({
+        claims: [],
+        observations: [
+          {
+            kind: 'turn',
+            type: 'bugfix',
+            title: '修复登录页',
+            subtitle: '更新 src/login.ts',
+            facts: ['登录报错', '已修复'],
+            narrative: '定位到 token 过期。',
+            concepts: ['what-changed'],
+          },
+          { kind: 'turn', type: 'unknown', title: 'dropped' },
+          { kind: 'turn', type: 'change', title: 'secret', sensitivity: 'secret' },
+        ],
+        summary: {
+          request: '修复登录页',
+          investigated: 'token',
+          learned: 'token 过期',
+          completed: '已修复',
+          nextSteps: '补测试',
+        },
+      }),
+      [source],
+    );
+    expect(result.claims).toEqual([]);
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0]).toMatchObject({
+      kind: 'turn',
+      type: 'bugfix',
+      title: '修复登录页',
+      facts: ['登录报错', '已修复'],
+    });
+    expect(result.summary).toMatchObject({
+      request: '修复登录页',
+      completed: '已修复',
+      nextSteps: '补测试',
+    });
   });
 });
 
@@ -455,5 +498,71 @@ describe('memory worker', () => {
     expect(store.claimEvidence(claims[0]!.id)).toHaveLength(2);
     expect(store.getSource(first.id)?.status).toBe('extracted');
     expect(store.getSource(second.id)?.status).toBe('extracted');
+  });
+
+  it('replaces the mechanical observation and keeps server-extracted files', async () => {
+    const store = openStore();
+    const source = addSource(store, '修复登录页的报错。', 1, 'r-1');
+    store.upsertObservation({
+      scope: 'workspace:life-1',
+      endId: 'life-end',
+      sessionId: 's-1',
+      runId: 'r-1',
+      sourceId: source.id,
+      kind: 'turn',
+      type: 'discovery',
+      title: '机械基线',
+      filesRead: ['src/login.ts'],
+      filesModified: ['src/login.ts'],
+    });
+    const provider = fakeProvider(() =>
+      JSON.stringify({
+        claims: [],
+        observations: [
+          {
+            kind: 'turn',
+            type: 'bugfix',
+            title: '修复登录页',
+            subtitle: 'token 过期',
+            facts: ['登录报错'],
+            narrative: '定位到 token 过期并修复。',
+            concepts: ['what-changed'],
+          },
+        ],
+        summary: {
+          request: '修复登录页',
+          investigated: 'token',
+          learned: 'token 过期',
+          completed: '已修复',
+          nextSteps: '补集成测试',
+        },
+      }),
+    );
+    const worker = new MemoryWorker({ store, resolveModel: async () => model(provider) });
+
+    const result = await worker.runOnce();
+    expect(result.extracted).toBe(1);
+    const observations = store.listObservations('workspace:life-1');
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({
+      type: 'bugfix',
+      title: '修复登录页',
+      filesRead: ['src/login.ts'],
+      filesModified: ['src/login.ts'],
+    });
+    const summaries = store.listSessionSummaries('workspace:life-1');
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      request: '修复登录页',
+      completed: '已修复',
+      nextSteps: '补集成测试',
+      filesEdited: ['src/login.ts'],
+    });
+    expect(store.listOpenLoops('workspace:life-1')).toMatchObject([
+      { title: '补集成测试' },
+    ]);
+    // A second run must not duplicate the open follow-up.
+    await worker.runOnce();
+    expect(store.listOpenLoops('workspace:life-1')).toHaveLength(1);
   });
 });

@@ -2,6 +2,7 @@ import type { NormalizedEvent } from '../types/api.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import type { ManagedRun } from './active-runs.js';
 import type { RunOutcome } from './engine.js';
+import type { ToolServerSpec } from './types.js';
 
 /**
  * One run's inputs, resolved by the chat route without knowing which runtime it
@@ -35,6 +36,8 @@ export interface RuntimeDriverRequest {
    * ignore it and rely on the caller's prompt prelude instead.
    */
   systemContext?: string;
+  /** MCP servers this run may use. The service assembles them once per run. */
+  toolServers?: ToolServerSpec[];
   onEvent: (ev: NormalizedEvent) => void;
 }
 

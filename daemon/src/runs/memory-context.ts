@@ -1,7 +1,9 @@
 import type { AppContext } from '../app/context.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
 import { renderContextPrelude, type ContextPrelude } from '../context/prelude.js';
-import { buildLifeBrief } from '../memory/brief.js';
+import { buildMemoryBrief } from '../memory/brief.js';
+import { resolveReadPolicy } from '../memory/read-policy.js';
+import { isMemoryInjectionEnabled } from '../memory/settings.js';
 import { log } from '../platform/log.js';
 
 export interface RunMemoryContext extends ContextPrelude {
@@ -11,12 +13,13 @@ export interface RunMemoryContext extends ContextPrelude {
 }
 
 /**
- * Build the life memory brief for external runtimes. Builtin is excluded:
- * its driver consumes the same brief through a runtime-context source so the
- * block is assembled with the rest of the agent context.
+ * Build the claim/profile brief for external runtimes. Builtin is excluded: its
+ * driver consumes the same brief through a runtime-context source.
  *
- * `off` and `no_injection` both suppress injection; `no_injection` still
- * captures. Commands and the scheduled-task authoring chat never inject.
+ * The current session's own timeline is deliberately NOT injected: the runtime
+ * already holds that conversation, so a recap duplicates tokens and breaks
+ * prompt caching. Cross-session context arrives through `memoryRecall` when the
+ * prompt is actually related to it.
  */
 export function memoryContext(
   ctx: AppContext,
@@ -24,13 +27,24 @@ export function memoryContext(
   workspace: WorkspaceRow,
 ): RunMemoryContext | null {
   if (!ctx.memory) return null;
-  if (workspace.family !== 'life') return null;
   if (session.runtime === 'command' || session.runtime === 'builtin') return null;
   if (session.purpose === 'task_config') return null;
   if (session.memory_mode !== 'normal') return null;
 
   try {
-    const brief = buildLifeBrief(ctx.memory, `workspace:${workspace.id}`);
+    const settings = ctx.db.getMemorySettings(workspace.id);
+    if (!isMemoryInjectionEnabled(workspace, settings)) return null;
+    const policy = resolveReadPolicy({
+      workspace,
+      workspaces: ctx.db.listWorkspaces(),
+      getSettings: (workspaceId) => ctx.db.getMemorySettings(workspaceId),
+    });
+    if (policy.scopes.length === 0) return null;
+    // Private claims stay out of work-session injection; life may include them.
+    const brief = buildMemoryBrief(ctx.memory, policy, {
+      scope: `workspace:${workspace.id}`,
+      includePrivate: workspace.family === 'life',
+    });
     if (!brief) return null;
     const prelude = renderContextPrelude(
       [

@@ -1,4 +1,4 @@
-import type { EndRow, MessageRow, SessionRow, WorkspaceRow } from '../db/db.js';
+import type { EndRow, MemorySettingsRow, MessageRow, SessionRow, WorkspaceRow } from '../db/db.js';
 import { filterCaptureText } from './capture-filter.js';
 import { resolveRunMemoryScope } from './scope-resolver.js';
 import { hashContent, type MemoryStore } from './store.js';
@@ -10,6 +10,8 @@ export interface CaptureRunInput {
   ends: readonly EndRow[];
   messages: readonly MessageRow[];
   runId: string;
+  /** Effective switches for the workspace at capture time. */
+  settings?: MemorySettingsRow;
 }
 
 /**
@@ -21,7 +23,13 @@ export interface CaptureRunInput {
  * Returns the number of newly created sources.
  */
 export function captureRunMessages(input: CaptureRunInput): number {
-  const scope = resolveRunMemoryScope(input.session, input.workspace, input.ends, input.runId);
+  const scope = resolveRunMemoryScope(
+    input.session,
+    input.workspace,
+    input.ends,
+    input.runId,
+    input.settings,
+  );
   if (!scope) return 0;
 
   const seen = input.store.capturedMessageIds(scope.scope, scope.sessionId);

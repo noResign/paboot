@@ -1,8 +1,8 @@
 import {
   MemoryExtractionError,
   claimDedupKey,
-  extractClaims,
-  type ExtractedClaim,
+  extractMemory,
+  type ExtractionResult,
 } from './extract.js';
 import type { MemoryModelSelection } from './model.js';
 import type { MemoryStore } from './store.js';
@@ -271,7 +271,13 @@ export class MemoryWorker {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
     try {
-      const claims = await this.extractWithRetry(sources, contextSources, model, controller.signal);
+      const extraction = await this.extractWithRetry(
+        sources,
+        contextSources,
+        model,
+        controller.signal,
+      );
+      const claims = extraction.claims;
       for (const [index, claim] of claims.entries()) {
         const claimRow = this.store.insertClaim(
           {
@@ -306,7 +312,63 @@ export class MemoryWorker {
         });
       }
 
-      const status = claims.length > 0 ? 'extracted' : 'skipped';
+      const sourceId = first.id;
+      // Mechanical files are server-authoritative; keep them when the LLM
+      // observation replaces the baseline row.
+      const baseline = this.store.findObservationForSource(first.scope, sourceId);
+      if (extraction.observations.length > 0) {
+        this.store.replaceObservationsForSource(first.scope, sourceId);
+        for (const observation of extraction.observations) {
+          this.store.upsertObservation({
+            scope: first.scope,
+            endId: first.endId,
+            sessionId: first.sessionId,
+            runId: first.runId,
+            sourceId,
+            kind: observation.kind,
+            type: observation.type,
+            title: observation.title,
+            subtitle: observation.subtitle,
+            facts: observation.facts,
+            narrative: observation.narrative,
+            concepts: observation.concepts,
+            filesRead: baseline?.filesRead ?? [],
+            filesModified: baseline?.filesModified ?? [],
+            sensitivity: observation.sensitivity,
+          });
+        }
+      }
+      if (extraction.summary && first.sessionId) {
+        this.store.upsertSessionSummary({
+          scope: first.scope,
+          endId: first.endId,
+          sessionId: first.sessionId,
+          runId: first.runId,
+          request: extraction.summary.request,
+          investigated: extraction.summary.investigated,
+          learned: extraction.summary.learned,
+          completed: extraction.summary.completed,
+          nextSteps: extraction.summary.nextSteps,
+          notes: extraction.summary.notes,
+          filesRead: baseline?.filesRead ?? [],
+          filesEdited: baseline?.filesModified ?? [],
+        });
+        if (extraction.summary.nextSteps.trim() !== '') {
+          this.store.upsertLoopCandidate({
+            scope: first.scope,
+            endId: first.endId,
+            title: extraction.summary.nextSteps.trim().slice(0, 200),
+            detail: extraction.summary.notes,
+            sourceId,
+          });
+        }
+      }
+
+      const durable =
+        claims.length > 0 ||
+        extraction.observations.length > 0 ||
+        extraction.summary !== null;
+      const status = durable ? 'extracted' : 'skipped';
       for (const source of sources) {
         this.store.setSourceStatus(source.id, status);
         this.store.setState(`extract_failures:${source.id}`, '0');
@@ -347,9 +409,9 @@ export class MemoryWorker {
     contextSources: MemorySource[],
     model: MemoryModelSelection,
     signal: AbortSignal,
-  ): Promise<ExtractedClaim[]> {
+  ): Promise<ExtractionResult> {
     try {
-      return await extractClaims({
+      return await extractMemory({
         provider: model.provider,
         providerId: model.providerId,
         model: model.model,
@@ -363,7 +425,7 @@ export class MemoryWorker {
         err instanceof MemoryExtractionError &&
         (err.code === 'invalid_json' || err.code === 'invalid_schema')
       ) {
-        return extractClaims({
+        return extractMemory({
           provider: model.provider,
           providerId: model.providerId,
           model: model.model,

@@ -1,4 +1,5 @@
-import type { EndRow, SessionRow, WorkspaceRow } from '../db/db.js';
+import type { EndRow, MemorySettingsRow, SessionRow, WorkspaceRow } from '../db/db.js';
+import { isMemoryEnabled } from './settings.js';
 import type { MemoryScope } from './types.js';
 
 export interface MemoryRunScope {
@@ -23,19 +24,23 @@ export function shouldCaptureSession(session: SessionRow): boolean {
 
 /**
  * Freeze the write scope for one run. The model never supplies scope; the
- * server derives it from the session + workspace. M1 widens this to dev
- * workspaces; M0 deliberately returns null outside a life workspace.
+ * server derives it from the session + workspace. Dev workspaces are opt-in
+ * (`memory_settings.enabled`); life is on unless explicitly disabled.
  */
 export function resolveRunMemoryScope(
   session: SessionRow,
   workspace: WorkspaceRow,
   ends: readonly EndRow[],
   runId: string | null = null,
+  settings?: MemorySettingsRow,
 ): MemoryRunScope | null {
   if (!shouldCaptureSession(session)) return null;
-  if (workspace.family !== 'life') return null;
+  if (!isMemoryEnabled(workspace, settings)) return null;
 
-  const lifeEnd = ends.find((end) => end.kind === 'life' && end.status === 'active');
+  const lifeEnd =
+    workspace.family === 'life'
+      ? ends.find((end) => end.kind === 'life' && end.status === 'active')
+      : undefined;
   return {
     scope: `workspace:${workspace.id}`,
     workspaceId: workspace.id,

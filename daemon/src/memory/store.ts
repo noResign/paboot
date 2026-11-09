@@ -9,9 +9,15 @@ import type {
   CreateSourceInput,
   ClaimEvidenceInput,
   MemoryClaim,
+  MemoryDocument,
+  MemoryObservation,
   MemoryScope,
+  MemorySessionSummary,
   MemorySource,
   SourceStatus,
+  UpsertDocumentInput,
+  UpsertObservationInput,
+  UpsertSessionSummaryInput,
 } from './types.js';
 
 const SOURCE_COLUMNS = `
@@ -30,6 +36,26 @@ const CLAIM_COLUMNS = `
   dedup_key AS dedupKey, sensitivity, status, superseded_by AS supersededBy,
   created_at AS createdAt, updated_at AS updatedAt`;
 
+const DOCUMENT_COLUMNS = `
+  id, scope, end_id AS endId, kind, title, summary, tags_json AS tagsJson,
+  path, origin, authority, weight, review_status AS reviewStatus,
+  extractable, sensitivity, content_hash AS contentHash,
+  last_edited_by AS lastEditedBy, updated_at AS updatedAt`;
+
+const OBSERVATION_COLUMNS = `
+  id, scope, end_id AS endId, session_id AS sessionId, run_id AS runId,
+  source_id AS sourceId, kind, type, title, subtitle,
+  facts_json AS factsJson, narrative, concepts_json AS conceptsJson,
+  files_read_json AS filesReadJson, files_modified_json AS filesModifiedJson,
+  evidence_json AS evidenceJson, content_hash AS contentHash, sensitivity, status,
+  created_at AS createdAt, updated_at AS updatedAt`;
+
+const SUMMARY_COLUMNS = `
+  id, scope, end_id AS endId, session_id AS sessionId, run_id AS runId,
+  request, investigated, learned, completed, next_steps AS nextSteps, notes,
+  files_read_json AS filesReadJson, files_edited_json AS filesEditedJson,
+  sensitivity, created_at AS createdAt`;
+
 /**
  * Owns `<dataDir>/memory/memory.db`. One process writer; WAL is advertised so a
  * future read-only inspector can attach without blocking consolidation.
@@ -45,6 +71,7 @@ export class MemoryStore {
     this.db = new DatabaseSync(this.file);
     this.db.exec(MEMORY_SCHEMA_SQL);
     this.setState('schema_version', String(MEMORY_SCHEMA_VERSION), false);
+    this.backfillSearchIndex();
   }
 
   close(): void {
@@ -112,6 +139,16 @@ export class MemoryStore {
       );
     const source = this.findSourceByKey(input, contentHash);
     if (!source) throw new Error('failed to read back memory source');
+    if (Number(result.changes) > 0 && source.sensitivity !== 'secret') {
+      this.indexSearch({
+        scope: source.scope,
+        endId: source.endId,
+        kind: 'source',
+        refId: source.id,
+        authority: null,
+        text: source.content,
+      });
+    }
     return { source, created: Number(result.changes) > 0 };
   }
 
@@ -119,6 +156,15 @@ export class MemoryStore {
     return this.db
       .prepare(`SELECT ${SOURCE_COLUMNS} FROM mem_sources WHERE id = ?`)
       .get(id) as unknown as MemorySource | undefined;
+  }
+
+  findSourceForRun(scope: MemoryScope, runId: string): MemorySource | undefined {
+    return this.db
+      .prepare(
+        `SELECT ${SOURCE_COLUMNS} FROM mem_sources
+         WHERE scope = ? AND run_id = ? ORDER BY rowid ASC LIMIT 1`,
+      )
+      .get(scope, runId) as unknown as MemorySource | undefined;
   }
 
   listSources(scope: MemoryScope): MemorySource[] {
@@ -333,6 +379,7 @@ export class MemoryStore {
     this.attachEvidence(id, evidence);
     const claim = this.getClaim(id);
     if (!claim) throw new Error('failed to read back memory claim');
+    this.refreshClaimIndex(claim);
     return claim;
   }
 
@@ -345,6 +392,55 @@ export class MemoryStore {
         )
         .run(claimId, item.sourceId, item.relation ?? 'supports', item.quote ?? null);
     }
+  }
+
+  /**
+   * Promote a workspace claim to the user scope (life -> user). A new claim is
+   * created with `promoted_from`; the source claim and the original evidence
+   * stay untouched. Tier-0 still applies inside the user scope.
+   */
+  promoteClaim(
+    id: string,
+    shareClass: 'portable' | 'personal' | 'life_only' = 'portable',
+  ): MemoryClaim | null {
+    const source = this.getClaim(id);
+    if (!source || source.scope === 'user' || source.sensitivity === 'secret') return null;
+    const promoted = this.insertClaim(
+      {
+        scope: 'user',
+        endId: null,
+        entityId: source.entityId,
+        predicate: source.predicate,
+        objectText: source.objectText,
+        objectEntityId: source.objectEntityId,
+        kind: source.kind,
+        summary: source.summary,
+        authority: 'user_confirmed',
+        shareClass,
+        promotedFrom: source.id,
+        validFrom: source.validFrom,
+        validTo: source.validTo,
+        timePrecision: source.timePrecision,
+        confidence: source.confidence,
+        importance: source.importance,
+        dedupKey: source.dedupKey,
+        sensitivity: source.sensitivity,
+      },
+      this.claimEvidence(source.id).map((item) => ({
+        sourceId: item.sourceId,
+        relation: item.relation as 'supports' | 'contradicts' | 'corrects',
+        quote: item.quote,
+      })),
+    );
+    this.recordOp({
+      batchKey: `promote:${source.id}`,
+      opIndex: 0,
+      op: 'promote',
+      targetType: 'claim',
+      targetId: promoted.id,
+      payload: { from: source.id, shareClass },
+    });
+    return promoted;
   }
 
   getClaim(id: string): MemoryClaim | undefined {
@@ -390,7 +486,9 @@ export class MemoryStore {
     columns.push('updated_at = ?');
     values.push(Date.now(), id);
     this.db.prepare(`UPDATE mem_claims SET ${columns.join(', ')} WHERE id = ?`).run(...values);
-    return this.getClaim(id);
+    const updated = this.getClaim(id);
+    if (updated) this.refreshClaimIndex(updated);
+    return updated;
   }
 
   /** User correction wins over extraction: authority + confidence are reset. */
@@ -418,7 +516,9 @@ export class MemoryStore {
     columns.push("authority = 'user_confirmed'", 'confidence = 1.0', 'updated_at = ?');
     values.push(Date.now(), id);
     this.db.prepare(`UPDATE mem_claims SET ${columns.join(', ')} WHERE id = ?`).run(...values);
-    return this.getClaim(id);
+    const corrected = this.getClaim(id);
+    if (corrected) this.refreshClaimIndex(corrected);
+    return corrected;
   }
 
   /** Forget one claim: tombstone its evidence sources, then delete the row. */
@@ -439,6 +539,7 @@ export class MemoryStore {
     }
     this.db.prepare(`DELETE FROM mem_claim_evidence WHERE claim_id = ?`).run(id);
     this.db.prepare(`DELETE FROM mem_claims WHERE id = ?`).run(id);
+    this.db.prepare(`DELETE FROM mem_search WHERE kind = 'claim' AND ref_id = ?`).run(id);
     return true;
   }
 
@@ -470,6 +571,568 @@ export class MemoryStore {
       .all(claimId) as unknown as { sourceId: string; relation: string; quote: string | null }[];
   }
 
+  // ---- documents (K2) ----
+
+  /**
+   * Mirror a knowledge document. The file remains the source of truth; this
+   * row and its chunks are only the search index. Chunks are rebuilt when the
+   * body hash, title, summary or authority changes.
+   */
+  upsertDocument(input: UpsertDocumentInput & { body: string }): boolean {
+    const existing = this.getDocument(input.id);
+    const chunks = chunkDocument(input.body, input.title, input.summary);
+    const changed =
+      !existing ||
+      existing.contentHash !== input.contentHash ||
+      existing.title !== input.title ||
+      existing.summary !== input.summary ||
+      existing.authority !== input.authority;
+
+    this.db
+      .prepare(
+        `INSERT INTO mem_documents
+           (id, scope, end_id, kind, title, summary, tags_json, path, origin, authority,
+            weight, review_status, extractable, sensitivity, content_hash, last_edited_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           scope = excluded.scope, end_id = excluded.end_id, kind = excluded.kind,
+           title = excluded.title, summary = excluded.summary, tags_json = excluded.tags_json,
+           path = excluded.path, origin = excluded.origin, authority = excluded.authority,
+           weight = excluded.weight, review_status = excluded.review_status,
+           extractable = excluded.extractable, sensitivity = excluded.sensitivity,
+           content_hash = excluded.content_hash, last_edited_by = excluded.last_edited_by,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        input.id,
+        input.scope,
+        input.endId,
+        input.kind,
+        input.title,
+        input.summary,
+        JSON.stringify(input.tags ?? []),
+        input.path,
+        input.origin,
+        input.authority,
+        input.weight ?? 1,
+        input.reviewStatus,
+        input.extractable ?? 0,
+        input.sensitivity,
+        input.contentHash,
+        input.lastEditedBy,
+        input.updatedAt,
+      );
+
+    if (!changed) return false;
+    this.db.prepare(`DELETE FROM mem_document_chunks WHERE document_id = ?`).run(input.id);
+    this.db.prepare(`DELETE FROM mem_search WHERE document_id = ?`).run(input.id);
+    chunks.forEach((text, chunkNo) => {
+      this.db
+        .prepare(
+          `INSERT INTO mem_document_chunks (id, document_id, chunk_no, text, content_hash, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(randomUUID(), input.id, chunkNo, text, hashContent(text), Date.now());
+      this.indexSearch({
+        scope: input.scope,
+        endId: input.endId,
+        kind: 'document',
+        refId: input.id,
+        authority: input.authority,
+        documentId: input.id,
+        chunkNo,
+        text: `${input.title}\n${text}`,
+      });
+    });
+    return true;
+  }
+
+  getDocument(id: string): MemoryDocument | undefined {
+    const row = this.db.prepare(`SELECT ${DOCUMENT_COLUMNS} FROM mem_documents WHERE id = ?`).get(id) as
+      | RawDocument
+      | undefined;
+    return row ? mapDocument(row) : undefined;
+  }
+
+  listDocuments(scope: MemoryScope): MemoryDocument[] {
+    const rows = this.db
+      .prepare(`SELECT ${DOCUMENT_COLUMNS} FROM mem_documents WHERE scope = ? ORDER BY updated_at DESC`)
+      .all(scope) as unknown as RawDocument[];
+    return rows.map(mapDocument);
+  }
+
+  listDocumentChunks(documentId: string): { chunkNo: number; text: string }[] {
+    return this.db
+      .prepare(
+        `SELECT chunk_no AS chunkNo, text FROM mem_document_chunks
+         WHERE document_id = ? ORDER BY chunk_no ASC`,
+      )
+      .all(documentId) as unknown as { chunkNo: number; text: string }[];
+  }
+
+  deleteDocument(id: string): void {
+    this.db.prepare(`DELETE FROM mem_document_chunks WHERE document_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM mem_search WHERE document_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM mem_documents WHERE id = ?`).run(id);
+  }
+
+  // ---- observations / session summaries (M1) ----
+
+  upsertObservation(input: UpsertObservationInput): {
+    observation: MemoryObservation;
+    created: boolean;
+  } {
+    const contentHash = observationHash(input);
+    const existing = this.db
+      .prepare(
+        `SELECT ${OBSERVATION_COLUMNS} FROM mem_observations
+         WHERE scope = ? AND COALESCE(source_id, '') = ? AND content_hash = ?`,
+      )
+      .get(input.scope, input.sourceId ?? '', contentHash) as unknown as RawObservation | undefined;
+    if (existing) {
+      return { observation: mapObservation(existing), created: false };
+    }
+
+    const id = randomUUID();
+    const now = Date.now();
+    const sensitivity = input.sensitivity ?? 'normal';
+    this.db
+      .prepare(
+        `INSERT INTO mem_observations
+           (id, scope, end_id, session_id, run_id, source_id, kind, type, title, subtitle,
+            facts_json, narrative, concepts_json, files_read_json, files_modified_json,
+            evidence_json, content_hash, sensitivity, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      )
+      .run(
+        id,
+        input.scope,
+        input.endId,
+        input.sessionId,
+        input.runId,
+        input.sourceId,
+        input.kind,
+        input.type,
+        input.title,
+        input.subtitle ?? null,
+        JSON.stringify(input.facts ?? []),
+        input.narrative ?? null,
+        JSON.stringify(input.concepts ?? []),
+        JSON.stringify(input.filesRead ?? []),
+        JSON.stringify(input.filesModified ?? []),
+        JSON.stringify(input.evidence ?? []),
+        contentHash,
+        sensitivity,
+        now,
+        now,
+      );
+    if (sensitivity !== 'secret') {
+      this.indexSearch({
+        scope: input.scope,
+        endId: input.endId,
+        kind: 'observation',
+        refId: id,
+        authority: null,
+        text: [
+          input.title,
+          input.subtitle ?? '',
+          ...(input.facts ?? []),
+          input.narrative ?? '',
+          ...(input.filesRead ?? []),
+          ...(input.filesModified ?? []),
+        ].join('\n'),
+      });
+    }
+    return { observation: this.getObservation(id)!, created: true };
+  }
+
+  findObservationForSource(
+    scope: MemoryScope,
+    sourceId: string,
+  ): MemoryObservation | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT ${OBSERVATION_COLUMNS} FROM mem_observations
+         WHERE scope = ? AND source_id = ? AND status = 'active'
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(scope, sourceId) as unknown as RawObservation | undefined;
+    return row ? mapObservation(row) : undefined;
+  }
+
+  /** Replace the mechanical baseline for one source with the LLM-compressed one. */
+  replaceObservationsForSource(scope: MemoryScope, sourceId: string): void {
+    const rows = this.db
+      .prepare(`SELECT id FROM mem_observations WHERE scope = ? AND source_id = ?`)
+      .all(scope, sourceId) as unknown as { id: string }[];
+    for (const row of rows) {
+      this.db.prepare(`DELETE FROM mem_search WHERE kind = 'observation' AND ref_id = ?`).run(row.id);
+    }
+    this.db
+      .prepare(`DELETE FROM mem_observations WHERE scope = ? AND source_id = ?`)
+      .run(scope, sourceId);
+  }
+
+  getObservation(id: string): MemoryObservation | undefined {
+    const row = this.db
+      .prepare(`SELECT ${OBSERVATION_COLUMNS} FROM mem_observations WHERE id = ?`)
+      .get(id) as unknown as RawObservation | undefined;
+    return row ? mapObservation(row) : undefined;
+  }
+
+  listObservationsForSession(
+    scope: MemoryScope,
+    sessionId: string,
+    limit = 50,
+  ): MemoryObservation[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${OBSERVATION_COLUMNS} FROM mem_observations
+         WHERE scope = ? AND session_id = ? AND status = 'active'
+         ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(scope, sessionId, limit) as unknown as RawObservation[];
+    return rows.map(mapObservation);
+  }
+
+  listObservations(scope: MemoryScope, limit = 50): MemoryObservation[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${OBSERVATION_COLUMNS} FROM mem_observations
+         WHERE scope = ? AND status = 'active'
+         ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(scope, limit) as unknown as RawObservation[];
+    return rows.map(mapObservation);
+  }
+
+  upsertSessionSummary(input: UpsertSessionSummaryInput): MemorySessionSummary {
+    const existing = this.db
+      .prepare(
+        `SELECT ${SUMMARY_COLUMNS} FROM mem_session_summaries
+         WHERE session_id = ? AND COALESCE(run_id, '') = ?
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(input.sessionId, input.runId ?? '') as unknown as RawSummary | undefined;
+    const sensitivity = input.sensitivity ?? 'normal';
+    const id = existing?.id ?? randomUUID();
+    const createdAt = existing?.createdAt ?? Date.now();
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE mem_session_summaries SET
+             scope = ?, end_id = ?, request = ?, investigated = ?, learned = ?,
+             completed = ?, next_steps = ?, notes = ?, files_read_json = ?,
+             files_edited_json = ?, sensitivity = ?
+           WHERE id = ?`,
+        )
+        .run(
+          input.scope,
+          input.endId,
+          input.request,
+          input.investigated ?? '',
+          input.learned ?? '',
+          input.completed ?? '',
+          input.nextSteps ?? '',
+          input.notes ?? null,
+          JSON.stringify(input.filesRead ?? []),
+          JSON.stringify(input.filesEdited ?? []),
+          sensitivity,
+          id,
+        );
+    } else {
+      this.db
+        .prepare(
+          `INSERT INTO mem_session_summaries
+             (id, scope, end_id, session_id, run_id, request, investigated, learned,
+              completed, next_steps, notes, files_read_json, files_edited_json,
+              sensitivity, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.scope,
+          input.endId,
+          input.sessionId,
+          input.runId,
+          input.request,
+          input.investigated ?? '',
+          input.learned ?? '',
+          input.completed ?? '',
+          input.nextSteps ?? '',
+          input.notes ?? null,
+          JSON.stringify(input.filesRead ?? []),
+          JSON.stringify(input.filesEdited ?? []),
+          sensitivity,
+          createdAt,
+        );
+    }
+    if (sensitivity !== 'secret') {
+      this.indexSearch({
+        scope: input.scope,
+        endId: input.endId,
+        kind: 'summary',
+        refId: id,
+        authority: null,
+        text: [input.request, input.investigated, input.learned, input.completed, input.nextSteps]
+          .filter((part): part is string => Boolean(part))
+          .join('\n'),
+      });
+    }
+    return this.getSessionSummary(id)!;
+  }
+
+  getSessionSummary(id: string): MemorySessionSummary | undefined {
+    const row = this.db
+      .prepare(`SELECT ${SUMMARY_COLUMNS} FROM mem_session_summaries WHERE id = ?`)
+      .get(id) as unknown as RawSummary | undefined;
+    return row ? mapSummary(row) : undefined;
+  }
+
+  listSessionSummaries(scope: MemoryScope, sessionId?: string, limit = 50): MemorySessionSummary[] {
+    if (sessionId) {
+      return (
+        this.db
+          .prepare(
+            `SELECT ${SUMMARY_COLUMNS} FROM mem_session_summaries
+             WHERE scope = ? AND session_id = ? ORDER BY created_at DESC LIMIT ?`,
+          )
+          .all(scope, sessionId, limit) as unknown as RawSummary[]
+      ).map(mapSummary);
+    }
+    return (
+      this.db
+        .prepare(
+          `SELECT ${SUMMARY_COLUMNS} FROM mem_session_summaries
+           WHERE scope = ? ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(scope, limit) as unknown as RawSummary[]
+    ).map(mapSummary);
+  }
+
+  /** nextSteps becomes an open follow-up candidate; duplicates stay collapsed. */
+  upsertLoopCandidate(input: {
+    scope: MemoryScope;
+    endId: string | null;
+    title: string;
+    detail?: string | null;
+    sourceId?: string | null;
+  }): string {
+    const existing = this.db
+      .prepare(
+        `SELECT id FROM mem_loops
+         WHERE scope = ? AND title = ? AND status = 'open' LIMIT 1`,
+      )
+      .get(input.scope, input.title) as { id: string } | undefined;
+    if (existing) return existing.id;
+    const id = randomUUID();
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO mem_loops
+           (id, scope, end_id, kind, title, detail, due_at, remind_json, status,
+            source_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'followup', ?, ?, NULL, '[]', 'open', ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.scope,
+        input.endId,
+        input.title,
+        input.detail ?? null,
+        input.sourceId ?? null,
+        now,
+        now,
+      );
+    return id;
+  }
+
+  listOpenLoops(scope: MemoryScope): { id: string; title: string; detail: string | null }[] {
+    return this.db
+      .prepare(
+        `SELECT id, title, detail FROM mem_loops
+         WHERE scope = ? AND status = 'open' ORDER BY created_at DESC`,
+      )
+      .all(scope) as unknown as { id: string; title: string; detail: string | null }[];
+  }
+
+  // ---- search (D31) ----
+
+  /**
+   * D31 ladder: FTS (>= 3 codepoints) -> LIKE substring -> OR over terms.
+   * The trigram tokeniser gives substring semantics for CJK; 1-2 character
+   * queries must bypass it because FTS5 rejects short phrases.
+   */
+  searchMemory(input: SearchMemoryInput): MemorySearchHit[] {
+    const query = input.query.trim();
+    const scopes = [...new Set(input.scopes)];
+    if (query === '' || scopes.length === 0) return [];
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
+    const placeholders = scopes.map(() => '?').join(',');
+
+    if (codepointLength(query) >= 3) {
+      const hits = this.searchFts(query, scopes, placeholders, limit);
+      if (hits.length > 0) return hits;
+    }
+    const substring = this.searchLike(query, scopes, placeholders, limit);
+    if (substring.length > 0) return substring;
+
+    const terms = query.split(/\s+/).filter(Boolean);
+    if (terms.length <= 1) return [];
+    return this.searchTerms(terms, scopes, placeholders, limit);
+  }
+
+  private searchFts(
+    query: string,
+    scopes: readonly MemoryScope[],
+    placeholders: string,
+    limit: number,
+  ): MemorySearchHit[] {
+    try {
+      const phrase = `"${query.replace(/"/g, '""')}"`;
+      const rows = this.db
+        .prepare(
+          `SELECT scope, end_id AS endId, kind, ref_id AS refId, authority,
+                  document_id AS documentId, chunk_no AS chunkNo, text,
+                  bm25(mem_search) AS rank
+           FROM mem_search
+           WHERE mem_search MATCH ? AND scope IN (${placeholders})
+           ORDER BY rank LIMIT ?`,
+        )
+        .all(phrase, ...scopes, limit * 3) as unknown as RawSearchRow[];
+      return dedupeHits(
+        rows.map((row) => ({
+          ...row,
+          score: -Number(row.rank ?? 0),
+        })),
+      ).slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  private searchLike(
+    query: string,
+    scopes: readonly MemoryScope[],
+    placeholders: string,
+    limit: number,
+  ): MemorySearchHit[] {
+    const pattern = `%${escapeLike(query)}%`;
+    const rows = this.db
+      .prepare(
+        `SELECT scope, end_id AS endId, kind, ref_id AS refId, authority,
+                document_id AS documentId, chunk_no AS chunkNo, text
+         FROM mem_search
+         WHERE text LIKE ? ESCAPE '\\' AND scope IN (${placeholders})
+         ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(pattern, ...scopes, limit) as unknown as RawSearchRow[];
+    return rows.map((row) => ({ ...row, score: 1 }));
+  }
+
+  private searchTerms(
+    terms: readonly string[],
+    scopes: readonly MemoryScope[],
+    placeholders: string,
+    limit: number,
+  ): MemorySearchHit[] {
+    const conditions = terms.map(() => `text LIKE ? ESCAPE '\\'`).join(' OR ');
+    const patterns = terms.map((term) => `%${escapeLike(term)}%`);
+    const rows = this.db
+      .prepare(
+        `SELECT scope, end_id AS endId, kind, ref_id AS refId, authority,
+                document_id AS documentId, chunk_no AS chunkNo, text
+         FROM mem_search
+         WHERE (${conditions}) AND scope IN (${placeholders})
+         ORDER BY rowid DESC LIMIT ?`,
+      )
+      .all(...patterns, ...scopes, limit * 5) as unknown as RawSearchRow[];
+    const scored = rows.map((row) => {
+      const haystack = row.text.toLowerCase();
+      const hits = terms.reduce(
+        (total, term) => total + countOccurrences(haystack, term.toLowerCase()),
+        0,
+      );
+      return { ...row, score: hits };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return dedupeHits(scored).slice(0, limit);
+  }
+
+  private indexSearch(input: {
+    scope: MemoryScope;
+    endId: string | null;
+    kind: string;
+    refId: string;
+    authority: string | null;
+    documentId?: string | null;
+    chunkNo?: number | null;
+    text: string;
+  }): void {
+    // Documents insert one row per chunk; the caller clears the whole document
+    // before inserting, so deleting by ref_id here would drop earlier chunks.
+    if (input.kind !== 'document') {
+      this.db
+        .prepare(`DELETE FROM mem_search WHERE kind = ? AND ref_id = ?`)
+        .run(input.kind, input.refId);
+    }
+    if (input.text.trim() === '') return;
+    this.db
+      .prepare(
+        `INSERT INTO mem_search
+           (scope, end_id, kind, ref_id, document_id, chunk_no, authority, text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.scope,
+        input.endId,
+        input.kind,
+        input.refId,
+        input.documentId ?? null,
+        input.chunkNo ?? null,
+        input.authority,
+        input.text,
+      );
+  }
+
+  private refreshClaimIndex(claim: MemoryClaim): void {
+    if (claim.sensitivity === 'secret') {
+      this.db.prepare(`DELETE FROM mem_search WHERE kind = 'claim' AND ref_id = ?`).run(claim.id);
+      return;
+    }
+    this.indexSearch({
+      scope: claim.scope,
+      endId: claim.endId,
+      kind: 'claim',
+      refId: claim.id,
+      authority: claim.authority,
+      text: `${claim.predicate} ${claim.objectText ?? ''} ${claim.summary}`.trim(),
+    });
+  }
+
+  /** One-time upgrade for databases written before mem_search existed. */
+  private backfillSearchIndex(): void {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM mem_search`).get() as { n: number };
+    if (Number(row.n) > 0) return;
+    const claims = this.db
+      .prepare(`SELECT ${CLAIM_COLUMNS} FROM mem_claims WHERE sensitivity <> 'secret'`)
+      .all() as unknown as RawClaim[];
+    for (const claim of claims) this.refreshClaimIndex(mapClaim(claim));
+    const sources = this.db
+      .prepare(`SELECT ${SOURCE_COLUMNS} FROM mem_sources WHERE sensitivity <> 'secret'`)
+      .all() as unknown as MemorySource[];
+    for (const source of sources) {
+      this.indexSearch({
+        scope: source.scope,
+        endId: source.endId,
+        kind: 'source',
+        refId: source.id,
+        authority: null,
+        text: source.content,
+      });
+    }
+  }
+
   private findSourceByKey(input: CreateSourceInput, contentHash: string): MemorySource | undefined {
     return this.db
       .prepare(
@@ -499,6 +1162,188 @@ export class MemoryStore {
       .get(input.scope, input.endId ?? '', input.dedupKey) as unknown as RawClaim | undefined;
     return row ? mapClaim(row) : undefined;
   }
+}
+
+export type MemorySearchKind = 'source' | 'claim' | 'observation' | 'summary' | 'document';
+
+export interface MemorySearchHit {
+  kind: MemorySearchKind;
+  refId: string;
+  scope: MemoryScope;
+  endId: string | null;
+  authority: string | null;
+  text: string;
+  score: number;
+  documentId: string | null;
+  chunkNo: number | null;
+}
+
+export interface SearchMemoryInput {
+  scopes: readonly MemoryScope[];
+  query: string;
+  limit?: number;
+}
+
+interface RawSearchRow {
+  scope: MemoryScope;
+  endId: string | null;
+  kind: MemorySearchKind;
+  refId: string;
+  authority: string | null;
+  documentId: string | null;
+  chunkNo: number | null;
+  text: string;
+  score?: number;
+  rank?: number;
+}
+
+function dedupeHits(rows: readonly RawSearchRow[]): MemorySearchHit[] {
+  const seen = new Set<string>();
+  const hits: MemorySearchHit[] = [];
+  for (const row of rows) {
+    const key = `${row.kind}:${row.refId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push({
+      kind: row.kind,
+      refId: row.refId,
+      scope: row.scope,
+      endId: row.endId,
+      authority: row.authority,
+      text: row.text,
+      score: Number(row.score ?? 0),
+      documentId: row.documentId,
+      chunkNo: row.chunkNo,
+    });
+  }
+  return hits;
+}
+
+function codepointLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle === '') return 0;
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index >= 0) {
+    count += 1;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
+
+interface RawObservation extends Omit<MemoryObservation, 'facts' | 'concepts' | 'filesRead' | 'filesModified' | 'evidence'> {
+  factsJson: string;
+  conceptsJson: string;
+  filesReadJson: string;
+  filesModifiedJson: string;
+  evidenceJson: string;
+}
+
+function mapObservation(row: RawObservation): MemoryObservation {
+  return {
+    ...row,
+    facts: parseStringArray(row.factsJson),
+    concepts: parseStringArray(row.conceptsJson),
+    filesRead: parseStringArray(row.filesReadJson),
+    filesModified: parseStringArray(row.filesModifiedJson),
+    evidence: parseEvidenceArray(row.evidenceJson),
+  };
+}
+
+function parseEvidenceArray(value: string): { runId: string; seq: number }[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is { runId: string; seq: number } =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof (item as { runId?: unknown }).runId === 'string' &&
+        typeof (item as { seq?: unknown }).seq === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
+interface RawSummary extends Omit<MemorySessionSummary, 'filesRead' | 'filesEdited'> {
+  filesReadJson: string;
+  filesEditedJson: string;
+}
+
+function mapSummary(row: RawSummary): MemorySessionSummary {
+  return {
+    ...row,
+    filesRead: parseStringArray(row.filesReadJson),
+    filesEdited: parseStringArray(row.filesEditedJson),
+  };
+}
+
+export function observationHash(input: UpsertObservationInput): string {
+  return hashContent(
+    JSON.stringify({
+      type: input.type,
+      title: input.title,
+      subtitle: input.subtitle ?? null,
+      facts: input.facts ?? [],
+      narrative: input.narrative ?? null,
+      filesRead: input.filesRead ?? [],
+      filesModified: input.filesModified ?? [],
+    }),
+  );
+}
+
+interface RawDocument extends Omit<MemoryDocument, 'tags'> {
+  tagsJson: string;
+}
+
+function mapDocument(row: RawDocument): MemoryDocument {
+  return {
+    ...row,
+    tags: parseStringArray(row.tagsJson),
+  };
+}
+
+/**
+ * Chunk by headings and paragraphs, then hard-split any oversized block.
+ * 2000 characters is roughly the 500-token cap from the design notes.
+ */
+export function chunkDocument(body: string, title: string, summary: string, maxChars = 2000): string[] {
+  const text = body.replace(/\r\n/g, '\n').trim();
+  if (text === '') {
+    const fallback = `${title}\n${summary}`.trim();
+    return [fallback === '' ? title : fallback];
+  }
+  const blocks: string[] = [];
+  let current = '';
+  for (const line of text.split('\n')) {
+    const heading = /^#{1,6}\s/.test(line);
+    if (heading && current.trim() !== '') {
+      blocks.push(current.trim());
+      current = '';
+    }
+    current += `${line}\n`;
+    if (current.length >= maxChars) {
+      blocks.push(current.trim());
+      current = '';
+    }
+  }
+  if (current.trim() !== '') blocks.push(current.trim());
+
+  const chunks: string[] = [];
+  for (const block of blocks) {
+    for (let start = 0; start < block.length; start += maxChars) {
+      chunks.push(block.slice(start, start + maxChars));
+    }
+  }
+  return chunks.length === 0 ? [title] : chunks;
 }
 
 interface RawClaim extends Omit<MemoryClaim, 'reinforcementDates'> {

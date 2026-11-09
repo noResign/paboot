@@ -97,14 +97,28 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'runId and toolName are required', code: 'bad_request' });
       return;
     }
-    const sessionId = ctx.db.getRun(runId)?.session_id ?? runId;
+    // Fail closed: an MCP server carrying a stale run id must not be able to
+    // park a request that no client can ever see.
+    const run = ctx.db.getRun(runId);
+    if (!run) {
+      res.status(404).json({ error: 'run not found', code: 'run_not_found' });
+      return;
+    }
+    const sessionId = run.session_id;
     const p = ctx.permissions.create(runId, sessionId, toolName, body.toolInput ?? null);
+    // `runs.permission_mode` is the effective mode resolved at the API boundary.
+    // Bypass auto-approves without broadcasting; ask / acceptEdits still ask.
+    if (run.permission_mode === 'bypass') {
+      ctx.permissions.decide(p.id, 'allow', 'bypass');
+      res.json({ id: p.id, status: p.status });
+      return;
+    }
     // An MCP call is covered either by a server-wide grant or by an exact one
     // (grants written before allowances were widened to the whole server).
     if (grantKeyCandidates(toolName).some((key) => ctx.db.hasPermissionGrant(sessionId, key))) {
       // Already granted for this session: resolve immediately, don't bother the client.
       ctx.permissions.decide(p.id, 'allow', 'auto-allowed');
-      res.json({ id: p.id });
+      res.json({ id: p.id, status: p.status });
       return;
     }
     // Read-only Bash commands (ls, cat, node --version, …) are auto-allowed.
@@ -130,7 +144,7 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       toolInput: p.toolInput,
       status: p.status,
     });
-    res.json({ id: p.id });
+    res.json({ id: p.id, status: p.status });
   });
 
   app.get('/api/internal/permissions/:id/status', (req, res) => {

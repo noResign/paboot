@@ -72,11 +72,11 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
-| `memory/` | Memory M0：`memory.db` schema / store、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、brief / 字符预算；见 [memory.md](memory.md) |
+| `memory/` | Memory M0 + M1.1：`memory.db` schema / store、`settings`（workspace 开关）、`read-policy`（dev / life 跨读）、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、brief / 字符预算；见 [memory.md](memory.md) |
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
 | `knowledge/` | K0 curated 知识：`paths`（根 / slug / containment）、`manifest`（`.meta.json` 原子读写 / hash）、`store`（扫描 / 读写 / verify / 永久删除 / export）、`index`（confirmed → ContextSection）、`zip`（无依赖导出） |
 | `scheduling/` | 定时任务领域：`scheduler`（30s tick + 启动对账）、`schedule`（cron 校验/求值）、`task-config`（AI 配置会话 prompt） |
-| `mcp/` | MCP 模块：`injection.ts`（各 runtime 注入参数）、`context.ts` / `types.ts`、`servers/paboot_tasks/`（stdio server + 工具定义）；后续 MCP server 按真实名称建同名目录 |
+| `mcp/` | MCP 模块：`injection.ts`（每 run 的 `ToolServerSpec` 组装 + 各 runtime 注入参数）、`stdio-server.ts`（通用 stdio server loop）、`gate.ts`（capability / memory 自 gate）、`context.ts` / `types.ts`、`servers/paboot_tasks/`、`servers/paboot_capability/`；后续 MCP server 按真实名称建同名目录 |
 | `routes/*.ts` | HTTP/SSE 边界，按域拆分（完整清单见 [protocol.md](protocol.md) 的端点表） |
 | `runtimes/` | runtime 插件层：`engine`（argv 通用生命周期）、`registry`、`drivers`（driver 装配点）、`active-runs`、`stdio-rpc`、`claude/`、`codex/`、`deepseek/`、`command` |
 | `types/api.ts` | 传输契约：`NormalizedEvent` 事件 union + DTO |
@@ -105,11 +105,12 @@ daemon/
 │  ├─ knowledge/          K0 curated 知识：paths / manifest / store / index / zip
 │  ├─ scheduling/         scheduler / schedule / task-config
 │  ├─ mcp/                MCP 模块
-│  │  ├─ injection.ts     各 runtime 的 MCP 注入参数（Claude / Codex / DeepSeek）
+│  │  ├─ injection.ts     每 run 的 server 组装 + 各 runtime 注入参数
+│  │  ├─ stdio-server.ts  通用 stdio MCP server loop
+│  │  ├─ gate.ts          capability / memory 的内部审批 gate
 │  │  ├─ context.ts / types.ts
-│  │  └─ servers/paboot_tasks/
-│  │     ├─ server.ts     stdio MCP server（→ dist/mcp/servers/paboot_tasks/server.js）
-│  │     └─ tools/        schedule-task / list-scheduled-tasks / cancel-scheduled-task / list-sessions
+│  │  ├─ servers/paboot_tasks/        → dist/mcp/servers/paboot_tasks/server.js
+│  │  └─ servers/paboot_capability/   → dist/mcp/servers/paboot_capability/server.js
 │  ├─ routes/             HTTP/SSE 边界（按域拆）
 │  ├─ runtimes/           engine / registry / drivers / active-runs / stdio-rpc + claude/ · codex/ · deepseek/ · command
 │  └─ types/api.ts        传输契约
@@ -143,7 +144,8 @@ daemon/
 - **新 MCP 工具**：在 `mcp/servers/<server-name>/tools/` 加一个文件，并在同目录 `tools/index.ts`
   注册；`server.ts` / `injection.ts` 不动。
 - **新 MCP server**：`src/mcp/servers/<server-name>/server.ts` + `tools/`，在 `mcp/injection.ts`
-  注册启动 spec；同步 `ctx` 中的 server 路径（当前只有 `paboot_tasks`）与桌面打包 entries。
+  注册启动 spec；同步 `ctx` 中的 server 路径（当前为 `paboot_tasks` / `paboot_capability`）与桌面
+  打包 entries。需要审批的 server 用 `mcp/gate.ts` 自 gate；builtin runtime 会跳过它。
 - **新共享原语**：`src/platform/`（必须保持无领域依赖）。
 
 ## 安装使用（本机已装并配置 Claude Code / Codex / DeepSeek Harness 至少一种）：

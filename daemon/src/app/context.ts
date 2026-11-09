@@ -2,6 +2,7 @@ import type { Config } from './config.js';
 import type { Db } from '../db/db.js';
 import type { AttachmentStore } from '../attachments/store.js';
 import type { KnowledgeStore } from '../knowledge/store.js';
+import type { MemoryKnowledgeIndexer } from '../memory/knowledge-index.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { MemoryWorker } from '../memory/worker.js';
 import type { ProviderManager } from '../providers/provider-manager.js';
@@ -20,6 +21,8 @@ export interface AppContext {
   db: Db;
   /** Curated knowledge documents (K0); file-backed, no memory.db. */
   knowledge: KnowledgeStore;
+  /** K2 mirror into memory.db; optional in partial test contexts. */
+  knowledgeIndex?: MemoryKnowledgeIndexer;
   /**
    * Long-term memory (`<dataDir>/memory/memory.db`). Optional in partial test
    * contexts; production always wires it and run capture degrades to a no-op.
@@ -40,4 +43,6 @@ export interface AppContext {
   hookPath: string;
   /** Absolute path to the compiled `paboot_tasks` MCP server entry. */
   mcpServerPath: string;
+  /** Absolute path to the compiled `paboot_capability` MCP server entry. */
+  capabilityMcpServerPath: string;
 }

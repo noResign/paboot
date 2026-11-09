@@ -2,9 +2,9 @@
 
 > 索引见 [daemon.md](daemon.md)
 
-## 运行时接入（两条路径）
+## 运行时接入（三条路径）
 
-运行时按驱动方式分两条路径，最后都产出同一份 `NormalizedEvent`。
+运行时按驱动方式分三条路径，最后都产出同一份 `NormalizedEvent`。
 
 **① argv + stdout 流式 CLI（`RuntimeAdapter`）**——`runtimes/types.ts` 定义接口，实现它并在
 `registry.ts` 的 adapter 表注册一行：
@@ -30,6 +30,12 @@ DeepSeek Harness 走 `dsh acp`（ACP v1，同样是换行分隔 JSON-RPC）。�
 Codex 在需要目录时短启 app-server 调 `model/list`；DeepSeek 的默认目录是静态的，由
 Registry 缓存。两种驱动共用 `runtimes/stdio-rpc.ts` 的通用 peer 传输（请求 / 响应 /
 通知 / 服务端反向请求）。
+**③ 进程内 runtime（Builtin）**——`runtimes/builtin/` 不 spawn 外部 CLI：`AgentKernel` 直接调用
+共享 `llm/` provider，执行原生工具、MCP server、skill 与图片输入，transcript 落在主库的
+`native_*` 表。它照样注册 `RuntimeDriver`，并和其他 runtime 消费同一份 per-run
+`ToolServerSpec[]`（MCP 由进程内 `McpToolProvider` 挂载；server 侧看到
+`PABOOT_RUNTIME=builtin` 会跳过自己的审批 gate）。
+
 所有运行时都通过 `RuntimeDriver` 注册执行驱动，`routes/chat.ts` 只按 id 取
 `registry.driver(id)` 并调用 `start`，**接入新运行时不需要改 chat 路由**。
 
@@ -84,18 +90,21 @@ assistant message / thought，不是 token 级增量，长回复会在模型步�
 `text_delta` 写入事件流，结束时补 `tool_result`（只带 exit code）。run / checkpoint / rollback /
 cancel 全部复用 `startSessionRun`。
 
-## 通用工具桥（MCP，自建定时任务）
+## 通用工具桥（MCP）
 
-daemon 用同一个 `ToolServerSpec` 向每个 runtime 注入 `paboot_tasks` MCP server：
+daemon 按 run 组装 `ToolServerSpec[]`（`paboot_tasks` + `paboot_capability`），每个 runtime 只负责把
+这份列表注册进自己的配置：
 
-- **Claude**：探测到 `--mcp-config` 后内联 JSON（server 名 `paboot_tasks`，env 携带
-  `PABOOT_DAEMON_URL/TOKEN/RUN_ID`）。非 bypass 模式下 MCP 工具走既有 `mcp__.*` PreToolUse
-  matcher，会弹审批；bypass 不挂 hook。
-- **Codex**：通过 `codex app-server -c mcp_servers.paboot_tasks.*` 注入，并设
+- **Claude**：探测到 `--mcp-config` 后内联 JSON（env 携带
+  `PABOOT_DAEMON_URL/TOKEN/RUN_ID`）。`paboot_tasks` 走既有 `mcp__.*` PreToolUse matcher；
+  `paboot_capability` 被 matcher 排除，由 server 自己 gate；bypass 不挂 hook。
+- **Codex**：通过 `codex app-server -c mcp_servers.<name>.*` 注入，并设
   `default_tools_approval_mode="approve"`——Codex 在 `approvalPolicy=never` 下会拒绝未预批准的
   MCP 调用。
 - **DeepSeek Harness**：作为 `session/new.mcpServers` 的 stdio 条目传入（每次 resume 重新挂载）。
-  注意 DSH 不会为 MCP 工具本身发起审批。
+  DSH 不会为 MCP 工具本身发起审批，因此能力工具靠 `paboot_capability` 的 server 内部 gate。
+- **Builtin**：`McpToolProvider` 直接消费同一份列表；原生 `ToolExecutor` 负责审批，server 读到
+  `PABOOT_RUNTIME=builtin` 时跳过内部 gate，避免双弹。
 - **未来 runtime**：实现「把 `ToolServerSpec` 注册进自己的配置」这一件事即可；工具实现、内部端点、
   调度完全复用。没有 MCP 的 runtime 可退回 CLI helper + `developer_instructions` 方案。
 

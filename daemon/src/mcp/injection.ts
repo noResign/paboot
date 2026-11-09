@@ -9,10 +9,26 @@ import type { ToolServerSpec } from '../runtimes/types.js';
  * translation, not another tool implementation.
  */
 export const TASK_TOOL_SERVER = 'paboot_tasks';
+export const CAPABILITY_TOOL_SERVER = 'paboot_capability';
 
 export function daemonUrlFor(config: AppContext['config']): string {
   const host = ['0.0.0.0', '::'].includes(config.host) ? '127.0.0.1' : config.host;
   return `${config.tls ? 'https' : 'http'}://${host}:${config.port}`;
+}
+
+function mcpServerEnv(ctx: AppContext, runId: string): Record<string, string> {
+  return {
+    // `process.execPath` is Electron's binary when the daemon is the one the
+    // desktop bundled. An in-process MCP spawn (the builtin runtime) passes
+    // exactly this env map, so the flag must travel with the spec or the
+    // child would start a second GUI instead of a Node process.
+    ...(process.env['ELECTRON_RUN_AS_NODE'] ? { ELECTRON_RUN_AS_NODE: process.env['ELECTRON_RUN_AS_NODE'] } : {}),
+    PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
+    // MCP servers only get the internal server token; the agent's own
+    // environment carries the read-only agent token instead.
+    PABOOT_TOKEN: ctx.config.serverToken,
+    PABOOT_RUN_ID: runId,
+  };
 }
 
 export function taskToolServer(ctx: AppContext, runId: string): ToolServerSpec {
@@ -20,19 +36,47 @@ export function taskToolServer(ctx: AppContext, runId: string): ToolServerSpec {
     name: TASK_TOOL_SERVER,
     command: process.execPath,
     args: [ctx.mcpServerPath],
+    env: mcpServerEnv(ctx, runId),
+  };
+}
+
+/**
+ * Per-run MCP servers. The builtin runtime consumes these specs directly via
+ * its stdio client; external runtimes translate them into `--mcp-config`,
+ * `-c mcp_servers.*` or ACP `session/new.mcpServers`.
+ *
+ * `PABOOT_RUNTIME` tells a self-gating server who launched it: the builtin
+ * kernel already gates tools in-process, so its MCP servers must not ask again.
+ */
+export function capabilityToolServer(
+  ctx: AppContext,
+  runId: string,
+  runtime: string,
+): ToolServerSpec {
+  return {
+    name: CAPABILITY_TOOL_SERVER,
+    command: process.execPath,
+    args: [ctx.capabilityMcpServerPath],
     env: {
-      // `process.execPath` is Electron's binary when the daemon is the one the
-      // desktop bundled. An in-process MCP spawn (the builtin runtime) passes
-      // exactly this env map, so the flag must travel with the spec or the
-      // child would start a second GUI instead of a Node process.
-      ...(process.env['ELECTRON_RUN_AS_NODE'] ? { ELECTRON_RUN_AS_NODE: process.env['ELECTRON_RUN_AS_NODE'] } : {}),
-      PABOOT_DAEMON_URL: daemonUrlFor(ctx.config),
-      // MCP servers only get the internal server token; the agent's own
-      // environment carries the read-only agent token instead.
-      PABOOT_TOKEN: ctx.config.serverToken,
-      PABOOT_RUN_ID: runId,
+      ...mcpServerEnv(ctx, runId),
+      PABOOT_RUNTIME: runtime,
     },
   };
+}
+
+/**
+ * Tool servers every run gets. Paths are optional only for partial test
+ * contexts; production always wires both entries.
+ */
+export function perRunToolServers(
+  ctx: AppContext,
+  runId: string,
+  runtime: string,
+): ToolServerSpec[] {
+  const servers: ToolServerSpec[] = [];
+  if (ctx.mcpServerPath) servers.push(taskToolServer(ctx, runId));
+  if (ctx.capabilityMcpServerPath) servers.push(capabilityToolServer(ctx, runId, runtime));
+  return servers;
 }
 
 /** JSON string syntax is valid TOML for the strings we emit. */
