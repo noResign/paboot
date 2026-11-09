@@ -22,6 +22,7 @@ import { registerRunRoutes } from '../routes/runs.js';
 import { registerSessionPermissionRoutes } from '../routes/session-permissions.js';
 import { registerSessionRoutes } from '../routes/sessions.js';
 import { registerScheduledTaskRoutes } from '../routes/scheduled-tasks.js';
+import { registerMcpCapabilityRoutes } from '../routes/mcp-capability.js';
 import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
 import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
 import { registerWorkspaceRoutes } from '../routes/workspaces.js';
@@ -65,6 +66,7 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerSessionRoutes(app, ctx);
   registerScheduledTaskRoutes(app, ctx);
   registerMcpTaskRoutes(app, ctx);
+  registerMcpCapabilityRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
   registerSystemRoutes(app, hooks);
 

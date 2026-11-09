@@ -47,8 +47,14 @@ describe('capabilityToolServer', () => {
 });
 
 describe('perRunToolServers', () => {
-  it('mounts tasks, capability and memory for every runtime', () => {
-    const specs = perRunToolServers(ctx(), 'run-1', 'builtin', 'session-1');
+  it('mounts tasks, an enabled capability and memory', () => {
+    const specs = perRunToolServers(
+      ctx(),
+      'run-1',
+      'builtin',
+      'session-1',
+      new Set(['paboot_capability']),
+    );
     expect(specs.map((spec) => spec.name)).toEqual([
       'paboot_tasks',
       'paboot_capability',
@@ -59,6 +65,11 @@ describe('perRunToolServers', () => {
       PABOOT_SESSION_ID: 'session-1',
       PABOOT_TOKEN: 'server-token',
     });
+  });
+
+  it('omits capability until a binding enables it', () => {
+    const specs = perRunToolServers(ctx(), 'run-1', 'claude', 'session-1');
+    expect(specs.map((spec) => spec.name)).toEqual(['paboot_tasks', 'paboot_memory']);
   });
 
   it('omits entries whose path is not wired (partial test contexts)', () => {
