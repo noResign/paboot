@@ -347,6 +347,63 @@ describe('memory routes (M0)', () => {
     expect(body.loops.map((loop) => loop.title)).toContain('补集成测试');
   });
 
+  it('lists and resolves duplicate candidates', async () => {
+    const { url, store, workspace, session } = await setup();
+    for (let index = 0; index < 20; index += 1) {
+      store.insertClaim({
+        scope: `workspace:${workspace.id}`,
+        endId: null,
+        predicate: `filler_${index}`,
+        objectText: `填充 ${index}`,
+        kind: 'fact',
+        summary: `无关记录 ${index}`,
+        confidence: 0.8,
+        importance: 0.8,
+      });
+    }
+    const target = store.insertClaim({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      predicate: 'likes',
+      objectText: '手冲咖啡',
+      kind: 'preference',
+      summary: '喜欢手冲咖啡',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    store.insertClaim({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      predicate: 'likes',
+      objectText: '手冲黑咖啡',
+      kind: 'preference',
+      summary: '喜欢手冲咖啡',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    const list = await fetch(`${url}/api/memory/duplicates?sessionId=${session.id}`);
+    const body = (await list.json()) as {
+      duplicates: { id: string; duplicateOf: string }[];
+    };
+    expect(body.duplicates).toHaveLength(1);
+    expect(body.duplicates[0]?.duplicateOf).toBe(target.id);
+
+    const merged = await fetch(
+      `${url}/api/memory/duplicates/${body.duplicates[0]!.id}?sessionId=${session.id}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'merge' }),
+      },
+    );
+    expect(merged.status).toBe(200);
+    const after = (await (
+      await fetch(`${url}/api/memory/duplicates?sessionId=${session.id}`)
+    ).json()) as { duplicates: unknown[] };
+    expect(after.duplicates).toHaveLength(0);
+  });
+
   it('corrects a claim and marks it user_confirmed', async () => {
     const { url, store, workspace, endId, session } = await setup();
     const claim = claimIn(store, workspace.id, endId);

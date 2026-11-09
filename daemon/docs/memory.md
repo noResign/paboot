@@ -92,7 +92,9 @@
 - **Tier-1 近似**（D33）：语料 ≥ 20 条后启用，同 scope + predicate 上做 IDF 加权 cosine
   （CJK bigram + Latin token）；≥ 0.72 写入 `mem_claim_duplicates(status=pending)`，
   **不自动合并**；对称差里的稀有 identifier token（如 `ffmpeg-7.1` vs `6.1`）否决候选。
-  `merged / distinct / dismissed` 由后续审核入口更新。
+  `GET /api/memory/duplicates` + `POST /api/memory/duplicates/:id {action}` 提供审核：
+  `merge` 把证据移到保留项、强化它、把重复项归档（`superseded_by`），
+  `distinct` / `dismiss` 只更新候选状态；`user_confirmed` 仍然优先。
 - **强化 / 排序**（D34）：重复确认按天追加 `reinforcement_dates`（FIFO 10，不改 confidence）；
   brief 用 ACT-R recency 选材（α=0），并保护最新 25% 不被预算裁掉。
 - worker 单写者。捕获即时，抽取防抖：
@@ -198,7 +200,7 @@
   留到后续。
 - claim 主语仍是 user；relation 可带 object entity，但还没有按 entity 检索 / 加权。
 - entity 跨 scope 只有 link + 显式 merge，没有 UI / 自动 link。
-- Tier-1 候选只落库；没有合并 / distinct / dismissed 的操作 API 或 UI。
+- Tier-1 候选已有审核 API；三端还没有候选列表 / 合并 UI。
 - memory MCP 读 / 写工具已接；`remember` 只写当前 workspace note，跨 workspace `target=life`
   仍未提供；loop 完成匹配仍靠模型显式调用 `complete_loop`。
 - 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度待接入；builtin 暂未接按轮召回。

@@ -758,6 +758,23 @@ export interface MemorySearchResponse {
   hits: MemorySearchHitDto[];
 }
 
+/** D33 Tier-1 review candidate. `pending` is the only actionable state. */
+export interface MemoryDuplicateDto {
+  id: string;
+  scope: MemoryScopeDto;
+  claimId: string;
+  duplicateOf: string;
+  claimSummary: string;
+  duplicateSummary: string;
+  score: number;
+  method: string;
+  status: string;
+}
+
+export interface MemoryDuplicatesResponse {
+  duplicates: MemoryDuplicateDto[];
+}
+
 /** L0 原文；`memory_source` 三层披露的最底层。 */
 export interface MemorySourceDto {
   id: string;

@@ -28,6 +28,8 @@ import { log } from '../platform/log.js';
 import type {
   MemoryBriefDto,
   MemoryClaimDto,
+  MemoryDuplicateDto,
+  MemoryDuplicatesResponse,
   MemoryClaimStatusDto,
   MemoryClaimsResponse,
   MemoryEvidenceRelationDto,
@@ -421,6 +423,73 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     res.json({ claim: toClaimDto(promoted, ctx) });
+  });
+
+  app.get('/api/memory/duplicates', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const status = typeof req.query['status'] === 'string' ? req.query['status'] : 'pending';
+    if (!['pending', 'merged', 'distinct', 'dismissed'].includes(status)) {
+      res.status(400).json({ error: 'invalid duplicate status', code: 'bad_request' });
+      return;
+    }
+    const duplicates: MemoryDuplicateDto[] = ctx.memory!
+      .listClaimDuplicates(target.scope, status)
+      .filter((row) => row.scope === target.scope)
+      .map((row) => ({
+        id: row.id,
+        scope: row.scope,
+        claimId: row.claimId,
+        duplicateOf: row.duplicateOf,
+        claimSummary: ctx.memory!.getClaim(row.claimId)?.summary ?? '',
+        duplicateSummary: ctx.memory!.getClaim(row.duplicateOf)?.summary ?? '',
+        score: row.score,
+        method: row.method,
+        status: row.status,
+      }));
+    const dto: MemoryDuplicatesResponse = { duplicates };
+    res.json(dto);
+  });
+
+  app.post('/api/memory/duplicates/:id', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const action = req.body?.['action'];
+    if (action !== 'merge' && action !== 'distinct' && action !== 'dismiss') {
+      res.status(400).json({ error: 'action must be merge, distinct or dismiss', code: 'bad_request' });
+      return;
+    }
+    const candidate = ctx.memory!.getClaimDuplicate(req.params['id']!);
+    if (!candidate || candidate.scope !== target.scope) {
+      res.status(404).json({ error: 'duplicate candidate not found', code: 'duplicate_not_found' });
+      return;
+    }
+    if (action === 'merge') {
+      const merged = ctx.memory!.mergeClaimDuplicate(candidate.id, 'operator');
+      if (!merged) {
+        res.status(409).json({ error: 'candidate is not pending', code: 'duplicate_resolved' });
+        return;
+      }
+      ctx.db.audit(
+        'memory_duplicate_review',
+        JSON.stringify({ id: candidate.id, action, targetId: merged.id }),
+      );
+      res.json({ ok: true, claim: toClaimDto(merged, ctx) });
+      return;
+    }
+    const updated = ctx.memory!.setClaimDuplicateStatus(
+      candidate.id,
+      action === 'distinct' ? 'distinct' : 'dismissed',
+    );
+    if (!updated) {
+      res.status(409).json({ error: 'candidate is not pending', code: 'duplicate_resolved' });
+      return;
+    }
+    ctx.db.audit(
+      'memory_duplicate_review',
+      JSON.stringify({ id: candidate.id, action }),
+    );
+    res.json({ ok: true, id: candidate.id, status: action === 'distinct' ? 'distinct' : 'dismissed' });
   });
 
   app.post('/api/memory/feedback', (req, res) => {

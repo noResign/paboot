@@ -124,6 +124,42 @@ describe('claim consistency (M2.1)', () => {
       .toBeGreaterThan(1);
   });
 
+  it('merges an accepted Tier-1 candidate and archives the duplicate', () => {
+    const store = openStore();
+    for (let index = 0; index < 20; index += 1) {
+      store.insertClaim(
+        claim({
+          predicate: `filler_${index}`,
+          objectText: `填充 ${index}`,
+          summary: `无关记录 ${index}`,
+        }),
+      );
+    }
+    const target = store.insertClaim(
+      claim({
+        predicate: 'likes',
+        objectText: '手冲咖啡',
+        summary: '喜欢手冲咖啡',
+      }),
+    );
+    const source = store.insertClaim(
+      claim({
+        predicate: 'likes',
+        objectText: '手冲黑咖啡',
+        summary: '喜欢手冲咖啡',
+      }),
+    );
+    const candidate = store.listClaimDuplicates(SCOPE)[0]!;
+    expect(candidate).toBeTruthy();
+    const merged = store.mergeClaimDuplicate(candidate.id, 'test')!;
+    expect(merged.id).toBe(target.id);
+    expect(store.getClaim(source.id)).toMatchObject({
+      status: 'archived',
+      supersededBy: target.id,
+    });
+    expect(store.getClaimDuplicate(candidate.id)?.status).toBe('merged');
+  });
+
   it('vetoes a Tier-1 candidate over a rare identifier token', () => {
     const store = openStore();
     for (let index = 0; index < 20; index += 1) {
