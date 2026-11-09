@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
+import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -245,6 +246,9 @@ fun MemoryScreen(
                     }
                     if (current.duplicates.isNotEmpty()) {
                         item(key = "duplicates") { MemoryDuplicatesCard(current.duplicates.take(5)) }
+                    }
+                    if (current.entities.isNotEmpty()) {
+                        item(key = "entities") { MemoryEntitiesCard(current.entities.take(6)) }
                     }
                     item(key = "search") {
                         SearchField(query = query, onQueryChange = { query = it })
@@ -620,6 +624,58 @@ private fun MemoryDuplicatesCard(items: List<MemoryDuplicateDto>) {
         }
     }
 }
+
+@Composable
+private fun MemoryEntitiesCard(items: List<MemoryEntityDto>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("实体（只读）", style = MaterialTheme.typography.titleSmall)
+            items.forEach { entity ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        entity.canonicalName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        buildString {
+                            append(ENTITY_KIND_LABELS[entity.kind] ?: entity.kind)
+                            if (entity.aliases.isNotEmpty()) {
+                                append(" · ${entity.aliases.size} 个别名")
+                            }
+                            append(" · ${entity.claimCount} 条记忆")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                "合并请在桌面端处理。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private val ENTITY_KIND_LABELS = mapOf(
+    "person" to "人物",
+    "place" to "地点",
+    "org" to "组织",
+    "pet" to "宠物",
+    "project" to "项目",
+    "thing" to "事物",
+)
 
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit) {

@@ -420,6 +420,37 @@ export class MemoryStore {
     return rows.map(mapEntity);
   }
 
+  listEntitiesWithCounts(scope: MemoryScope): Array<MemoryEntity & { claimCount: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT e.id, e.scope, e.kind, e.canonical_name AS canonicalName,
+                e.aliases_json AS aliasesJson, e.importance, e.sensitivity,
+                e.status, e.merged_into AS mergedInto,
+                e.created_at AS createdAt, e.updated_at AS updatedAt,
+                COUNT(DISTINCT c.id) AS claimCount
+         FROM mem_entities e
+         LEFT JOIN mem_claims c
+           ON c.status = 'active' AND c.sensitivity <> 'secret'
+          AND (c.entity_id = e.id OR c.object_entity_id = e.id)
+         WHERE e.scope = ? AND e.status = 'active' AND e.sensitivity <> 'secret'
+         GROUP BY e.id
+         ORDER BY e.importance DESC, e.canonical_name COLLATE NOCASE ASC`,
+      )
+      .all(scope) as unknown as Array<RawEntity & { claimCount: number }>;
+    return rows.map((row) => ({ ...mapEntity(row), claimCount: Number(row.claimCount) }));
+  }
+
+  countEntityClaims(id: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(DISTINCT id) AS count FROM mem_claims
+         WHERE status = 'active' AND sensitivity <> 'secret'
+           AND (entity_id = ? OR object_entity_id = ?)`,
+      )
+      .get(id, id) as { count: number } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
   /** Cross-scope / cross-family identity link; ordered to satisfy the CHECK. */
   linkEntities(a: string, b: string, relation: string, createdBy: string): void {
     if (a === b) return;
@@ -439,6 +470,16 @@ export class MemoryStore {
     const target = this.getEntity(targetId);
     if (!source || !target) return undefined;
     const now = Date.now();
+    const movedEntityClaims = (
+      this.db.prepare(`SELECT id FROM mem_claims WHERE entity_id = ?`).all(sourceId) as Array<{
+        id: string;
+      }>
+    ).map((row) => row.id);
+    const movedObjectClaims = (
+      this.db.prepare(`SELECT id FROM mem_claims WHERE object_entity_id = ?`).all(sourceId) as Array<{
+        id: string;
+      }>
+    ).map((row) => row.id);
     this.db.exec('BEGIN');
     try {
       this.db
@@ -470,7 +511,15 @@ export class MemoryStore {
         op: 'merge_entity',
         targetType: 'entity',
         targetId,
-        payload: { merged: sourceId, createdBy },
+        payload: {
+          merged: sourceId,
+          createdBy,
+          scope: source.scope,
+          kind: source.kind,
+          source: { canonicalName: source.canonicalName, aliases: source.aliases },
+          movedClaims: { entityIds: movedEntityClaims, objectEntityIds: movedObjectClaims },
+          at: now,
+        },
       });
       this.db.exec('COMMIT');
     } catch (err) {

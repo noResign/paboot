@@ -23,7 +23,7 @@ import {
   isMemoryProfileMode,
   type MemoryProfileMode,
 } from '../memory/settings.js';
-import type { MemoryClaim, MemoryScope, MemorySessionMode } from '../memory/types.js';
+import type { MemoryClaim, MemoryEntity, MemoryScope, MemorySessionMode } from '../memory/types.js';
 import { log } from '../platform/log.js';
 import type {
   MemoryBriefDto,
@@ -32,6 +32,9 @@ import type {
   MemoryDuplicatesResponse,
   MemoryClaimStatusDto,
   MemoryClaimsResponse,
+  MemoryEntitiesResponse,
+  MemoryEntityDto,
+  MemoryEntityResponse,
   MemoryEvidenceRelationDto,
   MemorySearchResponse,
   MemorySessionModeDto,
@@ -59,6 +62,21 @@ function isClaimStatus(value: unknown): value is MemoryClaimStatusDto {
 
 function scopeDto(scope: ResolvedMemoryScope): MemoryScope {
   return scope.kind === 'user' ? 'user' : `workspace:${scope.workspaceId}`;
+}
+
+function toEntityDto(entity: MemoryEntity, claimCount: number): MemoryEntityDto {
+  return {
+    id: entity.id,
+    scope: entity.scope as MemoryEntityDto['scope'],
+    kind: entity.kind,
+    canonicalName: entity.canonicalName,
+    aliases: entity.aliases,
+    importance: entity.importance,
+    sensitivity: entity.sensitivity,
+    claimCount,
+    createdAt: entity.createdAt,
+    updatedAt: entity.updatedAt,
+  };
 }
 
 interface MemoryTarget {
@@ -490,6 +508,65 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       JSON.stringify({ id: candidate.id, action }),
     );
     res.json({ ok: true, id: candidate.id, status: action === 'distinct' ? 'distinct' : 'dismissed' });
+  });
+
+  app.get('/api/memory/entities', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const entities = ctx.memory!
+      .listEntitiesWithCounts(target.scope)
+      .map((entity) => toEntityDto(entity, entity.claimCount));
+    const dto: MemoryEntitiesResponse = { entities };
+    res.json(dto);
+  });
+
+  app.patch('/api/memory/entities/:id', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const mergeInto = req.body?.['mergeInto'];
+    if (typeof mergeInto !== 'string' || mergeInto.trim() === '') {
+      res.status(400).json({ error: 'mergeInto is required', code: 'bad_request' });
+      return;
+    }
+    const source = ctx.memory!.getEntity(req.params['id']!);
+    const destination = ctx.memory!.getEntity(mergeInto);
+    if (
+      !source ||
+      !destination ||
+      source.scope !== target.scope ||
+      destination.scope !== target.scope ||
+      source.sensitivity === 'secret' ||
+      destination.sensitivity === 'secret'
+    ) {
+      res.status(404).json({ error: 'entity not found', code: 'entity_not_found' });
+      return;
+    }
+    if (source.id === destination.id) {
+      res.status(400).json({ error: 'cannot merge an entity into itself', code: 'entity_same' });
+      return;
+    }
+    if (source.status !== 'active' || destination.status !== 'active') {
+      res.status(409).json({ error: 'entity is not active', code: 'entity_merged' });
+      return;
+    }
+    if (source.kind !== destination.kind) {
+      res.status(409).json({ error: 'entities must share a kind', code: 'entity_kind_mismatch' });
+      return;
+    }
+    const merged = ctx.memory!.mergeEntities(source.id, destination.id, 'operator');
+    if (!merged) {
+      res.status(404).json({ error: 'entity not found', code: 'entity_not_found' });
+      return;
+    }
+    ctx.db.audit(
+      'memory_entity_merge',
+      JSON.stringify({ sourceId: source.id, targetId: destination.id, kind: source.kind }),
+    );
+    const dto: MemoryEntityResponse = {
+      ok: true,
+      entity: toEntityDto(merged, ctx.memory!.countEntityClaims(merged.id)),
+    };
+    res.json(dto);
   });
 
   app.post('/api/memory/feedback', (req, res) => {

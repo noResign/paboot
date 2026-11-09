@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/memory/store';
 
@@ -89,5 +90,88 @@ describe('memory entities', () => {
     store.linkEntities(a.id, b.id, 'same_person', 'test');
     expect(store.getEntity(a.id)?.status).toBe('active');
     expect(store.getEntity(b.id)?.status).toBe('active');
+  });
+
+  it('counts active non-secret claims on both sides of an entity', () => {
+    const store = openStore();
+    const person = store.upsertEntity({ scope: 'workspace:life-1', kind: 'person', name: '张女士' });
+    const base = {
+      scope: 'workspace:life-1' as const,
+      predicate: 'likes',
+      kind: 'fact' as const,
+      confidence: 0.8,
+      importance: 0.8,
+    };
+    store.insertClaim({ ...base, entityId: person.id, summary: '主语命中' });
+    store.insertClaim({ ...base, objectEntityId: person.id, summary: '宾语命中' });
+    store.insertClaim({
+      ...base,
+      entityId: person.id,
+      objectEntityId: person.id,
+      summary: '两列同时命中',
+    });
+    store.insertClaim({ ...base, entityId: person.id, summary: '已过期', status: 'superseded' });
+    store.insertClaim({
+      ...base,
+      entityId: person.id,
+      summary: '机密',
+      sensitivity: 'secret',
+    });
+
+    const [item] = store.listEntitiesWithCounts('workspace:life-1');
+    expect(item?.claimCount).toBe(3);
+    expect(store.countEntityClaims(person.id)).toBe(3);
+  });
+
+  it('hides merged sources and records rollback data in mem_ops', () => {
+    const store = openStore();
+    const source = store.upsertEntity({
+      scope: 'workspace:life-1',
+      kind: 'person',
+      name: '张阿姨',
+      aliases: ['阿姨'],
+    });
+    const target = store.upsertEntity({ scope: 'workspace:life-1', kind: 'person', name: '张女士' });
+    const entityClaim = store.insertClaim({
+      scope: 'workspace:life-1',
+      entityId: source.id,
+      predicate: 'lives_in',
+      kind: 'fact',
+      summary: '张阿姨住在上海',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    const objectClaim = store.insertClaim({
+      scope: 'workspace:life-1',
+      objectEntityId: source.id,
+      predicate: 'knows',
+      kind: 'relation',
+      summary: '张女士认识张阿姨',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    store.mergeEntities(source.id, target.id, 'test');
+
+    const listed = store.listEntitiesWithCounts('workspace:life-1');
+    expect(listed.map((entity) => entity.id)).toEqual([target.id]);
+    expect(listed[0]?.claimCount).toBe(2);
+
+    const db = new DatabaseSync(store.file);
+    const row = db
+      .prepare(`SELECT payload_json AS payload FROM mem_ops WHERE batch_key = ?`)
+      .get(`merge-entity:${source.id}:${target.id}`) as { payload: string } | undefined;
+    db.close();
+    const payload = JSON.parse(row?.payload ?? '{}') as {
+      merged: string;
+      kind: string;
+      source: { canonicalName: string };
+      movedClaims: { entityIds: string[]; objectEntityIds: string[] };
+    };
+    expect(payload.merged).toBe(source.id);
+    expect(payload.kind).toBe('person');
+    expect(payload.source.canonicalName).toBe('张阿姨');
+    expect(payload.movedClaims.entityIds).toEqual([entityClaim.id]);
+    expect(payload.movedClaims.objectEntityIds).toEqual([objectClaim.id]);
   });
 });

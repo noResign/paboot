@@ -567,3 +567,114 @@ describe('memory routes (M0)', () => {
     expect(db.getSession(session.id)?.memory_mode).toBe('off');
   });
 });
+
+describe('memory entity routes', () => {
+  function merge(
+    url: string,
+    sessionId: string,
+    id: string,
+    mergeInto: string,
+  ): Promise<Response> {
+    return fetch(`${url}/api/memory/entities/${id}?sessionId=${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mergeInto }),
+    });
+  }
+
+  it('lists active entities with claim counts', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}`;
+    const person = store.upsertEntity({ scope, kind: 'person', name: '张女士' });
+    store.insertClaim({
+      scope,
+      entityId: person.id,
+      predicate: 'lives_in',
+      kind: 'fact',
+      summary: '住在上海',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    const response = await fetch(`${url}/api/memory/entities?sessionId=${session.id}`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      entities: { id: string; canonicalName: string; claimCount: number }[];
+    };
+    expect(body.entities).toEqual([
+      expect.objectContaining({ id: person.id, canonicalName: '张女士', claimCount: 1 }),
+    ]);
+  });
+
+  it('merges same-kind entities in the same scope', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}`;
+    const source = store.upsertEntity({
+      scope,
+      kind: 'person',
+      name: '张阿姨',
+      aliases: ['阿姨'],
+    });
+    const target = store.upsertEntity({ scope, kind: 'person', name: '张女士' });
+    const claim = store.insertClaim({
+      scope,
+      entityId: source.id,
+      predicate: 'lives_in',
+      kind: 'fact',
+      summary: '张阿姨住在上海',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    const response = await merge(url, session.id, source.id, target.id);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      ok: boolean;
+      entity: { id: string; aliases: string[]; claimCount: number };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.entity.id).toBe(target.id);
+    expect(body.entity.aliases).toContain('张阿姨');
+    expect(body.entity.claimCount).toBe(1);
+    expect(store.getClaim(claim.id)?.entityId).toBe(target.id);
+
+    const list = (await (
+      await fetch(`${url}/api/memory/entities?sessionId=${session.id}`)
+    ).json()) as { entities: { id: string }[] };
+    expect(list.entities.map((entity) => entity.id)).toEqual([target.id]);
+  });
+
+  it('rejects invalid entity merges', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}`;
+    const source = store.upsertEntity({ scope, kind: 'person', name: '张阿姨' });
+    const target = store.upsertEntity({ scope, kind: 'person', name: '张女士' });
+    const place = store.upsertEntity({ scope, kind: 'place', name: '上海' });
+    const otherScope = store.upsertEntity({
+      scope: 'workspace:other',
+      kind: 'person',
+      name: '张女士',
+    });
+
+    const self = await merge(url, session.id, source.id, source.id);
+    expect(self.status).toBe(400);
+    expect(((await self.json()) as { code: string }).code).toBe('entity_same');
+
+    const kindMismatch = await merge(url, session.id, source.id, place.id);
+    expect(kindMismatch.status).toBe(409);
+    expect(((await kindMismatch.json()) as { code: string }).code).toBe(
+      'entity_kind_mismatch',
+    );
+
+    const crossScope = await merge(url, session.id, source.id, otherScope.id);
+    expect(crossScope.status).toBe(404);
+
+    const missing = await merge(url, session.id, source.id, 'missing-entity');
+    expect(missing.status).toBe(404);
+
+    expect((await merge(url, session.id, source.id, target.id)).status).toBe(200);
+    const again = await merge(url, session.id, source.id, target.id);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { code: string }).code).toBe('entity_merged');
+  });
+});

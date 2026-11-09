@@ -35,6 +35,8 @@ export const ROUTES = {
   memoryDuplicates: '/api/memory/duplicates',
   memoryDuplicate: (id: string) =>
     `/api/memory/duplicates/${encodeURIComponent(id)}`,
+  memoryEntities: '/api/memory/entities',
+  memoryEntity: (id: string) => `/api/memory/entities/${encodeURIComponent(id)}`,
   memorySource: (id: string) => `/api/memory/sources/${encodeURIComponent(id)}`,
   memoryClaimPromote: (id: string) =>
     `/api/memory/claims/${encodeURIComponent(id)}/promote`,

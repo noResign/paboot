@@ -22,6 +22,18 @@ private func shortClaimId(_ id: String) -> String {
     String(id.replacingOccurrences(of: "-", with: "").prefix(4))
 }
 
+private func entityKindLabel(_ kind: String) -> String {
+    switch kind {
+    case "person": return "人物"
+    case "place": return "地点"
+    case "org": return "组织"
+    case "pet": return "宠物"
+    case "project": return "项目"
+    case "thing": return "事物"
+    default: return kind
+    }
+}
+
 private func memoryAuthorityLabel(_ claim: MemoryClaimDto) -> String {
     claim.authority == "user_confirmed" ? "你已确认" : "自动整理"
 }
@@ -95,6 +107,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var settings: WorkspaceMemoryDto?
     private var timeline: [MemoryTimelineItemDto] = []
     private var duplicates: [MemoryDuplicateDto] = []
+    private var entities: [MemoryEntityDto] = []
     private var statusUnavailable = false
     private var query = ""
     private var hasLoaded = false
@@ -244,6 +257,11 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 duplicates = items
                 UIView.performWithoutAnimation { tableView.reloadData() }
             }
+            if let items = try? await repository.entities(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                entities = items
+                rebuildGroups()
+            }
         }
     }
 
@@ -282,7 +300,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     private func rebuildGroups() {
         groups = groupedMemory(claims, query: query)
-        emptyLabel.isHidden = !groups.isEmpty || showsTimeline || showsDuplicates
+        emptyLabel.isHidden = !groups.isEmpty || showsTimeline || showsDuplicates || showsEntities
         emptyLabel.text = query.isEmpty
             ? (family == "life"
                 ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
@@ -298,10 +316,17 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     private var showsTimeline: Bool { !timeline.isEmpty }
     private var showsDuplicates: Bool { !duplicates.isEmpty }
-    private var fixedSections: Int { (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0) }
+    private var showsEntities: Bool { !entities.isEmpty }
+    private var fixedSections: Int {
+        (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0)
+    }
     private var duplicatesSection: Int? {
         guard showsDuplicates else { return nil }
         return showsTimeline ? 1 : 0
+    }
+    private var entitiesSection: Int? {
+        guard showsEntities else { return nil }
+        return (showsTimeline ? 1 : 0) + (showsDuplicates ? 1 : 0)
     }
 
     private func groupIndex(for section: Int) -> Int {
@@ -317,6 +342,9 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         if let duplicatesSection, section == duplicatesSection {
             return "重复候选（只读，共 \(duplicates.count)）"
         }
+        if let entitiesSection, section == entitiesSection {
+            return "实体（只读，共 \(entities.count)）"
+        }
         let group = groups[groupIndex(for: section)]
         return "\(group.label)（\(group.claims.count)）"
     }
@@ -324,6 +352,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if showsTimeline && section == 0 { return timeline.count }
         if let duplicatesSection, section == duplicatesSection { return duplicates.count }
+        if let entitiesSection, section == entitiesSection { return entities.count }
         return groups[groupIndex(for: section)].claims.count
     }
 
@@ -360,6 +389,24 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             cell.detailTextLabel?.text =
                 "与「\(item.duplicateSummary)」相似 \(Int((item.score * 100).rounded()))%" +
                 " · 请在桌面端合并或忽略"
+            cell.detailTextLabel?.font = Typography.caption
+            cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
+            cell.accessoryType = .none
+            cell.backgroundColor = Theme.Colors.surface
+            return cell
+        }
+        if let entitiesSection, indexPath.section == entitiesSection {
+            let item = entities[indexPath.row]
+            let cell = tableView.dequeueReusableCell(withIdentifier: "memory-entity")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-entity")
+            cell.textLabel?.text = item.canonicalName
+            cell.textLabel?.numberOfLines = 1
+            cell.textLabel?.font = Typography.body
+            cell.textLabel?.textColor = Theme.Colors.textPrimary
+            let aliasLabel = item.aliases.isEmpty ? "" : "\(item.aliases.count) 个别名 · "
+            cell.detailTextLabel?.text =
+                "\(entityKindLabel(item.kind)) · \(aliasLabel)\(item.claimCount) 条记忆" +
+                " · 合并请在桌面端处理"
             cell.detailTextLabel?.font = Typography.caption
             cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
             cell.accessoryType = .none

@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS mem_claims (
   updated_at       INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_mem_claims_entity ON mem_claims(entity_id, status);
+CREATE INDEX IF NOT EXISTS ix_mem_claims_object_entity ON mem_claims(object_entity_id, status);
 CREATE INDEX IF NOT EXISTS ix_mem_claims_scope
   ON mem_claims(scope, end_id, status, updated_at);
 CREATE INDEX IF NOT EXISTS ix_mem_claims_dedup
