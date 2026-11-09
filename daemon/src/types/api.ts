@@ -837,6 +837,49 @@ export interface CapabilityScopeDto {
   family: 'dev' | 'life';
 }
 
+export interface EndDto {
+  id: string;
+  workspaceId: string;
+  family: 'dev' | 'life';
+  kind: string;
+  name: string;
+  status: string;
+  roots: string[];
+  createdAt: number;
+}
+
+export interface EndsResponse {
+  ends: EndDto[];
+}
+
+export interface EndResponse {
+  ok: boolean;
+  end: EndDto;
+}
+
+export interface EndSuggestionDto {
+  path: string;
+  reasons: string[];
+}
+
+export interface EndSuggestionsResponse {
+  suggestions: EndSuggestionDto[];
+}
+
+export interface CapabilityDeviceDto {
+  serial: string;
+  state: string;
+  model?: string;
+  product?: string;
+  device?: string;
+}
+
+export interface CapabilityDeviceListDto {
+  endId: string;
+  serial: string | null;
+  devices: CapabilityDeviceDto[];
+}
+
 export interface MemoryDisputeClaimDto {
   id: string;
   summary: string;

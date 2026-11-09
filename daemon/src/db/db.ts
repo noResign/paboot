@@ -1392,6 +1392,13 @@ export class Db {
       .all(workspaceId) as unknown as EndRow[];
   }
 
+  setEndStatus(id: string, status: string): EndRow | undefined {
+    this.db
+      .prepare(`UPDATE ends SET status = ?, archived_at = ? WHERE id = ?`)
+      .run(status, status === 'archived' || status === 'deleted' ? Date.now() : null, id);
+    return this.getEnd(id);
+  }
+
   listEndRoots(endId: string): string[] {
     const rows = this.db
       .prepare(`SELECT path FROM end_roots WHERE end_id = ? ORDER BY path ASC`)

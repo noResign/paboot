@@ -54,6 +54,42 @@
 - 只允许 dev workspace 且存在活跃端；life → 403 `capability_not_allowed`，无端 → 409 `end_missing`。
 - 变更类 action（tap / tap-selector / input-text / key-event / launch-app）写 `capability_device` audit。
 
+## 3.1 端管理与操作路由（operator）
+
+| 端点 | 方法与说明 |
+|---|---|
+| `GET /api/workspaces/:id/ends` | 列出端（含 roots） |
+| `GET /api/workspaces/:id/end-suggestions` | 扫描 workspace 根目录（深度 ≤4）中的 Gradle / `AndroidManifest.xml` |
+| `POST /api/workspaces/:id/ends` | `{name, kind?}` 创建 `draft` 端（仅 dev） |
+| `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于 workspace 内 |
+| `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活，并写入 `android-device` 的 end binding |
+| `GET /api/workspaces/:id/device` | 设备列表 + 当前 serial |
+| `POST /api/workspaces/:id/device/select` | `{endId, serial}` 记住设备 |
+| `GET /api/workspaces/:id/device/screenshot` | PNG 字节（operator；agent 一律 403） |
+| `POST /api/workspaces/:id/device/action` | 与内部端点相同的 action 集合，供桌面 / CLI 使用 |
+| `GET /api/workspaces/:id/device/stream` | 独立 SSE 镜像流；首个订阅启动、最后一个离开停止 |
+
+SSE 帧：`{type:'frame', endId, serial, png(base64), width, height, ts}`；错误帧
+`{type:'error', code, message}`。默认 2 fps，抓取仍在进行时丢帧而不是排队。
+
+## 3.2 CLI 兜底
+
+MCP 不可用的 runtime 可用：
+
+```bash
+paboot-capability android list --workspace <id>
+paboot-capability android screenshot --workspace <id> --end <endId> --out shot.png
+paboot-capability android tap --workspace <id> --x 120 --y 340
+paboot-capability android tap-selector --workspace <id> --selector-text 登录
+paboot-capability android input-text --workspace <id> --text "hello world"
+paboot-capability android key-event --workspace <id> --key back
+paboot-capability android launch-app --workspace <id> --package com.example
+paboot-capability android logcat --workspace <id> --lines 50
+```
+
+环境变量：`PABOOT_DAEMON_URL`、`PABOOT_TOKEN`（operator）。CLI 不自行审批；它经 Bash
+调用时已受现有 Bash 审批约束。
+
 ## 4. MCP 工具与审批
 
 `paboot_capability` 暴露 10 个 `android_*` 工具。审批策略：
@@ -77,3 +113,5 @@
   action 路由与 family / end 校验。
 - `tests/capability-scope.test.ts`：binding 最近者优先、family 拒绝、`end_roots` 解析、scope 端点。
 - `tests/capability-mcp.test.ts`：工具列表、审批 gate、截图 image block。
+- `tests/capability-routes.test.ts`：端建议 / 创建 / 绑定 / 激活、operator 设备路由与 403、
+  SSE 帧、CLI 参数与截图落盘。

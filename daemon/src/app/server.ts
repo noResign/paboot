@@ -23,6 +23,8 @@ import { registerSessionPermissionRoutes } from '../routes/session-permissions.j
 import { registerSessionRoutes } from '../routes/sessions.js';
 import { registerScheduledTaskRoutes } from '../routes/scheduled-tasks.js';
 import { registerCapabilityDeviceRoutes } from '../routes/capability-device.js';
+import { registerDeviceRoutes } from '../routes/device.js';
+import { registerEndRoutes } from '../routes/ends.js';
 import { registerMcpCapabilityRoutes } from '../routes/mcp-capability.js';
 import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
 import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
@@ -69,6 +71,8 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerMcpTaskRoutes(app, ctx);
   registerMcpCapabilityRoutes(app, ctx);
   registerCapabilityDeviceRoutes(app, ctx);
+  registerDeviceRoutes(app, ctx);
+  registerEndRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
   registerSystemRoutes(app, hooks);
 
