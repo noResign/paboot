@@ -828,6 +828,15 @@ export interface MemoryEntityLinkResponse {
   link: MemoryEntityLinkDto;
 }
 
+/** Server-resolved scope for a capability MCP server (`PABOOT_RUN_ID`). */
+export interface CapabilityScopeDto {
+  runId: string;
+  sessionId: string;
+  workspaceId: string;
+  endId: string | null;
+  family: 'dev' | 'life';
+}
+
 export interface MemoryDisputeClaimDto {
   id: string;
   summary: string;

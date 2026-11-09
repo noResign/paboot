@@ -100,10 +100,13 @@ export function perRunToolServers(
   runId: string,
   runtime: string,
   sessionId: string,
+  enabledServers: ReadonlySet<string> = new Set(),
 ): ToolServerSpec[] {
   const servers: ToolServerSpec[] = [];
   if (ctx.mcpServerPath) servers.push(taskToolServer(ctx, runId));
-  if (ctx.capabilityMcpServerPath) servers.push(capabilityToolServer(ctx, runId, runtime));
+  if (ctx.capabilityMcpServerPath && enabledServers.has(CAPABILITY_TOOL_SERVER)) {
+    servers.push(capabilityToolServer(ctx, runId, runtime));
+  }
   if (ctx.memoryMcpServerPath) servers.push(memoryToolServer(ctx, runId, sessionId, runtime));
   return servers;
 }

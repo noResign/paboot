@@ -15,6 +15,7 @@ import { captureRunMessages } from '../memory/ingest.js';
 import { captureRunObservation } from '../memory/observe.js';
 import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
 import { mergePreludes } from '../context/prelude.js';
+import { enabledCapabilityServers } from '../capabilities/scope.js';
 import { perRunToolServers } from '../mcp/injection.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
@@ -202,7 +203,13 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     ctx.notifier.register(runId, send);
     // One list for every runtime: argv/RPC drivers translate these specs into
     // their own MCP config, the builtin driver consumes them in-process.
-    const toolServers = perRunToolServers(ctx, runId, session.runtime, session.id);
+    const toolServers = perRunToolServers(
+      ctx,
+      runId,
+      session.runtime,
+      session.id,
+      enabledCapabilityServers(ctx.db, session),
+    );
 
     try {
       const active = driver.start({
