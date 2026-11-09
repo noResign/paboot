@@ -28,6 +28,10 @@ import type {
   KnowledgeDocsResponse,
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
+  EndResponse,
+  EndSuggestionsResponse,
+  EndsResponse,
+  CapabilityDeviceListDto,
   MemoryBriefDto,
   MemoryClaimDto,
   MemoryClaimResponse,
@@ -458,6 +462,42 @@ export const api = {
     }),
   workspaceMemory: (id: string) =>
     request<WorkspaceMemoryDto>({ method: 'GET', path: ROUTES.workspaceMemory(id) }),
+  workspaceEnds: (id: string) =>
+    request<EndsResponse>({ method: 'GET', path: ROUTES.workspaceEnds(id) }),
+  endSuggestions: (id: string) =>
+    request<EndSuggestionsResponse>({ method: 'GET', path: ROUTES.workspaceEndSuggestions(id) }),
+  createWorkspaceEnd: (id: string, name: string) =>
+    request<EndResponse>({
+      method: 'POST',
+      path: ROUTES.workspaceEnds(id),
+      body: { name },
+    }),
+  bindEndRoot: (id: string, endId: string, root: string) =>
+    request<EndResponse>({
+      method: 'POST',
+      path: ROUTES.workspaceEndRoots(id, endId),
+      body: { path: root },
+    }),
+  activateEnd: (id: string, endId: string) =>
+    request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndActivate(id, endId) }),
+  deviceList: (id: string, endId?: string) =>
+    request<CapabilityDeviceListDto>({
+      method: 'GET',
+      path: ROUTES.workspaceDevice(id),
+      query: endId ? { endId } : undefined,
+    }),
+  selectDevice: (id: string, endId: string, serial: string) =>
+    request<{ ok: boolean }>({
+      method: 'POST',
+      path: ROUTES.workspaceDeviceSelect(id),
+      body: { endId, serial },
+    }),
+  deviceAction: <T = unknown>(id: string, body: Record<string, unknown>) =>
+    request<T>({
+      method: 'POST',
+      path: ROUTES.workspaceDeviceAction(id),
+      body,
+    }),
   updateWorkspaceMemory: (
     id: string,
     patch: {
