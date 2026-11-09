@@ -78,7 +78,19 @@
 - 严格 JSON + 受控 predicate；未知 predicate / 无 evidence / quote 回源失败 / `secret`
   一律丢弃。
 - 会话级 scope 由服务端解析，模型只产 candidate。
-- Tier-0：`dedupKey = hash(predicate + normalized object)` 相同则合并证据，不新增行。
+- **Tier-0 精确**：`dedupKey` 相同或 `(scope, end, predicate, normalized object)` 相同 →
+  合并证据、追加 `reinforcement_dates`；不新增行。`derived` 重复不会降级
+  `user_confirmed`，反向会升级并采用新 summary。
+- **功能型谓词冲突**：`lives_in` / `works_at` / `name` / `birthday` 的旧值在新值有更晚
+  `validFrom` 时标记 `superseded`（`valid_to = 新.valid_from`）；同起点且置信度接近 →
+  双双 `disputed`；`user_confirmed` 永不被自动 supersede。多值谓词（likes / plans / goals /
+  relations）保留多条 active。
+- **Tier-1 近似**（D33）：语料 ≥ 20 条后启用，同 scope + predicate 上做 IDF 加权 cosine
+  （CJK bigram + Latin token）；≥ 0.72 写入 `mem_claim_duplicates(status=pending)`，
+  **不自动合并**；对称差里的稀有 identifier token（如 `ffmpeg-7.1` vs `6.1`）否决候选。
+  `merged / distinct / dismissed` 由后续审核入口更新。
+- **强化 / 排序**（D34）：重复确认按天追加 `reinforcement_dates`（FIFO 10，不改 confidence）；
+  brief 用 ACT-R recency 选材（α=0），并保护最新 25% 不被预算裁掉。
 - worker 单写者。捕获即时，抽取防抖：
   - 每次 run 结束只写 pending；单条消息不会立刻触发 LLM；
   - **按会话统计**：同一会话 pending 达到 6 条消息，立即抽取；
@@ -158,7 +170,9 @@
 
 - `provider_override` 已持久化，但 worker 仍使用全局 `memory_model`；按 workspace 选 provider
   留到后续。
-- claim 只有 user 主语；relation 以 object text 表示，不建 entity / episode / loop。
+- claim 只有 user 主语；relation 以 object text 表示；entity / entity_links 尚未写入。
+- Tier-1 候选只落库；没有合并 / distinct / dismissed 的操作 API 或 UI。
+- memory MCP 工具（search / timeline / source / remember / forget / loops）尚未实现。
 - 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度要等 M2；builtin 暂未接按轮召回。
 - loop 候选只落库，没有完成匹配 / 提醒 / UI。
 - 观察压缩与 claim 共用一次 LLM 调用；超长事件的 `<elided>` 二次压缩尚未实现。

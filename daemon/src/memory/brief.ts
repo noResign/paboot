@@ -58,17 +58,35 @@ export function buildMemoryBrief(
   for (const claim of current) {
     const key = `${claim.predicate}|${normalize(claim.objectText ?? claim.summary)}`;
     const existing = unique.get(key);
-    if (!existing || rank(claim) > rank(existing)) unique.set(key, claim);
+    if (!existing || rank(claim, now) > rank(existing, now)) unique.set(key, claim);
   }
 
-  const ordered = [...unique.values()].sort((a, b) => rank(b) - rank(a) || a.id.localeCompare(b.id));
+  const ordered = [...unique.values()].sort(
+    (a, b) => rank(b, now) - rank(a, now) || a.id.localeCompare(b.id),
+  );
   if (ordered.length === 0) return null;
+
+  // D34: the newest 25% by wall-clock are protected from budget trimming so a
+  // heavily reinforced old claim cannot evict the current facts.
+  const newest = [...ordered]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, Math.max(1, Math.ceil(ordered.length * 0.25)))
+    .map((claim) => claim.id);
+  const protectedIds = new Set(newest);
 
   let included = ordered;
   let markdown = render(included);
   let truncated = false;
   while (markdown.length > maxChars && included.length > 1) {
-    included = included.slice(0, -1);
+    let dropAt = -1;
+    for (let index = included.length - 1; index >= 0; index -= 1) {
+      if (!protectedIds.has(included[index]!.id)) {
+        dropAt = index;
+        break;
+      }
+    }
+    if (dropAt < 0) break;
+    included = [...included.slice(0, dropAt), ...included.slice(dropAt + 1)];
     markdown = render(included);
     truncated = true;
   }
@@ -125,9 +143,12 @@ function render(claims: readonly MemoryClaim[]): string {
   return blocks.join('\n\n');
 }
 
-function rank(claim: MemoryClaim): number {
+/** D34 ACT-R selection. α = 0 for now: pure recency, reinforcement stored only. */
+function rank(claim: MemoryClaim, now: number): number {
   const authority = claim.authority === 'user_confirmed' ? 1000 : 0;
-  return authority + claim.importance * 100 + claim.confidence * 10;
+  const ageDays = Math.max(1, (now - claim.createdAt) / 86_400_000);
+  const actr = Math.log(1 + 1 / Math.sqrt(ageDays));
+  return authority + (claim.importance * 0.6 + actr * 0.4) * 100 + claim.confidence * 10;
 }
 
 function dateLabel(claim: MemoryClaim): string {
