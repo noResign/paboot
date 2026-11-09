@@ -4,6 +4,7 @@ import { Icon } from '../../ui/Icon';
 import type {
   MemoryClaimDto,
   MemoryDuplicateDto,
+  MemoryEntityDto,
   MemorySearchHitDto,
   MemoryStatusDto,
   MemoryTimelineItemDto,
@@ -17,13 +18,22 @@ interface Props {
   onClose(): void;
 }
 
-type Tab = 'claims' | 'timeline' | 'search' | 'duplicates';
+type Tab = 'claims' | 'timeline' | 'search' | 'duplicates' | 'entities';
 
 const GROUPS: Array<{ kind: MemoryClaimDto['kind']; label: string }> = [
   { kind: 'fact', label: '关于你' },
   { kind: 'preference', label: '偏好' },
   { kind: 'relation', label: '关系' },
   { kind: 'profile', label: '画像' },
+];
+
+const ENTITY_GROUPS: Array<{ kind: MemoryEntityDto['kind']; label: string }> = [
+  { kind: 'person', label: '人物' },
+  { kind: 'place', label: '地点' },
+  { kind: 'org', label: '组织' },
+  { kind: 'pet', label: '宠物' },
+  { kind: 'project', label: '项目' },
+  { kind: 'thing', label: '事物' },
 ];
 
 const AUTHORITY_LABEL: Record<MemoryClaimDto['authority'], string> = {
@@ -111,6 +121,9 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [promoteClass, setPromoteClass] = useState<'portable' | 'personal' | 'life_only'>('portable');
   const [duplicates, setDuplicates] = useState<MemoryDuplicateDto[]>([]);
   const [selectedDuplicateId, setSelectedDuplicateId] = useState<string | null>(null);
+  const [entities, setEntities] = useState<MemoryEntityDto[]>([]);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [claimsRes, statusRes, settingsRes] = await Promise.all([
@@ -168,6 +181,21 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     });
   }, [tab, scope]);
 
+  const loadEntities = useCallback(async () => {
+    const res = await api.memoryEntities(scope);
+    if (!res.ok) return;
+    const items = res.data.entities;
+    setEntities(items);
+    setSelectedEntityId((current) =>
+      current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+    );
+  }, [scope]);
+
+  useEffect(() => {
+    if (tab !== 'entities') return;
+    void loadEntities();
+  }, [tab, loadEntities]);
+
   async function resolveDuplicate(
     duplicate: MemoryDuplicateDto,
     action: 'merge' | 'distinct' | 'dismiss',
@@ -184,6 +212,29 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     setDuplicates((current) => current.filter((item) => item.id !== duplicate.id));
     setSelectedDuplicateId((current) => (current === duplicate.id ? null : current));
     if (action === 'merge') void load();
+  }
+
+  async function mergeEntity(entity: MemoryEntityDto, targetId: string): Promise<void> {
+    const target = entities.find((item) => item.id === targetId);
+    if (!target) return;
+    const confirmed = window.confirm(
+      `将「${entity.canonicalName}」合并到「${target.canonicalName}」？\n\n` +
+        '来源实体会被归档，相关记忆改指向目标，此操作不可撤销。',
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.mergeMemoryEntity(scope, entity.id, target.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(`已合并实体；相关记忆已归到「${target.canonicalName}」`);
+    setMergeTargetId(null);
+    await loadEntities();
+    setSelectedEntityId(target.id);
+    void load();
   }
 
   async function updateSettings(patch: Partial<WorkspaceMemoryDto>): Promise<void> {
@@ -273,6 +324,19 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const selectedDuplicate = useMemo(
     () => duplicates.find((item) => item.id === selectedDuplicateId) ?? null,
     [duplicates, selectedDuplicateId],
+  );
+  const selectedEntity = useMemo(
+    () => entities.find((item) => item.id === selectedEntityId) ?? null,
+    [entities, selectedEntityId],
+  );
+  const mergeTargets = useMemo(
+    () =>
+      selectedEntity
+        ? entities.filter(
+            (item) => item.kind === selectedEntity.kind && item.id !== selectedEntity.id,
+          )
+        : [],
+    [entities, selectedEntity],
   );
   const groupSpecs = useMemo(
     () =>
@@ -419,6 +483,13 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
           >
             重复
             {duplicates.length > 0 && <span className="badge subtle">{duplicates.length}</span>}
+          </button>
+          <button
+            className={`btn${tab === 'entities' ? ' primary' : ''}`}
+            onClick={() => setTab('entities')}
+          >
+            实体
+            {entities.length > 0 && <span className="badge subtle">{entities.length}</span>}
           </button>
           <span className="mem-spacer" />
           {settings && (
@@ -683,6 +754,47 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                       </span>
                     </button>
                   ))
+                )}
+              </div>
+            )}
+
+            {tab === 'entities' && (
+              <div className="mem-groups">
+                {entities.length === 0 ? (
+                  <p className="hint">还没有实体；记忆整理后自动出现。</p>
+                ) : (
+                  ENTITY_GROUPS.map((group) => {
+                    const items = entities.filter((entity) => entity.kind === group.kind);
+                    if (items.length === 0) return null;
+                    return (
+                      <section className="mem-group" key={group.kind}>
+                        <div className="mem-group-head">
+                          <span>{group.label}</span>
+                          <span className="mem-group-count">{items.length}</span>
+                        </div>
+                        <div className="mem-rows">
+                          {items.map((entity) => (
+                            <button
+                              key={entity.id}
+                              className={`mem-row${selectedEntityId === entity.id ? ' is-active' : ''}`}
+                              onClick={() => {
+                                setSelectedEntityId(entity.id);
+                                setMergeTargetId(null);
+                              }}
+                            >
+                              <span className="mem-row-summary">{entity.canonicalName}</span>
+                              <span className="mem-row-meta">
+                                {entity.aliases.length > 0 && (
+                                  <span className="mem-tag">{entity.aliases.length} 个别名</span>
+                                )}
+                                <span className="mem-row-date">{entity.claimCount} 条记忆</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -954,6 +1066,72 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                   <div className="mem-detail-empty">
                     <Icon name="eye" size={24} />
                     <b>选择一条候选</b>
+                  </div>
+                )}
+              </article>
+            )}
+
+            {tab === 'entities' && (
+              <article className="mem-detail-body">
+                {selectedEntity ? (
+                  <>
+                    <div className="mem-detail-head">
+                      <div className="mem-badges">
+                        <span className="badge subtle">
+                          {ENTITY_GROUPS.find((group) => group.kind === selectedEntity.kind)?.label ??
+                            selectedEntity.kind}
+                        </span>
+                        <span className="badge subtle">{selectedEntity.claimCount} 条记忆</span>
+                        {selectedEntity.sensitivity !== 'normal' && (
+                          <span className="badge subtle">私密</span>
+                        )}
+                      </div>
+                      <span className="mem-claim-id mono">{shortClaimId(selectedEntity.id)}</span>
+                    </div>
+                    <h3 className="mem-detail-title">{selectedEntity.canonicalName}</h3>
+                    <p className="mem-detail-object">
+                      {selectedEntity.aliases.length > 0
+                        ? `别名：${selectedEntity.aliases.slice(0, 6).join('、')}${
+                            selectedEntity.aliases.length > 6
+                              ? ` 等 ${selectedEntity.aliases.length} 个`
+                              : ''
+                          }`
+                        : '无别名'}
+                    </p>
+                    {mergeTargets.length > 0 ? (
+                      <div className="mem-actions mem-detail-actions">
+                        <select
+                          className="mem-select"
+                          value={mergeTargetId ?? ''}
+                          disabled={busy}
+                          onChange={(event) => setMergeTargetId(event.target.value || null)}
+                        >
+                          <option value="">选择要合并到的实体…</option>
+                          {mergeTargets.map((target) => (
+                            <option key={target.id} value={target.id}>
+                              {target.canonicalName}（{target.claimCount} 条记忆）
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn primary"
+                          disabled={busy || !mergeTargetId}
+                          onClick={() =>
+                            mergeTargetId && void mergeEntity(selectedEntity, mergeTargetId)
+                          }
+                        >
+                          合并到所选实体
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="hint">没有其他同类型实体可合并。</p>
+                    )}
+                    <p className="hint">合并不可撤销，来源实体会被归档。</p>
+                  </>
+                ) : (
+                  <div className="mem-detail-empty">
+                    <Icon name="eye" size={24} />
+                    <b>选择一个实体</b>
                   </div>
                 )}
               </article>

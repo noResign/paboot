@@ -6,6 +6,7 @@ import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
+import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -45,6 +46,14 @@ class MemoryRepository(
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.memoryDuplicates(scope(workspaceId)) }) {
             is NetworkResult.Success -> NetworkResult.Success(r.data.duplicates)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun entities(workspaceId: String): NetworkResult<List<MemoryEntityDto>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.memoryEntities(scope(workspaceId)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.entities)
             is NetworkResult.Error -> r
         }
     }

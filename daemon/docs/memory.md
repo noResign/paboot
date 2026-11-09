@@ -155,6 +155,8 @@
 | `/api/memory/claims` | GET | 列表，可带 `status` |
 | `/api/memory/claims/:id` | GET / PATCH / DELETE | 查看 / 改正（operator）/ 忘记（operator） |
 | `/api/memory/claims/:id/promote` | POST | life → user 晋升；新建 user claim + `promoted_from`，源 claim 与 evidence 保留 |
+| `/api/memory/entities` | GET | 同 scope 活跃实体 + 关联 active claim 数（不含 secret） |
+| `/api/memory/entities/:id` | PATCH | `{ mergeInto }` 同 scope 同 kind 显式合并（operator）；`mem_ops` 记录来源名/别名与迁移 claim id |
 | `/api/memory/feedback` | POST | 记录 helpful / wrong / stale / corrected |
 | `/api/memory/remember` | POST | 客户端「记住这个」（`sessionId` + `messageId`） |
 | `/api/memory/search` | GET | `q` + `sessionId`/`scope`（可选 `files`）；D31 检索阶梯，返回 claim / source / observation / summary / document 命中 |

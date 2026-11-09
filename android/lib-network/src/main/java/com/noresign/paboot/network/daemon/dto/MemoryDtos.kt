@@ -122,6 +122,25 @@ data class MemoryDuplicatesResponse(
 )
 
 @Serializable
+data class MemoryEntityDto(
+    val id: String = "",
+    val scope: String = "",
+    val kind: String = "thing",
+    val canonicalName: String = "",
+    val aliases: List<String> = emptyList(),
+    val importance: Double = 0.0,
+    val sensitivity: String = "normal",
+    val claimCount: Int = 0,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
+)
+
+@Serializable
+data class MemoryEntitiesResponse(
+    val entities: List<MemoryEntityDto> = emptyList(),
+)
+
+@Serializable
 data class WorkspaceMemoryDto(
     val workspaceId: String = "",
     val enabled: Boolean = false,

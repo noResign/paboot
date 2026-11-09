@@ -35,6 +35,8 @@ import type {
   MemoryCorrectClaimRequest,
   MemoryRememberRequest,
   MemoryDuplicatesResponse,
+  MemoryEntitiesResponse,
+  MemoryEntityResponse,
   MemorySearchResponse,
   MemorySessionModeRequest,
   MemoryStatusDto,
@@ -386,6 +388,19 @@ export const api = {
       path: ROUTES.memoryDuplicate(id),
       query: { scope },
       body: { action },
+    }),
+  memoryEntities: (scope: string) =>
+    request<MemoryEntitiesResponse>({
+      method: 'GET',
+      path: ROUTES.memoryEntities,
+      query: { scope },
+    }),
+  mergeMemoryEntity: (scope: string, id: string, mergeInto: string) =>
+    request<MemoryEntityResponse>({
+      method: 'PATCH',
+      path: ROUTES.memoryEntity(id),
+      query: { scope },
+      body: { mergeInto },
     }),
   promoteMemoryClaim: (scope: string, id: string, shareClass: 'portable' | 'personal' | 'life_only') =>
     request<MemoryClaimResponse>({

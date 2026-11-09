@@ -46,6 +46,15 @@ final class MemoryRepository {
         }
     }
 
+    func entities(workspaceId: String) async throws -> [MemoryEntityDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.memoryEntities(scope: scope(workspaceId)).entities
+        } catch {
+            throw map(error)
+        }
+    }
+
     func timeline(workspaceId: String) async throws -> [MemoryTimelineItemDto] {
         let client = try clientOrThrow()
         do {

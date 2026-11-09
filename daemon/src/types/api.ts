@@ -775,6 +775,30 @@ export interface MemoryDuplicatesResponse {
   duplicates: MemoryDuplicateDto[];
 }
 
+export type MemoryEntityKindDto = 'person' | 'place' | 'org' | 'pet' | 'project' | 'thing';
+
+export interface MemoryEntityDto {
+  id: string;
+  scope: MemoryScopeDto;
+  kind: MemoryEntityKindDto;
+  canonicalName: string;
+  aliases: string[];
+  importance: number;
+  sensitivity: MemorySensitivityDto;
+  claimCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryEntitiesResponse {
+  entities: MemoryEntityDto[];
+}
+
+export interface MemoryEntityResponse {
+  ok: boolean;
+  entity: MemoryEntityDto;
+}
+
 /** L0 原文；`memory_source` 三层披露的最底层。 */
 export interface MemorySourceDto {
   id: string;

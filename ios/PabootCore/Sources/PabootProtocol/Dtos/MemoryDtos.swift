@@ -197,6 +197,50 @@ public struct MemoryDuplicatesResponse: Decodable, Equatable, Sendable {
     }
 }
 
+public struct MemoryEntityDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let scope: String
+    public let kind: String
+    public let canonicalName: String
+    public let aliases: [String]
+    public let importance: Double
+    public let sensitivity: String
+    public let claimCount: Int
+    public let createdAt: Int
+    public let updatedAt: Int
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "thing"
+        canonicalName = try container.decodeIfPresent(String.self, forKey: .canonicalName) ?? ""
+        aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
+        importance = try container.decodeIfPresent(Double.self, forKey: .importance) ?? 0
+        sensitivity = try container.decodeIfPresent(String.self, forKey: .sensitivity) ?? "normal"
+        claimCount = try container.decodeIfPresent(Int.self, forKey: .claimCount) ?? 0
+        createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt) ?? 0
+        updatedAt = try container.decodeIfPresent(Int.self, forKey: .updatedAt) ?? 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, scope, kind, canonicalName, aliases, importance, sensitivity, claimCount, createdAt, updatedAt
+    }
+}
+
+public struct MemoryEntitiesResponse: Decodable, Equatable, Sendable {
+    public let entities: [MemoryEntityDto]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entities = try container.decodeIfPresent([MemoryEntityDto].self, forKey: .entities) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case entities
+    }
+}
+
 public struct WorkspaceMemoryDto: Decodable, Equatable, Sendable {
     public let workspaceId: String
     public let enabled: Bool
