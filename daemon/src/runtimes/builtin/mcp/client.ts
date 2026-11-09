@@ -156,6 +156,8 @@ export function parseToolResult(raw: unknown): ToolResult {
       if (!item) continue;
       if (item['type'] === 'text' && typeof item['text'] === 'string') {
         parts.push(item['text']);
+      } else if (item['type'] === 'image') {
+        parts.push('[image omitted: builtin runtime cannot render images]');
       } else {
         parts.push(JSON.stringify(item));
       }

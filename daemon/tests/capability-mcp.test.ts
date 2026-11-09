@@ -44,6 +44,20 @@ async function fakeDaemon(): Promise<string> {
     calls.push({ method: 'GET', path: req.path, body: null });
     res.json({ status: permissionStatus });
   });
+  app.post('/api/internal/capability/device/:action', (req, res) => {
+    calls.push({ method: 'POST', path: req.path, body: req.body });
+    if (req.params.action === 'screenshot') {
+      res.json({
+        serial: 's',
+        mimeType: 'image/png',
+        width: 1,
+        height: 2,
+        png: Buffer.from('png').toString('base64'),
+      });
+      return;
+    }
+    res.json({ ok: true });
+  });
   const server = app.listen(0);
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -111,7 +125,27 @@ describe('paboot_capability MCP server', () => {
       serverInfo: { name: 'paboot_capability' },
     });
     const list = await client.rpc('tools/list');
-    expect(list.result.tools.map((tool: { name: string }) => tool.name)).toEqual(['echo']);
+    const names = list.result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain('echo');
+    expect(names).toContain('android_device_list');
+    expect(names).toContain('android_screenshot');
+    expect(names).toHaveLength(11);
+    client.stop();
+  });
+
+  it('returns an image content block for screenshots', async () => {
+    const client = startClient(daemonEnv(await fakeDaemon()));
+    const response = await client.rpc('tools/call', {
+      name: 'android_screenshot',
+      arguments: {},
+    });
+    expect(response.result.content[0]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/png',
+    });
+    expect(calls.some((call) => call.path === '/api/internal/capability/device/screenshot')).toBe(
+      true,
+    );
     client.stop();
   });
 
