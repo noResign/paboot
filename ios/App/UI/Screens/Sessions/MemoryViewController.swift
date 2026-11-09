@@ -33,6 +33,22 @@ private func memoryDateLabel(_ timestamp: Int64?) -> String {
     return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000))
 }
 
+/// validFrom = 事实开始生效；validTo 为空表示仍然有效。
+private func memoryValidityLabel(_ claim: MemoryClaimDto) -> String {
+    let from = claim.validFrom.flatMap { $0 > 0 ? $0 : nil }
+    let to = claim.validTo.flatMap { $0 > 0 ? $0 : nil }
+    switch (from, to) {
+    case (nil, nil):
+        return "未知"
+    case let (from?, to?):
+        return "\(memoryDateLabel(from)) – \(memoryDateLabel(to))"
+    case let (from?, nil):
+        return "\(memoryDateLabel(from)) 起"
+    case let (nil, to?):
+        return "至 \(memoryDateLabel(to))"
+    }
+}
+
 private func memoryMatches(_ claim: MemoryClaimDto, query: String) -> Bool {
     let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if needle.isEmpty { return true }
@@ -65,6 +81,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private let repository = MemoryRepository()
     private let workspaceId: String
     private let workspaceName: String
+    private let family: String
 
     private let statusLabel = UILabel()
     private let searchBar = UISearchBar()
@@ -75,14 +92,17 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var claims: [MemoryClaimDto] = []
     private var groups: [MemoryGroup] = []
     private var status: MemoryStatusDto?
+    private var settings: WorkspaceMemoryDto?
+    private var timeline: [MemoryTimelineItemDto] = []
     private var statusUnavailable = false
     private var query = ""
     private var hasLoaded = false
     private var loadGeneration = 0
 
-    init(workspaceId: String, workspaceName: String) {
+    init(workspaceId: String, workspaceName: String, family: String = "life") {
         self.workspaceId = workspaceId
         self.workspaceName = workspaceName
+        self.family = family
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -93,7 +113,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "关于你"
+        title = family == "life" ? "关于你" : "项目记忆"
         view.backgroundColor = Theme.Colors.background
         configureLayout()
     }
@@ -167,6 +187,21 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             spinner.startAnimating()
         }
         Task {
+            if let currentSettings = try? await repository.settings(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                settings = currentSettings
+                if !currentSettings.enabled {
+                    hasLoaded = true
+                    spinner.stopAnimating()
+                    claims = []
+                    timeline = []
+                    statusUnavailable = true
+                    updateStatusLabel()
+                    rebuildGroups()
+                    return
+                }
+            }
+
             do {
                 let rows = try await repository.list(workspaceId: workspaceId)
                 guard generation == loadGeneration else { return }
@@ -192,31 +227,60 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 statusUnavailable = true
                 updateStatusLabel()
             }
+
+            if let currentSettings = try? await repository.settings(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                settings = currentSettings
+                updateStatusLabel()
+            }
+            if let items = try? await repository.timeline(workspaceId: workspaceId) {
+                guard generation == loadGeneration else { return }
+                timeline = items
+                UIView.performWithoutAnimation { tableView.reloadData() }
+            }
         }
     }
 
     private func updateStatusLabel() {
-        if statusUnavailable {
-            statusLabel.text = "记忆状态暂不可用；列表仍可正常浏览。"
-            return
-        }
-        let pending = status?.pendingSources ?? 0
-        if let model = status?.extractionModel, !model.isEmpty {
-            if status?.modelAvailable == true {
-                statusLabel.text = "自动整理（\(model)）· \(pending) 条待整理"
-            } else {
-                statusLabel.text = "记忆模型配置不可用（\(model)）：请检查 Provider 的 Key、启用状态和模型目录。"
-            }
+        let base: String
+        if settings?.enabled == false {
+            base = "记忆未启用；请在桌面端启用后使用。"
+        } else if statusUnavailable {
+            base = "记忆状态暂不可用；列表仍可正常浏览。"
         } else {
-            statusLabel.text = "仅记录，未整理：在桌面设置 → 模型 Provider 里勾选「用于记忆」后会自动补齐。"
+            let pending = status?.pendingSources ?? 0
+            if let model = status?.extractionModel, !model.isEmpty {
+                base = status?.modelAvailable == true
+                    ? "自动整理（\(model)）· \(pending) 条待整理"
+                    : "记忆模型配置不可用（\(model)）：请检查 Provider 的 Key、启用状态和模型目录。"
+            } else {
+                base = "仅记录，未整理：在桌面设置 → 模型 Provider 里勾选「用于记忆」后会自动补齐。"
+            }
         }
+        statusLabel.text = base + settingsSummary()
+    }
+
+    /// Read-only view of the workspace switches; desktop owns the edits.
+    private func settingsSummary() -> String {
+        guard let settings, settings.enabled else { return "" }
+        var parts = ["记忆已启用"]
+        if settings.enabled {
+            parts.append(settings.injectionEnabled ? "注入开" : "只记录")
+            if let profile = settings.profileMode { parts.append("画像 \(profile)") }
+            if let readable = settings.lifeReadable {
+                parts.append(readable ? "生活可读" : "生活不可读")
+            }
+        }
+        return "\n" + parts.joined(separator: " · ")
     }
 
     private func rebuildGroups() {
         groups = groupedMemory(claims, query: query)
-        emptyLabel.isHidden = !groups.isEmpty
+        emptyLabel.isHidden = !groups.isEmpty || showsTimeline
         emptyLabel.text = query.isEmpty
-            ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
+            ? (family == "life"
+                ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
+                : "还没有记忆。先在桌面端启用这个工作区的记忆，再正常聊天。")
             : "没有匹配的记忆。"
         UIView.performWithoutAnimation { tableView.reloadData() }
     }
@@ -226,21 +290,50 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         rebuildGroups()
     }
 
+    private var showsTimeline: Bool { !timeline.isEmpty }
+
+    private func groupIndex(for section: Int) -> Int {
+        showsTimeline ? section - 1 : section
+    }
+
     func numberOfSections(in tableView: UITableView) -> Int {
-        groups.count
+        groups.count + (showsTimeline ? 1 : 0)
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        let group = groups[section]
+        if showsTimeline && section == 0 { return "最近工作（只读）" }
+        let group = groups[groupIndex(for: section)]
         return "\(group.label)（\(group.claims.count)）"
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        groups[section].claims.count
+        if showsTimeline && section == 0 { return timeline.count }
+        return groups[groupIndex(for: section)].claims.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let claim = groups[indexPath.section].claims[indexPath.row]
+        if showsTimeline && indexPath.section == 0 {
+            let item = timeline[indexPath.row]
+            let cell = tableView.dequeueReusableCell(withIdentifier: "memory-timeline")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-timeline")
+            cell.textLabel?.text = item.title
+            cell.textLabel?.numberOfLines = 2
+            cell.textLabel?.font = Typography.body
+            cell.textLabel?.textColor = Theme.Colors.textPrimary
+            let sessionHint = item.sessionId.map {
+                " · 会话 \(String($0.replacingOccurrences(of: "-", with: "").prefix(4)))"
+            } ?? ""
+            cell.detailTextLabel?.text =
+                "\(item.kind == "summary" ? "摘要" : "观察") · \(memoryDateLabel(item.at))" +
+                sessionHint +
+                (item.files.isEmpty ? "" : " · \(item.files.count) 个文件")
+            cell.detailTextLabel?.font = Typography.caption
+            cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
+            cell.accessoryType = .none
+            cell.backgroundColor = Theme.Colors.surface
+            return cell
+        }
+        let claim = groups[groupIndex(for: indexPath.section)].claims[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "memory-row")
             ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-row")
         cell.textLabel?.text = claim.summary
@@ -259,7 +352,8 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let claim = groups[indexPath.section].claims[indexPath.row]
+        if showsTimeline && indexPath.section == 0 { return }
+        let claim = groups[groupIndex(for: indexPath.section)].claims[indexPath.row]
         let detail = MemoryDetailViewController(
             claim: claim,
             repository: repository,
@@ -371,7 +465,7 @@ private final class MemoryDetailViewController: UIViewController {
 
         let meta = UILabel()
         meta.text =
-            "置信度 \(Int((claim.confidence * 100).rounded()))% · 更新 \(memoryDateLabel(claim.updatedAt)) · 有效期 \(memoryDateLabel(claim.validFrom))"
+            "置信度 \(Int((claim.confidence * 100).rounded()))% · 更新 \(memoryDateLabel(claim.updatedAt)) · 生效 \(memoryValidityLabel(claim))"
         meta.font = Typography.caption
         meta.textColor = Theme.Colors.textMuted
         stack.addArrangedSubview(meta)

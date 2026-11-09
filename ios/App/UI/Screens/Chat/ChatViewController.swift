@@ -455,6 +455,7 @@ final class ChatViewController: UIViewController {
     private func updateMenu(_ state: ChatViewModel.State) {
         let signature = [
             state.permissionMode,
+            state.memoryMode,
             state.bypassAllowed ? "1" : "0",
             state.model ?? "",
             state.sessionId ?? "",
@@ -481,6 +482,26 @@ final class ChatViewController: UIViewController {
                 }
             )
         }
+
+        let memoryOptions: [(mode: String, title: String)] = [
+            ("normal", "记忆：正常"),
+            ("no_injection", "记忆：只记录，不注入"),
+            ("off", "记忆：本会话关闭"),
+        ]
+        var memoryActions: [UIMenuElement] = []
+        for option in memoryOptions {
+            let attributes: UIAction.Attributes = state.sessionId == nil ? .disabled : []
+            memoryActions.append(
+                UIAction(
+                    title: option.title,
+                    state: state.memoryMode == option.mode ? .on : .off,
+                    attributes: attributes
+                ) { [weak self] _ in
+                    self?.viewModel.setMemoryMode(option.mode)
+                }
+            )
+        }
+        let memoryMenu = UIMenu(title: "本会话记忆", children: memoryActions)
 
         var modelChildren: [UIMenuElement] = []
         modelChildren.append(
@@ -557,6 +578,7 @@ final class ChatViewController: UIViewController {
         let menu = UIMenu(children: [
             UIMenu(title: "权限模式", options: .displayInline, children: permissionActions),
             modelMenu,
+            UIMenu(title: "记忆", options: .displayInline, children: [memoryMenu]),
             UIMenu(options: .displayInline, children: [tasksAction, permissionSettings]),
         ])
 

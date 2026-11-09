@@ -105,6 +105,7 @@ fun ChatScreen(
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val sessionPermissionMode by viewModel.sessionPermissionMode.collectAsState()
+    val sessionMemoryMode by viewModel.sessionMemoryMode.collectAsState()
     val bypassAllowed by viewModel.bypassAllowed.collectAsState()
     val reconnecting by viewModel.reconnecting.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
@@ -226,6 +227,26 @@ fun ChatScreen(
                                     onClick = {
                                         showSessionMenu = false
                                         viewModel.updateSessionPermissionMode(mode)
+                                    },
+                                )
+                            }
+                            HorizontalDivider()
+                            listOf(
+                                "normal" to "记忆：正常",
+                                "no_injection" to "记忆：只记录，不注入",
+                                "off" to "记忆：本会话关闭",
+                            ).forEach { (mode, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    enabled = currentSessionId != null,
+                                    trailingIcon = {
+                                        if (sessionMemoryMode == mode) {
+                                            Icon(Icons.Rounded.Check, contentDescription = "当前记忆模式")
+                                        }
+                                    },
+                                    onClick = {
+                                        showSessionMenu = false
+                                        viewModel.updateSessionMemoryMode(mode)
                                     },
                                 )
                             }

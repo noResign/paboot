@@ -182,6 +182,24 @@ public final class PabootAPI {
         )
     }
 
+    public func memoryTimeline(scope: String) async throws -> MemoryTimelineResponse {
+        try await get(
+            "api/memory/timeline",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            authenticated: true,
+            as: MemoryTimelineResponse.self
+        )
+    }
+
+    public func workspaceMemory(id: String) async throws -> WorkspaceMemoryDto {
+        try await get(
+            "api/workspaces/\(id)/memory",
+            query: [],
+            authenticated: true,
+            as: WorkspaceMemoryDto.self
+        )
+    }
+
     public func addWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
         try await request(
             "POST",

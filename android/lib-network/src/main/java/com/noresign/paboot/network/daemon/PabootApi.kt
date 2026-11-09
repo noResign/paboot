@@ -23,6 +23,8 @@ import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeResponse
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
+import com.noresign.paboot.network.daemon.dto.MemoryTimelineResponse
+import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.network.daemon.dto.OkResponse
 import com.noresign.paboot.network.daemon.dto.ProviderResponse
 import com.noresign.paboot.network.daemon.dto.ProviderTestResponse
@@ -304,4 +306,10 @@ interface PabootApi {
 
     @PATCH("api/memory/session")
     suspend fun setMemorySessionMode(@Body body: MemorySessionModeRequest): MemorySessionModeResponse
+
+    @GET("api/memory/timeline")
+    suspend fun memoryTimeline(@Query("scope") scope: String): MemoryTimelineResponse
+
+    @GET("api/workspaces/{id}/memory")
+    suspend fun workspaceMemory(@Path("id") id: String): WorkspaceMemoryDto
 }

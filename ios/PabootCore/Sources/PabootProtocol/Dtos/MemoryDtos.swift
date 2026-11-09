@@ -113,6 +113,71 @@ public struct MemoryBriefDto: Decodable, Equatable, Sendable {
     }
 }
 
+public struct MemoryTimelineItemDto: Decodable, Equatable, Sendable {
+    public let kind: String
+    public let id: String
+    public let scope: String
+    public let endId: String?
+    public let sessionId: String?
+    public let title: String
+    public let subtitle: String?
+    public let at: Int64
+    public let files: [String]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "observation"
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        endId = try container.decodeIfPresent(String.self, forKey: .endId)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+        at = try container.decodeIfPresent(Int64.self, forKey: .at) ?? 0
+        files = try container.decodeIfPresent([String].self, forKey: .files) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, id, scope, endId, sessionId, title, subtitle, at, files
+    }
+}
+
+public struct MemoryTimelineResponse: Decodable, Equatable, Sendable {
+    public let items: [MemoryTimelineItemDto]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        items = try container.decodeIfPresent([MemoryTimelineItemDto].self, forKey: .items) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case items
+    }
+}
+
+public struct WorkspaceMemoryDto: Decodable, Equatable, Sendable {
+    public let workspaceId: String
+    public let enabled: Bool
+    public let injectionEnabled: Bool
+    public let profileMode: String?
+    public let lifeReadable: Bool?
+    public let providerOverride: String?
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        workspaceId = try container.decodeIfPresent(String.self, forKey: .workspaceId) ?? ""
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        injectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .injectionEnabled) ?? true
+        profileMode = try container.decodeIfPresent(String.self, forKey: .profileMode)
+        lifeReadable = try container.decodeIfPresent(Bool.self, forKey: .lifeReadable)
+        providerOverride = try container.decodeIfPresent(String.self, forKey: .providerOverride)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case workspaceId, enabled, injectionEnabled, profileMode, lifeReadable, providerOverride
+    }
+}
+
 public struct MemoryStatusDto: Decodable, Equatable, Sendable {
     public let scope: String
     public let pendingSources: Int

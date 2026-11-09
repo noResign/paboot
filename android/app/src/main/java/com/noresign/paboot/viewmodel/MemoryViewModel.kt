@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.repository.MemoryRepository
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
+import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
+import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.util.friendlyError
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +18,8 @@ sealed class MemoryUiState {
     data class Content(
         val claims: List<MemoryClaimDto>,
         val status: MemoryStatusDto?,
+        val settings: WorkspaceMemoryDto? = null,
+        val timeline: List<MemoryTimelineItemDto> = emptyList(),
     ) : MemoryUiState()
     data class Error(val message: String) : MemoryUiState()
 }
@@ -43,11 +47,24 @@ class MemoryViewModel(
         viewModelScope.launch {
             val claims = repository.list(workspaceId)
             val status = repository.status(workspaceId)
+            val settings = repository.settings(workspaceId)
+            val timeline = repository.timeline(workspaceId)
+            val currentSettings = (settings as? NetworkResult.Success)?.data
             when {
+                claims is NetworkResult.Error &&
+                    claims.apiCode == "memory_not_enabled" &&
+                    currentSettings != null -> _state.value = MemoryUiState.Content(
+                    claims = emptyList(),
+                    status = null,
+                    settings = currentSettings,
+                    timeline = emptyList(),
+                )
                 claims is NetworkResult.Error -> _state.value = MemoryUiState.Error(friendlyError(claims))
                 claims is NetworkResult.Success -> _state.value = MemoryUiState.Content(
                     claims = claims.data,
                     status = (status as? NetworkResult.Success)?.data,
+                    settings = currentSettings,
+                    timeline = (timeline as? NetworkResult.Success)?.data ?: emptyList(),
                 )
             }
         }

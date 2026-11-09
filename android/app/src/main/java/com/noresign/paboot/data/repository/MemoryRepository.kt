@@ -6,6 +6,8 @@ import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
+import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
+import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 
@@ -31,6 +33,19 @@ class MemoryRepository(
     suspend fun status(workspaceId: String): NetworkResult<MemoryStatusDto> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return safeApiCall { api.memoryStatus(scope(workspaceId)) }
+    }
+
+    suspend fun settings(workspaceId: String): NetworkResult<WorkspaceMemoryDto> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return safeApiCall { api.workspaceMemory(workspaceId) }
+    }
+
+    suspend fun timeline(workspaceId: String): NetworkResult<List<MemoryTimelineItemDto>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.memoryTimeline(scope(workspaceId)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.items)
+            is NetworkResult.Error -> r
+        }
     }
 
     suspend fun correct(
