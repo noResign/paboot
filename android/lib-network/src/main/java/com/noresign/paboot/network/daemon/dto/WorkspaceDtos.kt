@@ -92,3 +92,36 @@ data class DirectoriesResponse(
     val parent: String? = null,
     val entries: List<DirectoryEntryDto> = emptyList(),
 )
+
+@Serializable
+data class EndDto(
+    val id: String = "",
+    val workspaceId: String = "",
+    val family: String = "dev",
+    val kind: String = "android",
+    val name: String = "",
+    val status: String = "draft",
+    val roots: List<String> = emptyList(),
+    val createdAt: Long = 0L,
+)
+
+@Serializable
+data class EndsResponse(
+    val ends: List<EndDto> = emptyList(),
+)
+
+@Serializable
+data class CapabilityDeviceDto(
+    val serial: String = "",
+    val state: String = "offline",
+    val model: String? = null,
+    val product: String? = null,
+    val device: String? = null,
+)
+
+@Serializable
+data class CapabilityDeviceListDto(
+    val endId: String = "",
+    val serial: String? = null,
+    val devices: List<CapabilityDeviceDto> = emptyList(),
+)

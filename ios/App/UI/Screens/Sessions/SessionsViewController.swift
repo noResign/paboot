@@ -865,6 +865,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
+    private let repository = WorkspaceRepository()
 
     init(workspace: WorkspaceDto, sessions: [SessionDto]?) {
         self.workspace = workspace
@@ -939,6 +940,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
         if workspace.family != "life" {
             contentStack.addArrangedSubview(knowledgeCard())
+            contentStack.addArrangedSubview(capabilityCard())
         }
         contentStack.addArrangedSubview(memoryCard())
 
@@ -1205,6 +1207,62 @@ private final class WorkspaceOverviewViewController: UIViewController {
             row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
             row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
         ])
+        return card
+    }
+
+    private func capabilityCard() -> UIView {
+        let card = makeCard()
+        let iconBox = makeIconBox(systemName: "iphone", boxSize: 38, iconSize: 19)
+        let title = UILabel()
+        title.text = "Android 设备（只读）"
+        title.font = Typography.cardTitle
+        title.textColor = Theme.Colors.textPrimary
+        let detail = UILabel()
+        detail.text = "检查中…"
+        detail.font = Typography.caption
+        detail.textColor = Theme.Colors.textSecondary
+        detail.numberOfLines = 2
+        let hint = UILabel()
+        hint.text = "镜像 / 点击请在桌面端操作。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textMuted
+        hint.numberOfLines = 2
+
+        let textStack = UIStackView(arrangedSubviews: [title, detail, hint])
+        textStack.axis = .vertical
+        textStack.spacing = 2
+
+        let row = UIStackView(arrangedSubviews: [iconBox, textStack])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = Spacing.sm
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.md),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.md),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
+        ])
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let ends = try await repository.listEnds(workspaceId: workspace.id)
+                guard let active = ends.first(where: { $0.status == "active" }) else {
+                    detail.text = "尚未添加 Android 端；请在桌面端添加。"
+                    return
+                }
+                let devices = try await repository.deviceList(
+                    workspaceId: workspace.id,
+                    endId: active.id
+                )
+                let online = devices.devices.filter { $0.state == "device" }.count
+                detail.text = "端：\(active.name) · \(online) 台设备在线"
+            } catch {
+                detail.text = "能力状态不可用"
+            }
+        }
         return card
     }
 

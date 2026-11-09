@@ -230,6 +230,24 @@ public final class PabootAPI {
         )
     }
 
+    public func workspaceEnds(id: String) async throws -> EndsResponse {
+        try await get(
+            "api/workspaces/\(id)/ends",
+            query: [],
+            authenticated: true,
+            as: EndsResponse.self
+        )
+    }
+
+    public func workspaceDevice(id: String, endId: String? = nil) async throws -> CapabilityDeviceListDto {
+        try await get(
+            "api/workspaces/\(id)/device",
+            query: endId.map { [URLQueryItem(name: "endId", value: $0)] } ?? [],
+            authenticated: true,
+            as: CapabilityDeviceListDto.self
+        )
+    }
+
     public func addWorkspaceDir(id: String, path: String) async throws -> WorkspaceDirsResponse {
         try await request(
             "POST",

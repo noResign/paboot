@@ -164,3 +164,32 @@ public struct DirectoriesResponse: Decodable, Equatable, Sendable {
         case path, parent, entries
     }
 }
+
+public struct EndDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let workspaceId: String
+    public let family: String
+    public let kind: String
+    public let name: String
+    public let status: String
+    public let roots: [String]
+    public let createdAt: Int
+}
+
+public struct EndsResponse: Decodable, Equatable, Sendable {
+    public let ends: [EndDto]
+}
+
+public struct CapabilityDeviceDto: Decodable, Equatable, Sendable {
+    public let serial: String
+    public let state: String
+    public let model: String?
+    public let product: String?
+    public let device: String?
+}
+
+public struct CapabilityDeviceListDto: Decodable, Equatable, Sendable {
+    public let endId: String
+    public let serial: String?
+    public let devices: [CapabilityDeviceDto]
+}

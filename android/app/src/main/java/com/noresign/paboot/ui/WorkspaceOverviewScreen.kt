@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +36,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -47,6 +49,9 @@ import com.noresign.paboot.model.session.WorkspaceDirectory
 import com.noresign.paboot.model.session.workspaceDirectoryRows
 import com.noresign.paboot.network.daemon.dto.WorkspaceDto
 import com.noresign.paboot.ui.theme.CodeBody
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.noresign.paboot.viewmodel.CapabilityStatusUiState
+import com.noresign.paboot.viewmodel.CapabilityStatusViewModel
 import com.noresign.paboot.viewmodel.SessionListUiState
 import com.noresign.paboot.viewmodel.SessionListViewModel
 
@@ -71,6 +76,9 @@ fun WorkspaceOverviewScreen(
     val workspaces by viewModel.workspaces.collectAsState()
     val workspace = workspaces.find { it.id == workspaceId }
     val sessions = (uiState as? SessionListUiState.Content)?.model?.allSessions
+    val capabilityViewModel: CapabilityStatusViewModel = viewModel()
+    val capabilityState by capabilityViewModel.state.collectAsState()
+    LaunchedEffect(workspaceId) { capabilityViewModel.load(workspaceId) }
 
     Scaffold(
         topBar = {
@@ -104,6 +112,7 @@ fun WorkspaceOverviewScreen(
                     DirectorySection(dirs)
                     if (workspace.family != "life") {
                         KnowledgeCard(workspace, onOpenKnowledge)
+                        CapabilityCard(capabilityState)
                     }
                     MemoryCard(workspace, onOpenMemory)
                     if (workspace.isBuiltin && workspace.family != "life") {
@@ -392,6 +401,63 @@ private fun KnowledgeCard(workspace: WorkspaceDto, onOpenKnowledge: (String) -> 
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun CapabilityCard(state: CapabilityStatusUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.PhoneAndroid,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("Android 设备（只读）", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    when (state) {
+                        is CapabilityStatusUiState.Loading -> "检查中…"
+                        is CapabilityStatusUiState.Unavailable -> "能力状态不可用"
+                        is CapabilityStatusUiState.Content ->
+                            if (state.activeEndName == null) {
+                                "尚未添加 Android 端；请在桌面端添加。"
+                            } else {
+                                "端：${state.activeEndName} · ${state.onlineDevices} 台设备在线"
+                            }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "镜像 / 点击请在桌面端操作。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

@@ -47,6 +47,24 @@ final class WorkspaceRepository {
         }
     }
 
+    func listEnds(workspaceId: String) async throws -> [EndDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.workspaceEnds(id: workspaceId).ends
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func deviceList(workspaceId: String, endId: String?) async throws -> CapabilityDeviceListDto {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.workspaceDevice(id: workspaceId, endId: endId)
+        } catch {
+            throw map(error)
+        }
+    }
+
     func config() async throws -> ConfigResponse {
         let client = try clientOrThrow()
         do {
