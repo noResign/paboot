@@ -42,6 +42,7 @@ export const ROUTES = {
   memoryEntity: (id: string) => `/api/memory/entities/${encodeURIComponent(id)}`,
   memoryEntityUnmerge: (id: string) =>
     `/api/memory/entities/${encodeURIComponent(id)}/unmerge`,
+  memoryEntityLinks: '/api/memory/entity-links',
   memorySource: (id: string) => `/api/memory/sources/${encodeURIComponent(id)}`,
   memoryClaimPromote: (id: string) =>
     `/api/memory/claims/${encodeURIComponent(id)}/promote`,

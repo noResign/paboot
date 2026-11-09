@@ -6,7 +6,7 @@ import {
 } from './extract.js';
 import type { MemoryModelSelection } from './model.js';
 import type { MemoryStore } from './store.js';
-import type { MemorySource } from './types.js';
+import type { MemoryScope, MemorySource } from './types.js';
 import { log } from '../platform/log.js';
 
 export interface MemoryWorkerOptions {
@@ -32,6 +32,8 @@ export interface MemoryWorkerOptions {
   contextSources?: number;
   /** Parse failures tolerated per source before it is parked. */
   failureLimit?: number;
+  /** Scopes that share one personal identity (user + life); dev is never here. */
+  personalScopes?: () => readonly MemoryScope[];
   now?: () => number;
 }
 
@@ -83,6 +85,7 @@ export class MemoryWorker {
   private readonly maxBatchChars: number | undefined;
   private readonly contextSources: number;
   private readonly failureLimit: number;
+  private readonly personalScopes: (() => readonly MemoryScope[]) | undefined;
   private readonly now: () => number;
   private timer: NodeJS.Timeout | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -101,6 +104,7 @@ export class MemoryWorker {
     this.maxBatchChars = options.maxBatchChars;
     this.contextSources = options.contextSources ?? 4;
     this.failureLimit = options.failureLimit ?? 3;
+    this.personalScopes = options.personalScopes;
     this.now = options.now ?? Date.now;
   }
 
@@ -285,6 +289,11 @@ export class MemoryWorker {
           name: entity.name,
           aliases: entity.aliases,
         });
+        try {
+          this.store.autoLinkPersonalEntity(row, this.personalScopes?.() ?? []);
+        } catch (err) {
+          log.warn('memory entity auto-link failed', err);
+        }
         entityIds.set(entity.tempId, row.id);
       }
       const claims = extraction.claims;

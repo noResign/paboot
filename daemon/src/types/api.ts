@@ -803,6 +803,31 @@ export interface MemoryEntityResponse {
   entity: MemoryEntityDto;
 }
 
+export interface MemoryEntityLinkEndpointDto {
+  id: string;
+  scope: MemoryScopeDto;
+  kind: MemoryEntityKindDto;
+  canonicalName: string;
+}
+
+export interface MemoryEntityLinkDto {
+  id: string;
+  a: MemoryEntityLinkEndpointDto;
+  b: MemoryEntityLinkEndpointDto;
+  relation: string;
+  createdBy: string;
+  createdAt: number;
+}
+
+export interface MemoryEntityLinksResponse {
+  links: MemoryEntityLinkDto[];
+}
+
+export interface MemoryEntityLinkResponse {
+  ok: boolean;
+  link: MemoryEntityLinkDto;
+}
+
 export interface MemoryDisputeClaimDto {
   id: string;
   summary: string;

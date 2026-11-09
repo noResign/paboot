@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EntityOperationError, MemoryStore } from '../src/memory/store';
+import { EntityOperationError, LinkOperationError, MemoryStore } from '../src/memory/store';
 
 const stores: MemoryStore[] = [];
 const dirs: string[] = [];
@@ -317,5 +317,80 @@ describe('memory entities', () => {
       supersededBy: secondNew.id,
       validTo: 2_000,
     });
+  });
+
+  it('links personal entities across scopes and exposes link counts', () => {
+    const store = openStore();
+    const life = store.upsertEntity({
+      scope: 'workspace:life-1',
+      kind: 'person',
+      name: '张女士',
+    });
+    const user = store.upsertEntity({ scope: 'user', kind: 'person', name: '张女士' });
+
+    const link = store.createEntityLink(user.id, life.id, 'test');
+    expect(link.relation).toBe('same_person');
+    expect(store.listEntityLinks('workspace:life-1')).toEqual([
+      expect.objectContaining({ id: link.id, createdBy: 'test' }),
+    ]);
+    expect(store.listEntitiesWithCounts('workspace:life-1')[0]?.linkCount).toBe(1);
+    expect(store.listEntitiesWithCounts('user')[0]?.linkCount).toBe(1);
+
+    expect(store.deleteEntityLink(user.id, life.id)).toBe(true);
+    expect(store.listEntityLinks('workspace:life-1')).toHaveLength(0);
+    expect(store.deleteEntityLink(user.id, life.id)).toBe(false);
+  });
+
+  it('rejects invalid links and deleting merge links', () => {
+    const store = openStore();
+    const dev = store.upsertEntity({ scope: 'workspace:dev-a', kind: 'person', name: '张女士' });
+    const user = store.upsertEntity({ scope: 'user', kind: 'person', name: '张女士' });
+    const life = store.upsertEntity({
+      scope: 'workspace:life-1',
+      kind: 'person',
+      name: '张女士',
+    });
+    const place = store.upsertEntity({
+      scope: 'workspace:life-1',
+      kind: 'place',
+      name: '上海',
+    });
+
+    expect(() => store.createEntityLink(user.id, user.id, 'test')).toThrow(LinkOperationError);
+    expect(() => store.createEntityLink(life.id, place.id, 'test')).toThrow(LinkOperationError);
+
+    store.linkEntities(dev.id, user.id, 'merged', 'test');
+    try {
+      store.deleteEntityLink(dev.id, user.id);
+      throw new Error('expected delete to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(LinkOperationError);
+      expect((err as LinkOperationError).code).toBe('link_merge_locked');
+    }
+
+    expect(store.listEntityLinks('workspace:life-1')).toHaveLength(0);
+    expect(store.listEntityLinks('user')).toHaveLength(1);
+  });
+
+  it('auto-links personal scopes only', () => {
+    const store = openStore();
+    const scopes = ['user', 'workspace:life-1'] as const;
+    const life = store.upsertEntity({
+      scope: 'workspace:life-1',
+      kind: 'person',
+      name: '张女士',
+    });
+    const user = store.upsertEntity({ scope: 'user', kind: 'person', name: '张女士' });
+    store.autoLinkPersonalEntity(life, scopes);
+    expect(store.listEntityLinks('workspace:life-1')).toHaveLength(1);
+
+    const dev = store.upsertEntity({ scope: 'workspace:dev-a', kind: 'person', name: '张女士' });
+    store.autoLinkPersonalEntity(dev, scopes);
+    expect(store.listEntityLinks('workspace:dev-a')).toHaveLength(0);
+
+    // Idempotent: a second extraction of the same person adds no rows.
+    store.autoLinkPersonalEntity(life, scopes);
+    expect(store.listEntityLinks('workspace:life-1')).toHaveLength(1);
+    expect(user.id).not.toBe(life.id);
   });
 });

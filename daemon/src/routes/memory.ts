@@ -5,9 +5,11 @@ import { filterCaptureText } from '../memory/capture-filter.js';
 import {
   DisputeOperationError,
   EntityOperationError,
+  LinkOperationError,
   hashContent,
   type EntityWithCounts,
   type MemoryDisputePair,
+  type MemoryEntityLinkPair,
 } from '../memory/store.js';
 import { buildMemoryBrief } from '../memory/brief.js';
 import { configuredMemoryModel, normalizeMemoryModelSelection } from '../memory/model.js';
@@ -43,6 +45,9 @@ import type {
   MemoryDisputeResolveResponse,
   MemoryEntitiesResponse,
   MemoryEntityDto,
+  MemoryEntityLinkDto,
+  MemoryEntityLinkResponse,
+  MemoryEntityLinksResponse,
   MemoryEntityResponse,
   MemoryEvidenceRelationDto,
   MemorySearchResponse,
@@ -100,6 +105,30 @@ function entityDtoFromList(
 ): MemoryEntityDto | undefined {
   const entity = ctx.memory!.listEntitiesWithCounts(scope, status).find((item) => item.id === id);
   return entity ? toEntityDto(entity) : undefined;
+}
+
+function toLinkDto(link: MemoryEntityLinkPair): MemoryEntityLinkDto {
+  const endpoint = (entity: MemoryEntity) => ({
+    id: entity.id,
+    scope: entity.scope as MemoryEntityLinkDto['a']['scope'],
+    kind: entity.kind,
+    canonicalName: entity.canonicalName,
+  });
+  return {
+    id: link.id,
+    a: endpoint(link.a),
+    b: endpoint(link.b),
+    relation: link.relation,
+    createdBy: link.createdBy,
+    createdAt: link.createdAt,
+  };
+}
+
+function personalScopeSet(ctx: AppContext): Set<MemoryScope> {
+  const scopes = new Set<MemoryScope>(['user']);
+  const life = ctx.db.listWorkspaces().find((workspace) => workspace.family === 'life');
+  if (life) scopes.add(`workspace:${life.id}`);
+  return scopes;
 }
 
 function toDisputeDto(pair: MemoryDisputePair): MemoryDisputeDto {
@@ -696,6 +725,95 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
     );
     const dto: MemoryDisputeResolveResponse = { ok: true };
     res.json(dto);
+  });
+
+  app.get('/api/memory/entity-links', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const links = ctx.memory!.listEntityLinks(target.scope).map(toLinkDto);
+    const dto: MemoryEntityLinksResponse = { links };
+    res.json(dto);
+  });
+
+  app.post('/api/memory/entity-links', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const a = req.body?.['a'];
+    const b = req.body?.['b'];
+    if (typeof a !== 'string' || typeof b !== 'string' || a === '' || b === '') {
+      res.status(400).json({ error: 'a and b are required', code: 'bad_request' });
+      return;
+    }
+    const left = ctx.memory!.getEntity(a);
+    const right = ctx.memory!.getEntity(b);
+    if (
+      !left ||
+      !right ||
+      left.id === right.id ||
+      left.scope === right.scope ||
+      left.kind !== right.kind ||
+      left.sensitivity === 'secret' ||
+      right.sensitivity === 'secret'
+    ) {
+      res.status(404).json({ error: 'entities cannot be linked', code: 'link_not_allowed' });
+      return;
+    }
+    const personal = personalScopeSet(ctx);
+    if (!personal.has(left.scope) || !personal.has(right.scope)) {
+      res.status(409).json({ error: 'only personal scopes can be linked', code: 'link_not_allowed' });
+      return;
+    }
+    let link: MemoryEntityLinkPair;
+    try {
+      link = ctx.memory!.createEntityLink(left.id, right.id, 'operator');
+    } catch (err) {
+      if (err instanceof LinkOperationError) {
+        res.status(409).json({ error: 'entities cannot be linked', code: err.code });
+        return;
+      }
+      throw err;
+    }
+    ctx.db.audit(
+      'memory_entity_link',
+      JSON.stringify({ a: left.id, b: right.id, relation: link.relation }),
+    );
+    const dto: MemoryEntityLinkResponse = { ok: true, link: toLinkDto(link) };
+    res.json(dto);
+  });
+
+  app.delete('/api/memory/entity-links', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const a = req.query['a'];
+    const b = req.query['b'];
+    if (typeof a !== 'string' || typeof b !== 'string' || a === '' || b === '') {
+      res.status(400).json({ error: 'a and b are required', code: 'bad_request' });
+      return;
+    }
+    const left = ctx.memory!.getEntity(a);
+    const right = ctx.memory!.getEntity(b);
+    if (
+      !left ||
+      !right ||
+      (left.scope !== target.scope && right.scope !== target.scope)
+    ) {
+      res.status(404).json({ error: 'entity link not found', code: 'link_not_found' });
+      return;
+    }
+    try {
+      if (!ctx.memory!.deleteEntityLink(left.id, right.id)) {
+        res.status(404).json({ error: 'entity link not found', code: 'link_not_found' });
+        return;
+      }
+    } catch (err) {
+      if (err instanceof LinkOperationError) {
+        res.status(409).json({ error: 'entity link cannot be removed', code: err.code });
+        return;
+      }
+      throw err;
+    }
+    ctx.db.audit('memory_entity_unlink', JSON.stringify({ a: left.id, b: right.id }));
+    res.json({ ok: true });
   });
 
   app.post('/api/memory/feedback', (req, res) => {

@@ -8,6 +8,7 @@ import type {
   CreateClaimInput,
   CreateSourceInput,
   ClaimEvidenceInput,
+  EntityKind,
   MemoryClaim,
   MemoryDocument,
   MemoryEntity,
@@ -103,6 +104,24 @@ export interface MemoryDisputePair {
   predicate: string;
   newClaim: MemoryClaim;
   oldClaim: MemoryClaim;
+}
+
+export type LinkOperationErrorCode = 'link_not_allowed' | 'link_merge_locked';
+
+export class LinkOperationError extends Error {
+  constructor(readonly code: LinkOperationErrorCode) {
+    super(code);
+    this.name = 'LinkOperationError';
+  }
+}
+
+export interface MemoryEntityLinkPair {
+  id: string;
+  a: MemoryEntity;
+  b: MemoryEntity;
+  relation: string;
+  createdBy: string;
+  createdAt: number;
 }
 
 export interface EntityWithCounts extends MemoryEntity {
@@ -509,6 +528,130 @@ export class MemoryStore {
       )
       .get(id, id) as { count: number } | undefined;
     return Number(row?.count ?? 0);
+  }
+
+  listEntityLinks(scope: MemoryScope): MemoryEntityLinkPair[] {
+    const rows = this.db
+      .prepare(
+        `SELECT l.entity_a AS aId, l.entity_b AS bId, l.relation,
+                l.created_by AS createdBy, l.created_at AS createdAt
+         FROM mem_entity_links l
+         JOIN mem_entities a ON a.id = l.entity_a
+         JOIN mem_entities b ON b.id = l.entity_b
+         WHERE (a.scope = ? OR b.scope = ?)
+           AND a.sensitivity <> 'secret' AND b.sensitivity <> 'secret'
+         ORDER BY l.created_at DESC`,
+      )
+      .all(scope, scope) as Array<{
+      aId: string;
+      bId: string;
+      relation: string;
+      createdBy: string;
+      createdAt: number;
+    }>;
+    const out: MemoryEntityLinkPair[] = [];
+    for (const row of rows) {
+      const a = this.getEntity(row.aId);
+      const b = this.getEntity(row.bId);
+      if (!a || !b) continue;
+      out.push({
+        id: `${row.aId}:${row.bId}`,
+        a,
+        b,
+        relation: row.relation,
+        createdBy: row.createdBy,
+        createdAt: row.createdAt,
+      });
+    }
+    return out;
+  }
+
+  createEntityLink(aId: string, bId: string, createdBy: string): MemoryEntityLinkPair {
+    const a = this.getEntity(aId);
+    const b = this.getEntity(bId);
+    if (
+      !a ||
+      !b ||
+      a.id === b.id ||
+      a.scope === b.scope ||
+      a.kind !== b.kind ||
+      a.sensitivity === 'secret' ||
+      b.sensitivity === 'secret'
+    ) {
+      throw new LinkOperationError('link_not_allowed');
+    }
+    const relation = entityRelation(a.kind);
+    this.linkEntities(a.id, b.id, relation, createdBy);
+    const [first, second] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+    this.recordOp({
+      batchKey: `link-entity:${first}:${second}`,
+      opIndex: 0,
+      op: 'link_entity',
+      targetType: 'entity',
+      targetId: b.id,
+      payload: { a: a.id, b: b.id, relation, createdBy },
+    });
+    return { id: `${first}:${second}`, a, b, relation, createdBy, createdAt: Date.now() };
+  }
+
+  /** Links are non-destructive; merge links are owned by the unmerge trail. */
+  deleteEntityLink(aId: string, bId: string): boolean {
+    const a = this.getEntity(aId);
+    const b = this.getEntity(bId);
+    if (!a || !b) return false;
+    const [first, second] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+    const row = this.db
+      .prepare(`SELECT relation FROM mem_entity_links WHERE entity_a = ? AND entity_b = ?`)
+      .get(first, second) as { relation: string } | undefined;
+    if (!row) return false;
+    if (row.relation === 'merged') throw new LinkOperationError('link_merge_locked');
+    this.db
+      .prepare(`DELETE FROM mem_entity_links WHERE entity_a = ? AND entity_b = ?`)
+      .run(first, second);
+    this.recordOp({
+      batchKey: `unlink-entity:${first}:${second}`,
+      opIndex: 0,
+      op: 'unlink_entity',
+      targetType: 'entity',
+      targetId: second,
+      payload: { a: first, b: second },
+    });
+    return true;
+  }
+
+  /**
+   * Personal family (user + life) may auto-link identical canonical names.
+   * Dev workspaces never call this; links move no data.
+   */
+  autoLinkPersonalEntity(entity: MemoryEntity, personalScopes: readonly MemoryScope[]): void {
+    if (!personalScopes.includes(entity.scope)) return;
+    if (entity.sensitivity === 'secret') return;
+    const relation = entityRelation(entity.kind);
+    for (const peerScope of personalScopes) {
+      if (peerScope === entity.scope) continue;
+      const rows = this.db
+        .prepare(
+          `SELECT ${ENTITY_COLUMNS} FROM mem_entities
+           WHERE scope = ? AND kind = ? AND status = 'active' AND sensitivity <> 'secret'
+             AND canonical_name = ?`,
+        )
+        .all(peerScope, entity.kind, entity.canonicalName) as unknown as RawEntity[];
+      for (const raw of rows) {
+        const other = mapEntity(raw);
+        if (other.id === entity.id) continue;
+        this.linkEntities(other.id, entity.id, relation, 'auto');
+        const [first, second] =
+          other.id < entity.id ? [other.id, entity.id] : [entity.id, other.id];
+        this.recordOp({
+          batchKey: `link-entity:${first}:${second}`,
+          opIndex: 0,
+          op: 'link_entity',
+          targetType: 'entity',
+          targetId: entity.id,
+          payload: { a: other.id, b: entity.id, relation, createdBy: 'auto' },
+        });
+      }
+    }
   }
 
   /** Cross-scope / cross-family identity link; ordered to satisfy the CHECK. */
@@ -2090,6 +2233,23 @@ function mapEntity(row: RawEntity): MemoryEntity {
 
 function normalizeEntityName(value: string): string {
   return value.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+function entityRelation(kind: EntityKind): string {
+  switch (kind) {
+    case 'person':
+      return 'same_person';
+    case 'place':
+      return 'same_place';
+    case 'org':
+      return 'same_org';
+    case 'pet':
+      return 'same_pet';
+    case 'project':
+      return 'same_project';
+    case 'thing':
+      return 'same_thing';
+  }
 }
 
 interface RawDocument extends Omit<MemoryDocument, 'tags'> {
