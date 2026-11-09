@@ -68,17 +68,19 @@ describe('life brief', () => {
 
   it('keeps one line per predicate/object and prefers user_confirmed', () => {
     const { store } = setup();
-    store.insertClaim(claim({ summary: '自动抽取：住上海', authority: 'derived' }));
-    store.insertClaim(
-      claim({ summary: '用户确认：住上海', authority: 'user_confirmed', id: 'confirmed-claim' }),
+    const derived = store.insertClaim(claim({ summary: '自动抽取：住上海', authority: 'derived' }));
+    const confirmed = store.insertClaim(
+      claim({ summary: '用户确认：住上海', authority: 'user_confirmed' }),
     );
     store.insertClaim(claim({ predicate: 'likes', kind: 'preference', objectText: '咖啡', summary: '喜欢咖啡' }));
 
+    // Tier-0 merges the exact duplicate and upgrades the existing row.
+    expect(confirmed.id).toBe(derived.id);
     const brief = buildLifeBrief(store, 'workspace:life-1');
     expect(brief!.markdown).toContain('用户确认：住上海');
     expect(brief!.markdown).not.toContain('自动抽取：住上海');
     expect(brief!.markdown).toContain('## 偏好');
-    expect(brief!.usedClaimIds).toContain('confirmed-claim');
+    expect(brief!.usedClaimIds).toContain(derived.id);
   });
 
   it('never injects secret claims or expired claims', () => {

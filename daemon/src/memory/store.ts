@@ -36,6 +36,14 @@ const CLAIM_COLUMNS = `
   dedup_key AS dedupKey, sensitivity, status, superseded_by AS supersededBy,
   created_at AS createdAt, updated_at AS updatedAt`;
 
+/** Predicates where a newer value replaces the previous one. */
+const FUNCTIONAL_PREDICATES = new Set(['lives_in', 'works_at', 'name', 'birthday']);
+
+/** D33: approximate dedup only starts once the scope has some history. */
+const TIER1_MIN_CORPUS = 20;
+const TIER1_THRESHOLD = 0.72;
+const TIER1_POSTING_LIMIT = 200;
+
 const DOCUMENT_COLUMNS = `
   id, scope, end_id AS endId, kind, title, summary, tags_json AS tagsJson,
   path, origin, authority, weight, review_status AS reviewStatus,
@@ -333,54 +341,87 @@ export class MemoryStore {
     // Tier-0: an exact dedup key merges into the existing row instead of
     // creating a second claim. The unique-ish check stays in application code
     // because dedup_key is nullable and the index is not UNIQUE.
-    const existing = input.dedupKey ? this.findClaimByDedup(input) : undefined;
+    const existing =
+      (input.dedupKey ? this.findClaimByDedup(input) : undefined) ??
+      this.findExactClaim(input);
     if (existing) {
       this.attachEvidence(existing.id, evidence);
-      return existing;
+      // Tier-0 never downgrades authority: a user-confirmed repeat promotes the
+      // existing derived row, while a derived repeat leaves it confirmed.
+      if (input.authority === 'user_confirmed' && existing.authority !== 'user_confirmed') {
+        this.db
+          .prepare(
+            `UPDATE mem_claims
+             SET authority = 'user_confirmed', confidence = 1.0,
+                 summary = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .run(input.summary, Date.now(), existing.id);
+      }
+      this.recordOp({
+        batchKey: `dedup:${existing.id}:${evidence.map((item) => item.sourceId).join(',')}`,
+        opIndex: 0,
+        op: 'merge',
+        targetType: 'claim',
+        targetId: existing.id,
+        payload: { sourceIds: evidence.map((item) => item.sourceId) },
+      });
+      const refreshed = this.getClaim(existing.id) ?? existing;
+      this.refreshClaimIndex(refreshed);
+      return this.reinforceClaim(existing.id) ?? refreshed;
     }
 
     const id = input.id ?? randomUUID();
     const now = Date.now();
-    this.db
-      .prepare(
-        `INSERT OR IGNORE INTO mem_claims
-           (id, scope, end_id, entity_id, predicate, object_text, object_entity_id,
-            kind, summary, authority, share_class, promoted_from, valid_from,
-            valid_to, time_precision, confidence, importance, reinforcement_dates,
-            dedup_key, sensitivity, status, superseded_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        input.scope,
-        input.endId ?? null,
-        input.entityId ?? null,
-        input.predicate,
-        input.objectText ?? null,
-        input.objectEntityId ?? null,
-        input.kind,
-        input.summary,
-        input.authority ?? 'derived',
-        input.shareClass ?? null,
-        input.promotedFrom ?? null,
-        input.validFrom ?? null,
-        input.validTo ?? null,
-        input.timePrecision ?? 'day',
-        input.confidence,
-        input.importance,
-        JSON.stringify(input.reinforcementDates ?? []),
-        input.dedupKey ?? null,
-        input.sensitivity ?? 'normal',
-        input.status ?? 'active',
-        input.supersededBy ?? null,
-        now,
-        now,
-      );
-    this.attachEvidence(id, evidence);
-    const claim = this.getClaim(id);
-    if (!claim) throw new Error('failed to read back memory claim');
-    this.refreshClaimIndex(claim);
-    return claim;
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO mem_claims
+             (id, scope, end_id, entity_id, predicate, object_text, object_entity_id,
+              kind, summary, authority, share_class, promoted_from, valid_from,
+              valid_to, time_precision, confidence, importance, reinforcement_dates,
+              dedup_key, sensitivity, status, superseded_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          input.scope,
+          input.endId ?? null,
+          input.entityId ?? null,
+          input.predicate,
+          input.objectText ?? null,
+          input.objectEntityId ?? null,
+          input.kind,
+          input.summary,
+          input.authority ?? 'derived',
+          input.shareClass ?? null,
+          input.promotedFrom ?? null,
+          input.validFrom ?? null,
+          input.validTo ?? null,
+          input.timePrecision ?? 'day',
+          input.confidence,
+          input.importance,
+          JSON.stringify(input.reinforcementDates ?? []),
+          input.dedupKey ?? null,
+          input.sensitivity ?? 'normal',
+          input.status ?? 'active',
+          input.supersededBy ?? null,
+          now,
+          now,
+        );
+      this.attachEvidence(id, evidence);
+      const claim = this.getClaim(id);
+      if (!claim) throw new Error('failed to read back memory claim');
+      this.refreshClaimIndex(claim);
+      this.resolveClaimConflicts(claim);
+      this.findTier1Duplicates(this.getClaim(id) ?? claim);
+      this.db.exec('COMMIT');
+      return this.getClaim(id) ?? claim;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   private attachEvidence(claimId: string, evidence: readonly ClaimEvidenceInput[]): void {
@@ -392,6 +433,212 @@ export class MemoryStore {
         )
         .run(claimId, item.sourceId, item.relation ?? 'supports', item.quote ?? null);
     }
+  }
+
+  private findExactClaim(input: CreateClaimInput): MemoryClaim | undefined {
+    if (!input.objectText || input.objectText.trim() === '') return undefined;
+    const object = normalizeObject(input.objectText);
+    const rows = this.db
+      .prepare(
+        `SELECT ${CLAIM_COLUMNS} FROM mem_claims
+         WHERE scope = ? AND COALESCE(end_id, '') = ? AND predicate = ?
+           AND status = 'active'
+         ORDER BY updated_at DESC LIMIT 50`,
+      )
+      .all(input.scope, input.endId ?? '', input.predicate) as unknown as RawClaim[];
+    const match = rows
+      .map(mapClaim)
+      .find((claim) => claim.objectText !== null && normalizeObject(claim.objectText) === object);
+    return match;
+  }
+
+  /** D34: append today once; FIFO 10; confidence is intentionally unchanged. */
+  reinforceClaim(id: string): MemoryClaim | undefined {
+    const claim = this.getClaim(id);
+    if (!claim) return undefined;
+    const today = new Date().toISOString().slice(0, 10);
+    if (claim.reinforcementDates.includes(today)) return claim;
+    const dates = [...claim.reinforcementDates, today].slice(-10);
+    this.db
+      .prepare(`UPDATE mem_claims SET reinforcement_dates = ?, updated_at = ? WHERE id = ?`)
+      .run(JSON.stringify(dates), Date.now(), id);
+    return this.getClaim(id);
+  }
+
+  /**
+   * Deterministic conflict handling for functional predicates. Multi-valued
+   * predicates (likes, plans, goals, relations) may legitimately have several
+   * active objects, so they are left alone here.
+   */
+  private resolveClaimConflicts(claim: MemoryClaim): void {
+    if (claim.status !== 'active') return;
+    if (!FUNCTIONAL_PREDICATES.has(claim.predicate)) return;
+    const candidates = this.db
+      .prepare(
+        `SELECT ${CLAIM_COLUMNS} FROM mem_claims
+         WHERE scope = ? AND COALESCE(end_id, '') = ? AND predicate = ?
+           AND status = 'active' AND id <> ?
+         ORDER BY updated_at DESC LIMIT 20`,
+      )
+      .all(claim.scope, claim.endId ?? '', claim.predicate, claim.id) as unknown as RawClaim[];
+
+    for (const raw of candidates) {
+      const old = mapClaim(raw);
+      if (old.objectText === null || claim.objectText === null) continue;
+      if (normalizeObject(old.objectText) === normalizeObject(claim.objectText)) continue;
+
+      const newFrom = claim.validFrom;
+      const oldFrom = old.validFrom;
+      const oldTo = old.validTo;
+      const newTo = claim.validTo;
+      // Non-overlapping intervals are history, not a conflict.
+      if (newFrom !== null && oldTo !== null && newFrom > oldTo) continue;
+      if (newTo !== null && oldFrom !== null && newTo < oldFrom) continue;
+
+      if (old.authority === 'user_confirmed') {
+        this.updateClaim(claim.id, { status: 'disputed' });
+        this.recordConflictOp('dispute', claim, old);
+        return;
+      }
+      if (newFrom !== null && (oldFrom === null || newFrom >= oldFrom)) {
+        const sameStart = oldFrom !== null && newFrom === oldFrom;
+        if (sameStart && Math.abs(claim.confidence - old.confidence) < 0.15) {
+          this.updateClaim(claim.id, { status: 'disputed' });
+          this.updateClaim(old.id, { status: 'disputed' });
+          this.recordConflictOp('dispute', claim, old);
+          return;
+        }
+        this.updateClaim(old.id, {
+          status: 'superseded',
+          supersededBy: claim.id,
+          validTo: newFrom,
+        });
+        this.recordConflictOp('supersede', claim, old);
+        return;
+      }
+    }
+  }
+
+  private recordConflictOp(op: 'supersede' | 'dispute', claim: MemoryClaim, old: MemoryClaim): void {
+    this.recordOp({
+      batchKey: `conflict:${claim.id}:${old.id}`,
+      opIndex: 0,
+      op,
+      targetType: 'claim',
+      targetId: claim.id,
+      payload: { supersedes: old.id, object: claim.objectText, previous: old.objectText },
+    });
+  }
+
+  /**
+   * D33 Tier-1: IDF-weighted cosine over summary/object tokens, same scope +
+   * predicate. Never auto-merges; high-IDF tokens in the symmetric difference
+   * veto a candidate so `ffmpeg-7.1` vs `6.1` cannot collapse into one row.
+   */
+  private findTier1Duplicates(claim: MemoryClaim): void {
+    if (claim.status !== 'active' || claim.sensitivity === 'secret') return;
+    const rows = this.db
+      .prepare(
+        `SELECT ${CLAIM_COLUMNS} FROM mem_claims
+         WHERE scope = ? AND status = 'active' AND id <> ?
+         ORDER BY updated_at DESC LIMIT 500`,
+      )
+      .all(claim.scope, claim.id) as unknown as RawClaim[];
+    const corpus = rows.map(mapClaim);
+    if (corpus.length + 1 < TIER1_MIN_CORPUS) return;
+
+    const tokenCache = new Map<string, Set<string>>();
+    const tokensOf = (row: MemoryClaim): Set<string> => {
+      const cached = tokenCache.get(row.id);
+      if (cached) return cached;
+      const tokens = tokenizeForDedup(`${row.predicate} ${row.objectText ?? ''} ${row.summary}`);
+      tokenCache.set(row.id, tokens);
+      return tokens;
+    };
+    const claimTokens = tokenizeForDedup(
+      `${claim.predicate} ${claim.objectText ?? ''} ${claim.summary}`,
+    );
+    if (claimTokens.size === 0) return;
+
+    const df = new Map<string, number>();
+    for (const row of corpus) {
+      for (const token of tokensOf(row)) df.set(token, (df.get(token) ?? 0) + 1);
+    }
+    const total = corpus.length + 1;
+    const idf = (token: string): number => Math.log((total + 1) / ((df.get(token) ?? 0) + 1)) + 1;
+    const rareDf = Math.max(1, Math.floor(total * 0.05));
+    const norm = (tokens: Set<string>): number => {
+      let sum = 0;
+      for (const token of tokens) sum += idf(token) ** 2;
+      return Math.sqrt(sum) || 1;
+    };
+    const claimNorm = norm(claimTokens);
+
+    const candidates = corpus
+      .filter((row) => row.predicate === claim.predicate && row.sensitivity !== 'secret')
+      .slice(0, TIER1_POSTING_LIMIT);
+    for (const existing of candidates) {
+      const tokens = tokensOf(existing);
+      const intersection = [...claimTokens].filter((token) => tokens.has(token));
+      if (intersection.length === 0) continue;
+      let dot = 0;
+      for (const token of intersection) dot += idf(token) ** 2;
+      const score = dot / (claimNorm * norm(tokens));
+      if (!Number.isFinite(score) || score < TIER1_THRESHOLD) continue;
+
+      const symmetric = new Set<string>();
+      for (const token of claimTokens) if (!tokens.has(token)) symmetric.add(token);
+      for (const token of tokens) if (!claimTokens.has(token)) symmetric.add(token);
+      // Natural-language bigrams are expected to differ; the veto targets
+      // identifier-like tokens (ffmpeg-7.1 vs 6.1, rdlp-api vs rdlp-plugin).
+      const rareVeto = [...symmetric].some(
+        (token) => /[0-9._-]/.test(token) && (df.get(token) ?? 0) <= rareDf,
+      );
+      if (rareVeto) continue;
+
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO mem_claim_duplicates
+             (id, claim_id, duplicate_of, scope, method, score, status, created_at)
+           VALUES (?, ?, ?, ?, 'tier1_cosine', ?, 'pending', ?)`,
+        )
+        .run(randomUUID(), claim.id, existing.id, claim.scope, score, Date.now());
+    }
+  }
+
+  listClaimDuplicates(
+    scope: MemoryScope,
+    status = 'pending',
+  ): {
+    id: string;
+    claimId: string;
+    duplicateOf: string;
+    score: number;
+    method: string;
+    status: string;
+  }[] {
+    return this.db
+      .prepare(
+        `SELECT id, claim_id AS claimId, duplicate_of AS duplicateOf, score,
+                method, status
+         FROM mem_claim_duplicates WHERE scope = ? AND status = ?
+         ORDER BY score DESC`,
+      )
+      .all(scope, status) as unknown as {
+      id: string;
+      claimId: string;
+      duplicateOf: string;
+      score: number;
+      method: string;
+      status: string;
+    }[];
+  }
+
+  setClaimDuplicateStatus(id: string, status: 'merged' | 'distinct' | 'dismissed'): boolean {
+    const result = this.db
+      .prepare(`UPDATE mem_claim_duplicates SET status = ? WHERE id = ? AND status = 'pending'`)
+      .run(status, id);
+    return Number(result.changes) > 0;
   }
 
   /**
@@ -1364,6 +1611,25 @@ function parseStringArray(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+function normalizeObject(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+/** Latin words + CJK bigrams; used only for Tier-1 candidate scoring. */
+function tokenizeForDedup(value: string): Set<string> {
+  const text = value.normalize('NFKC').toLowerCase();
+  const tokens = new Set<string>();
+  for (const match of text.matchAll(/[a-z0-9][a-z0-9._-]{1,}/g)) tokens.add(match[0]);
+  for (const sequence of text.match(/[㐀-鿿]+/g) ?? []) {
+    const chars = Array.from(sequence);
+    if (chars.length === 1) tokens.add(chars[0]!);
+    for (let index = 0; index + 2 <= chars.length; index += 1) {
+      tokens.add(chars.slice(index, index + 2).join(''));
+    }
+  }
+  return tokens;
 }
 
 /** CRLF/NFKC normalization keeps the dedup key stable across editors. */
