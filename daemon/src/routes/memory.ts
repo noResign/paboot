@@ -2,7 +2,11 @@ import type { Express, Request, Response } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { Db, WorkspaceRow } from '../db/db.js';
 import { filterCaptureText } from '../memory/capture-filter.js';
-import { hashContent } from '../memory/store.js';
+import {
+  EntityOperationError,
+  hashContent,
+  type EntityWithCounts,
+} from '../memory/store.js';
 import { buildMemoryBrief } from '../memory/brief.js';
 import { configuredMemoryModel, normalizeMemoryModelSelection } from '../memory/model.js';
 import {
@@ -64,7 +68,7 @@ function scopeDto(scope: ResolvedMemoryScope): MemoryScope {
   return scope.kind === 'user' ? 'user' : `workspace:${scope.workspaceId}`;
 }
 
-function toEntityDto(entity: MemoryEntity, claimCount: number): MemoryEntityDto {
+function toEntityDto(entity: EntityWithCounts): MemoryEntityDto {
   return {
     id: entity.id,
     scope: entity.scope as MemoryEntityDto['scope'],
@@ -73,10 +77,24 @@ function toEntityDto(entity: MemoryEntity, claimCount: number): MemoryEntityDto 
     aliases: entity.aliases,
     importance: entity.importance,
     sensitivity: entity.sensitivity,
-    claimCount,
+    status: entity.status,
+    mergedInto: entity.mergedInto,
+    mergedIntoName: entity.mergedIntoName,
+    claimCount: entity.claimCount,
+    linkCount: entity.linkCount,
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,
   };
+}
+
+function entityDtoFromList(
+  ctx: AppContext,
+  scope: MemoryScope,
+  id: string,
+  status: 'active' | 'merged' = 'active',
+): MemoryEntityDto | undefined {
+  const entity = ctx.memory!.listEntitiesWithCounts(scope, status).find((item) => item.id === id);
+  return entity ? toEntityDto(entity) : undefined;
 }
 
 interface MemoryTarget {
@@ -513,9 +531,14 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/entities', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
+    const status = req.query['status'] ?? 'active';
+    if (status !== 'active' && status !== 'merged') {
+      res.status(400).json({ error: 'invalid entity status', code: 'bad_request' });
+      return;
+    }
     const entities = ctx.memory!
-      .listEntitiesWithCounts(target.scope)
-      .map((entity) => toEntityDto(entity, entity.claimCount));
+      .listEntitiesWithCounts(target.scope, status)
+      .map((entity) => toEntityDto(entity));
     const dto: MemoryEntitiesResponse = { entities };
     res.json(dto);
   });
@@ -562,10 +585,44 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       'memory_entity_merge',
       JSON.stringify({ sourceId: source.id, targetId: destination.id, kind: source.kind }),
     );
-    const dto: MemoryEntityResponse = {
-      ok: true,
-      entity: toEntityDto(merged, ctx.memory!.countEntityClaims(merged.id)),
-    };
+    const entity = entityDtoFromList(ctx, target.scope, merged.id);
+    if (!entity) {
+      res.status(500).json({ error: 'entity merge state missing', code: 'entity_missing' });
+      return;
+    }
+    const dto: MemoryEntityResponse = { ok: true, entity };
+    res.json(dto);
+  });
+
+  app.post('/api/memory/entities/:id/unmerge', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const source = ctx.memory!.getEntity(req.params['id']!);
+    if (!source || source.scope !== target.scope || source.sensitivity === 'secret') {
+      res.status(404).json({ error: 'entity not found', code: 'entity_not_found' });
+      return;
+    }
+    const targetId = source.mergedInto;
+    let restored: MemoryEntity;
+    try {
+      restored = ctx.memory!.unmergeEntities(source.id, 'operator');
+    } catch (err) {
+      if (err instanceof EntityOperationError) {
+        res.status(409).json({ error: 'entity cannot be unmerged', code: err.code });
+        return;
+      }
+      throw err;
+    }
+    ctx.db.audit(
+      'memory_entity_unmerge',
+      JSON.stringify({ sourceId: source.id, targetId, kind: source.kind }),
+    );
+    const entity = entityDtoFromList(ctx, target.scope, restored.id);
+    if (!entity) {
+      res.status(500).json({ error: 'entity state missing', code: 'entity_missing' });
+      return;
+    }
+    const dto: MemoryEntityResponse = { ok: true, entity };
     res.json(dto);
   });
 

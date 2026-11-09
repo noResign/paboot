@@ -644,6 +644,57 @@ describe('memory entity routes', () => {
     expect(list.entities.map((entity) => entity.id)).toEqual([target.id]);
   });
 
+  it('lists merged entities and unmerges them', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}`;
+    const source = store.upsertEntity({ scope, kind: 'person', name: '张阿姨' });
+    const target = store.upsertEntity({ scope, kind: 'person', name: '张女士' });
+    const claim = store.insertClaim({
+      scope,
+      entityId: source.id,
+      predicate: 'lives_in',
+      kind: 'fact',
+      summary: '张阿姨住在上海',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    expect((await merge(url, session.id, source.id, target.id)).status).toBe(200);
+
+    const mergedList = (await (
+      await fetch(`${url}/api/memory/entities?sessionId=${session.id}&status=merged`)
+    ).json()) as {
+      entities: { id: string; status: string; mergedIntoName: string | null }[];
+    };
+    expect(mergedList.entities).toEqual([
+      expect.objectContaining({
+        id: source.id,
+        status: 'merged',
+        mergedIntoName: '张女士',
+      }),
+    ]);
+
+    const unmerged = await fetch(
+      `${url}/api/memory/entities/${source.id}/unmerge?sessionId=${session.id}`,
+      { method: 'POST' },
+    );
+    expect(unmerged.status).toBe(200);
+    const body = (await unmerged.json()) as { entity: { id: string; status: string } };
+    expect(body.entity).toMatchObject({ id: source.id, status: 'active' });
+    expect(store.getClaim(claim.id)?.entityId).toBe(source.id);
+
+    const again = await fetch(
+      `${url}/api/memory/entities/${source.id}/unmerge?sessionId=${session.id}`,
+      { method: 'POST' },
+    );
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { code: string }).code).toBe('source_not_merged');
+
+    const invalid = await fetch(
+      `${url}/api/memory/entities?sessionId=${session.id}&status=archived`,
+    );
+    expect(invalid.status).toBe(400);
+  });
+
   it('rejects invalid entity merges', async () => {
     const { url, store, workspace, session } = await setup();
     const scope = `workspace:${workspace.id}`;

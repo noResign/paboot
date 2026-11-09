@@ -785,7 +785,11 @@ export interface MemoryEntityDto {
   aliases: string[];
   importance: number;
   sensitivity: MemorySensitivityDto;
+  status: 'active' | 'merged';
+  mergedInto: string | null;
+  mergedIntoName: string | null;
   claimCount: number;
+  linkCount: number;
   createdAt: number;
   updatedAt: number;
 }

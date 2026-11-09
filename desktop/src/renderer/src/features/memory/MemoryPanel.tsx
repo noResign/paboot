@@ -124,6 +124,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [entities, setEntities] = useState<MemoryEntityDto[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
+  const [entityStatus, setEntityStatus] = useState<'active' | 'merged'>('active');
 
   const load = useCallback(async () => {
     const [claimsRes, statusRes, settingsRes] = await Promise.all([
@@ -181,20 +182,23 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     });
   }, [tab, scope]);
 
-  const loadEntities = useCallback(async () => {
-    const res = await api.memoryEntities(scope);
-    if (!res.ok) return;
-    const items = res.data.entities;
-    setEntities(items);
-    setSelectedEntityId((current) =>
-      current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
-    );
-  }, [scope]);
+  const loadEntities = useCallback(
+    async (status: 'active' | 'merged' = 'active') => {
+      const res = await api.memoryEntities(scope, status);
+      if (!res.ok) return;
+      const items = res.data.entities;
+      setEntities(items);
+      setSelectedEntityId((current) =>
+        current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null,
+      );
+    },
+    [scope],
+  );
 
   useEffect(() => {
     if (tab !== 'entities') return;
-    void loadEntities();
-  }, [tab, loadEntities]);
+    void loadEntities(entityStatus);
+  }, [tab, entityStatus, loadEntities]);
 
   async function resolveDuplicate(
     duplicate: MemoryDuplicateDto,
@@ -232,8 +236,30 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     }
     setNotice(`已合并实体；相关记忆已归到「${target.canonicalName}」`);
     setMergeTargetId(null);
-    await loadEntities();
+    await loadEntities('active');
     setSelectedEntityId(target.id);
+    void load();
+  }
+
+  async function unmergeEntity(entity: MemoryEntityDto): Promise<void> {
+    const targetName = entity.mergedIntoName ?? '目标实体';
+    const confirmed = window.confirm(
+      `撤销「${entity.canonicalName}」到「${targetName}」的合并？\n\n` +
+        '相关记忆会归回来源实体，目标实体保留自己的别名。',
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.unmergeMemoryEntity(scope, entity.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(`已撤销合并，恢复「${entity.canonicalName}」`);
+    setEntityStatus('active');
+    await loadEntities('active');
+    setSelectedEntityId(entity.id);
     void load();
   }
 
@@ -760,8 +786,26 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
 
             {tab === 'entities' && (
               <div className="mem-groups">
+                <div className="mem-actions">
+                  <button
+                    className={`btn${entityStatus === 'active' ? ' primary' : ''}`}
+                    onClick={() => setEntityStatus('active')}
+                  >
+                    活跃
+                  </button>
+                  <button
+                    className={`btn${entityStatus === 'merged' ? ' primary' : ''}`}
+                    onClick={() => setEntityStatus('merged')}
+                  >
+                    已合并
+                  </button>
+                </div>
                 {entities.length === 0 ? (
-                  <p className="hint">还没有实体；记忆整理后自动出现。</p>
+                  <p className="hint">
+                    {entityStatus === 'active'
+                      ? '还没有实体；记忆整理后自动出现。'
+                      : '没有已合并的实体。'}
+                  </p>
                 ) : (
                   ENTITY_GROUPS.map((group) => {
                     const items = entities.filter((entity) => entity.kind === group.kind);
@@ -787,7 +831,11 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                                 {entity.aliases.length > 0 && (
                                   <span className="mem-tag">{entity.aliases.length} 个别名</span>
                                 )}
-                                <span className="mem-row-date">{entity.claimCount} 条记忆</span>
+                                <span className="mem-row-date">
+                                  {entity.status === 'merged'
+                                    ? `已合并到「${entity.mergedIntoName ?? '实体'}」`
+                                    : `${entity.claimCount} 条记忆`}
+                                </span>
                               </span>
                             </button>
                           ))}
@@ -1081,7 +1129,11 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                           {ENTITY_GROUPS.find((group) => group.kind === selectedEntity.kind)?.label ??
                             selectedEntity.kind}
                         </span>
-                        <span className="badge subtle">{selectedEntity.claimCount} 条记忆</span>
+                        {selectedEntity.status === 'merged' ? (
+                          <span className="badge subtle">已合并</span>
+                        ) : (
+                          <span className="badge subtle">{selectedEntity.claimCount} 条记忆</span>
+                        )}
                         {selectedEntity.sensitivity !== 'normal' && (
                           <span className="badge subtle">私密</span>
                         )}
@@ -1098,35 +1150,56 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                           }`
                         : '无别名'}
                     </p>
-                    {mergeTargets.length > 0 ? (
-                      <div className="mem-actions mem-detail-actions">
-                        <select
-                          className="mem-select"
-                          value={mergeTargetId ?? ''}
-                          disabled={busy}
-                          onChange={(event) => setMergeTargetId(event.target.value || null)}
-                        >
-                          <option value="">选择要合并到的实体…</option>
-                          {mergeTargets.map((target) => (
-                            <option key={target.id} value={target.id}>
-                              {target.canonicalName}（{target.claimCount} 条记忆）
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="btn primary"
-                          disabled={busy || !mergeTargetId}
-                          onClick={() =>
-                            mergeTargetId && void mergeEntity(selectedEntity, mergeTargetId)
-                          }
-                        >
-                          合并到所选实体
-                        </button>
-                      </div>
+                    {selectedEntity.status === 'merged' ? (
+                      <>
+                        <p className="mem-detail-object">
+                          已合并到「
+                          {selectedEntity.mergedIntoName ?? selectedEntity.mergedInto ?? '目标实体'}
+                          」。撤销后相关记忆会归回这个实体。
+                        </p>
+                        <div className="mem-actions mem-detail-actions">
+                          <button
+                            className="btn primary"
+                            disabled={busy}
+                            onClick={() => void unmergeEntity(selectedEntity)}
+                          >
+                            撤销合并
+                          </button>
+                        </div>
+                      </>
                     ) : (
-                      <p className="hint">没有其他同类型实体可合并。</p>
+                      <>
+                        {mergeTargets.length > 0 ? (
+                          <div className="mem-actions mem-detail-actions">
+                            <select
+                              className="mem-select"
+                              value={mergeTargetId ?? ''}
+                              disabled={busy}
+                              onChange={(event) => setMergeTargetId(event.target.value || null)}
+                            >
+                              <option value="">选择要合并到的实体…</option>
+                              {mergeTargets.map((target) => (
+                                <option key={target.id} value={target.id}>
+                                  {target.canonicalName}（{target.claimCount} 条记忆）
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="btn primary"
+                              disabled={busy || !mergeTargetId}
+                              onClick={() =>
+                                mergeTargetId && void mergeEntity(selectedEntity, mergeTargetId)
+                              }
+                            >
+                              合并到所选实体
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="hint">没有其他同类型实体可合并。</p>
+                        )}
+                        <p className="hint">合并可在「已合并」里撤销。</p>
+                      </>
                     )}
-                    <p className="hint">合并不可撤销，来源实体会被归档。</p>
                   </>
                 ) : (
                   <div className="mem-detail-empty">

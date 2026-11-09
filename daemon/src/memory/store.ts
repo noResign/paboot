@@ -75,6 +75,35 @@ const SUMMARY_COLUMNS = `
  * Owns `<dataDir>/memory/memory.db`. One process writer; WAL is advertised so a
  * future read-only inspector can attach without blocking consolidation.
  */
+export type EntityOperationErrorCode =
+  | 'source_not_merged'
+  | 'target_inactive'
+  | 'merge_trace_missing'
+  | 'entity_name_conflict';
+
+export class EntityOperationError extends Error {
+  constructor(readonly code: EntityOperationErrorCode) {
+    super(code);
+    this.name = 'EntityOperationError';
+  }
+}
+
+export interface EntityWithCounts extends MemoryEntity {
+  claimCount: number;
+  mergedIntoName: string | null;
+  linkCount: number;
+}
+
+interface MergeEntityPayload {
+  merged?: string;
+  createdBy?: string;
+  source?: { canonicalName?: string; aliases?: string[] };
+  movedClaims?: { entityIds?: string[]; objectEntityIds?: string[] };
+  targetAliasesBefore?: string[];
+  linkCreated?: boolean;
+  at?: number;
+}
+
 export class MemoryStore {
   private readonly db: DatabaseSync;
   readonly file: string;
@@ -420,24 +449,38 @@ export class MemoryStore {
     return rows.map(mapEntity);
   }
 
-  listEntitiesWithCounts(scope: MemoryScope): Array<MemoryEntity & { claimCount: number }> {
+  listEntitiesWithCounts(
+    scope: MemoryScope,
+    status: 'active' | 'merged' = 'active',
+  ): EntityWithCounts[] {
     const rows = this.db
       .prepare(
         `SELECT e.id, e.scope, e.kind, e.canonical_name AS canonicalName,
                 e.aliases_json AS aliasesJson, e.importance, e.sensitivity,
                 e.status, e.merged_into AS mergedInto,
+                t.canonical_name AS mergedIntoName,
+                (SELECT COUNT(*) FROM mem_entity_links l
+                  WHERE l.entity_a = e.id OR l.entity_b = e.id) AS linkCount,
                 e.created_at AS createdAt, e.updated_at AS updatedAt,
                 COUNT(DISTINCT c.id) AS claimCount
          FROM mem_entities e
+         LEFT JOIN mem_entities t ON t.id = e.merged_into
          LEFT JOIN mem_claims c
            ON c.status = 'active' AND c.sensitivity <> 'secret'
           AND (c.entity_id = e.id OR c.object_entity_id = e.id)
-         WHERE e.scope = ? AND e.status = 'active' AND e.sensitivity <> 'secret'
+         WHERE e.scope = ? AND e.status = ? AND e.sensitivity <> 'secret'
          GROUP BY e.id
          ORDER BY e.importance DESC, e.canonical_name COLLATE NOCASE ASC`,
       )
-      .all(scope) as unknown as Array<RawEntity & { claimCount: number }>;
-    return rows.map((row) => ({ ...mapEntity(row), claimCount: Number(row.claimCount) }));
+      .all(scope, status) as unknown as Array<
+      RawEntity & { claimCount: number; mergedIntoName: string | null; linkCount: number }
+    >;
+    return rows.map((row) => ({
+      ...mapEntity(row),
+      claimCount: Number(row.claimCount),
+      mergedIntoName: row.mergedIntoName ?? null,
+      linkCount: Number(row.linkCount ?? 0),
+    }));
   }
 
   countEntityClaims(id: string): number {
@@ -480,6 +523,11 @@ export class MemoryStore {
         id: string;
       }>
     ).map((row) => row.id);
+    const [linkFirst, linkSecond] = sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+    const linkExisted =
+      this.db
+        .prepare(`SELECT 1 AS present FROM mem_entity_links WHERE entity_a = ? AND entity_b = ?`)
+        .get(linkFirst, linkSecond) !== undefined;
     this.db.exec('BEGIN');
     try {
       this.db
@@ -518,6 +566,8 @@ export class MemoryStore {
           kind: source.kind,
           source: { canonicalName: source.canonicalName, aliases: source.aliases },
           movedClaims: { entityIds: movedEntityClaims, objectEntityIds: movedObjectClaims },
+          targetAliasesBefore: target.aliases,
+          linkCreated: !linkExisted,
           at: now,
         },
       });
@@ -527,6 +577,99 @@ export class MemoryStore {
       throw err;
     }
     return this.getEntity(targetId);
+  }
+
+  /** Reverses one explicit merge using the mem_ops trail written by mergeEntities. */
+  unmergeEntities(sourceId: string, createdBy: string): MemoryEntity {
+    const source = this.getEntity(sourceId);
+    if (!source || source.status !== 'merged' || !source.mergedInto) {
+      throw new EntityOperationError('source_not_merged');
+    }
+    const targetId = source.mergedInto;
+    const target = this.getEntity(targetId);
+    if (!target || target.status !== 'active') {
+      throw new EntityOperationError('target_inactive');
+    }
+    const opRow = this.db
+      .prepare(
+        `SELECT payload_json AS payload FROM mem_ops
+         WHERE batch_key = ? AND op = 'merge_entity'`,
+      )
+      .get(`merge-entity:${sourceId}:${targetId}`) as { payload: string } | undefined;
+    if (!opRow) throw new EntityOperationError('merge_trace_missing');
+    let payload: MergeEntityPayload;
+    try {
+      payload = JSON.parse(opRow.payload) as MergeEntityPayload;
+    } catch {
+      throw new EntityOperationError('merge_trace_missing');
+    }
+    const entityIds = Array.isArray(payload.movedClaims?.entityIds)
+      ? payload.movedClaims.entityIds
+      : [];
+    const objectEntityIds = Array.isArray(payload.movedClaims?.objectEntityIds)
+      ? payload.movedClaims.objectEntityIds
+      : [];
+    const conflict = this.db
+      .prepare(
+        `SELECT 1 AS present FROM mem_entities
+         WHERE scope = ? AND kind = ? AND canonical_name = ? AND status = 'active' AND id <> ?`,
+      )
+      .get(source.scope, source.kind, source.canonicalName, sourceId);
+    if (conflict) throw new EntityOperationError('entity_name_conflict');
+
+    const now = Date.now();
+    this.db.exec('BEGIN');
+    try {
+      const restoreEntity = this.db.prepare(
+        `UPDATE mem_claims SET entity_id = ? WHERE id = ? AND entity_id = ?`,
+      );
+      for (const id of entityIds) restoreEntity.run(sourceId, id, targetId);
+      const restoreObject = this.db.prepare(
+        `UPDATE mem_claims SET object_entity_id = ? WHERE id = ? AND object_entity_id = ?`,
+      );
+      for (const id of objectEntityIds) restoreObject.run(sourceId, id, targetId);
+
+      const targetAliases = Array.isArray(payload.targetAliasesBefore)
+        ? payload.targetAliasesBefore.filter((alias) => alias !== target.canonicalName)
+        : target.aliases.filter(
+            (alias) =>
+              alias !== target.canonicalName &&
+              alias !== source.canonicalName &&
+              !source.aliases.includes(alias),
+          );
+      this.db
+        .prepare(`UPDATE mem_entities SET aliases_json = ?, updated_at = ? WHERE id = ?`)
+        .run(JSON.stringify(targetAliases), now, targetId);
+      this.db
+        .prepare(
+          `UPDATE mem_entities SET status = 'active', merged_into = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(now, sourceId);
+      if (payload.linkCreated === true) {
+        const [first, second] =
+          sourceId < targetId ? [sourceId, targetId] : [targetId, sourceId];
+        this.db
+          .prepare(`DELETE FROM mem_entity_links WHERE entity_a = ? AND entity_b = ?`)
+          .run(first, second);
+      }
+      this.recordOp({
+        batchKey: `unmerge-entity:${sourceId}:${targetId}`,
+        opIndex: 0,
+        op: 'unmerge_entity',
+        targetType: 'entity',
+        targetId,
+        payload: { restored: sourceId, createdBy, entityIds, objectEntityIds, at: now },
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      if ((err as { code?: string }).code === 'ERR_SQLITE_ERROR') {
+        throw new EntityOperationError('entity_name_conflict');
+      }
+      throw err;
+    }
+    return this.getEntity(sourceId)!;
   }
 
   // ---- claims ----
