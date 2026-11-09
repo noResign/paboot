@@ -1,19 +1,16 @@
 import type { Express, Response } from 'express';
 import type { AppContext } from '../app/context.js';
+import { performDeviceAction } from '../capabilities/device-actions.js';
 import { AdbRunner } from '../capabilities/providers/android/adb.js';
 import { AndroidDeviceProvider } from '../capabilities/providers/android/index.js';
 import { resolveCapabilityBindings, resolveCapabilityScope } from '../capabilities/scope.js';
-import {
-  CapabilityError,
-  type DeviceProvider,
-  type DeviceSelector,
-} from '../capabilities/types.js';
+import { CapabilityError, type DeviceProvider } from '../capabilities/types.js';
 
-function providerFor(ctx: AppContext): DeviceProvider {
+export function providerFor(ctx: AppContext): DeviceProvider {
   return ctx.deviceProvider ?? new AndroidDeviceProvider(new AdbRunner());
 }
 
-function sendCapabilityError(res: Response, err: CapabilityError): void {
+export function sendCapabilityError(res: Response, err: CapabilityError): void {
   const status =
     err.code === 'adb_missing'
       ? 503
@@ -23,24 +20,20 @@ function sendCapabilityError(res: Response, err: CapabilityError): void {
           ? 404
           : err.code === 'screenshot_invalid'
             ? 502
-            : 400;
+            : err.code === 'unknown_action'
+              ? 404
+              : 400;
   res.status(status).json({ error: err.message, code: err.code });
 }
 
-function numberField(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null;
-}
-
-function selectorFrom(body: Record<string, unknown>): DeviceSelector {
-  const raw =
-    body['selector'] && typeof body['selector'] === 'object'
-      ? (body['selector'] as Record<string, unknown>)
-      : body;
-  const selector: DeviceSelector = {};
-  for (const key of ['text', 'resourceId', 'contentDesc', 'className'] as const) {
-    if (typeof raw[key] === 'string' && raw[key] !== '') selector[key] = raw[key] as string;
-  }
-  return selector;
+export function serialFromBinding(
+  ctx: AppContext,
+  session: Parameters<typeof resolveCapabilityBindings>[1],
+): string | undefined {
+  const binding = resolveCapabilityBindings(ctx.db, session).find(
+    (item) => item.descriptor.id === 'android-device',
+  );
+  return typeof binding?.config['serial'] === 'string' ? binding.config['serial'] : undefined;
 }
 
 /**
@@ -77,110 +70,22 @@ export function registerCapabilityDeviceRoutes(app: Express, ctx: AppContext): v
 
     const provider = providerFor(ctx);
     const action = req.params['action'] ?? '';
-    const binding = resolveCapabilityBindings(ctx.db, session).find(
-      (item) => item.descriptor.id === 'android-device',
-    );
-    const configSerial =
-      typeof binding?.config['serial'] === 'string' ? binding.config['serial'] : undefined;
-    const explicitSerial = typeof body['serial'] === 'string' ? body['serial'] : configSerial;
-
+    const explicitSerial =
+      typeof body['serial'] === 'string' ? body['serial'] : serialFromBinding(ctx, session);
     try {
       if (action === 'list') {
         res.json({ devices: await provider.list() });
         return;
       }
       const serial = await provider.resolveSerial(explicitSerial);
-      switch (action) {
-        case 'screenshot': {
-          const shot = await provider.screenshot(serial);
-          res.json({
-            serial,
-            mimeType: 'image/png',
-            width: shot.width,
-            height: shot.height,
-            png: shot.png.toString('base64'),
-          });
-          return;
-        }
-        case 'ui-dump': {
-          const dump = await provider.uiDump(serial);
-          res.json({ serial, nodes: dump.nodes });
-          return;
-        }
-        case 'tap': {
-          const x = numberField(body['x']);
-          const y = numberField(body['y']);
-          if (x === null || y === null) {
-            res.status(400).json({ error: 'x and y are required', code: 'bad_request' });
-            return;
-          }
-          await provider.tap(serial, x, y);
-          ctx.db.audit('capability_device', JSON.stringify({ action, runId, serial, x, y }));
-          res.json({ ok: true, serial, x, y });
-          return;
-        }
-        case 'tap-selector': {
-          const selector = selectorFrom(body);
-          if (Object.keys(selector).length === 0) {
-            res.status(400).json({ error: 'selector is required', code: 'bad_request' });
-            return;
-          }
-          const point = await provider.tapSelector(serial, selector);
-          ctx.db.audit(
-            'capability_device',
-            JSON.stringify({ action, runId, serial, selector, ...point }),
-          );
-          res.json({ ok: true, serial, ...point });
-          return;
-        }
-        case 'input-text': {
-          const text = typeof body['text'] === 'string' ? body['text'] : '';
-          if (!text) {
-            res.status(400).json({ error: 'text is required', code: 'bad_request' });
-            return;
-          }
-          await provider.inputText(serial, text);
-          ctx.db.audit(
-            'capability_device',
-            JSON.stringify({ action, runId, serial, chars: text.length }),
-          );
-          res.json({ ok: true, serial });
-          return;
-        }
-        case 'key-event': {
-          const key = typeof body['key'] === 'string' ? body['key'] : '';
-          if (!key) {
-            res.status(400).json({ error: 'key is required', code: 'bad_request' });
-            return;
-          }
-          await provider.keyEvent(serial, key);
-          ctx.db.audit('capability_device', JSON.stringify({ action, runId, serial, key }));
-          res.json({ ok: true, serial });
-          return;
-        }
-        case 'launch-app': {
-          const pkg = typeof body['package'] === 'string' ? body['package'] : '';
-          if (!pkg) {
-            res.status(400).json({ error: 'package is required', code: 'bad_request' });
-            return;
-          }
-          await provider.launchApp(serial, pkg);
-          ctx.db.audit('capability_device', JSON.stringify({ action, runId, serial, pkg }));
-          res.json({ ok: true, serial });
-          return;
-        }
-        case 'logcat': {
-          const lines = numberField(body['lines']) ?? 200;
-          res.json({ serial, text: await provider.logcat(serial, lines) });
-          return;
-        }
-        case 'current-activity': {
-          res.json({ serial, activity: await provider.currentActivity(serial) });
-          return;
-        }
-        default:
-          res.status(404).json({ error: `unknown device action: ${action}`, code: 'not_found' });
+      const outcome = await performDeviceAction(provider, action, body, serial);
+      if (outcome.audit) {
+        ctx.db.audit(
+          'capability_device',
+          JSON.stringify({ action, runId, workspaceId: scope.workspace.id, ...outcome.audit }),
+        );
       }
+      res.json(outcome.json);
     } catch (err) {
       if (err instanceof CapabilityError) {
         sendCapabilityError(res, err);

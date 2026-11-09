@@ -23,7 +23,8 @@
     "self-hosted"
   ],
   "bin": {
-    "paboot": "dist/index.js"
+    "paboot": "dist/index.js",
+    "paboot-capability": "dist/capabilities/bin.js"
   },
   "files": [
     "dist",
@@ -41,7 +42,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755); require('node:fs').chmodSync('dist/capabilities/bin.js', 0o755)\"",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
