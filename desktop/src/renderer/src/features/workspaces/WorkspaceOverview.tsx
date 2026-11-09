@@ -8,6 +8,7 @@ import {
   workspaceLabel,
 } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
+import { DevicePanel } from '../device/DevicePanel';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
@@ -59,6 +60,7 @@ export function WorkspaceOverview({
   const [notice, setNotice] = useState<string | null>(null);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [deviceOpen, setDeviceOpen] = useState(false);
 
   useEffect(() => {
     if (!notice) return;
@@ -354,18 +356,38 @@ export function WorkspaceOverview({
         )}
       </section>
 
-      <section className="settings-section">
-        <div className="section-head">
-          <h3>端 / 能力</h3>
-        </div>
-        <div className="wo-placeholder">
-          <Icon name="plus" size={16} />
-          <div>
-            <b>添加端 / 能力</b>
-            <div className="hint">按端管理目录、设备与 Mock 的能力配置将在后续版本开放。</div>
+      {!isLife && (
+        <section className="settings-section">
+          <div className="section-head">
+            <h3>端 / 能力</h3>
           </div>
-        </div>
-      </section>
+          <button
+            type="button"
+            className="wo-knowledge"
+            onClick={() => setDeviceOpen(true)}
+            aria-label="打开 Android 设备能力"
+          >
+            <span className="wo-knowledge-icon">
+              <Icon name="eye" size={18} />
+            </span>
+            <span className="wo-knowledge-copy">
+              <b>Android 设备</b>
+              <span className="hint">
+                通过 adb 镜像设备画面、点击与输入；需要先在工作区里添加一个 Android 端。
+              </span>
+              <span className="wo-knowledge-meta">
+                <span className="wo-knowledge-chip">device</span>
+                <span className="wo-knowledge-chip">需审批</span>
+                <span className="wo-knowledge-chip">dev 专用</span>
+              </span>
+            </span>
+            <span className="wo-knowledge-action">
+              打开设备
+              <Icon name="chevron-right" size={14} />
+            </span>
+          </button>
+        </section>
+      )}
 
       {pickerDialog}
       {knowledgeOpen && (
@@ -381,6 +403,13 @@ export function WorkspaceOverview({
           workspaceName={workspaceLabel(workspace) ?? workspace.name}
           family={workspace.family === 'life' ? 'life' : 'dev'}
           onClose={() => setMemoryOpen(false)}
+        />
+      )}
+      {deviceOpen && (
+        <DevicePanel
+          workspaceId={workspace.id}
+          workspaceName={workspaceLabel(workspace) ?? workspace.name}
+          onClose={() => setDeviceOpen(false)}
         />
       )}
       {notice && <div className="ws-notice">{notice}</div>}

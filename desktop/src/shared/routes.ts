@@ -47,6 +47,18 @@ export const ROUTES = {
   memoryClaimPromote: (id: string) =>
     `/api/memory/claims/${encodeURIComponent(id)}/promote`,
   workspaceMemory: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/memory`,
+  workspaceEnds: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/ends`,
+  workspaceEndSuggestions: (id: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/end-suggestions`,
+  workspaceEndRoots: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/roots`,
+  workspaceEndActivate: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/activate`,
+  workspaceDevice: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/device`,
+  workspaceDeviceSelect: (id: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/device/select`,
+  workspaceDeviceAction: (id: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/device/action`,
   directories: '/api/fs/directories',
   config: '/api/config',
   files: '/api/files',
