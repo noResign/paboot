@@ -257,38 +257,40 @@ export function WorkspaceOverview({
         </p>
       </section>
 
-      {isLife && (
-        <section className="settings-section">
-          <div className="section-head">
-            <h3>关于你</h3>
-          </div>
-          <button
-            type="button"
-            className="wo-knowledge"
-            onClick={() => setMemoryOpen(true)}
-            aria-label="查看关于你"
-          >
-            <span className="wo-knowledge-icon">
-              <Icon name="eye" size={18} />
+      <section className="settings-section">
+        <div className="section-head">
+          <h3>{isLife ? '关于你' : '记忆'}</h3>
+        </div>
+        <button
+          type="button"
+          className="wo-knowledge"
+          onClick={() => setMemoryOpen(true)}
+          aria-label={isLife ? '查看关于你' : '打开项目记忆'}
+        >
+          <span className="wo-knowledge-icon">
+            <Icon name="eye" size={18} />
+          </span>
+          <span className="wo-knowledge-copy">
+            <b>{isLife ? '关于你' : '项目记忆'}</b>
+            <span className="hint">
+              {isLife
+                ? '生活会话里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。'
+                : '这个工作区的长期记忆默认关闭；打开后可启用捕获、整理与注入。'}
             </span>
-            <span className="wo-knowledge-copy">
-              <b>关于你</b>
-              <span className="hint">
-                生活会话里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。
+            <span className="wo-knowledge-meta">
+              <span className="wo-knowledge-chip">{isLife ? '自动整理' : '默认关闭'}</span>
+              <span className="wo-knowledge-chip">
+                {isLife ? '来源可追溯' : '可允许生活读取'}
               </span>
-              <span className="wo-knowledge-meta">
-                <span className="wo-knowledge-chip">自动整理</span>
-                <span className="wo-knowledge-chip">来源可追溯</span>
-                <span className="wo-knowledge-chip">secret 不注入</span>
-              </span>
+              <span className="wo-knowledge-chip">secret 不注入</span>
             </span>
-            <span className="wo-knowledge-action">
-              查看记忆
-              <Icon name="chevron-right" size={14} />
-            </span>
-          </button>
-        </section>
-      )}
+          </span>
+          <span className="wo-knowledge-action">
+            {isLife ? '查看记忆' : '打开记忆'}
+            <Icon name="chevron-right" size={14} />
+          </span>
+        </button>
+      </section>
 
       {!isLife && (
         <section className="settings-section">
@@ -377,6 +379,7 @@ export function WorkspaceOverview({
         <MemoryPanel
           workspaceId={workspace.id}
           workspaceName={workspaceLabel(workspace) ?? workspace.name}
+          family={workspace.family === 'life' ? 'life' : 'dev'}
           onClose={() => setMemoryOpen(false)}
         />
       )}

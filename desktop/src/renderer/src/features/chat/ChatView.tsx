@@ -48,6 +48,7 @@ export function ChatView({
   const patchSessionTitle = useSessions((state) => state.patchTitle);
   const patchChatTitle = useChat((state) => state.patchTitle);
   const setPermissionMode = useChat((state) => state.setPermissionMode);
+  const clearError = useChat((state) => state.clearError);
   const setMemoryMode = useChat((state) => state.setMemoryMode);
   const setSessionSelection = useChat((state) => state.setSessionSelection);
 
@@ -132,12 +133,27 @@ export function ChatView({
     ];
     if (current.sessionId) {
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
-      const memoryOff = (current.memoryMode ?? 'normal') === 'off';
-      items.push({
-        id: 'memory',
-        label: memoryOff ? '恢复记忆写入' : '本会话不用记忆',
-        run: () => void setMemoryMode(memoryOff ? 'normal' : 'off'),
-      });
+      const memoryMode = current.memoryMode ?? 'normal';
+      items.push(
+        {
+          id: 'memory-normal',
+          label: '记忆：正常',
+          disabled: memoryMode === 'normal',
+          run: () => void setMemoryMode('normal'),
+        },
+        {
+          id: 'memory-no-injection',
+          label: '记忆：只记录，不注入',
+          disabled: memoryMode === 'no_injection',
+          run: () => void setMemoryMode('no_injection'),
+        },
+        {
+          id: 'memory-off',
+          label: '记忆：本会话关闭',
+          disabled: memoryMode === 'off',
+          run: () => void setMemoryMode('off'),
+        },
+      );
       if (onOpenTasks) {
         items.push({
           id: 'tasks',
@@ -260,7 +276,19 @@ export function ChatView({
 
       <TodoPanel todos={chat.todos} />
 
-      {chat.error && <div className="chat-banner error">{chat.error}</div>}
+      {chat.error && (
+        <div className="chat-banner error chat-banner-dismissible">
+          <span>{chat.error}</span>
+          <button
+            className="chat-banner-close"
+            title="关闭"
+            aria-label="关闭"
+            onClick={clearError}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
       {rollback && (
         <div className="chat-banner rollback-confirm">
           <span>
