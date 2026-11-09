@@ -26,6 +26,6 @@ export const searchMemoryTool: McpTool = {
     params.set('q', query);
     if (typeof args.limit === 'number') params.set('limit', String(args.limit));
     if (typeof args.files === 'string' && args.files.trim()) params.set('files', args.files.trim());
-    return ctx.callDaemon('GET', `/api/memory/search?${params.toString()}`);
+    return ctx.callDaemon('GET', `/api/internal/memory/search?${params.toString()}`);
   },
 };

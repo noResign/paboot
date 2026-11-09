@@ -8,6 +8,6 @@ export const listOpenLoopsTool: McpTool = {
     inputSchema: { type: 'object', properties: {} },
   },
   async run(_args, ctx) {
-    return ctx.callDaemon('GET', `/api/memory/loops?${sessionQuery(ctx)}`);
+    return ctx.callDaemon('GET', `/api/internal/memory/loops?${sessionQuery(ctx)}`);
   },
 };

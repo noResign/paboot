@@ -57,7 +57,7 @@ describe('perRunToolServers', () => {
     expect(specs[1]?.env.PABOOT_RUNTIME).toBe('builtin');
     expect(specs[2]?.env).toMatchObject({
       PABOOT_SESSION_ID: 'session-1',
-      PABOOT_TOKEN: 'agent-token',
+      PABOOT_TOKEN: 'server-token',
     });
   });
 

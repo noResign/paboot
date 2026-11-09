@@ -1339,6 +1339,16 @@ export class MemoryStore {
     return id;
   }
 
+  completeLoop(scope: MemoryScope, id: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE mem_loops SET status = 'done', updated_at = ?
+         WHERE id = ? AND scope = ? AND status = 'open'`,
+      )
+      .run(Date.now(), id, scope);
+    return Number(result.changes) > 0;
+  }
+
   listOpenLoops(scope: MemoryScope): { id: string; title: string; detail: string | null }[] {
     return this.db
       .prepare(

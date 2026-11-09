@@ -18,7 +18,7 @@ export const memorySourceTool: McpTool = {
     if (!sourceId) throw new Error('sourceId is required');
     return ctx.callDaemon(
       'GET',
-      `/api/memory/sources/${encodeURIComponent(sourceId)}?${sessionQuery(ctx)}`,
+      `/api/internal/memory/sources/${encodeURIComponent(sourceId)}?${sessionQuery(ctx)}`,
     );
   },
 };

@@ -179,6 +179,141 @@ function requireReadableClaim(
   return claim;
 }
 
+function resolveInternalTarget(ctx: AppContext, req: Request, res: Response): MemoryTarget | null {
+  const raw = req.query['runId'] ?? req.body?.['runId'];
+  const runId = typeof raw === 'string' ? raw : '';
+  const run = runId ? ctx.db.getRun(runId) : undefined;
+  if (!run) {
+    res.status(404).json({ error: 'run not found', code: 'run_not_found' });
+    return null;
+  }
+  const session = ctx.db.getSession(run.session_id);
+  const workspace = session?.workspace_id ? ctx.db.getWorkspace(session.workspace_id) : undefined;
+  if (!session || !workspace) {
+    res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+    return null;
+  }
+  const settings = ctx.db.getMemorySettings(workspace.id);
+  if (!isMemoryEnabled(workspace, settings)) {
+    res.status(400).json({ error: 'memory is not enabled for this workspace', code: 'memory_not_enabled' });
+    return null;
+  }
+  return {
+    resolved: {
+      kind: 'workspace',
+      workspaceId: workspace.id,
+      sessionId: session.id,
+    },
+    scope: `workspace:${workspace.id}`,
+    workspace,
+    policy: resolveReadPolicy({
+      workspace,
+      workspaces: ctx.db.listWorkspaces(),
+      getSettings: (workspaceId) => ctx.db.getMemorySettings(workspaceId),
+    }),
+  };
+}
+
+function internalSearchHits(
+  ctx: AppContext,
+  target: MemoryTarget,
+  query: string,
+  limit: number,
+  files: string[],
+): MemorySearchResponse {
+  const hits = ctx.memory!.searchMemory({
+    scopes: target.policy.scopes.map((item) => item.scope),
+    query,
+    limit: Math.max(limit * 3, limit),
+  });
+  const out: MemorySearchResponse = { hits: [] };
+  const fileMatches = (paths: string[]): boolean =>
+    files.length === 0 ||
+    files.some((needle) =>
+      paths.some((pathValue) => pathValue.toLowerCase().includes(needle.toLowerCase())),
+    );
+  for (const hit of hits) {
+    if (out.hits.length >= limit) break;
+    if (files.length > 0 && hit.kind !== 'observation' && hit.kind !== 'summary') continue;
+    if (hit.kind === 'claim') {
+      const claim = ctx.memory!.getClaim(hit.refId);
+      if (!claim || claim.status !== 'active' || !claimAllowed(claim, target.policy)) continue;
+      out.hits.push({
+        kind: 'claim',
+        id: claim.id,
+        scope: claim.scope,
+        endId: claim.endId,
+        title: claim.summary,
+        snippet: compact(claim.summary, 240),
+        score: hit.score,
+      });
+    } else if (hit.kind === 'observation') {
+      const observation = ctx.memory!.getObservation(hit.refId);
+      const paths = observation
+        ? [...observation.filesRead, ...observation.filesModified]
+        : [];
+      if (
+        !observation ||
+        observation.status !== 'active' ||
+        !scopeAllowsSensitivity(target.policy, observation.scope, observation.sensitivity) ||
+        !fileMatches(paths)
+      ) {
+        continue;
+      }
+      out.hits.push({
+        kind: 'observation',
+        id: observation.id,
+        scope: observation.scope,
+        endId: observation.endId,
+        title: observation.title,
+        snippet: compact(observation.subtitle ?? observation.narrative ?? observation.title, 240),
+        score: hit.score,
+        files: paths,
+      });
+    } else if (hit.kind === 'summary') {
+      const summary = ctx.memory!.getSessionSummary(hit.refId);
+      const paths = summary ? [...summary.filesRead, ...summary.filesEdited] : [];
+      if (
+        !summary ||
+        !scopeAllowsSensitivity(target.policy, summary.scope, summary.sensitivity) ||
+        !fileMatches(paths)
+      ) {
+        continue;
+      }
+      out.hits.push({
+        kind: 'summary',
+        id: summary.id,
+        scope: summary.scope,
+        endId: summary.endId,
+        title: compact(summary.request || '会话摘要', 120),
+        snippet: compact(summary.completed || summary.learned, 240),
+        score: hit.score,
+        files: paths,
+      });
+    } else if (hit.kind === 'document') {
+      const document = ctx.memory!.getDocument(hit.refId);
+      if (
+        !document ||
+        document.reviewStatus === 'missing' ||
+        !scopeAllowsSensitivity(target.policy, document.scope, document.sensitivity)
+      ) {
+        continue;
+      }
+      out.hits.push({
+        kind: 'document',
+        id: document.id,
+        scope: document.scope,
+        endId: document.endId,
+        title: document.title,
+        snippet: compact(document.summary || hit.text, 240),
+        score: hit.score,
+        path: document.path,
+      });
+    }
+  }
+  return out;
+}
+
 export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/brief', (req, res) => {
     const target = resolveScope(ctx, req, res);
@@ -741,6 +876,168 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       ctx.db.updateWorkspaceMemory(workspace.id, { lifeReadable: body['lifeReadable'] });
     }
     res.json(workspaceMemoryDto(ctx, ctx.db.getWorkspace(workspace.id)!));
+  });
+
+  // ---- internal endpoints for the paboot_memory MCP server (server token) ----
+
+  app.get('/api/internal/memory/search', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    const query = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
+    if (!query) {
+      res.status(400).json({ error: 'q is required', code: 'bad_request' });
+      return;
+    }
+    const limit = Number(req.query['limit'] ?? 20);
+    const files = typeof req.query['files'] === 'string'
+      ? req.query['files'].split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
+    res.json(internalSearchHits(ctx, target, query, Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 20, files));
+  });
+
+  app.get('/api/internal/memory/timeline', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    const requested = Number(req.query['limit'] ?? 50);
+    const limit = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), 200) : 50;
+    const items: MemoryTimelineItemDto[] = [];
+    for (const readScope of target.policy.scopes) {
+      for (const observation of ctx.memory!.listObservations(readScope.scope, limit)) {
+        if (!scopeAllowsSensitivity(target.policy, observation.scope, observation.sensitivity)) continue;
+        items.push({
+          kind: 'observation',
+          id: observation.id,
+          scope: observation.scope,
+          endId: observation.endId,
+          sessionId: observation.sessionId,
+          title: observation.title,
+          subtitle: observation.subtitle,
+          at: observation.createdAt,
+          files: [...observation.filesRead, ...observation.filesModified],
+        });
+      }
+      for (const summary of ctx.memory!.listSessionSummaries(readScope.scope, undefined, limit)) {
+        if (!scopeAllowsSensitivity(target.policy, summary.scope, summary.sensitivity)) continue;
+        items.push({
+          kind: 'summary',
+          id: summary.id,
+          scope: summary.scope,
+          endId: summary.endId,
+          sessionId: summary.sessionId,
+          title: compact(summary.request || '会话摘要', 120),
+          subtitle: summary.completed === '' ? null : compact(summary.completed, 160),
+          at: summary.createdAt,
+          files: [...summary.filesRead, ...summary.filesEdited],
+        });
+      }
+    }
+    items.sort((a, b) => b.at - a.at);
+    const dto: MemoryTimelineResponse = { items: items.slice(0, limit) };
+    res.json(dto);
+  });
+
+  app.get('/api/internal/memory/sources/:id', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    const source = ctx.memory!.getSource(req.params['id']!);
+    if (
+      !source ||
+      source.status === 'excluded' ||
+      !scopeAllowsSensitivity(target.policy, source.scope, source.sensitivity)
+    ) {
+      res.status(404).json({ error: 'source not found', code: 'source_not_found' });
+      return;
+    }
+    res.json({
+      source: {
+        id: source.id,
+        scope: source.scope,
+        endId: source.endId,
+        kind: source.kind,
+        sessionId: source.sessionId,
+        runId: source.runId,
+        occurredAt: source.occurredAt,
+        content: source.content,
+        sensitivity: source.sensitivity,
+        status: source.status,
+      } satisfies MemorySourceDto,
+    });
+  });
+
+  app.get('/api/internal/memory/loops', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    res.json({
+      loops: target.policy.scopes.flatMap((readScope) =>
+        ctx.memory!.listOpenLoops(readScope.scope).map((loop) => ({
+          ...loop,
+          scope: readScope.scope,
+        })),
+      ),
+    });
+  });
+
+  app.post('/api/internal/memory/remember', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target || !target.workspace) return;
+    const raw = typeof req.body?.['text'] === 'string' ? req.body['text'] : '';
+    const content = filterCaptureText(raw);
+    if (content === '') {
+      res.status(400).json({ error: 'text has no capturable content', code: 'empty_content' });
+      return;
+    }
+    const sessionId = target.resolved.sessionId!;
+    const session = ctx.db.getSession(sessionId);
+    if (!session) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    const endId = session.end_id ?? null;
+    if (ctx.memory!.hasTombstone(target.scope, endId, hashContent(content))) {
+      res.status(409).json({ error: 'this content was forgotten', code: 'forgotten_content' });
+      return;
+    }
+    const result = ctx.memory!.insertSource({
+      scope: target.scope as MemoryScope,
+      workspaceId: target.workspace.id,
+      endId,
+      kind: 'manual',
+      sourceTable: 'note',
+      sessionId,
+      messageId: null,
+      occurredAt: Date.now(),
+      content,
+      meta: { origin: 'mcp_remember' },
+    });
+    ctx.memoryWorker?.kick();
+    res.json({ ok: true, sourceId: result.source.id });
+  });
+
+  app.post('/api/internal/memory/forget', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    const claimId = typeof req.body?.['claimId'] === 'string' ? req.body['claimId'] : '';
+    const claim = claimId ? ctx.memory!.getClaim(claimId) : undefined;
+    if (!claim || claim.scope !== target.scope || claim.sensitivity === 'secret') {
+      res.status(404).json({ error: 'claim not found', code: 'claim_not_found' });
+      return;
+    }
+    ctx.memory!.forgetClaim(claim.id);
+    res.json({ ok: true, id: claim.id });
+  });
+
+  app.post('/api/internal/memory/loops/:id/complete', (req, res) => {
+    const target = resolveInternalTarget(ctx, req, res);
+    if (!target) return;
+    const loopId = req.params['id']!;
+    const done = target.policy.scopes.some((readScope) =>
+      ctx.memory!.completeLoop(readScope.scope, loopId),
+    );
+    if (!done) {
+      res.status(404).json({ error: 'open loop not found', code: 'loop_not_found' });
+      return;
+    }
+    res.json({ ok: true, id: loopId });
   });
 }
 
