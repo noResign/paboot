@@ -813,3 +813,52 @@ describe('memory dispute routes', () => {
     expect(otherScope.disputes).toHaveLength(0);
   });
 });
+
+describe('memory entity link routes', () => {
+  it('links and unlinks personal-scope entities', async () => {
+    const { url, store, workspace, session } = await setup();
+    const life = store.upsertEntity({
+      scope: `workspace:${workspace.id}`,
+      kind: 'person',
+      name: '张女士',
+    });
+    const user = store.upsertEntity({ scope: 'user', kind: 'person', name: '张女士' });
+    const dev = store.upsertEntity({ scope: 'workspace:dev-a', kind: 'person', name: '张女士' });
+
+    const created = await fetch(`${url}/api/memory/entity-links?sessionId=${session.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ a: user.id, b: life.id }),
+    });
+    expect(created.status).toBe(200);
+    const body = (await created.json()) as {
+      ok: boolean;
+      link: { relation: string; createdBy: string };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.link).toMatchObject({ relation: 'same_person', createdBy: 'operator' });
+
+    const listed = (await (
+      await fetch(`${url}/api/memory/entity-links?sessionId=${session.id}`)
+    ).json()) as { links: { a: { id: string }; b: { id: string } }[] };
+    expect(listed.links).toHaveLength(1);
+
+    const devLink = await fetch(`${url}/api/memory/entity-links?sessionId=${session.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ a: dev.id, b: user.id }),
+    });
+    expect(devLink.status).toBe(409);
+    expect(((await devLink.json()) as { code: string }).code).toBe('link_not_allowed');
+
+    const deleted = await fetch(
+      `${url}/api/memory/entity-links?sessionId=${session.id}&a=${user.id}&b=${life.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleted.status).toBe(200);
+    const after = (await (
+      await fetch(`${url}/api/memory/entity-links?sessionId=${session.id}`)
+    ).json()) as { links: unknown[] };
+    expect(after.links).toHaveLength(0);
+  });
+});

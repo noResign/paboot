@@ -229,6 +229,10 @@ async function main(): Promise<void> {
     // headless fallback. Neither = record-only.
     resolveModel: () =>
       resolveMemoryModel(configuredMemoryModel((key) => ctx.db.getSetting(key), config.memoryModel)),
+    personalScopes: () => {
+      const life = db.listWorkspaces().find((workspace) => workspace.family === 'life');
+      return life ? ['user', `workspace:${life.id}`] : ['user'];
+    },
   });
   ctx.memoryWorker = memoryWorker;
   const effectiveMemoryModel = configuredMemoryModel(

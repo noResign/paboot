@@ -6,6 +6,7 @@ import type {
   MemoryDisputeDto,
   MemoryDuplicateDto,
   MemoryEntityDto,
+  MemoryEntityLinkDto,
   MemorySearchHitDto,
   MemoryStatusDto,
   MemoryTimelineItemDto,
@@ -126,6 +127,9 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
   const [entityStatus, setEntityStatus] = useState<'active' | 'merged'>('active');
+  const [entityLinks, setEntityLinks] = useState<MemoryEntityLinkDto[]>([]);
+  const [globalEntities, setGlobalEntities] = useState<MemoryEntityDto[]>([]);
+  const [linkPeerId, setLinkPeerId] = useState<string | null>(null);
   const [disputes, setDisputes] = useState<MemoryDisputeDto[]>([]);
   const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
 
@@ -211,10 +215,23 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     [scope],
   );
 
+  const loadEntityLinks = useCallback(async () => {
+    const res = await api.memoryEntityLinks(scope);
+    if (res.ok) setEntityLinks(res.data.links);
+  }, [scope]);
+
   useEffect(() => {
     if (tab !== 'entities') return;
     void loadEntities(entityStatus);
-  }, [tab, entityStatus, loadEntities]);
+    void loadEntityLinks();
+  }, [tab, entityStatus, loadEntities, loadEntityLinks]);
+
+  useEffect(() => {
+    if (tab !== 'entities' || family !== 'life') return;
+    void api.memoryEntities('user').then((res) => {
+      if (res.ok) setGlobalEntities(res.data.entities);
+    });
+  }, [tab, family]);
 
   async function resolveDuplicate(
     duplicate: MemoryDuplicateDto,
@@ -280,6 +297,36 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     await loadEntities('active');
     setSelectedEntityId(target.id);
     void load();
+  }
+
+  async function linkEntity(entity: MemoryEntityDto, peerId: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.linkMemoryEntities(scope, entity.id, peerId);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('已关联跨 scope 实体');
+    setLinkPeerId(null);
+    await loadEntityLinks();
+    await loadEntities(entityStatus);
+  }
+
+  async function unlinkEntity(peer: { id: string }): Promise<void> {
+    if (!selectedEntity) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.unlinkMemoryEntities(scope, selectedEntity.id, peer.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('已解除跨 scope 关联');
+    await loadEntityLinks();
+    await loadEntities(entityStatus);
   }
 
   async function unmergeEntity(entity: MemoryEntityDto): Promise<void> {
@@ -409,6 +456,31 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
         : [],
     [entities, selectedEntity],
   );
+  const selectedLinks = useMemo(
+    () =>
+      selectedEntity
+        ? entityLinks.filter(
+            (link) => link.a.id === selectedEntity.id || link.b.id === selectedEntity.id,
+          )
+        : [],
+    [entityLinks, selectedEntity],
+  );
+  const linkCandidates = useMemo(
+    () =>
+      selectedEntity && family === 'life'
+        ? globalEntities.filter(
+            (entity) =>
+              entity.kind === selectedEntity.kind &&
+              !selectedLinks.some(
+                (link) => link.a.id === entity.id || link.b.id === entity.id,
+              ),
+          )
+        : [],
+    [family, globalEntities, selectedEntity, selectedLinks],
+  );
+  const linkPeer = (link: MemoryEntityLinkDto, entityId: string) =>
+    link.a.id === entityId ? link.b : link.a;
+  const scopeLabel = (scopeValue: string) => (scopeValue === 'user' ? '全局' : '工作区');
   const groupSpecs = useMemo(
     () =>
       family === 'life'
@@ -898,6 +970,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                               onClick={() => {
                                 setSelectedEntityId(entity.id);
                                 setMergeTargetId(null);
+                                setLinkPeerId(null);
                               }}
                             >
                               <span className="mem-row-summary">{entity.canonicalName}</span>
@@ -1270,6 +1343,58 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                           }`
                         : '无别名'}
                     </p>
+                    {family === 'life' && (
+                      <div>
+                        <p className="hint">跨 scope 关联</p>
+                        {selectedLinks.length === 0 ? (
+                          <p className="hint">暂无关联。</p>
+                        ) : (
+                          selectedLinks.map((link) => {
+                            const peer = linkPeer(link, selectedEntity.id);
+                            return (
+                              <div key={link.id} className="mem-actions">
+                                <span>
+                                  {peer.canonicalName}（{scopeLabel(peer.scope)} · {link.relation}）
+                                </span>
+                                <button
+                                  className="btn ghost"
+                                  disabled={busy}
+                                  onClick={() => void unlinkEntity(peer)}
+                                >
+                                  解除
+                                </button>
+                              </div>
+                            );
+                          })
+                        )}
+                        {selectedEntity.status === 'active' && linkCandidates.length > 0 && (
+                          <div className="mem-actions mem-detail-actions">
+                            <select
+                              className="mem-select"
+                              value={linkPeerId ?? ''}
+                              disabled={busy}
+                              onChange={(event) => setLinkPeerId(event.target.value || null)}
+                            >
+                              <option value="">选择全局实体…</option>
+                              {linkCandidates.map((entity) => (
+                                <option key={entity.id} value={entity.id}>
+                                  {entity.canonicalName}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="btn"
+                              disabled={busy || !linkPeerId}
+                              onClick={() =>
+                                linkPeerId && void linkEntity(selectedEntity, linkPeerId)
+                              }
+                            >
+                              关联
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {selectedEntity.status === 'merged' ? (
                       <>
                         <p className="mem-detail-object">

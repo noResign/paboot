@@ -696,6 +696,7 @@ private fun MemoryEntitiesCard(items: List<MemoryEntityDto>) {
                                 append(" · ${entity.aliases.size} 个别名")
                             }
                             append(" · ${entity.claimCount} 条记忆")
+                            if (entity.linkCount > 0) append(" · 关联 ${entity.linkCount}")
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

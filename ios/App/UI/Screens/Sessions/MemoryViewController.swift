@@ -437,9 +437,10 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             cell.textLabel?.font = Typography.body
             cell.textLabel?.textColor = Theme.Colors.textPrimary
             let aliasLabel = item.aliases.isEmpty ? "" : "\(item.aliases.count) 个别名 · "
+            let linkLabel = item.linkCount > 0 ? " · 关联 \(item.linkCount)" : ""
             cell.detailTextLabel?.text =
                 "\(entityKindLabel(item.kind)) · \(aliasLabel)\(item.claimCount) 条记忆" +
-                " · 合并请在桌面端处理"
+                "\(linkLabel) · 合并请在桌面端处理"
             cell.detailTextLabel?.font = Typography.caption
             cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
             cell.accessoryType = .none

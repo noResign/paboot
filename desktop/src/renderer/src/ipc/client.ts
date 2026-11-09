@@ -38,6 +38,8 @@ import type {
   MemoryDisputeResolveResponse,
   MemoryDuplicatesResponse,
   MemoryEntitiesResponse,
+  MemoryEntityLinkResponse,
+  MemoryEntityLinksResponse,
   MemoryEntityResponse,
   MemorySearchResponse,
   MemorySessionModeRequest,
@@ -427,6 +429,25 @@ export const api = {
       method: 'POST',
       path: ROUTES.memoryEntityUnmerge(id),
       query: { scope },
+    }),
+  memoryEntityLinks: (scope: string) =>
+    request<MemoryEntityLinksResponse>({
+      method: 'GET',
+      path: ROUTES.memoryEntityLinks,
+      query: { scope },
+    }),
+  linkMemoryEntities: (scope: string, a: string, b: string) =>
+    request<MemoryEntityLinkResponse>({
+      method: 'POST',
+      path: ROUTES.memoryEntityLinks,
+      query: { scope },
+      body: { a, b },
+    }),
+  unlinkMemoryEntities: (scope: string, a: string, b: string) =>
+    request<{ ok: boolean }>({
+      method: 'DELETE',
+      path: ROUTES.memoryEntityLinks,
+      query: { scope, a, b },
     }),
   promoteMemoryClaim: (scope: string, id: string, shareClass: 'portable' | 'personal' | 'life_only') =>
     request<MemoryClaimResponse>({
