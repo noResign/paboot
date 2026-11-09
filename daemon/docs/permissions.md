@@ -21,8 +21,9 @@ bypass       -> bypassPermissions
 ```
 
 `Read` / `Grep` **不纳入门禁**：读工作区外的文件不审批（见下文「读取不门控」）。`ask` 模式下 PreToolUse
-hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*`；`acceptEdits`
-匹配 `Bash|WebSearch|WebFetch|mcp__.*`；`bypass` 不注入 hook。`WebSearch` / `WebFetch` 在 `ask` /
+hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*`，但用负向
+lookahead 排除 `mcp__paboot_capability__*` / `mcp__paboot_memory__*`（这两个 server 自己 gate，
+见下文）；`acceptEdits` 同理；`bypass` 不注入 hook。`WebSearch` / `WebFetch` 在 `ask` /
 `acceptEdits` 下都审批：它们会把查询、URL 和上下文发往外部服务，和「读本机文件」不是一类操作。
 
 `Glob` **不纳入**：它只返回文件名、不返回内容，却是探索阶段最频繁的调用，
@@ -51,6 +52,21 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   → daemon 广播 permission_request（SSE）→ 客户端决定 → POST .../decision
   → hook 轮询 status → permissionDecision allow/deny → claude 放行/阻止
 ```
+
+### MCP server 自 gate（capability / memory）
+
+`paboot_tasks` 仍由 Claude hook / Codex / DeepSeek 的审批通道处理；`paboot_capability` /
+`paboot_memory` 在 MCP server 进程内自己 gate：工具执行前调
+`POST /api/internal/permissions/create` 并轮询 `/status`，非 `allowed` 一律返回 MCP error。
+这样不依赖 runtime 是否 gate MCP 调用：
+
+- `runs.permission_mode` 是 run 启动时解析后的**实际生效模式**。`bypass` 时 create 端点直接
+  allow、不广播；`ask` / `acceptEdits` 仍创建 pending 并推给客户端。
+- run 不存在时 create 返回 404，避免留下客户端永远看不到的 pending 请求。
+- `PABOOT_RUNTIME=builtin` 时 server **跳过内部 gate**：builtin 的 `ToolExecutor` 已经通过
+  `PermissionBroker` 审过一次，再 gate 会双弹。builtin 的 MCP 工具统一按 `sideEffect='mcp'`
+  处理（`ask` / `acceptEdits` 询问，`bypass` 放行）。
+- gate 的内部轮询有独立 deadline；daemon 不可达、deny、timeout 全部 fail closed。
 
 审批策略（`routes/permissions.ts` + `permissions/command-safety.ts`）：
 

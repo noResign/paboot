@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { LlmProvider } from '../llm/types.js';
-import type { ClaimKind, MemorySource, Sensitivity } from './types.js';
+import type {
+  ClaimKind,
+  MemorySource,
+  ObservationType,
+  Sensitivity,
+} from './types.js';
 
 export const MEMORY_PREDICATES = [
   'lives_in',
@@ -40,6 +45,32 @@ export interface ExtractedClaim {
   evidence: ExtractedEvidence[];
 }
 
+export interface ExtractedObservation {
+  kind: 'tool' | 'turn';
+  type: ObservationType;
+  title: string;
+  subtitle: string | null;
+  facts: string[];
+  narrative: string | null;
+  concepts: string[];
+  sensitivity: Sensitivity;
+}
+
+export interface ExtractedSummary {
+  request: string;
+  investigated: string;
+  learned: string;
+  completed: string;
+  nextSteps: string;
+  notes: string | null;
+}
+
+export interface ExtractionResult {
+  claims: ExtractedClaim[];
+  observations: ExtractedObservation[];
+  summary: ExtractedSummary | null;
+}
+
 export type ExtractionErrorCode = 'invalid_json' | 'invalid_schema' | 'provider_unavailable';
 
 export class MemoryExtractionError extends Error {
@@ -54,6 +85,17 @@ export class MemoryExtractionError extends Error {
 
 const CLAIM_KINDS = new Set<ClaimKind>(['fact', 'preference', 'relation', 'profile']);
 const SENSITIVITIES = new Set<Sensitivity>(['normal', 'private', 'secret']);
+const OBSERVATION_TYPES = new Set<ObservationType>([
+  'bugfix',
+  'feature',
+  'refactor',
+  'change',
+  'discovery',
+  'decision',
+  'security_alert',
+  'security_note',
+  'sensitive',
+]);
 const TIME_PRECISIONS = new Set<TimePrecision>(['exact', 'day', 'month', 'year', 'unknown']);
 const PREDICATES = new Set<string>(MEMORY_PREDICATES);
 
@@ -68,14 +110,25 @@ export function extractionSystemPrompt(): string {
     `4. predicate 只能取：${MEMORY_PREDICATES.join(', ')}。`,
     '5. kind 只能取：fact | preference | relation | profile。',
     '6. summary 是一句简洁中文，供 brief 和「关于你」展示。',
-    '7. 没有值得记录的内容时输出 {"claims":[]}。',
+    '7. 没有值得长期记录的内容时输出 {"claims":[]}。',
     '8. 标记为 context 的消息只用于理解指代和背景；不要为 context 单独创建 claim，',
     '   evidence 的 sourceId 只能引用当前要抽取的 source。',
+    '9. 可选输出 observations：把本批工作压缩成 0..N 条；kind 只能 tool|turn；',
+    '   type 只能 bugfix|feature|refactor|change|discovery|decision|security_alert|security_note|sensitive；',
+    '   每条含 title、subtitle、facts（字符串数组）、narrative、concepts（字符串数组）。',
+    '   没有可记的工作内容就省略或输出空数组。',
+    '10. 可选输出 summary：{request, investigated, learned, completed, nextSteps, notes}；',
+    '    nextSteps 写下一步计划（没有就空字符串）。',
     '输出格式：',
     '{"claims":[{"predicate":"lives_in","object":"上海","kind":"fact",',
     '"summary":"住在上海","validFrom":"2026-09","timePrecision":"month",',
     '"confidence":0.9,"importance":0.8,"sensitivity":"normal",',
-    '"evidence":[{"sourceId":"<source id>","quote":"我上个月搬到上海了"}]}]}',
+    '"evidence":[{"sourceId":"<source id>","quote":"我上个月搬到上海了"}]}],',
+    '"observations":[{"kind":"turn","type":"bugfix","title":"修复登录页报错",',
+    '"subtitle":"更新 src/login.ts","facts":["登录页报错","已修复"],"narrative":"……",',
+    '"concepts":["what-changed"]}],',
+    '"summary":{"request":"……","investigated":"","learned":"","completed":"……",',
+    '"nextSteps":"","notes":null}}',
   ].join('\n');
 }
 
@@ -109,25 +162,43 @@ export function parseExtraction(
   raw: string,
   sources: readonly MemorySource[],
 ): ExtractedClaim[] {
+  return parseExtractionResult(raw, sources).claims;
+}
+
+/** Parse claims + optional observations / session summary from one response. */
+export function parseExtractionResult(
+  raw: string,
+  sources: readonly MemorySource[],
+): ExtractionResult {
   const document = parseJsonDocument(raw);
   if (document === null || typeof document !== 'object' || Array.isArray(document)) {
     throw new MemoryExtractionError('extraction response is not an object', 'invalid_schema');
   }
   const record = document as Record<string, unknown>;
-  if (record['skip'] === true) return [];
+  if (record['skip'] === true) {
+    return { claims: [], observations: [], summary: null };
+  }
   const rawClaims = record['claims'];
-  if (rawClaims === undefined) return [];
-  if (!Array.isArray(rawClaims)) {
+  if (rawClaims !== undefined && !Array.isArray(rawClaims)) {
     throw new MemoryExtractionError('claims must be an array', 'invalid_schema');
   }
 
   const byId = new Map(sources.map((source) => [source.id, source]));
   const claims: ExtractedClaim[] = [];
-  for (const item of rawClaims) {
+  for (const item of arrayValue(rawClaims)) {
     const claim = parseClaim(item, byId);
     if (claim) claims.push(claim);
   }
-  return claims;
+  const observations: ExtractedObservation[] = [];
+  for (const item of arrayValue(record['observations'])) {
+    const observation = parseObservation(item);
+    if (observation) observations.push(observation);
+  }
+  return {
+    claims,
+    observations,
+    summary: parseSummary(record['summary']),
+  };
 }
 
 export async function extractClaims(input: {
@@ -139,6 +210,18 @@ export async function extractClaims(input: {
   contextSources?: readonly MemorySource[];
   signal: AbortSignal;
 }): Promise<ExtractedClaim[]> {
+  return (await extractMemory(input)).claims;
+}
+
+/** One call produces claims, observations and the run summary. */
+export async function extractMemory(input: {
+  provider: LlmProvider;
+  providerId: string;
+  model: string;
+  sources: readonly MemorySource[];
+  contextSources?: readonly MemorySource[];
+  signal: AbortSignal;
+}): Promise<ExtractionResult> {
   const completion = await input.provider.complete({
     provider: input.providerId,
     model: input.model,
@@ -147,14 +230,14 @@ export async function extractClaims(input: {
       { role: 'user', content: buildExtractionPrompt(input.sources, input.contextSources) },
     ],
     tools: [],
-    maxTokens: 1200,
+    maxTokens: 2000,
     temperature: 0,
     signal: input.signal,
   });
   if (completion.finishReason === 'unavailable') {
     throw new MemoryExtractionError('memory provider is unavailable', 'provider_unavailable');
   }
-  return parseExtraction(completion.text, input.sources);
+  return parseExtractionResult(completion.text, input.sources);
 }
 
 /** Stable Tier-0 key; subject is the user in M0 (no entity graph yet). */
@@ -204,6 +287,54 @@ function parseClaim(
     sensitivity,
     evidence,
   };
+}
+
+function parseObservation(item: unknown): ExtractedObservation | null {
+  if (item === null || typeof item !== 'object' || Array.isArray(item)) return null;
+  const record = item as Record<string, unknown>;
+  const kind = stringValue(record['kind']);
+  if (kind !== 'tool' && kind !== 'turn') return null;
+  const type = stringValue(record['type']) as ObservationType | null;
+  if (!type || !OBSERVATION_TYPES.has(type)) return null;
+  const title = stringValue(record['title']);
+  if (!title) return null;
+  const sensitivity = (stringValue(record['sensitivity']) ?? 'normal') as Sensitivity;
+  if (!SENSITIVITIES.has(sensitivity) || sensitivity === 'secret') return null;
+  return {
+    kind,
+    type,
+    title,
+    subtitle: stringValue(record['subtitle']),
+    facts: stringArray(record['facts']),
+    narrative: stringValue(record['narrative']),
+    concepts: stringArray(record['concepts']),
+    sensitivity,
+  };
+}
+
+function parseSummary(raw: unknown): ExtractedSummary | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const summary: ExtractedSummary = {
+    request: stringValue(record['request']) ?? '',
+    investigated: stringValue(record['investigated']) ?? '',
+    learned: stringValue(record['learned']) ?? '',
+    completed: stringValue(record['completed']) ?? '',
+    nextSteps: stringValue(record['nextSteps']) ?? '',
+    notes: stringValue(record['notes']),
+  };
+  return Object.values(summary).some((value) => value !== null && value !== '') ? summary : null;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item !== '');
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function parseEvidence(

@@ -12,9 +12,13 @@ import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
 import { captureRunMessages } from '../memory/ingest.js';
+import { captureRunObservation } from '../memory/observe.js';
+import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
 import { mergePreludes } from '../context/prelude.js';
+import { perRunToolServers } from '../mcp/injection.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
+import { memoryRecall } from './memory-recall.js';
 
 /** Claude's resume failure when the conversation is gone from its own storage. */
 const MISSING_NATIVE_SESSION_RE = /No conversation found with session ID/i;
@@ -176,7 +180,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     //   otherwise → first-message prelude only (K0 behavior), never on resume.
     const knowledge = knowledgeContext(ctx, session, workspace);
     const memory = memoryContext(ctx, session, workspace);
-    const injected = mergePreludes(knowledge, memory);
+    const recall = memoryRecall(ctx, session, workspace, prompt);
+    const injected = mergePreludes(knowledge, memory, recall);
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
     const usePrelude = injected !== null && !nativeSystemPrompt && !session.native_session_id;
@@ -195,6 +200,9 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
 
     const sessionId = session.id;
     ctx.notifier.register(runId, send);
+    // One list for every runtime: argv/RPC drivers translate these specs into
+    // their own MCP config, the builtin driver consumes them in-process.
+    const toolServers = perRunToolServers(ctx, runId, session.runtime);
 
     try {
       const active = driver.start({
@@ -213,6 +221,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         extraDirs,
         attachmentIds: input.attachmentIds,
         systemContext: nativeSystemPrompt && injected ? injected.prefix : undefined,
+        toolServers,
         // The service owns the terminal frame: provider errors may arrive before
         // exit, while the final checkpoint and run metadata are not ready yet.
         onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),
@@ -316,6 +325,7 @@ function scheduleMemoryCapture(
       const latestSession = ctx.db.getSession(session.id);
       const latestWorkspace = ctx.db.getWorkspace(workspace.id);
       if (!latestSession || !latestWorkspace) return;
+      const settings = ctx.db.getMemorySettings(latestWorkspace.id);
       const captured = captureRunMessages({
         store: memory,
         session: latestSession,
@@ -323,7 +333,24 @@ function scheduleMemoryCapture(
         ends,
         messages,
         runId,
+        settings,
       });
+      const scope = resolveRunMemoryScope(latestSession, latestWorkspace, ends, runId, settings);
+      if (scope) {
+        const observed = captureRunObservation({
+          store: memory,
+          scope,
+          messages,
+          toolEvents: ctx.db.listToolEvents(runId),
+        });
+        if (observed.observation) {
+          log.info(
+            `run ${runId}: observation ${observed.observation.id.slice(0, 8)}, ` +
+              `${observed.observation.filesRead.length} read / ` +
+              `${observed.observation.filesModified.length} modified file(s)`,
+          );
+        }
+      }
       if (captured > 0) {
         log.info(`run ${runId}: captured ${captured} memory source(s)`);
         ctx.memoryWorker?.kick();

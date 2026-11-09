@@ -19,6 +19,16 @@ import type {
   KnowledgeDocDto,
   KnowledgeReviewStatus,
 } from '../types/api.js';
+import { log } from '../platform/log.js';
+
+/** K2 is derived index state: a failure must not fail the knowledge request. */
+function syncKnowledgeIndex(ctx: AppContext, workspaceId: string): void {
+  try {
+    ctx.knowledgeIndex?.syncWorkspace(workspaceId);
+  } catch (err) {
+    log.warn(`knowledge index sync failed for workspace ${workspaceId}`, err);
+  }
+}
 
 function toDocDto(doc: KnowledgeDocument): KnowledgeDocDto {
   return {
@@ -182,7 +192,11 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
         else throw new KnowledgeError('verified must be true or false', 'bad_request', 400);
       }
       if (typeof req.query.q === 'string' && req.query.q.trim()) filter.q = req.query.q;
-      res.json({ documents: ctx.knowledge.list(workspace.id, filter).map(toDocDto) });
+      const documents = ctx.knowledge.list(workspace.id, filter);
+      // Listing reconciles external file changes; mirror them before answering
+      // so a follow-up memory search sees the same catalogue.
+      syncKnowledgeIndex(ctx, workspace.id);
+      res.json({ documents: documents.map(toDocDto) });
     } catch (err) {
       sendKnowledgeError(res, err);
     }
@@ -203,6 +217,7 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
     if (!workspace) return;
     try {
       const document = ctx.knowledge.create(workspace.id, parseCreate(req.body));
+      syncKnowledgeIndex(ctx, workspace.id);
       ctx.db.audit(
         'knowledge_create',
         JSON.stringify({ workspaceId: workspace.id, id: document.id, path: document.path }),
@@ -218,6 +233,7 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
     if (!workspace) return;
     try {
       const document = ctx.knowledge.update(workspace.id, req.params.kid!, parseUpdate(req.body));
+      syncKnowledgeIndex(ctx, workspace.id);
       ctx.db.audit(
         'knowledge_update',
         JSON.stringify({ workspaceId: workspace.id, id: document.id, path: document.path }),
@@ -237,6 +253,7 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
         throw new KnowledgeError('verified must be a boolean', 'bad_request', 400);
       }
       const document = ctx.knowledge.verify(workspace.id, req.params.kid!, raw.verified);
+      syncKnowledgeIndex(ctx, workspace.id);
       ctx.db.audit(
         'knowledge_verify',
         JSON.stringify({
@@ -258,6 +275,7 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
     try {
       const id = req.params.kid!;
       ctx.knowledge.remove(workspace.id, id);
+      syncKnowledgeIndex(ctx, workspace.id);
       ctx.db.audit('knowledge_delete', JSON.stringify({ workspaceId: workspace.id, id }));
       res.json({ ok: true, id });
     } catch (err) {

@@ -1,4 +1,9 @@
-import { buildLifeBrief, DEFAULT_MEMORY_BRIEF_CHARS } from '../../../memory/brief.js';
+import {
+  buildLifeBrief,
+  buildMemoryBrief,
+  DEFAULT_MEMORY_BRIEF_CHARS,
+} from '../../../memory/brief.js';
+import type { MemoryReadPolicy } from '../../../memory/read-policy.js';
 import type { MemoryStore } from '../../../memory/store.js';
 import type {
   RuntimeContextCollectContext,
@@ -6,29 +11,62 @@ import type {
   RuntimeContextSource,
 } from '../runtime-context.js';
 
-/** Memory brief as a builtin runtime-context section (M0: life only). */
+/** The slice of a workspace the policy needs; builtin context carries a snapshot. */
+export interface MemoryPolicyWorkspace {
+  id: string;
+  family: string;
+}
+
+export interface MemoryBriefContextSourceOptions {
+  maxChars?: number;
+  /**
+   * Effective read policy for the run's workspace. Returning an empty scope
+   * list disables injection (workspace off / injection off). When omitted the
+   * source falls back to the M0 life-only behavior.
+   */
+  resolvePolicy?: (workspace: MemoryPolicyWorkspace) => MemoryReadPolicy;
+}
+
+/** Memory brief as a builtin runtime-context section. */
 export class MemoryBriefContextSource implements RuntimeContextSource {
   readonly id = 'memory-brief';
+  private readonly maxChars: number;
+  private readonly resolvePolicy:
+    | ((workspace: MemoryPolicyWorkspace) => MemoryReadPolicy)
+    | undefined;
 
   constructor(
     private readonly store: MemoryStore,
-    private readonly maxChars: number = DEFAULT_MEMORY_BRIEF_CHARS,
-  ) {}
+    options: MemoryBriefContextSourceOptions = {},
+  ) {
+    this.maxChars = options.maxChars ?? DEFAULT_MEMORY_BRIEF_CHARS;
+    this.resolvePolicy = options.resolvePolicy;
+  }
 
   collect(context: RuntimeContextCollectContext): RuntimeContextContribution[] {
     const workspace = context.agent.workspace;
-    if (workspace.family !== 'life') return [];
     // Builtin gets memory through this source instead of runs/memory-context,
     // so it must enforce the same session switch here. Missing mode is treated
     // as no-injection (older callers/tests cannot accidentally leak memory).
     if (context.session.memoryMode !== 'normal') return [];
     if (context.session.purpose === 'task_config') return [];
-    const brief = buildLifeBrief(this.store, `workspace:${workspace.id}`, {
-      maxChars: this.maxChars,
-      now: context.now,
-    });
+    if (!this.resolvePolicy && workspace.family !== 'life') return [];
+
+    const policy = this.resolvePolicy?.(workspace);
+    if (policy && policy.scopes.length === 0) return [];
+    const brief = policy
+      ? buildMemoryBrief(this.store, policy, {
+          maxChars: this.maxChars,
+          now: context.now,
+          scope: `workspace:${workspace.id}`,
+          includePrivate: workspace.family === 'life',
+        })
+      : buildLifeBrief(this.store, `workspace:${workspace.id}`, {
+          maxChars: this.maxChars,
+          now: context.now,
+        });
     if (!brief) return [];
-    return [
+    const contributions: RuntimeContextContribution[] = [
       {
         source: 'memory:brief',
         kind: 'memory',
@@ -39,5 +77,6 @@ export class MemoryBriefContextSource implements RuntimeContextSource {
         content: brief.markdown,
       },
     ];
+    return contributions;
   }
 }

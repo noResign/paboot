@@ -118,8 +118,8 @@ describe('life brief', () => {
 });
 
 describe('memory injection context', () => {
-  function ctx(store: MemoryStore): AppContext {
-    return { memory: store } as unknown as AppContext;
+  function ctx(store: MemoryStore, db: Db): AppContext {
+    return { memory: store, db } as unknown as AppContext;
   }
 
   function session(
@@ -142,12 +142,68 @@ describe('memory injection context', () => {
   it('wraps the brief for a life chat', () => {
     const { db, store, workspace, endId } = setup();
     store.insertClaim(claim({ scope: `workspace:${workspace.id}`, endId }));
-    const result = memoryContext(ctx(store), session(db, workspace), workspace);
+    const result = memoryContext(ctx(store, db), session(db, workspace), workspace);
 
     expect(result).not.toBeNull();
     expect(result!.prefix).toContain('<paboot-memory-context>');
     expect(result!.prefix).toContain('住在上海');
     expect(result!.claims).toBe(1);
+  });
+
+  it('injects for an enabled dev chat and honors injection-enabled', () => {
+    const { db, store } = setup();
+    const dev = db.createWorkspace({
+      name: 'repo',
+      path: fs.realpathSync(tmpDir('repo')),
+      isDefault: false,
+    });
+    const devSession = session(db, dev);
+    store.insertClaim(claim({ scope: `workspace:${dev.id}`, endId: null, summary: '项目使用 Compose' }));
+    store.upsertObservation({
+      scope: `workspace:${dev.id}`,
+      endId: null,
+      sessionId: devSession.id,
+      runId: 'run-1',
+      sourceId: null,
+      kind: 'turn',
+      type: 'bugfix',
+      title: '修复登录页',
+      subtitle: '更新布局',
+    });
+
+    db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: true, providerOverride: null });
+    const enabled = memoryContext(ctx(store, db), devSession, db.getWorkspace(dev.id)!);
+    expect(enabled?.prefix).toContain('项目使用 Compose');
+    // The current session's own timeline is already in runtime history.
+    expect(enabled?.prefix).not.toContain('修复登录页');
+
+    db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: false, providerOverride: null });
+    expect(memoryContext(ctx(store, db), devSession, db.getWorkspace(dev.id)!)).toBeNull();
+  });
+
+  it('never injects the current session timeline (runtime already has it)', () => {
+    const { db, store, workspace } = setup();
+    const a = session(db, workspace);
+    store.upsertObservation({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      sessionId: a.id,
+      runId: 'run-a',
+      sourceId: null,
+      kind: 'turn',
+      type: 'change',
+      title: '会话 A 的工作',
+    });
+    store.upsertSessionSummary({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      sessionId: a.id,
+      runId: 'run-a',
+      request: '继续做登录',
+      nextSteps: '补测试',
+    });
+
+    expect(memoryContext(ctx(store, db), a, workspace)).toBeNull();
   });
 
   it('does not inject in dev, commands, builtin, authoring chats, or disabled sessions', () => {
@@ -164,12 +220,12 @@ describe('memory injection context', () => {
       cwd: dev.path,
     });
 
-    expect(memoryContext(ctx(store), devSession, dev)).toBeNull();
-    expect(memoryContext(ctx(store), session(db, workspace, { runtime: 'builtin' }), workspace)).toBeNull();
-    expect(memoryContext(ctx(store), session(db, workspace, { runtime: 'command' }), workspace)).toBeNull();
-    expect(memoryContext(ctx(store), session(db, workspace, { purpose: 'task_config' }), workspace)).toBeNull();
-    expect(memoryContext(ctx(store), session(db, workspace, { memoryMode: 'off' }), workspace)).toBeNull();
-    expect(memoryContext(ctx(store), session(db, workspace, { memoryMode: 'no_injection' }), workspace)).toBeNull();
+    expect(memoryContext(ctx(store, db), devSession, dev)).toBeNull();
+    expect(memoryContext(ctx(store, db), session(db, workspace, { runtime: 'builtin' }), workspace)).toBeNull();
+    expect(memoryContext(ctx(store, db), session(db, workspace, { runtime: 'command' }), workspace)).toBeNull();
+    expect(memoryContext(ctx(store, db), session(db, workspace, { purpose: 'task_config' }), workspace)).toBeNull();
+    expect(memoryContext(ctx(store, db), session(db, workspace, { memoryMode: 'off' }), workspace)).toBeNull();
+    expect(memoryContext(ctx(store, db), session(db, workspace, { memoryMode: 'no_injection' }), workspace)).toBeNull();
   });
 
   it('builtin context obeys the session memory mode and authoring exclusion', () => {

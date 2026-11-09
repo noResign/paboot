@@ -109,7 +109,7 @@ describe('memory routes (M0)', () => {
     expect(body.claims[0]?.evidence).toEqual([]);
   });
 
-  it('requires a scope and rejects dev workspaces in M0', async () => {
+  it('requires a scope and rejects a disabled dev workspace', async () => {
     const { url, db } = await setup();
     const missing = await fetch(`${url}/api/memory/claims`);
     expect(missing.status).toBe(400);
@@ -118,6 +118,170 @@ describe('memory routes (M0)', () => {
     const rejected = await fetch(`${url}/api/memory/claims?scope=workspace:${dev!.id}`);
     expect(rejected.status).toBe(400);
     expect(((await rejected.json()) as { code: string }).code).toBe('memory_not_enabled');
+  });
+
+  it('exposes effective settings and validates family-specific fields', async () => {
+    const { url, db, workspace } = await setup();
+    const life = (await (await fetch(`${url}/api/workspaces/${workspace.id}/memory`)).json()) as {
+      enabled: boolean;
+      profileMode?: string;
+      lifeReadable?: boolean;
+    };
+    expect(life).toMatchObject({ enabled: true, profileMode: 'portable' });
+    expect(life.lifeReadable).toBeUndefined();
+
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    const devDefaults = (await (await fetch(`${url}/api/workspaces/${dev.id}/memory`)).json()) as {
+      enabled: boolean;
+      lifeReadable?: boolean;
+      profileMode?: string;
+    };
+    expect(devDefaults).toMatchObject({ enabled: false, lifeReadable: false });
+    expect(devDefaults.profileMode).toBeUndefined();
+
+    const patched = await fetch(`${url}/api/workspaces/${dev.id}/memory`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, lifeReadable: true, providerOverride: 'work' }),
+    });
+    expect(patched.status).toBe(200);
+    expect(await patched.json()).toMatchObject({
+      enabled: true,
+      lifeReadable: true,
+      providerOverride: 'work',
+    });
+
+    const wrongDev = await fetch(`${url}/api/workspaces/${dev.id}/memory`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ profileMode: 'full' }),
+    });
+    expect(wrongDev.status).toBe(400);
+    const wrongLife = await fetch(`${url}/api/workspaces/${workspace.id}/memory`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lifeReadable: true }),
+    });
+    expect(wrongLife.status).toBe(400);
+  });
+
+  it('reads an enabled dev workspace and keeps it isolated from life', async () => {
+    const { url, db, store, workspace, endId, session } = await setup();
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: true, providerOverride: null });
+    db.updateWorkspaceMemory(dev.id, { lifeReadable: true });
+    const lifeClaim = claimIn(store, workspace.id, endId, '生活里的上海');
+    const devClaim = store.insertClaim({
+      scope: `workspace:${dev.id}`,
+      endId: null,
+      predicate: 'uses_framework',
+      objectText: 'Compose',
+      kind: 'fact',
+      summary: '项目使用 Compose',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    const devSession = db.createSession({
+      id: 's-dev',
+      runtime: 'claude',
+      workspaceId: dev.id,
+      permissionMode: 'ask',
+      cwd: dev.path,
+    });
+
+    const devClaims = (await (await fetch(`${url}/api/memory/claims?sessionId=${devSession.id}`)).json()) as {
+      claims: { id: string }[];
+    };
+    expect(devClaims.claims.map((claim) => claim.id)).toEqual([devClaim.id]);
+
+    // Dev cannot reach life even though it has a readable policy of its own.
+    expect(devClaims.claims.some((claim) => claim.id === lifeClaim.id)).toBe(false);
+
+    // And the life session sees both (the dev workspace is life_readable).
+    const lifeClaims = (await (await fetch(`${url}/api/memory/claims?sessionId=${session.id}`)).json()) as {
+      claims: { id: string }[];
+    };
+    expect(lifeClaims.claims.map((claim) => claim.id).sort()).toEqual(
+      [devClaim.id, lifeClaim.id].sort(),
+    );
+  });
+
+  it('lets life read normal claims from a life_readable dev workspace only', async () => {
+    const { url, db, store, workspace, endId, session } = await setup();
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: true, providerOverride: null });
+    db.updateWorkspaceMemory(dev.id, { lifeReadable: true });
+    const normal = store.insertClaim({
+      scope: `workspace:${dev.id}`,
+      endId: null,
+      predicate: 'uses_database',
+      objectText: 'Postgres',
+      kind: 'fact',
+      summary: '项目使用 Postgres',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    const privateClaim = store.insertClaim({
+      scope: `workspace:${dev.id}`,
+      endId: null,
+      predicate: 'client_secret',
+      objectText: 'hidden',
+      kind: 'fact',
+      summary: '私密客户信息',
+      sensitivity: 'private',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+
+    const claims = (await (await fetch(`${url}/api/memory/claims?sessionId=${session.id}`)).json()) as {
+      claims: { id: string }[];
+    };
+    expect(claims.claims.map((claim) => claim.id)).toEqual([normal.id]);
+    expect(claims.claims.some((claim) => claim.id === privateClaim.id)).toBe(false);
+
+    // Cross-read claims are read-only.
+    const patch = await fetch(`${url}/api/memory/claims/${normal.id}?sessionId=${session.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ objectText: 'changed' }),
+    });
+    expect(patch.status).toBe(404);
+    expect(claimIn(store, workspace.id, endId)).toBeTruthy();
+  });
+
+  it('saves the per-session switch even when the workspace has memory disabled', async () => {
+    const { url, db } = await setup();
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    const devSession = db.createSession({
+      id: 's-dev-memory',
+      runtime: 'claude',
+      workspaceId: dev.id,
+      permissionMode: 'ask',
+      cwd: dev.path,
+    });
+    const response = await fetch(`${url}/api/memory/session`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: devSession.id, mode: 'off' }),
+    });
+    expect(response.status).toBe(200);
+    expect(db.getSession(devSession.id)?.memory_mode).toBe('off');
+
+    const command = db.createSession({
+      id: 's-command',
+      runtime: 'command',
+      workspaceId: dev.id,
+      permissionMode: 'ask',
+      cwd: dev.path,
+      kind: 'command',
+    });
+    const rejected = await fetch(`${url}/api/memory/session`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: command.id, mode: 'off' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect(((await rejected.json()) as { code: string }).code).toBe('session_not_chat');
   });
 
   it('corrects a claim and marks it user_confirmed', async () => {

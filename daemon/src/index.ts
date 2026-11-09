@@ -8,6 +8,7 @@ import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
 import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
+import { MemoryKnowledgeIndexer } from './memory/knowledge-index.js';
 import { configuredMemoryModel, resolveMemoryModel } from './memory/model.js';
 import { MemoryStore } from './memory/store.js';
 import { MemoryWorker } from './memory/worker.js';
@@ -194,7 +195,26 @@ async function main(): Promise<void> {
       'paboot_tasks',
       'server.js',
     ),
+    capabilityMcpServerPath: path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      'mcp',
+      'servers',
+      'paboot_capability',
+      'server.js',
+    ),
   };
+
+  // K2 lives in memory.db but the files stay authoritative; rebuild the mirror
+  // for every known workspace at boot, then keep it fresh from knowledge routes.
+  const knowledgeIndex = new MemoryKnowledgeIndexer(memory, ctx.knowledge);
+  ctx.knowledgeIndex = knowledgeIndex;
+  for (const workspace of db.listWorkspaces()) {
+    try {
+      knowledgeIndex.syncWorkspace(workspace.id);
+    } catch (err) {
+      log.warn(`knowledge index sync failed for workspace ${workspace.id}`, err);
+    }
+  }
 
   const memoryWorker = new MemoryWorker({
     store: memory,

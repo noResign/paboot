@@ -445,5 +445,10 @@ describe('default approval policy', () => {
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('write'), input: {}, agent: accept })).toBe('allow');
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('execute'), input: {}, agent: accept })).toBe('ask');
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('execute'), input: {}, agent: bypass })).toBe('allow');
+    // MCP tools (capability / memory) always ask outside bypass; the MCP server
+    // itself must not gate again for the builtin runtime.
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: ask })).toBe('ask');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: accept })).toBe('ask');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: bypass })).toBe('allow');
   });
 });

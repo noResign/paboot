@@ -1,38 +1,70 @@
-# paboot Memory（M0）
+# paboot Memory（M0 + M1.1）
 
-> 长期记忆的 life 垂直切片。设计源在 `docs/local/paboot_memory/`（私有笔记，不入库）；
-> 本文件只描述 daemon 已实现的行为、配置与边界。
+> 长期记忆的 life 垂直切片 + M1.1 的 workspace scope / 开关 / read-policy。设计源在
+> `docs/local/paboot_memory/`（私有笔记，不入库）；本文件只描述 daemon 已实现的行为、配置与边界。
 
 ## 1. 范围
 
-M0 只处理 `workspace.family = 'life'` 的会话：
+已实现：
 
-- 会话结束后捕获 user / assistant 可见文本；
+- life 会话结束后捕获 user / assistant 可见文本；
 - 后台用共享 LLM 抽取 claim（事实 / 偏好 / 关系 / 画像）；
-- 新会话注入 life brief；
-- 客户端只读 + 改正 / 忘记。
+- 新会话注入 brief；
+- 客户端只读 + 改正 / 忘记；
+- **M1.1**：dev workspace 可选开启记忆；每 workspace 开关 / 注入开关 / provider override；
+  life 的 `profileMode`、dev 的 `lifeReadable`；读写都走统一的 read-policy。
+- **M1.2**：D31 检索阶梯；K2 知识文档索引；life → user 晋升；run 结束生成 observation +
+  session summary，文件列表从结构化工具事件机械提取；搜索支持 `files` 过滤，提供 timeline。
 
-**不做**：dev 记忆、工具事件、observation / session summary、检索阶梯、实体归一、去重候选、
-强化、memory MCP、主动提醒。这些在 M1 / M2 / M3。
+**不做**（后续 M1/M2/M3）：工具事件、observation / session summary、检索阶梯、实体归一、
+去重候选、强化、memory MCP、主动提醒；`provider_override` 目前只持久化，尚未参与抽取模型解析。
 
 ## 2. 存储
 
 - 独立库 `<dataDir>/memory/memory.db`，WAL + `busy_timeout=5000`。
 - 不与主库做跨库外键；主库只保留 `memory_settings` / `sessions.memory_mode` 等开关。
+- `memory_settings` 按 workspace 一行：`enabled` / `injection_enabled` / `provider_override`。
+  **缺行时按产品默认**：dev 关、life 开、注入开、`profileMode=portable`、`lifeReadable=0`。
+  写入前先合并默认值，避免只改注入开关把 life 静默关掉。
+- `workspaces.profile_mode`（life）与 `life_readable`（dev）由
+  `GET/PATCH /api/workspaces/:id/memory` 维护。
 - M0 使用的表：`mem_sources` / `mem_claims` / `mem_claim_evidence` / `mem_tombstones` /
   `mem_ops` / `mem_state`；完整 schema 已建好，供 M1/M2 使用。
+- **K2**：`mem_documents` / `mem_document_chunks` / `mem_search`。文件与 `.meta.json` 仍是真源，
+  这三张表是可重建索引；正文不进 memory.db，只存 chunk 文本用于检索。
+
+### K2 索引
+
+- `MemoryKnowledgeIndexer.syncWorkspace()` 把 `.meta.json` 镜像成 document + chunk：
+  标题 / 段落切块（约 2000 字符），hash 未变则复用；正文变化重建 chunk 与 `mem_search`。
+- 权威映射：`authority=curated` 且 `reviewStatus=confirmed` → `curated`，其余 → `derived`。
+- 文件消失 / 删除 → 删除镜像与索引；外部修改在 knowledge 列表 reconcile 后同步。
+- 触发：daemon 启动时全量同步；knowledge 列表 / 新建 / 编辑 / 核验 / 删除后同步。
+  索引失败只 warn，不影响知识接口。
 - `mem_state.schema_version` 由 memory.db 自己维护。
 
 ## 3. 捕获
 
 - 触发：`runs/run-service.ts` 在 run 终态与 assistant 消息落库后，`setImmediate`
   异步投递，不阻塞 SSE。
-- 来源：主库 `messages`（builtin 也走这里；M1 再接 `native_messages` / 工具事件）。
+- 写 scope：`workspace:<id>`。life 默认开启；dev 仅在 `memory_settings.enabled=1` 时捕获。
+  `end_id` 仅作为标签（life 端 / dev 端），不做隔离。
+- 来源：主库 `messages`（builtin 也走这里；M1 后续再接 `native_messages` / 工具事件）。
 - 幂等键：`scope + end + session + source_table + message_id`（无 message id 时用 content hash）。
 - 过滤（D30）：`<private>` / `<no-memory>` 整段剥离；`<paboot-memory-context>` 注入块剥离；
   command / task_config 会话不捕获；`memory_mode=off` 不捕获，`no_injection` 仍捕获。
 - 墓碑：删除 claim 时写入 tombstone；相同原话不会再次成为 source / claim。
 - `off → normal/no_injection` 时把当前会话最大 message id 记为捕获水位；关闭期间的消息不会被回填。
+- **observation / summary（M1.2）**：run 结束后，同一个异步捕获先写一条机械 `turn`
+  observation + session summary（标题取首条用户消息，narrative 取最后一条 assistant 文本），
+  随后 worker 的抽取调用（与 claim 同一次 LLM 请求）可返回 `observations` / `summary`：
+  - LLM observation 替换同 source 的机械基线；`files_read` / `files_modified` 始终保留
+    服务端从 `tool_use`（Read / Write / Edit / MultiEdit / NotebookEdit）机械提取的值，
+    Bash 不猜。
+  - LLM summary 覆盖 request / investigated / learned / completed / notes；`nextSteps`
+    同时写一条 open `followup` loop 候选（同 scope + 标题去重）。
+  - `(scope, source_id, content_hash)` / `(session_id, run_id)` 保证幂等。
+  - provider=none 时机械基线仍保留；配置 provider 后 LLM 结果替换基线。
 
 ## 4. 抽取
 
@@ -61,13 +93,41 @@ M0 只处理 `workspace.family = 'life'` 的会话：
 
 ## 5. 注入
 
-- life brief 由 `memory/brief.ts` 确定性拼装：`## 关于你` / `## 偏好` / `## 注意`；
+- brief 由 `memory/brief.ts` 确定性拼装：`## 关于你` / `## 偏好` / `## 注意`；
   每条带短 ID（`#claim_ab12`）与有效期。
+- **read-policy**（`memory/read-policy.ts`）：
+  - dev：只读当前 workspace；
+  - life：`user`（按 `profileMode` 过滤）+ life workspace + 每个 `life_readable=1` 且已启用的
+    dev workspace（**normal 级、只读**）；
+  - `secret` 永不读取；`private` 不跨 workspace；dev 注入时 privates 也不注入。
+  - 显式 `scope=user` 是 operator 级只读入口。
 - 预算：D32 按字符测量，默认 1200；整条丢弃，至少保留 1 条；`secret` 永不注入。
+- **按轮召回**：每轮用消息生成 2–4 字 n-gram 检索（D31）。有「上次 / 之前 / 记得 / 我说过 /
+  继续 / 接着」等明确线索时直接召回；没有线索时要求至少命中一个 ≥3 字段或两个 ≥2 字段，
+  避免无关新会话串入别人的时间线。open loop 标题命中（或「继续」线索）时优先注入
+  `[未完成]` 项。取最多 5 条 claim / observation / summary / document，按 read-policy 过滤后
+  作为 `## 相关记忆` 追加。Claude / Codex 每轮生效；只有首条前导的 runtime（DeepSeek resume）
+  只在首轮生效；builtin 目前只注入 brief。
+- **检索（D31）**：`mem_search` FTS5 trigram。查询 ≥3 个码点时先走 FTS（子串 + bm25），
+  无命中退 LIKE；1–2 个码点直接 LIKE；多词再退「任一词 OR」并按命中次数排序。
+  `secret` 不建索引；`private` 只在允许它的 scope 返回；`excluded` source 不返回。
+  claim 命中会再校验 read-policy 与 active 状态，source 命中通过 `/api/memory/sources/:id`
+  取 L0 原文；document 命中返回标题 + 摘要 + 相对路径（正文由 agent Read 文件）；
+  observation / summary 命中返回标题、摘要与 files 列表。
+- **files 过滤**：`files=a,b` 时只返回带文件元数据的 observation / summary，并要求
+  `files_read` / `files_modified` 包含任一请求值（子串匹配）。
+- **timeline**：把 read-policy 内所有 scope 的 observation + session summary 按时间倒序合并；
+  只用于展示，不整段进 prompt。
+- **时间线不进 prompt**：当前会话自己的 observation / summary 本来就是已有对话的压缩版，
+  runtime 历史里已经有，再注入只会重复并破坏 prompt caching；因此自动注入只保留 claim brief
+  与按轮召回。时间线保留给 UI（workspace 级总览，每条带 `sessionId`）和相关性召回。
+  未来如果检测到 runtime 已压缩历史，再考虑注入一次摘要。
 - 注入块：`<paboot-memory-context>…</paboot-memory-context>`。
 - 外部 runtime：与 K0 知识合并后走 native system prompt / 首条消息前导；resume 默认不重注入。
-- builtin：`MemoryBriefContextSource` 进入 ContextAssembler 的 runtime-context。
-- `sessions.memory_mode = off | no_injection` 不注入。
+- builtin：`MemoryBriefContextSource` 进入 ContextAssembler 的 runtime-context，使用同一份
+  settings + read-policy。
+- `sessions.memory_mode = off | no_injection` 不注入；workspace 关闭或
+  `injection_enabled=0` 也不注入（仍按开关决定是否捕获）。
 
 ## 6. HTTP
 
@@ -76,19 +136,32 @@ M0 只处理 `workspace.family = 'life'` 的会话：
 | `/api/memory/brief` | GET | `sessionId` 或 `scope`；返回 brief |
 | `/api/memory/claims` | GET | 列表，可带 `status` |
 | `/api/memory/claims/:id` | GET / PATCH / DELETE | 查看 / 改正（operator）/ 忘记（operator） |
+| `/api/memory/claims/:id/promote` | POST | life → user 晋升；新建 user claim + `promoted_from`，源 claim 与 evidence 保留 |
 | `/api/memory/feedback` | POST | 记录 helpful / wrong / stale / corrected |
 | `/api/memory/remember` | POST | 客户端「记住这个」（`sessionId` + `messageId`） |
+| `/api/memory/search` | GET | `q` + `sessionId`/`scope`（可选 `files`）；D31 检索阶梯，返回 claim / source / observation / summary / document 命中 |
+| `/api/memory/timeline` | GET | observation + session summary 时间线 |
+| `/api/memory/sources/:id` | GET | L0 原文（read-policy 过滤） |
 | `/api/memory/status` | GET | pending / 最近整理 / 失败次数 / extraction model / modelAvailable |
 | `/api/memory/session` | PATCH | 会话级 `memory_mode` |
+| `/api/workspaces/:id/memory` | GET / PATCH | 生效值 + 开关 / `profileMode`（life）/ `lifeReadable`（dev）/ `providerOverride` |
 
-- 所有端点必须带 `sessionId` 或显式 `scope`，没有默认全局。
+- 所有 memory 端点必须带 `sessionId` 或显式 `scope`，没有默认全局。
 - GET 允许 agent token；写端点由现有 role policy 限定 operator token。
-- M0 对 dev workspace 返回 `400 memory_not_enabled`。
-- claim 读写都校验 scope，防止跨工作区 IDOR。
+- 未启用的 workspace（dev 默认、或显式关闭的 life）读 / 写 claims 返回 `400 memory_not_enabled`；
+  **会话级 `memory_mode` 例外**：即使 workspace 未启用也能保存（只是暂时不产生效果）。
+- claim 读取走 read-policy；PATCH / DELETE / feedback 只允许调用方自己的 scope，
+  跨 workspace 读到的 dev claim 是只读的。
+- 设置端点按 family 校验字段：`profileMode` 仅 life，`lifeReadable` 仅 dev。
 
 ## 7. 已知限制
 
-- M0 只处理 life；`scope=user` 可读但为空（用户画像 / 晋升在 M1）。
+- `provider_override` 已持久化，但 worker 仍使用全局 `memory_model`；按 workspace 选 provider
+  留到后续。
 - claim 只有 user 主语；relation 以 object text 表示，不建 entity / episode / loop。
-- 客户端「记住这个」按钮与移动端会话级记忆开关尚未接线（API 已就绪）。
+- 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度要等 M2；builtin 暂未接按轮召回。
+- loop 候选只落库，没有完成匹配 / 提醒 / UI。
+- 观察压缩与 claim 共用一次 LLM 调用；超长事件的 `<elided>` 二次压缩尚未实现。
+- 客户端「记住这个」按钮尚未接线（API 已就绪）；会话级记忆三档已接桌面 / Android / iOS；
+  移动端只读设置 + 时间线，没有搜索 / 晋升（按只读范围）。
 - 真实 provider 的抽取质量尚未评估；自动化 fixture 只验证管线与护栏。

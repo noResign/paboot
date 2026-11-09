@@ -102,6 +102,15 @@ export interface PermissionGrantRow {
   created_at: number;
 }
 
+/** Per-workspace memory switches. Missing row = product defaults (life on, dev off). */
+export interface MemorySettingsRow {
+  workspace_id: string;
+  enabled: number;
+  injection_enabled: number;
+  provider_override: string | null;
+  updated_at: number;
+}
+
 export interface SettingRow {
   key: string;
   value: string;
@@ -1255,6 +1264,56 @@ export class Db {
     }
   }
 
+  updateWorkspaceMemory(
+    id: string,
+    update: { profileMode?: 'off' | 'portable' | 'full'; lifeReadable?: boolean },
+  ): void {
+    if (!this.getWorkspace(id)) return;
+    if (update.profileMode !== undefined) {
+      this.db.prepare(`UPDATE workspaces SET profile_mode = ? WHERE id = ?`).run(update.profileMode, id);
+    }
+    if (update.lifeReadable !== undefined) {
+      this.db
+        .prepare(`UPDATE workspaces SET life_readable = ? WHERE id = ?`)
+        .run(update.lifeReadable ? 1 : 0, id);
+    }
+  }
+
+  getMemorySettings(workspaceId: string): MemorySettingsRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM memory_settings WHERE workspace_id = ?`)
+      .get(workspaceId) as unknown as MemorySettingsRow | undefined;
+  }
+
+  /**
+   * Persist the row with fully-resolved effective values. Callers must merge
+   * product defaults first (life on, dev off) so writing only
+   * `injection_enabled` cannot silently disable a life workspace.
+   */
+  putMemorySettings(
+    workspaceId: string,
+    input: { enabled: boolean; injectionEnabled: boolean; providerOverride: string | null },
+  ): MemorySettingsRow {
+    this.db
+      .prepare(
+        `INSERT INTO memory_settings (workspace_id, enabled, injection_enabled, provider_override, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(workspace_id) DO UPDATE SET
+           enabled = excluded.enabled,
+           injection_enabled = excluded.injection_enabled,
+           provider_override = excluded.provider_override,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        workspaceId,
+        input.enabled ? 1 : 0,
+        input.injectionEnabled ? 1 : 0,
+        input.providerOverride,
+        Date.now(),
+      );
+    return this.getMemorySettings(workspaceId)!;
+  }
+
   touchWorkspace(id: string): void {
     this.db.prepare(`UPDATE workspaces SET last_used_at = ? WHERE id = ?`).run(Date.now(), id);
   }
@@ -1694,6 +1753,16 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM events WHERE run_id = ? AND seq > ? ORDER BY seq ASC`)
       .all(runId, afterSeq) as unknown as EventRow[];
+  }
+
+  /** Tool events only (text deltas dominate long runs and are irrelevant here). */
+  listToolEvents(runId: string): EventRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM events WHERE run_id = ? AND type IN ('tool_use', 'tool_result')
+         ORDER BY seq ASC`,
+      )
+      .all(runId) as unknown as EventRow[];
   }
 
   /**

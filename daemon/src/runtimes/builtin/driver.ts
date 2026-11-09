@@ -35,10 +35,12 @@ import { createPermissionBroker } from './tools/permission-broker.js';
 import { ToolExecutor } from './tools/executor.js';
 import { ToolRegistry } from './tools/registry.js';
 import type { ToolProvider } from './tools/types.js';
-import { createPabootTasksProvider } from './mcp/tasks.js';
+import { McpToolProvider } from './mcp/provider.js';
 import type { AgentProfile, AgentRunContext, PathGrant, ResolvedPathPolicy, ToolDescriptor } from './types.js';
 import type { AgentPromptPreset } from './prompt.js';
 import { isBypassAllowed } from '../../permissions/security-profile.js';
+import { resolveReadPolicy } from '../../memory/read-policy.js';
+import { isMemoryInjectionEnabled } from '../../memory/settings.js';
 
 export function createBuiltinDriver(ctx: AppContext): RuntimeDriver {
   return {
@@ -146,7 +148,27 @@ async function runBuiltin(
           measure,
         }),
         new WorkspaceKnowledgeContextSource(ctx.knowledge),
-        ...(ctx.memory ? [new MemoryBriefContextSource(ctx.memory)] : []),
+        ...(ctx.memory
+          ? [
+              new MemoryBriefContextSource(ctx.memory, {
+                resolvePolicy: (snapshot) => {
+                  const workspace = ctx.db.getWorkspace(snapshot.id);
+                  if (!workspace) {
+                    return { scopes: [], profileMode: 'off', includesUser: false };
+                  }
+                  const settings = ctx.db.getMemorySettings(workspace.id);
+                  if (!isMemoryInjectionEnabled(workspace, settings)) {
+                    return { scopes: [], profileMode: 'off', includesUser: false };
+                  }
+                  return resolveReadPolicy({
+                    workspace,
+                    workspaces: ctx.db.listWorkspaces(),
+                    getSettings: (workspaceId) => ctx.db.getMemorySettings(workspaceId),
+                  });
+                },
+              }),
+            ]
+          : []),
         new SkillsCatalogContextSource(skills, {
           descriptionMaxChars: builtinConfig.skills.catalogDescriptionChars,
         }),
@@ -185,8 +207,14 @@ async function runBuiltin(
       }),
     ]);
     const toolProviders: ToolProvider[] = [nativeProvider];
-    if (ctx.mcpServerPath && fs.existsSync(ctx.mcpServerPath)) {
-      toolProviders.push(createPabootTasksProvider(ctx, req.runId));
+    // The daemon assembled this run's MCP servers; mount the entries that
+    // actually exist (the dev tsx runner may not have compiled dist/).
+    const mcpServers = (req.toolServers ?? []).filter((spec) => {
+      const entry = spec.args[0];
+      return typeof entry === 'string' && fs.existsSync(entry);
+    });
+    if (mcpServers.length > 0) {
+      toolProviders.push(new McpToolProvider(mcpServers));
     }
     const toolsRegistry = new ToolRegistry(toolProviders);
     const toolDescriptors = await toolsRegistry.list({ agent, signal });

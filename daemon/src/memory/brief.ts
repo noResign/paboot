@@ -1,3 +1,4 @@
+import { claimAllowed, type MemoryReadPolicy, type ReadScope } from './read-policy.js';
 import type { MemoryStore } from './store.js';
 import type { MemoryClaim, MemoryScope } from './types.js';
 
@@ -17,28 +18,41 @@ export interface MemoryBrief {
 export interface BuildBriefOptions {
   maxChars?: number;
   now?: number;
+  /**
+   * Injection defaults to normal-only for dev; the API brief may include the
+   * workspace's own private claims. Cross-workspace private is always excluded
+   * by the read policy, not by this flag.
+   */
+  includePrivate?: boolean;
+  /** Scope reported to callers; defaults to the policy's workspace scope. */
+  scope?: MemoryScope;
 }
 
 /**
- * Deterministic life brief (no LLM call). Claims are the only L1 data M0
- * produces, so the brief has「关于你」+「偏好」+ a staleness note.
- *
- * Authority order is `user_confirmed > derived`; the same predicate + object
- * appears once. `secret` is never injected (D35). The block is measured and
- * whole lines are dropped from the lowest-ranked claim until it fits (D32).
+ * Deterministic brief over every scope the caller may read. Dev sees only its
+ * own workspace; life additionally sees `user` (profile-filtered) and readable
+ * dev workspaces. Claims are deduped by predicate + object and ranked
+ * `user_confirmed > derived`; `secret` never appears (D35). Whole lines are
+ * dropped from the lowest-ranked claim until the block fits (D32).
  */
-export function buildLifeBrief(
+export function buildMemoryBrief(
   store: MemoryStore,
-  scope: MemoryScope,
+  policy: MemoryReadPolicy,
   options: BuildBriefOptions = {},
 ): MemoryBrief | null {
   const maxChars = options.maxChars ?? DEFAULT_MEMORY_BRIEF_CHARS;
   const now = options.now ?? Date.now();
+  const includePrivate = options.includePrivate ?? true;
 
-  const current = store
-    .listClaims(scope, 'active')
-    .filter((claim) => claim.sensitivity !== 'secret')
-    .filter((claim) => claim.validTo === null || claim.validTo > now);
+  const current: MemoryClaim[] = [];
+  for (const readScope of policy.scopes) {
+    for (const claim of store.listClaims(readScope.scope, 'active')) {
+      if (!claimAllowed(claim, policy)) continue;
+      if (!includePrivate && claim.sensitivity !== 'normal') continue;
+      if (claim.validTo !== null && claim.validTo <= now) continue;
+      current.push(claim);
+    }
+  }
 
   const unique = new Map<string, MemoryClaim>();
   for (const claim of current) {
@@ -64,8 +78,30 @@ export function buildLifeBrief(
     charCount: markdown.length,
     usedClaimIds: included.map((claim) => claim.id),
     truncated,
-    scope,
+    scope: options.scope ?? defaultScope(policy.scopes),
   };
+}
+
+/** Single-scope compatibility wrapper (M0 tests / callers). */
+export function buildLifeBrief(
+  store: MemoryStore,
+  scope: MemoryScope,
+  options: BuildBriefOptions = {},
+): MemoryBrief | null {
+  const readScope: ReadScope = { scope, includePrivate: true };
+  return buildMemoryBrief(
+    store,
+    {
+      scopes: [readScope],
+      profileMode: scope === 'user' ? 'full' : 'off',
+      includesUser: scope === 'user',
+    },
+    { ...options, scope },
+  );
+}
+
+function defaultScope(scopes: readonly ReadScope[]): MemoryScope {
+  return scopes.find((item) => item.scope.startsWith('workspace:'))?.scope ?? scopes[0]!.scope;
 }
 
 export function renderClaimLine(claim: MemoryClaim): string {

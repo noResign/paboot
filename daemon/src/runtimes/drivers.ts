@@ -7,7 +7,7 @@ import { startCodexRun } from './codex/session.js';
 import { DEEPSEEK_BIN } from './deepseek/detect.js';
 import { startDeepSeekRun } from './deepseek/session.js';
 import { createCommandDriver } from './command.js';
-import { codexToolServerArgs, taskToolServer } from '../mcp/injection.js';
+import { codexToolServerArgs } from '../mcp/injection.js';
 import { claudePermissionHookMatcher } from '../permissions/hook-matcher.js';
 import { defaultCapabilities, type RuntimeAdapter, type RuntimeCapabilities } from './types.js';
 import type { Registry } from './registry.js';
@@ -70,7 +70,7 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
         systemContext: req.systemContext,
         dataDir: deps.ctx.config.dataDir,
         onNativeSessionId: req.onNativeSessionId,
-        toolServers: [taskToolServer(deps.ctx, req.runId)],
+        toolServers: req.toolServers ?? [],
         permissionHook:
           req.permissionMode === 'bypass'
             ? undefined
@@ -110,7 +110,7 @@ function createCodexDriver(ctx: AppContext): RuntimeDriver {
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
         env: process.env,
-        extraArgs: codexToolServerArgs([taskToolServer(ctx, req.runId)]),
+        extraArgs: codexToolServerArgs(req.toolServers ?? []),
         idleTimeoutMs: ctx.config.runIdleTimeoutMs,
         deps: { permissions: ctx.permissions, notifier: ctx.notifier, db: ctx.db },
         onEvent: req.onEvent,
@@ -136,7 +136,7 @@ function createDeepSeekDriver(ctx: AppContext): RuntimeDriver {
         permissionMode: req.permissionMode,
         env: process.env,
         bin: DEEPSEEK_BIN,
-        toolServers: [taskToolServer(ctx, req.runId)],
+        toolServers: req.toolServers ?? [],
         idleTimeoutMs: ctx.config.runIdleTimeoutMs,
         deps: { permissions: ctx.permissions, notifier: ctx.notifier, db: ctx.db },
         onEvent: req.onEvent,

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AppContext } from '../src/app/context';
-import { taskToolServer } from '../src/mcp/injection';
+import {
+  capabilityToolServer,
+  perRunToolServers,
+  taskToolServer,
+} from '../src/mcp/injection';
 
-function ctx(): AppContext {
+function ctx(overrides: Partial<AppContext> = {}): AppContext {
   return {
     config: {
       host: '127.0.0.1',
@@ -13,6 +17,8 @@ function ctx(): AppContext {
       serverToken: 'server-token',
     },
     mcpServerPath: '/opt/paboot/mcp/servers/paboot_tasks/server.js',
+    capabilityMcpServerPath: '/opt/paboot/mcp/servers/paboot_capability/server.js',
+    ...overrides,
   } as unknown as AppContext;
 }
 
@@ -23,5 +29,35 @@ describe('taskToolServer', () => {
     expect(spec.env.PABOOT_TOKEN).not.toBe('operator-token');
     expect(spec.env.PABOOT_TOKEN).not.toBe('agent-token');
     expect(spec.env.PABOOT_RUN_ID).toBe('run-1');
+  });
+});
+
+describe('capabilityToolServer', () => {
+  it('carries the run id, server token and launching runtime', () => {
+    const spec = capabilityToolServer(ctx(), 'run-1', 'codex');
+    expect(spec.name).toBe('paboot_capability');
+    expect(spec.args).toEqual(['/opt/paboot/mcp/servers/paboot_capability/server.js']);
+    expect(spec.env).toMatchObject({
+      PABOOT_RUN_ID: 'run-1',
+      PABOOT_TOKEN: 'server-token',
+      PABOOT_RUNTIME: 'codex',
+    });
+  });
+});
+
+describe('perRunToolServers', () => {
+  it('mounts tasks and capability for every runtime', () => {
+    const specs = perRunToolServers(ctx(), 'run-1', 'builtin');
+    expect(specs.map((spec) => spec.name)).toEqual(['paboot_tasks', 'paboot_capability']);
+    expect(specs[1]?.env.PABOOT_RUNTIME).toBe('builtin');
+  });
+
+  it('omits entries whose path is not wired (partial test contexts)', () => {
+    const specs = perRunToolServers(
+      ctx({ mcpServerPath: '', capabilityMcpServerPath: '' }),
+      'run-1',
+      'claude',
+    );
+    expect(specs).toEqual([]);
   });
 });

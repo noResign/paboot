@@ -1,15 +1,28 @@
 import type { Express, Request, Response } from 'express';
 import type { AppContext } from '../app/context.js';
-import type { Db } from '../db/db.js';
+import type { Db, WorkspaceRow } from '../db/db.js';
 import { filterCaptureText } from '../memory/capture-filter.js';
 import { hashContent } from '../memory/store.js';
-import { buildLifeBrief } from '../memory/brief.js';
+import { buildMemoryBrief } from '../memory/brief.js';
 import { configuredMemoryModel, normalizeMemoryModelSelection } from '../memory/model.js';
+import {
+  claimAllowed,
+  resolveReadPolicy,
+  scopeAllowsSensitivity,
+  userReadPolicy,
+  type MemoryReadPolicy,
+} from '../memory/read-policy.js';
 import {
   MemoryScopeError,
   resolveMemoryScope,
   type ResolvedMemoryScope,
 } from '../memory/scope.js';
+import {
+  effectiveMemorySettings,
+  isMemoryEnabled,
+  isMemoryProfileMode,
+  type MemoryProfileMode,
+} from '../memory/settings.js';
 import type { MemoryClaim, MemoryScope, MemorySessionMode } from '../memory/types.js';
 import { log } from '../platform/log.js';
 import type {
@@ -18,8 +31,13 @@ import type {
   MemoryClaimStatusDto,
   MemoryClaimsResponse,
   MemoryEvidenceRelationDto,
+  MemorySearchResponse,
   MemorySessionModeDto,
+  MemorySourceDto,
   MemoryStatusDto,
+  MemoryTimelineItemDto,
+  MemoryTimelineResponse,
+  WorkspaceMemoryDto,
 } from '../types/api.js';
 
 function lookupSession(db: Db) {
@@ -41,35 +59,46 @@ function scopeDto(scope: ResolvedMemoryScope): MemoryScope {
   return scope.kind === 'user' ? 'user' : `workspace:${scope.workspaceId}`;
 }
 
+interface MemoryTarget {
+  resolved: ResolvedMemoryScope;
+  scope: MemoryScope;
+  workspace: WorkspaceRow | null;
+  policy: MemoryReadPolicy;
+}
+
 /**
- * Resolve `sessionId` / `scope`, reject unknown sessions, and keep M0 to life
- * workspaces. `user` is read-only for now (no user claims until M1).
+ * Resolve `sessionId` / `scope` and apply the workspace switch + read policy.
+ * Dev workspaces are readable once enabled; life composes `user` + life +
+ * readable dev workspaces. Explicit `scope=user` is operator-level read-only.
  */
-function resolveScope(
-  ctx: AppContext,
-  req: Request,
-  res: Response,
-): { resolved: ResolvedMemoryScope; scope: MemoryScope } | null {
+function resolveScope(ctx: AppContext, req: Request, res: Response): MemoryTarget | null {
   try {
     const resolved = resolveMemoryScope(
       { sessionId: req.query['sessionId'] ?? req.body?.['sessionId'], scope: req.query['scope'] },
       lookupSession(ctx.db),
     );
-    if (resolved.kind === 'workspace') {
-      const workspace = ctx.db.getWorkspace(resolved.workspaceId!);
-      if (!workspace) {
-        res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
-        return null;
-      }
-      if (workspace.family !== 'life') {
-        res.status(400).json({
-          error: 'memory is not enabled for this workspace yet',
-          code: 'memory_not_enabled',
-        });
-        return null;
-      }
+    if (resolved.kind === 'user') {
+      return { resolved, scope: 'user', workspace: null, policy: userReadPolicy() };
     }
-    return { resolved, scope: scopeDto(resolved) };
+    const workspace = ctx.db.getWorkspace(resolved.workspaceId!);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return null;
+    }
+    const settings = ctx.db.getMemorySettings(workspace.id);
+    if (!isMemoryEnabled(workspace, settings)) {
+      res.status(400).json({
+        error: 'memory is not enabled for this workspace',
+        code: 'memory_not_enabled',
+      });
+      return null;
+    }
+    const policy = resolveReadPolicy({
+      workspace,
+      workspaces: ctx.db.listWorkspaces(),
+      getSettings: (workspaceId) => ctx.db.getMemorySettings(workspaceId),
+    });
+    return { resolved, scope: scopeDto(resolved), workspace, policy };
   } catch (err) {
     if (err instanceof MemoryScopeError) {
       res.status(err.status).json({ error: err.message, code: err.code });
@@ -77,6 +106,35 @@ function resolveScope(
     }
     throw err;
   }
+}
+
+function memoryClaimsFor(
+  ctx: AppContext,
+  target: MemoryTarget,
+  status: MemoryClaimStatusDto,
+): MemoryClaim[] {
+  const byId = new Map<string, MemoryClaim>();
+  for (const readScope of target.policy.scopes) {
+    for (const claim of ctx.memory!.listClaims(readScope.scope, status)) {
+      if (claimAllowed(claim, target.policy)) byId.set(claim.id, claim);
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Mutations stay within the caller's own scope; cross-read dev claims are read-only. */
+function requireWritableClaim(
+  ctx: AppContext,
+  req: Request,
+  res: Response,
+  target: MemoryTarget,
+): MemoryClaim | null {
+  const claim = ctx.memory!.getClaim(req.params['id']!);
+  if (!claim || claim.scope !== target.scope || claim.sensitivity === 'secret') {
+    res.status(404).json({ error: 'claim not found', code: 'claim_not_found' });
+    return null;
+  }
+  return claim;
 }
 
 function toClaimDto(claim: MemoryClaim, ctx: AppContext): MemoryClaimDto {
@@ -89,6 +147,8 @@ function toClaimDto(claim: MemoryClaim, ctx: AppContext): MemoryClaimDto {
     kind: claim.kind,
     summary: claim.summary,
     authority: claim.authority,
+    shareClass: claim.shareClass,
+    promotedFrom: claim.promotedFrom,
     validFrom: claim.validFrom,
     validTo: claim.validTo,
     timePrecision: claim.timePrecision,
@@ -105,14 +165,14 @@ function toClaimDto(claim: MemoryClaim, ctx: AppContext): MemoryClaimDto {
   };
 }
 
-function requireClaim(
+function requireReadableClaim(
   ctx: AppContext,
   req: Request,
   res: Response,
-  scope: MemoryScope,
+  target: MemoryTarget,
 ): MemoryClaim | null {
   const claim = ctx.memory!.getClaim(req.params['id']!);
-  if (!claim || claim.scope !== scope || claim.sensitivity === 'secret') {
+  if (!claim || !claimAllowed(claim, target.policy)) {
     res.status(404).json({ error: 'claim not found', code: 'claim_not_found' });
     return null;
   }
@@ -123,11 +183,11 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/brief', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
-    if (target.scope === 'user') {
-      res.json(emptyBrief(target.scope));
-      return;
-    }
-    const brief = buildLifeBrief(ctx.memory!, target.scope);
+    const brief = buildMemoryBrief(ctx.memory!, target.policy, {
+      scope: target.scope,
+      // Work sessions never inject private claims; life briefs may include them.
+      includePrivate: target.workspace?.family !== 'dev',
+    });
     if (!brief) {
       res.json(emptyBrief(target.scope));
       return;
@@ -151,8 +211,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'invalid claim status', code: 'bad_request' });
       return;
     }
-    const claims = ctx.memory!.listClaims(target.scope, status)
-      .filter((claim) => claim.sensitivity !== 'secret');
+    const claims = memoryClaimsFor(ctx, target, status);
     const dto: MemoryClaimsResponse = { claims: claims.map((claim) => toClaimDto(claim, ctx)) };
     res.json(dto);
   });
@@ -160,7 +219,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/claims/:id', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
-    const claim = requireClaim(ctx, req, res, target.scope);
+    const claim = requireReadableClaim(ctx, req, res, target);
     if (!claim) return;
     res.json({ claim: toClaimDto(claim, ctx) });
   });
@@ -168,7 +227,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.patch('/api/memory/claims/:id', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
-    const claim = requireClaim(ctx, req, res, target.scope);
+    const claim = requireWritableClaim(ctx, req, res, target);
     if (!claim) return;
 
     const summary = typeof req.body?.['summary'] === 'string' ? req.body['summary'].trim() : undefined;
@@ -198,10 +257,35 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.delete('/api/memory/claims/:id', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
-    const claim = requireClaim(ctx, req, res, target.scope);
+    const claim = requireWritableClaim(ctx, req, res, target);
     if (!claim) return;
     ctx.memory!.forgetClaim(claim.id);
     res.json({ ok: true, id: claim.id });
+  });
+
+  app.post('/api/memory/claims/:id/promote', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    if (target.workspace?.family !== 'life') {
+      res.status(400).json({
+        error: 'only life claims can be promoted to user memory',
+        code: 'promotion_not_supported',
+      });
+      return;
+    }
+    const claim = requireWritableClaim(ctx, req, res, target);
+    if (!claim) return;
+    const shareClass = req.body?.['shareClass'] ?? 'portable';
+    if (shareClass !== 'portable' && shareClass !== 'personal' && shareClass !== 'life_only') {
+      res.status(400).json({ error: 'invalid shareClass', code: 'bad_request' });
+      return;
+    }
+    const promoted = ctx.memory!.promoteClaim(claim.id, shareClass);
+    if (!promoted) {
+      res.status(400).json({ error: 'claim cannot be promoted', code: 'promotion_not_supported' });
+      return;
+    }
+    res.json({ claim: toClaimDto(promoted, ctx) });
   });
 
   app.post('/api/memory/feedback', (req, res) => {
@@ -218,6 +302,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'claim not found', code: 'claim_not_found' });
       return;
     }
+    // Feedback targets the caller's own claim; cross-read scopes stay read-only.
     ctx.memory!.addFeedback({
       targetType: 'claim',
       targetId,
@@ -226,6 +311,209 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       sessionId: target.resolved.sessionId,
     });
     res.json({ ok: true });
+  });
+
+  app.get('/api/memory/search', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const query = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
+    if (query === '') {
+      res.status(400).json({ error: 'q is required', code: 'bad_request' });
+      return;
+    }
+    const requestedLimit = Number(req.query['limit'] ?? 20);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 100)
+      : 20;
+    const files =
+      typeof req.query['files'] === 'string'
+        ? req.query['files']
+            .split(',')
+            .map((item) => item.trim().toLowerCase())
+            .filter(Boolean)
+        : [];
+    const fileMatches = (paths: readonly string[]): boolean =>
+      files.length === 0 ||
+      files.some((wanted) =>
+        paths.some((candidate) => candidate.toLowerCase().includes(wanted)),
+      );
+
+    const hits = ctx.memory!.searchMemory({
+      scopes: target.policy.scopes.map((item) => item.scope),
+      query,
+      limit: Math.max(limit * 5, limit),
+    });
+
+    const dto: MemorySearchResponse = { hits: [] };
+    for (const hit of hits) {
+      // Only observations / summaries carry file metadata; a files filter is
+      // therefore a hard restriction, not an extra ranking signal.
+      if (files.length > 0 && hit.kind !== 'observation' && hit.kind !== 'summary') continue;
+      if (hit.kind === 'claim') {
+        const claim = ctx.memory!.getClaim(hit.refId);
+        if (!claim || claim.status !== 'active' || !claimAllowed(claim, target.policy)) continue;
+        dto.hits.push({
+          kind: 'claim',
+          id: claim.id,
+          scope: claim.scope,
+          endId: claim.endId,
+          title: claim.summary,
+          snippet: compact(claim.summary, 240),
+          score: hit.score,
+        });
+      } else if (hit.kind === 'source') {
+        const source = ctx.memory!.getSource(hit.refId);
+        if (
+          !source ||
+          source.status === 'excluded' ||
+          !scopeAllowsSensitivity(target.policy, source.scope, source.sensitivity)
+        ) {
+          continue;
+        }
+        dto.hits.push({
+          kind: 'source',
+          id: source.id,
+          scope: source.scope,
+          endId: source.endId,
+          title: compact(source.content, 80),
+          snippet: compact(source.content, 240),
+          score: hit.score,
+        });
+      } else if (hit.kind === 'observation') {
+        const observation = ctx.memory!.getObservation(hit.refId);
+        const paths = observation
+          ? [...observation.filesRead, ...observation.filesModified]
+          : [];
+        if (
+          !observation ||
+          observation.status !== 'active' ||
+          !scopeAllowsSensitivity(target.policy, observation.scope, observation.sensitivity) ||
+          !fileMatches(paths)
+        ) {
+          continue;
+        }
+        dto.hits.push({
+          kind: 'observation',
+          id: observation.id,
+          scope: observation.scope,
+          endId: observation.endId,
+          title: observation.title,
+          snippet: compact(observation.subtitle ?? observation.narrative ?? observation.title, 240),
+          score: hit.score,
+          files: paths,
+        });
+      } else if (hit.kind === 'summary') {
+        const summary = ctx.memory!.getSessionSummary(hit.refId);
+        const paths = summary ? [...summary.filesRead, ...summary.filesEdited] : [];
+        if (
+          !summary ||
+          !scopeAllowsSensitivity(target.policy, summary.scope, summary.sensitivity) ||
+          !fileMatches(paths)
+        ) {
+          continue;
+        }
+        dto.hits.push({
+          kind: 'summary',
+          id: summary.id,
+          scope: summary.scope,
+          endId: summary.endId,
+          title: compact(summary.request || '会话摘要', 120),
+          snippet: compact(summary.completed || summary.learned, 240),
+          score: hit.score,
+          files: paths,
+        });
+      } else if (hit.kind === 'document') {
+        const document = ctx.memory!.getDocument(hit.refId);
+        if (
+          !document ||
+          document.reviewStatus === 'missing' ||
+          !scopeAllowsSensitivity(target.policy, document.scope, document.sensitivity)
+        ) {
+          continue;
+        }
+        dto.hits.push({
+          kind: 'document',
+          id: document.id,
+          scope: document.scope,
+          endId: document.endId,
+          title: document.title,
+          snippet: compact(document.summary || hit.text, 240),
+          score: hit.score,
+          path: document.path,
+        });
+      }
+      if (dto.hits.length >= limit) break;
+    }
+    res.json(dto);
+  });
+
+  app.get('/api/memory/timeline', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const requestedLimit = Number(req.query['limit'] ?? 50);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 200)
+      : 50;
+    const items: MemoryTimelineItemDto[] = [];
+    for (const readScope of target.policy.scopes) {
+      for (const observation of ctx.memory!.listObservations(readScope.scope, limit)) {
+        if (!scopeAllowsSensitivity(target.policy, observation.scope, observation.sensitivity)) continue;
+        items.push({
+          kind: 'observation',
+          id: observation.id,
+          scope: observation.scope,
+          endId: observation.endId,
+          sessionId: observation.sessionId,
+          title: observation.title,
+          subtitle: observation.subtitle,
+          at: observation.createdAt,
+          files: [...observation.filesRead, ...observation.filesModified],
+        });
+      }
+      for (const summary of ctx.memory!.listSessionSummaries(readScope.scope, undefined, limit)) {
+        if (!scopeAllowsSensitivity(target.policy, summary.scope, summary.sensitivity)) continue;
+        items.push({
+          kind: 'summary',
+          id: summary.id,
+          scope: summary.scope,
+          endId: summary.endId,
+          sessionId: summary.sessionId,
+          title: compact(summary.request || '会话摘要', 120),
+          subtitle: summary.completed === '' ? null : compact(summary.completed, 160),
+          at: summary.createdAt,
+          files: [...summary.filesRead, ...summary.filesEdited],
+        });
+      }
+    }
+    items.sort((a, b) => b.at - a.at);
+    const dto: MemoryTimelineResponse = { items: items.slice(0, limit) };
+    res.json(dto);
+  });
+
+  app.get('/api/memory/sources/:id', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const source = ctx.memory!.getSource(req.params['id']!);
+    if (
+      !source ||
+      !scopeAllowsSensitivity(target.policy, source.scope, source.sensitivity)
+    ) {
+      res.status(404).json({ error: 'source not found', code: 'source_not_found' });
+      return;
+    }
+    const dto: MemorySourceDto = {
+      id: source.id,
+      scope: source.scope,
+      endId: source.endId,
+      kind: source.kind,
+      sessionId: source.sessionId,
+      runId: source.runId,
+      occurredAt: source.occurredAt,
+      content: source.content,
+      sensitivity: source.sensitivity,
+      status: source.status,
+    };
+    res.json({ source: dto });
   });
 
   app.post('/api/memory/remember', (req, res) => {
@@ -241,8 +529,8 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const workspace = ctx.db.getWorkspace(session.workspace_id);
-    if (!workspace || workspace.family !== 'life') {
-      res.status(400).json({ error: 'memory is not enabled for this workspace yet', code: 'memory_not_enabled' });
+    if (!workspace || !isMemoryEnabled(workspace, ctx.db.getMemorySettings(workspace.id))) {
+      res.status(400).json({ error: 'memory is not enabled for this workspace', code: 'memory_not_enabled' });
       return;
     }
     if (session.memory_mode === 'off') {
@@ -260,7 +548,10 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const ends = ctx.db.listEnds(workspace.id);
-    const lifeEnd = ends.find((end) => end.kind === 'life' && end.status === 'active');
+    const lifeEnd =
+      workspace.family === 'life'
+        ? ends.find((end) => end.kind === 'life' && end.status === 'active')
+        : undefined;
     const endId = session.end_id ?? lifeEnd?.id ?? null;
     const scoped = `workspace:${workspace.id}` as const;
     if (ctx.memory!.hasTombstone(scoped, endId, hashContent(content))) {
@@ -307,13 +598,21 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       }
       const dto: MemoryStatusDto = {
         scope: target.scope,
-        pendingSources: ctx.memory!.countSources('pending', target.scope),
+        pendingSources: target.policy.scopes.reduce(
+          (total, readScope) => total + ctx.memory!.countSources('pending', readScope.scope),
+          0,
+        ),
         lastConsolidatedAt: numberState(ctx, 'last_consolidated_at'),
         lastSuccessAt: numberState(ctx, 'last_success_at'),
         consecutiveFailures: Number(ctx.memory!.getState('consecutive_failures') ?? 0),
         extractionModel,
         modelAvailable,
-        enabled: true,
+        enabled: target.workspace
+          ? effectiveMemorySettings(
+              target.workspace,
+              ctx.db.getMemorySettings(target.workspace.id),
+            ).enabled
+          : true,
       };
       res.json(dto);
     } catch (err) {
@@ -337,10 +636,17 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const workspace = session.workspace_id ? ctx.db.getWorkspace(session.workspace_id) : undefined;
-    if (!workspace || workspace.family !== 'life' || session.kind !== 'chat') {
-      res.status(400).json({ error: 'memory is not enabled for this workspace yet', code: 'memory_not_enabled' });
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
+    if (session.kind !== 'chat') {
+      res.status(400).json({ error: 'only chat sessions have memory', code: 'session_not_chat' });
+      return;
+    }
+    // The per-session switch is a privacy choice, not a feature toggle: it must
+    // be savable even while the workspace itself has memory disabled (dev is
+    // off by default). Capture/injection already gate on the workspace switch.
     const previousMode = session.memory_mode;
     ctx.db.setSessionMemoryMode(session.id, mode as MemorySessionMode);
     // Turning off is a hard privacy boundary: anything said while off must not
@@ -350,6 +656,101 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
     }
     res.json({ sessionId: session.id, mode });
   });
+
+  app.get('/api/workspaces/:id/memory', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params['id']!);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    res.json(workspaceMemoryDto(ctx, workspace));
+  });
+
+  app.patch('/api/workspaces/:id/memory', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params['id']!);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const life = workspace.family === 'life';
+    if (body['profileMode'] !== undefined && !life) {
+      res.status(400).json({
+        error: 'profileMode is only available for the life workspace',
+        code: 'bad_setting',
+      });
+      return;
+    }
+    if (body['lifeReadable'] !== undefined && life) {
+      res.status(400).json({
+        error: 'lifeReadable is only available for dev workspaces',
+        code: 'bad_setting',
+      });
+      return;
+    }
+    if (
+      (body['enabled'] !== undefined && typeof body['enabled'] !== 'boolean') ||
+      (body['injectionEnabled'] !== undefined && typeof body['injectionEnabled'] !== 'boolean') ||
+      (body['lifeReadable'] !== undefined && typeof body['lifeReadable'] !== 'boolean')
+    ) {
+      res.status(400).json({ error: 'enabled/injectionEnabled must be boolean', code: 'bad_setting' });
+      return;
+    }
+    if (body['profileMode'] !== undefined && !isMemoryProfileMode(body['profileMode'])) {
+      res.status(400).json({ error: 'invalid profileMode', code: 'bad_setting' });
+      return;
+    }
+    let providerOverride = effectiveMemorySettings(
+      workspace,
+      ctx.db.getMemorySettings(workspace.id),
+    ).providerOverride;
+    if (body['providerOverride'] !== undefined) {
+      const raw = body['providerOverride'];
+      if (raw !== null && typeof raw !== 'string') {
+        res.status(400).json({ error: 'providerOverride must be a string or null', code: 'bad_setting' });
+        return;
+      }
+      providerOverride = raw === null ? null : raw.trim() || null;
+    }
+
+    const current = effectiveMemorySettings(workspace, ctx.db.getMemorySettings(workspace.id));
+    const enabled = typeof body['enabled'] === 'boolean' ? body['enabled'] : current.enabled;
+    const injectionEnabled =
+      typeof body['injectionEnabled'] === 'boolean'
+        ? body['injectionEnabled']
+        : current.injectionEnabled;
+    ctx.db.putMemorySettings(workspace.id, { enabled, injectionEnabled, providerOverride });
+    if (body['profileMode'] !== undefined) {
+      ctx.db.updateWorkspaceMemory(workspace.id, {
+        profileMode: body['profileMode'] as MemoryProfileMode,
+      });
+    }
+    if (typeof body['lifeReadable'] === 'boolean') {
+      ctx.db.updateWorkspaceMemory(workspace.id, { lifeReadable: body['lifeReadable'] });
+    }
+    res.json(workspaceMemoryDto(ctx, ctx.db.getWorkspace(workspace.id)!));
+  });
+}
+
+function workspaceMemoryDto(ctx: AppContext, workspace: WorkspaceRow): WorkspaceMemoryDto {
+  const effective = effectiveMemorySettings(
+    workspace,
+    ctx.db.getMemorySettings(workspace.id),
+  );
+  return {
+    workspaceId: workspace.id,
+    enabled: effective.enabled,
+    injectionEnabled: effective.injectionEnabled,
+    ...(effective.profileMode === undefined ? {} : { profileMode: effective.profileMode }),
+    ...(effective.lifeReadable === undefined ? {} : { lifeReadable: effective.lifeReadable }),
+    providerOverride: effective.providerOverride,
+  };
+}
+
+function compact(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const chars = Array.from(normalized);
+  return chars.length <= max ? normalized : `${chars.slice(0, max - 1).join('')}…`;
 }
 
 function emptyBrief(scope: MemoryScope): MemoryBriefDto {
