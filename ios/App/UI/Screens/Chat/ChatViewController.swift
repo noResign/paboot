@@ -528,8 +528,8 @@ final class ChatViewController: UIViewController {
             memoryActions.append(
                 UIAction(
                     title: option.title,
-                    state: state.memoryMode == option.mode ? .on : .off,
-                    attributes: attributes
+                    attributes: attributes,
+                    state: state.memoryMode == option.mode ? .on : .off
                 ) { [weak self] _ in
                     self?.viewModel.setMemoryMode(option.mode)
                 }
