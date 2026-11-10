@@ -294,7 +294,10 @@ fun MemoryScreen(
                         }
                         if (!isCollapsed) {
                             item(key = "group-${group.kind}") {
-                                GroupCard(group.claims) { selected = it }
+                                GroupCard(
+                                    claims = group.claims,
+                                    currentScope = "workspace:$workspaceId",
+                                ) { selected = it }
                             }
                         }
                     }
@@ -806,7 +809,11 @@ private fun GroupHeader(
 }
 
 @Composable
-private fun GroupCard(claims: List<MemoryClaimDto>, onClick: (MemoryClaimDto) -> Unit) {
+private fun GroupCard(
+    claims: List<MemoryClaimDto>,
+    currentScope: String,
+    onClick: (MemoryClaimDto) -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -815,7 +822,11 @@ private fun GroupCard(claims: List<MemoryClaimDto>, onClick: (MemoryClaimDto) ->
     ) {
         Column {
             claims.forEachIndexed { index, claim ->
-                MemoryRow(claim = claim, onClick = { onClick(claim) })
+                MemoryRow(
+                    claim = claim,
+                    currentScope = currentScope,
+                    onClick = { onClick(claim) },
+                )
                 if (index < claims.lastIndex) {
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
@@ -829,7 +840,11 @@ private fun GroupCard(claims: List<MemoryClaimDto>, onClick: (MemoryClaimDto) ->
 }
 
 @Composable
-private fun MemoryRow(claim: MemoryClaimDto, onClick: () -> Unit) {
+private fun MemoryRow(
+    claim: MemoryClaimDto,
+    currentScope: String,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -866,6 +881,13 @@ private fun MemoryRow(claim: MemoryClaimDto, onClick: () -> Unit) {
                         MaterialTheme.colorScheme.surfaceVariant
                     },
                 )
+                if (claim.scope != currentScope && claim.scopeLabel.isNotEmpty()) {
+                    MemoryTag(
+                        claim.scopeLabel,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
                 if (claim.sensitivity == "private") {
                     MemoryTag(
                         "私密",
@@ -982,6 +1004,13 @@ private fun MemoryDetail(
                     MaterialTheme.colorScheme.surfaceVariant
                 },
             )
+            if (claim.scopeLabel.isNotEmpty()) {
+                MemoryTag(
+                    claim.scopeLabel,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+            }
             if (claim.sensitivity == "private") {
                 MemoryTag(
                     "私密",

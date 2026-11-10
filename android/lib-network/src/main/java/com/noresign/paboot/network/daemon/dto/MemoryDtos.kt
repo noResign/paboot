@@ -18,6 +18,7 @@ data class MemoryClaimEvidenceDto(
 data class MemoryClaimDto(
     val id: String = "",
     val scope: String = "",
+    val scopeLabel: String = "",
     val endId: String? = null,
     val predicate: String = "",
     val objectText: String? = null,

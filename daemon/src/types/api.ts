@@ -660,6 +660,8 @@ export interface MemoryClaimEvidenceDto {
 export interface MemoryClaimDto {
   id: string;
   scope: MemoryScopeDto;
+  /** Human-readable scope: 全局 / 生活 / workspace name. */
+  scopeLabel: string;
   endId: string | null;
   predicate: string;
   objectText: string | null;

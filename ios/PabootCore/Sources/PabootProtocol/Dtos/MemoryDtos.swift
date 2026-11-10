@@ -20,6 +20,7 @@ public struct MemoryClaimEvidenceDto: Decodable, Equatable, Sendable {
 public struct MemoryClaimDto: Decodable, Equatable, Sendable {
     public let id: String
     public let scope: String
+    public let scopeLabel: String
     public let endId: String?
     public let predicate: String
     public let objectText: String?
@@ -40,6 +41,7 @@ public struct MemoryClaimDto: Decodable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        scopeLabel = try container.decodeIfPresent(String.self, forKey: .scopeLabel) ?? ""
         endId = try container.decodeIfPresent(String.self, forKey: .endId)
         predicate = try container.decodeIfPresent(String.self, forKey: .predicate) ?? ""
         objectText = try container.decodeIfPresent(String.self, forKey: .objectText)
@@ -58,7 +60,7 @@ public struct MemoryClaimDto: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, scope, endId, predicate, objectText, kind, summary, authority
+        case id, scope, scopeLabel, endId, predicate, objectText, kind, summary, authority
         case validFrom, validTo, timePrecision, confidence, importance, sensitivity
         case status, evidence, updatedAt
     }

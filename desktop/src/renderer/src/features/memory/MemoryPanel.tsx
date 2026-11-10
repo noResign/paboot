@@ -796,6 +796,9 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                                 >
                                   {AUTHORITY_LABEL[claim.authority]}
                                 </span>
+                                {claim.scope !== scope && claim.scopeLabel && (
+                                  <span className="mem-tag">{claim.scopeLabel}</span>
+                                )}
                                 {claim.sensitivity === 'private' && (
                                   <span className="mem-tag">私密</span>
                                 )}
@@ -1016,6 +1019,9 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                     >
                       {AUTHORITY_LABEL[selected.authority]}
                     </span>
+                    {selected.scopeLabel && (
+                      <span className="badge subtle">{selected.scopeLabel}</span>
+                    )}
                     {selected.sensitivity === 'private' && (
                       <span className="badge subtle">私密</span>
                     )}
