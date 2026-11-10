@@ -165,6 +165,47 @@ describe('ends routes', () => {
     expect(enabledCapabilityServers(db, session).has('paboot_capability')).toBe(true);
   });
 
+  it('binds several roots, removes a root and deletes the end', async () => {
+    const { db, workspace, session, root, url } = await boot();
+    const androidDir = path.join(root, 'android');
+    fs.mkdirSync(androidDir);
+    const created = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Pixel' }),
+      })
+    ).json()) as { end: { id: string } };
+    const endId = created.end.id;
+    for (const dir of [root, androidDir]) {
+      const bound = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/roots`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: dir }),
+      });
+      expect(bound.status).toBe(200);
+    }
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/activate`, { method: 'POST' });
+    expect(db.listEndRoots(endId)).toHaveLength(2);
+    expect(enabledCapabilityServers(db, session).has('paboot_capability')).toBe(true);
+
+    const removed = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/roots`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: androidDir }),
+    });
+    expect(removed.status).toBe(200);
+    expect(db.listEndRoots(endId)).toEqual([root]);
+
+    const deleted = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}`, {
+      method: 'DELETE',
+    });
+    expect(deleted.status).toBe(200);
+    expect(db.getEnd(endId)).toBeUndefined();
+    expect(db.getSession(session.id)?.end_id).toBeNull();
+    expect(enabledCapabilityServers(db, session).has('paboot_capability')).toBe(false);
+  });
+
   it('rejects roots outside the workspace', async () => {
     const { workspace, url } = await boot();
     const created = (await (

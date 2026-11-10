@@ -176,6 +176,38 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
     res.json(dto);
   });
 
+  app.delete('/api/workspaces/:id/ends/:endId/roots', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    const root = typeof req.body?.['path'] === 'string' ? req.body['path'].trim() : '';
+    if (!root) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    ctx.db.removeEndRoot(end.id, path.resolve(root));
+    const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };
+    res.json(dto);
+  });
+
+  app.delete('/api/workspaces/:id/ends/:endId', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    // The end only scopes capabilities and the main-end hint; sessions stay
+    // in the workspace after their end is removed.
+    ctx.db.deleteEnd(end.id);
+    res.json({ ok: true });
+  });
+
   app.post('/api/workspaces/:id/ends/:endId/activate', (req, res) => {
     if (!requireOperator(res)) return;
     const workspace = workspaceFor(ctx, req.params['id']!);

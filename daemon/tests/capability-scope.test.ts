@@ -119,6 +119,72 @@ describe('capability bindings and scope', () => {
     expect(enabledCapabilityServers(db, session).has('paboot_capability')).toBe(true);
   });
 
+  it('injects a mounted end into every workspace session, even outside its roots', () => {
+    const db = openDb();
+    const devPath = tmpDir('workspace-root');
+    const androidPath = path.join(devPath, 'android');
+    fs.mkdirSync(androidPath);
+    const workspace = db.createWorkspace({ name: 'dev', path: devPath, family: 'dev' });
+    const session = db.createSession({
+      id: 's-outside',
+      runtime: 'claude',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: devPath,
+    });
+    const end = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Pixel',
+      status: 'active',
+    });
+    db.addEndRoot(end.id, androidPath);
+    db.upsertCapabilityBinding({
+      scopeType: 'end',
+      scopeId: end.id,
+      providerId: 'android-device',
+    });
+
+    // cwd (workspace root) is not inside the end root, yet the mount applies.
+    expect(resolveCapabilityScope(db, session).end?.id).toBe(end.id);
+    expect(enabledCapabilityServers(db, session).has('paboot_capability')).toBe(true);
+  });
+
+  it('cleans capability bindings when a session or workspace is deleted', () => {
+    const db = openDb();
+    const devPath = tmpDir('cleanup');
+    const workspace = db.createWorkspace({ name: 'dev', path: devPath, family: 'dev' });
+    const session = db.createSession({
+      id: 's-cleanup',
+      runtime: 'claude',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: devPath,
+    });
+    const end = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Pixel',
+      status: 'active',
+    });
+    for (const [scopeType, scopeId] of [
+      ['session', session.id],
+      ['end', end.id],
+      ['workspace', workspace.id],
+    ] as const) {
+      db.upsertCapabilityBinding({ scopeType, scopeId, providerId: 'android-device' });
+    }
+
+    db.deleteSession(session.id);
+    expect(db.listCapabilityBindings('session', session.id)).toHaveLength(0);
+
+    db.deleteWorkspace(workspace.id);
+    expect(db.listCapabilityBindings('end', end.id)).toHaveLength(0);
+    expect(db.listCapabilityBindings('workspace', workspace.id)).toHaveLength(0);
+  });
+
   it('exposes the resolved scope to the capability MCP server by run id', async () => {
     const db = openDb();
     const devPath = tmpDir('scope-route');
