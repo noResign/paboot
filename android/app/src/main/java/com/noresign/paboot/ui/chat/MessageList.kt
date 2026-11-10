@@ -179,6 +179,9 @@ internal fun UserBubble(message: ChatUiMessage.User) {
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            if (message.attachmentIds.isNotEmpty()) {
+                MessageAttachments(message.attachmentIds)
+            }
             Surface(shape = RoundedCornerShape(16.dp), color = bubbleColor) {
                 Text(
                     text = message.text,

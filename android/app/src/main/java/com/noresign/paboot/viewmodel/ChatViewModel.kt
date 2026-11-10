@@ -1,9 +1,11 @@
 package com.noresign.paboot.viewmodel
 
+import android.net.Uri
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.PendingNewSession
+import com.noresign.paboot.data.repository.AttachmentRepository
 import com.noresign.paboot.data.repository.ChatRepository
 import com.noresign.paboot.data.repository.MetaRepository
 import com.noresign.paboot.data.repository.SessionRepository
@@ -16,6 +18,7 @@ import com.noresign.paboot.util.ReconnectPolicy
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.util.friendlyMessage
 import com.noresign.paboot.network.daemon.ChatStreamEvent
+import com.noresign.paboot.model.chat.AttachmentDraft
 import com.noresign.paboot.model.chat.ChatUiMessage
 import com.noresign.paboot.model.chat.ContentBlock
 import com.noresign.paboot.model.chat.ContextUsage
@@ -56,10 +59,14 @@ class ChatViewModel(
     private val sessionRepository: SessionRepository = SessionRepository(),
     private val metaRepository: MetaRepository = MetaRepository(),
     private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
+    private val attachmentRepository: AttachmentRepository = AttachmentRepository(),
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
     val messages = _messages.asStateFlow()
+
+    private val _attachments = MutableStateFlow<List<AttachmentDraft>>(emptyList())
+    val attachments = _attachments.asStateFlow()
 
     private val _todos = MutableStateFlow<List<TodoItem>>(emptyList())
     val todos = _todos.asStateFlow()
@@ -268,7 +275,7 @@ class ChatViewModel(
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         for (run in runs) {
-            list += ChatUiMessage.User(run.prompt, run.startedAt)
+            list += ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds)
             if (run.id == runningRunId) {
                 // 运行中：attach() 会追加并续流
                 list += ChatUiMessage.Assistant()
@@ -306,14 +313,53 @@ class ChatViewModel(
         return finalizeAssistant(a)
     }
 
+    fun attachImage(bytes: ByteArray, contentType: String, previewUri: Uri) {
+        if (_attachments.value.size >= 8) return
+        val localId = UUID.randomUUID().toString()
+        _attachments.update {
+            it + AttachmentDraft(localId = localId, previewUri = previewUri, uploading = true)
+        }
+        viewModelScope.launch {
+            when (val result = attachmentRepository.upload(bytes, contentType)) {
+                is NetworkResult.Success -> _attachments.update { list ->
+                    list.map {
+                        if (it.localId == localId) {
+                            it.copy(remoteId = result.data.id, uploading = false, error = null)
+                        } else {
+                            it
+                        }
+                    }
+                }
+                is NetworkResult.Error -> _attachments.update { list ->
+                    list.map {
+                        if (it.localId == localId) {
+                            it.copy(uploading = false, error = friendlyError(result))
+                        } else {
+                            it
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun removeAttachment(localId: String) {
+        _attachments.update { list -> list.filterNot { it.localId == localId } }
+    }
+
     fun send(text: String) {
-        val prompt = text.trim()
+        if (_attachments.value.any { it.uploading }) return
+        val attachmentIds = _attachments.value.mapNotNull { it.remoteId }
+        val prompt = text.trim().ifEmpty {
+            if (attachmentIds.isNotEmpty()) "请查看这些图片。" else ""
+        }
         if (prompt.isEmpty() || _streaming.value) return
         if (sessionId == null && _sessionTitle.value == null) {
             _sessionTitle.value = prompt.take(60)
         }
         _messages.update {
-            it + ChatUiMessage.User(prompt, System.currentTimeMillis()) + ChatUiMessage.Assistant()
+            it + ChatUiMessage.User(prompt, System.currentTimeMillis(), attachmentIds) +
+                ChatUiMessage.Assistant()
         }
         _error.value = null
         // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
@@ -335,6 +381,7 @@ class ChatViewModel(
                 permissionMode = permissionMode,
                 model = model,
                 modelParameters = modelParameters,
+                attachmentIds = attachmentIds.ifEmpty { null },
                 commandId = commandId,
             )
         }
@@ -345,6 +392,7 @@ class ChatViewModel(
             initialAfter = null,
             resendChat = chatFlow,
         )
+        _attachments.value = emptyList()
         initialRuntime = null
         initialWorkspaceId = null
         initialPermissionMode = null

@@ -2,6 +2,7 @@ package com.noresign.paboot.network.daemon
 
 import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
+import com.noresign.paboot.network.daemon.dto.AttachmentDto
 import com.noresign.paboot.network.daemon.dto.ChangesResponse
 import com.noresign.paboot.network.daemon.dto.DiffResponse
 import com.noresign.paboot.network.daemon.dto.ConfigResponse
@@ -58,14 +59,18 @@ import com.noresign.paboot.network.daemon.dto.WorkspaceResponse
 import com.noresign.paboot.network.daemon.dto.WorkspaceShortcutsResponse
 import com.noresign.paboot.network.daemon.dto.WorkspacesResponse
 import kotlinx.serialization.json.JsonObject
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
+import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface PabootApi {
 
@@ -130,6 +135,16 @@ interface PabootApi {
     ): OkResponse
 
     // ---- Workspace / Config ----
+
+    @POST("api/attachments")
+    suspend fun uploadAttachment(
+        @Header("Content-Type") contentType: String,
+        @Body body: RequestBody,
+    ): AttachmentDto
+
+    @Streaming
+    @GET("api/attachments/{id}")
+    suspend fun attachment(@Path("id") id: String): ResponseBody
 
     @GET("api/workspaces")
     suspend fun workspaces(): WorkspacesResponse

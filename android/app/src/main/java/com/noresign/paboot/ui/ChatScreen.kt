@@ -2,7 +2,9 @@ package com.noresign.paboot.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -40,6 +42,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import kotlinx.coroutines.launch
+import com.noresign.paboot.ui.chat.ChatImagePrep
 import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
@@ -48,6 +52,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -92,7 +97,9 @@ fun ChatScreen(
     viewModel: ChatViewModel = viewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
+    val attachments by viewModel.attachments.collectAsState()
     val streaming by viewModel.streaming.collectAsState()
+    val scope = rememberCoroutineScope()
     val historyLoading by viewModel.historyLoading.collectAsState()
     val permission by viewModel.permission.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -147,6 +154,23 @@ fun ChatScreen(
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(8)
+    ) { uris ->
+        uris.take(8).forEach { uri ->
+            scope.launch {
+                ChatImagePrep.prepare(context, uri)
+                    .onSuccess { viewModel.attachImage(it.bytes, it.contentType, uri) }
+                    .onFailure {
+                        Toast.makeText(
+                            context,
+                            it.message ?: "图片处理失败",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+            }
+        }
+    }
 
     LaunchedEffect(sessionId) {
         // 人已经进来了，这条会话的旧提醒就没用了
@@ -314,6 +338,17 @@ fun ChatScreen(
                         InputBar(
                             input = input,
                             streaming = streaming,
+                            attachments = attachments,
+                            uploading = attachments.any { it.uploading },
+                            canAttach = true,
+                            onPickImages = {
+                                imagePicker.launch(
+                                    PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
+                            },
+                            onRemoveAttachment = viewModel::removeAttachment,
                             onInputChange = { input = it },
                             onSend = {
                                 viewModel.send(input)

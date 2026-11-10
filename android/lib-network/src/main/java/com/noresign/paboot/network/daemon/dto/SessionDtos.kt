@@ -61,6 +61,8 @@ data class RunDto(
     val model: String? = null,
     val status: String = "",
     val prompt: String = "",
+    /** Image attachment ids sent with this run. */
+    val attachmentIds: List<String> = emptyList(),
     val startedAt: Long = 0,
     val endedAt: Long? = null,
     val exitCode: Long? = null,
