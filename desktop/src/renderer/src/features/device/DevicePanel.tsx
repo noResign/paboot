@@ -37,6 +37,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   const [serial, setSerial] = useState<string | null>(null);
   const [shot, setShot] = useState<Shot | null>(null);
   const [clickEnabled, setClickEnabled] = useState(false);
+  const [mirroring, setMirroring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
     setShot(null);
     setDevices([]);
     setSerial(null);
+    setMirroring(false);
     if (!active) {
       const scanned = await api.endSuggestions(workspaceId);
       if (scanned.ok) setSuggestions(scanned.data.suggestions);
@@ -96,7 +98,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   }, [activeEnd, loadDevices]);
 
   useEffect(() => {
-    if (!activeEnd || !serial) return;
+    if (!activeEnd || !serial || !mirroring) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async (): Promise<void> => {
@@ -119,7 +121,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [activeEnd, serial, workspaceId]);
+  }, [activeEnd, serial, mirroring, workspaceId]);
 
   async function addEnd(directory: string): Promise<void> {
     setBusy(true);
@@ -155,7 +157,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   }
 
   async function onMirrorClick(event: MouseEvent<HTMLImageElement>): Promise<void> {
-    if (!clickEnabled || !shot || !activeEnd || !serial) return;
+    if (!mirroring || !clickEnabled || !shot || !activeEnd || !serial) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = Math.round(((event.clientX - rect.left) / rect.width) * shot.width);
     const y = Math.round(((event.clientY - rect.top) / rect.height) * shot.height);
@@ -269,6 +271,13 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                   </option>
                 ))}
               </select>
+              <button
+                className={`btn${mirroring ? '' : ' primary'}`}
+                disabled={!serial}
+                onClick={() => setMirroring((value) => !value)}
+              >
+                {mirroring ? '停止投屏' : '开始投屏'}
+              </button>
               {devices.length === 0 && (
                 <span className="hint">没有发现设备；检查 USB 调试与 adb。</span>
               )}
@@ -279,15 +288,19 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                   className="device-mirror"
                   src={`data:image/png;base64,${shot.png}`}
                   alt="Android 设备画面"
-                  style={{ cursor: clickEnabled ? 'crosshair' : 'default' }}
+                  style={{ cursor: mirroring && clickEnabled ? 'crosshair' : 'default' }}
                   onClick={(event) => void onMirrorClick(event)}
                 />
               </div>
             ) : (
-              <p className="hint">等待设备画面…</p>
+              <p className="hint">
+                {mirroring ? '正在获取设备画面…' : '点击「开始投屏」获取设备画面。'}
+              </p>
             )}
             <p className="hint">
-              画面每 1.5 秒刷新；点击到的坐标会换算为设备像素后发送 tap。
+              {mirroring
+                ? '投屏中，每 1.5 秒刷新；点击到的坐标会换算为设备像素后发送 tap。'
+                : '投屏已暂停；需要时点击「开始投屏」。开启「允许点击操作」后才会发送 tap。'}
             </p>
           </>
         )}
