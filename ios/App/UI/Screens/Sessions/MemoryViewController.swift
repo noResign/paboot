@@ -128,7 +128,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = family == "life" ? "关于你" : "项目记忆"
+        title = "记忆"
         view.backgroundColor = Theme.Colors.background
         configureLayout()
     }

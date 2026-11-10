@@ -584,7 +584,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
       className="kn-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label="关于你"
+      aria-label="记忆"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -593,7 +593,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
         <header className="kn-head">
           <div className="kn-head-copy">
             <div className="kn-head-title">
-              <h2>{family === 'life' ? '关于你' : '项目记忆'}</h2>
+              <h2>记忆</h2>
               <span className="kn-workspace-chip">{workspaceName}</span>
               {total > 0 && <span className="badge subtle">{total} 条</span>}
             </div>
@@ -1138,7 +1138,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                 )}
                 {family !== 'life' && selected.scope.startsWith('workspace:') && (
                   <p className="hint mem-detail-actions">
-                    项目记忆只属于当前工作区，不能提升为全局画像。
+                    记忆只属于当前工作区，不能提升为全局画像。
                   </p>
                 )}
               </article>

@@ -263,19 +263,19 @@ export function WorkspaceOverview({
 
       <section className="settings-section">
         <div className="section-head">
-          <h3>{isLife ? '关于你' : '记忆'}</h3>
+          <h3>记忆</h3>
         </div>
         <button
           type="button"
           className="wo-knowledge"
           onClick={() => setMemoryOpen(true)}
-          aria-label={isLife ? '查看关于你' : '打开项目记忆'}
+          aria-label="打开记忆"
         >
           <span className="wo-knowledge-icon">
             <Icon name="eye" size={18} />
           </span>
           <span className="wo-knowledge-copy">
-            <b>{isLife ? '关于你' : '项目记忆'}</b>
+            <b>记忆</b>
             <span className="hint">
               {isLife
                 ? '生活会话里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。'

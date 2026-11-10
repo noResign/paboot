@@ -496,7 +496,7 @@ private fun MemoryCard(workspace: WorkspaceDto, onOpenMemory: (String) -> Unit) 
             ) {
                 val life = workspace.family == "life"
                 Text(
-                    if (life) "关于你" else "项目记忆",
+                    "记忆",
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Text(

@@ -1289,14 +1289,14 @@ private final class WorkspaceOverviewViewController: UIViewController {
         card.isAccessibilityElement = true
         card.accessibilityTraits = .button
         let life = workspace.family == "life"
-        card.accessibilityLabel = life ? "关于你" : "项目记忆"
+        card.accessibilityLabel = "记忆"
         card.addGestureRecognizer(
             UITapGestureRecognizer(target: self, action: #selector(openMemory))
         )
 
         let iconBox = makeIconBox(systemName: "person.crop.circle", boxSize: 38, iconSize: 19)
         let title = UILabel()
-        title.text = life ? "关于你" : "项目记忆"
+        title.text = "记忆"
         title.font = Typography.cardTitle
         title.textColor = Theme.Colors.textPrimary
         let hint = UILabel()
