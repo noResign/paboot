@@ -238,9 +238,13 @@ describe('attachment -> transcript -> provider mapping', () => {
 });
 
 describe('attachment HTTP routes', () => {
-  it('uploads raw image bytes and serves them back with auth-independent route logic', async () => {
+  it('uploads raw image bytes and serves them back to the operator', async () => {
     const { db, dataDir, store } = openStore();
     const app = express();
+    app.use((_req, res, next) => {
+      (res.locals as { authRole?: string }).authRole = 'operator';
+      next();
+    });
     registerAttachmentRoutes(app, { db, attachments: store } as unknown as AppContext);
     const server = app.listen(0);
     servers.push(server);

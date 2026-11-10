@@ -19,6 +19,7 @@ import { registerSessionRoutes } from '../src/routes/sessions';
 import { registerPermissionRoutes } from '../src/routes/permissions';
 import { registerAgentRoutes } from '../src/routes/agent';
 import { KnowledgeStore } from '../src/knowledge/store';
+import { AttachmentStore } from '../src/attachments/store';
 
 // Mock only the provider transport. Exercise real sessions, DB, SSE, routes,
 // permission decisions and the shared lifecycle without making model requests.
@@ -88,7 +89,7 @@ async function api(config: Record<string, unknown> = {}) {
       id, name: id, bin: id, available: true, version: 'test', authed: true,
       // Codex app-server accepts `developerInstructions`; Claude needs the flag probe.
       capabilities: id === 'codex'
-        ? { ...defaultCapabilities, nativeSystemPrompt: true }
+        ? { ...defaultCapabilities, nativeSystemPrompt: true, imageInput: true }
         : defaultCapabilities,
       models: [] as [],
       error: null as string | null,
@@ -102,6 +103,7 @@ async function api(config: Record<string, unknown> = {}) {
   const ctx = {
     db, registry, permissions: new PermissionManager(), notifier: new RunNotifier(),
     knowledge: new KnowledgeStore(dataDir),
+    attachments: new AttachmentStore(db, dataDir),
     config: { permissionMode: 'default', host: '127.0.0.1', port: 1, runIdleTimeoutMs: 0, ...config },
   } as unknown as AppContext;
   registerRuntimeDrivers(registry, ctx);
@@ -174,6 +176,32 @@ describe('Codex HTTP integration', () => {
     });
     const peer = await startedPeer();
     expect(peer.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({ effort: 'high' }));
+    complete(peer);
+    await chat.text();
+  });
+
+  it('passes image attachments as localImage input items', async () => {
+    const { ctx, post } = await api();
+    const pixel = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const attachment = await ctx.attachments.saveImage(pixel);
+    const chat = await post('/api/chat', {
+      prompt: 'look',
+      runtime: 'codex',
+      attachmentIds: [attachment.id],
+    });
+    const peer = await startedPeer();
+    expect(peer.request).toHaveBeenCalledWith(
+      'turn/start',
+      expect.objectContaining({
+        input: [
+          { type: 'text', text: 'look' },
+          { type: 'localImage', path: attachment.storagePath },
+        ],
+      }),
+    );
     complete(peer);
     await chat.text();
   });

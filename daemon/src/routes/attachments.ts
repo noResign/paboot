@@ -3,6 +3,7 @@ import type { AppContext } from '../app/context.js';
 import { AttachmentError } from '../attachments/store.js';
 import type { AttachmentDto } from '../types/api.js';
 import type { AttachmentMediaType, AttachmentRow } from '../types/attachments.js';
+import { authRole } from '../http/auth.js';
 
 const SUPPORTED_TYPES: AttachmentMediaType[] = [
   'image/png',
@@ -38,6 +39,12 @@ export function registerAttachmentRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/attachments/:id', async (req, res) => {
+    // Image bytes are user data; only the operator UI may fetch them. Agents
+    // receive the bytes inline in the prompt instead.
+    if (authRole(res) !== 'operator') {
+      res.status(403).json({ error: 'operator token required', code: 'operator_required' });
+      return;
+    }
     try {
       const stored = await ctx.attachments.readImage(req.params.id);
       const etag = `"${stored.row.sha256}"`;

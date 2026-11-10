@@ -26,6 +26,21 @@ export interface ModelOption {
   label: string;
   /** Knobs this specific model accepts. Absent/empty = none. */
   parameters?: ModelParameter[];
+  /** False when the model cannot accept image input. Absent = unknown. */
+  supportsImages?: boolean;
+}
+
+/** An attachment resolved for a run; bytes stay on disk until a runtime needs them. */
+export interface RuntimeImageInput {
+  id: string;
+  mediaType: string;
+  storagePath: string;
+}
+
+/** Base64 image block handed to an argv adapter's stdin encoder. */
+export interface EncodedImage {
+  mediaType: string;
+  data: string;
 }
 
 /**
@@ -52,6 +67,8 @@ export interface RuntimeCapabilities {
   mcpConfig: boolean;
   /** The runtime can receive an extra native system prompt (Claude flag / Codex developer instructions). */
   nativeSystemPrompt: boolean;
+  /** The runtime accepts image input for a user turn. */
+  imageInput: boolean;
 }
 
 export const defaultCapabilities: RuntimeCapabilities = {
@@ -64,6 +81,7 @@ export const defaultCapabilities: RuntimeCapabilities = {
   effort: false,
   mcpConfig: false,
   nativeSystemPrompt: false,
+  imageInput: false,
 };
 
 export interface RuntimeDetection {
@@ -152,5 +170,5 @@ export interface RuntimeAdapter {
   /** Construct the stdout parser for this runtime. */
   createParser(onEvent: (ev: NormalizedEvent) => void): StreamParser;
   /** Encode a user message into the runtime's stdin format (with newline). */
-  encodeUserMessage(text: string): string;
+  encodeUserMessage(text: string, images?: readonly EncodedImage[]): string;
 }

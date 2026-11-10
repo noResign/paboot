@@ -37,6 +37,8 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   mcpConfig: false,
   // ACP v2 `session/new` has no instruction field; keep the prelude fallback.
   nativeSystemPrompt: false,
+  // ACP supports image prompt blocks; the per-session model route is the real gate.
+  imageInput: true,
 };
 
 /** DSH's user-data root (`$DSH_HOME` or `~/.dsh`), where credentials live. */

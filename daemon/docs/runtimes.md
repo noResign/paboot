@@ -108,6 +108,21 @@ daemon 按 run 组装 `ToolServerSpec[]`（`paboot_tasks` + `paboot_capability`�
 - **未来 runtime**：实现「把 `ToolServerSpec` 注册进自己的配置」这一件事即可；工具实现、内部端点、
   调度完全复用。没有 MCP 的 runtime 可退回 CLI helper + `developer_instructions` 方案。
 
+## 图片输入
+
+用户消息可以带最多 8 张图片：客户端先 `POST /api/attachments`，再把 `attachmentIds` 放进
+`POST /api/chat`。daemon 校验归属与数量后，按 runtime 转成原生格式：
+
+| runtime | 传输 | 能力判断 |
+|---|---|---|
+| builtin | `LlmContentBlock.image`（providerImage base64） | 现有模型 `supportsImages` |
+| Claude Code | stream-json user content 的 `{type:'image', source:{type:'base64', media_type, data}}` | `imageInput` = 探测到 `--input-format` |
+| Codex | `turn/start.input` 追加 `{type:'localImage', path}` | app-server ≥ 0.160 |
+| DeepSeek | `session/prompt.prompt` 追加 `{type:'image', data:base64, mimeType}` | initialize 的 `promptCapabilities.image` |
+
+`runs.attachment_ids` 记录本轮的图片 id（`RunDto.attachmentIds`），历史消息据此回显；附件文件仍在
+`<dataDir>/attachments/`，客户端按 id 鉴权拉取。图片只在第一轮 prompt 发送，steering 消息不带附件。
+
 ## 模型参数（可扩展）
 
 `ModelOption` 除 `id` / `label` 外可带 `parameters: ModelParameter[]`，每个参数是一个

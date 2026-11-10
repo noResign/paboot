@@ -22,6 +22,8 @@ function probeCapabilities(help: string): RuntimeCapabilities {
     effort: help.includes('--effort'),
     mcpConfig: help.includes('--mcp-config'),
     nativeSystemPrompt: help.includes('--append-system-prompt'),
+    // No dedicated flag exists; the stream-json user frame carries image blocks.
+    imageInput: help.includes('--input-format'),
   };
 }
 
@@ -35,6 +37,7 @@ const FALLBACK_CAPS: RuntimeCapabilities = {
   effort: false,
   mcpConfig: false,
   nativeSystemPrompt: false,
+  imageInput: true,
 };
 
 /**

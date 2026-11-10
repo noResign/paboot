@@ -10,6 +10,23 @@ function parseVersion(stdout: string): string | null {
   return m ? m[1] : null;
 }
 
+/** First app-server release paboot relies on for `localImage` user input. */
+function versionAtLeast(version: string | null, minimum: string): boolean {
+  if (!version) return false;
+  const parse = (value: string): number[] =>
+    value
+      .split(/[-+]/)[0]!
+      .split('.')
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const current = parse(version);
+  const required = parse(minimum);
+  for (let index = 0; index < Math.max(current.length, required.length); index += 1) {
+    const delta = (current[index] ?? 0) - (required[index] ?? 0);
+    if (delta !== 0) return delta > 0;
+  }
+  return true;
+}
+
 /**
  * `RuntimeCapabilities` describes the Claude argv contract (which flags the
  * adapter may pass). Codex has no argv contract — its knobs are RPC params — so
@@ -26,6 +43,7 @@ const NO_CAPABILITIES: RuntimeCapabilities = {
   mcpConfig: false,
   // Codex app-server accepts `developerInstructions` on thread start/resume.
   nativeSystemPrompt: true,
+  imageInput: false,
 };
 
 /**
@@ -54,12 +72,13 @@ export async function detectCodex(bin: string, env: NodeJS.ProcessEnv): Promise<
     ? !/not (?:logged|signed|authenticated) in/i.test(`${authRes.stdout}\n${authRes.stderr}`)
     : null;
 
+  const version = parseVersion(versionRes.stdout);
   return {
     ...base,
     available: true,
-    version: parseVersion(versionRes.stdout),
+    version,
     authed,
-    capabilities: NO_CAPABILITIES,
+    capabilities: { ...NO_CAPABILITIES, imageInput: versionAtLeast(version, '0.160.0') },
     // The real catalogue needs a short-lived app-server; Registry lists it
     // lazily through the detector's `listModels`, not during detection.
     models: [],

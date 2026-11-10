@@ -8,7 +8,15 @@ import { spawnExecutable } from '../platform/executable.js';
 import { log } from '../platform/log.js';
 import { killProcessTree } from '../platform/process-tree.js';
 import { quoteCommandArg } from '../platform/shell.js';
-import type { RuntimeAdapter, RuntimeCapabilities, StreamParser, SpawnContext, ToolServerSpec } from './types.js';
+import type {
+  EncodedImage,
+  RuntimeAdapter,
+  RuntimeCapabilities,
+  RuntimeImageInput,
+  StreamParser,
+  SpawnContext,
+  ToolServerSpec,
+} from './types.js';
 
 export type RunStatus = 'succeeded' | 'failed' | 'cancelled';
 
@@ -42,6 +50,8 @@ export interface RunRequest {
   idleTimeoutMs?: number;
   /** Daemon data dir; per-run files (the hook settings) are written here. */
   dataDir: string;
+  /** Image attachments for the initial user turn. */
+  images?: RuntimeImageInput[];
   /**
    * Called once the runtime confirms the native session id. A host-picking
    * runtime (Claude `--session-id`) only proves the conversation exists when it
@@ -73,6 +83,27 @@ export function startRun(req: RunRequest): ActiveRun {
   let stderrTail = '';
   let lastActivity = Date.now();
   let watchdog: ReturnType<typeof setInterval> | null = null;
+
+  let encodedImages: EncodedImage[] = [];
+  try {
+    encodedImages = (req.images ?? []).map((image) => ({
+      mediaType: image.mediaType,
+      data: fs.readFileSync(image.storagePath).toString('base64'),
+    }));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.warn(`run ${req.id}: failed to read image attachment: ${message}`);
+    return {
+      id: req.id,
+      promise: Promise.resolve({
+        status: 'failed',
+        exitCode: null,
+        error: `failed to read image attachment: ${message}`,
+      }),
+      cancel: () => undefined,
+      writeUserMessage: () => undefined,
+    };
+  }
 
   const closeStdin = (): void => {
     if (stdinClosed || !child) return;
@@ -261,9 +292,9 @@ export function startRun(req: RunRequest): ActiveRun {
     });
 
     if (req.adapter.keepStdinOpen) {
-      p.stdin?.write(req.adapter.encodeUserMessage(req.prompt));
+      p.stdin?.write(req.adapter.encodeUserMessage(req.prompt, encodedImages));
     } else {
-      p.stdin?.end(req.adapter.encodeUserMessage(req.prompt));
+      p.stdin?.end(req.adapter.encodeUserMessage(req.prompt, encodedImages));
     }
   });
 

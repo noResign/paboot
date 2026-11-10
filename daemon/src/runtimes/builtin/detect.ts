@@ -15,6 +15,7 @@ const BUILTIN_CAPABILITIES: RuntimeCapabilities = {
   effort: false,
   mcpConfig: false,
   nativeSystemPrompt: true,
+  imageInput: true,
 };
 
 /** Qualified model ids exposed to clients, e.g. `anthropic:claude-sonnet-4-6`. */
@@ -34,6 +35,7 @@ function modelOption(providerId: string, model: ProviderModel): ModelOption {
   return {
     id: formatModelId(providerId, model.id),
     label: model.label ?? model.id,
+    ...(model.supportsImages === undefined ? {} : { supportsImages: model.supportsImages }),
   };
 }
 

@@ -40,6 +40,7 @@ describe('builtin detection', () => {
     expect(detection.models).toContainEqual({
       id: 'anthropic:claude-sonnet-4-6',
       label: 'Claude Sonnet 4.6',
+      supportsImages: true,
     });
     expect(detection.error).toBeNull();
   });
@@ -47,7 +48,11 @@ describe('builtin detection', () => {
   it('exposes DeepSeek Flash as a vision-capable configured model', async () => {
     const detection = await detectBuiltin(await env({ DEEPSEEK_API_KEY: 'sk-test' }));
     expect(detection.available).toBe(true);
-    expect(detection.models).toContainEqual({ id: 'deepseek:deepseek-flash', label: 'DeepSeek Flash' });
+    expect(detection.models).toContainEqual({
+      id: 'deepseek:deepseek-flash',
+      label: 'DeepSeek Flash',
+      supportsImages: true,
+    });
   });
 
   it('honours models from providers.json and excludes disabled models', async () => {

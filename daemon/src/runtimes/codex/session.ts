@@ -7,6 +7,7 @@ import { ALLOW_ALL_REASON, type PermissionManager } from '../../permissions/perm
 import type { RunNotifier } from '../../runs/run-notifier.js';
 import { grantKeyCandidates } from '../../permissions/tool-grants.js';
 import type { NormalizedEvent } from '../../types/api.js';
+import type { RuntimeImageInput } from '../types.js';
 import { VERSION } from '../../version.js';
 import { asRecord, codexApprovalResult, createCodexStreamMapper, readCodexApproval, readString } from './map.js';
 import { initializeCodexAppServer, spawnCodexAppServer, type CodexAppServerConnection } from './rpc.js';
@@ -48,6 +49,8 @@ export interface CodexRunRequest {
   extraDirs?: string[];
   /** Native developer instructions (workspace knowledge), refreshed every run. */
   systemContext?: string;
+  /** Image attachments for the initial user turn. */
+  images?: RuntimeImageInput[];
   /** Codex thread id to continue; omit to start a new thread. */
   resumeThreadId?: string;
   /**
@@ -330,7 +333,13 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
       mapper.beginTurn();
       const response = await conn.request('turn/start', {
         threadId,
-        input: [{ type: 'text', text: req.prompt }],
+        input: [
+          { type: 'text', text: req.prompt },
+          ...(req.images ?? []).map((image) => ({
+            type: 'localImage',
+            path: image.storagePath,
+          })),
+        ],
         // Override on every turn, including resume, so removed workspace grants
         // cannot survive in the thread's previous sandbox configuration.
         sandboxPolicy: req.permissionMode === 'bypass'

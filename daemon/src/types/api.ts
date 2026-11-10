@@ -255,6 +255,8 @@ export interface RunDto {
   modelParameters: Record<string, string> | null;
   status: string;
   prompt: string;
+  /** Image attachments admitted with this run (ids; fetch bytes by id). */
+  attachmentIds: string[];
   startedAt: number;
   endedAt: number | null;
   exitCode: number | null;

@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { registerActiveRun } from '../active-runs.js';
 import { grantKeyCandidates } from '../../permissions/tool-grants.js';
 import { log } from '../../platform/log.js';
@@ -5,7 +6,7 @@ import type { ProductPermissionMode } from '../../permissions/permission-mode.js
 import type { PermissionManager } from '../../permissions/permissions.js';
 import type { RunNotifier } from '../../runs/run-notifier.js';
 import type { NormalizedEvent } from '../../types/api.js';
-import type { ToolServerSpec } from '../types.js';
+import type { RuntimeImageInput, ToolServerSpec } from '../types.js';
 import { asRecord, createDeepSeekStreamMapper, mapToolName, readString } from './map.js';
 import { normalizeModelValue } from './models.js';
 import { initializeDeepSeekAcp, spawnDeepSeekAcp } from './rpc.js';
@@ -50,6 +51,8 @@ export interface DeepSeekRunRequest {
   bin: string;
   /** MCP servers to expose to the harness (the shared `paboot_tasks`). */
   toolServers?: ToolServerSpec[];
+  /** Image attachments for the initial user turn. */
+  images?: RuntimeImageInput[];
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
   deps: DeepSeekRunDeps;
@@ -278,8 +281,13 @@ export function startDeepSeekRun(req: DeepSeekRunRequest): DeepSeekActiveRun {
       conn.onStderr(forwardStderr);
       conn.onExit((reason) => finish(failureOutcome(reason.message)));
 
-      await initializeDeepSeekAcp(conn);
+      const capabilities = await initializeDeepSeekAcp(conn);
       if (settled || cancelled) return;
+      if (req.images?.length && !capabilities.images) {
+        throw new Error(
+          'the selected DeepSeek model route does not accept image input; choose a vision-capable model',
+        );
+      }
 
       const result = req.resumeSessionId
         ? await conn.request(
@@ -312,9 +320,19 @@ export function startDeepSeekRun(req: DeepSeekRunRequest): DeepSeekActiveRun {
       if (settled || cancelled) return;
 
       log.info(`deepseek run ${req.id}: acp session ${acpSessionId}`);
+      const imageBlocks = await Promise.all(
+        (req.images ?? []).map(async (image) => ({
+          type: 'image',
+          data: (await fs.readFile(image.storagePath)).toString('base64'),
+          mimeType: image.mediaType,
+        })),
+      );
       const response = await conn.request(
         'session/prompt',
-        { sessionId: acpSessionId, prompt: [{ type: 'text', text: req.prompt }] },
+        {
+          sessionId: acpSessionId,
+          prompt: [{ type: 'text', text: req.prompt }, ...imageBlocks],
+        },
         0,
       );
       if (settled) return;

@@ -2,6 +2,16 @@ import type { RunCheckpointRow, RunRow } from './db.js';
 import { parseStoredModelParameters } from './model-selection.js';
 import type { RunDto } from '../types/api.js';
 
+function parseAttachmentIds(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Shared run mapping so session and scheduled-task responses agree. */
 export function runDto(
   r: RunRow,
@@ -18,6 +28,7 @@ export function runDto(
     modelParameters: parseStoredModelParameters(r.model_parameters),
     status: r.status,
     prompt: r.prompt,
+    attachmentIds: parseAttachmentIds(r.attachment_ids),
     startedAt: r.started_at,
     endedAt: r.ended_at,
     exitCode: r.exit_code,
