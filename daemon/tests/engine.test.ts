@@ -94,7 +94,17 @@ describe('run event stream', () => {
     // The adapter receives the file path, never the inline JSON.
     expect(settingsPath).toBeTruthy();
     expect(claudeArgs[settingsIndex + 1]).toBe(settingsPath);
-    expect(settings!.permissions).toEqual({ allow: ['Read', 'Grep'] });
+    expect(settings!.permissions.allow).toEqual(
+      expect.arrayContaining([
+        'Read',
+        'Grep',
+        'mcp__paboot_memory__search_memory',
+        'mcp__paboot_memory__forget',
+        'mcp__paboot_capability__android_screenshot',
+      ]),
+    );
+    // Task tools still go through the PreToolUse hook.
+    expect(settings!.permissions.allow).not.toContain('mcp__paboot_tasks__schedule_task');
     expect(settings!.hooks.PreToolUse).toEqual([
       {
         matcher,
