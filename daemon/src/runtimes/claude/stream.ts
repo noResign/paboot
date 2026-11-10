@@ -15,13 +15,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function toolResultBlock(block: unknown): string {
+  if (!isRecord(block)) return JSON.stringify(block);
+  if (block.type === 'text') return String(block.text ?? '');
+  if (block.type === 'image') {
+    // Keep the runtime's live image out of paboot's event log (UI / replay).
+    // MCP blocks use `mimeType`; Anthropic blocks use `source.media_type`.
+    const source = isRecord(block.source) ? block.source : block;
+    const mediaType =
+      typeof block.mimeType === 'string'
+        ? block.mimeType
+        : typeof source.media_type === 'string'
+          ? source.media_type
+          : 'image';
+    return `[image omitted: ${mediaType}]`;
+  }
+  return JSON.stringify(block);
+}
+
 function stringifyToolResult(content: unknown): string {
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((c) => (isRecord(c) && c.type === 'text' ? String(c.text) : JSON.stringify(c)))
-      .join('\n');
-  }
+  if (Array.isArray(content)) return content.map(toolResultBlock).join('\n');
   return JSON.stringify(content);
 }
 
