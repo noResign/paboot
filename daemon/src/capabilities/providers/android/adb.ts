@@ -21,16 +21,24 @@ const execFileAsync = promisify(execFile) as unknown as ExecFn;
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_BUFFER = 32 * 1024 * 1024;
 
+// Serial names can contain spaces (e.g. a USB camera registered with adb), so
+// split on a known state token instead of the first whitespace run.
+const DEVICE_STATES =
+  'device|offline|unauthorized|recovery|sideload|bootloader|unknown|no permissions';
+
 export function parseAdbDevices(output: string): DeviceInfo[] {
   const devices: DeviceInfo[] = [];
+  const linePattern = new RegExp(`^(.*?)\\s+(${DEVICE_STATES})(?:\\s+|$)(.*)$`);
   for (const line of output.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('List of devices')) continue;
     if (trimmed.startsWith('*')) continue;
-    const [serial, state, ...rest] = trimmed.split(/\s+/);
+    const match = trimmed.match(linePattern);
+    if (!match) continue;
+    const [, serial, state, tail] = match;
     if (!serial || !state) continue;
     const fields = new Map<string, string>();
-    for (const part of rest) {
+    for (const part of (tail ?? '').split(/\s+/)) {
       const index = part.indexOf(':');
       if (index > 0) fields.set(part.slice(0, index), part.slice(index + 1));
     }

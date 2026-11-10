@@ -77,6 +77,24 @@ describe('android provider', () => {
     expect(await provider.resolveSerial()).toBe('emulator-5554');
   });
 
+  it('keeps serials with spaces and multi-word states intact', () => {
+    const parsed = parseAdbDevices(
+      [
+        'List of devices attached',
+        'UGREEN Camera 2K       no permissions (missing udev rules?)',
+        'J4K6R22906007718       device usb:1-7 product:GOT-W09 model:GOT_W09 transport_id:4',
+      ].join('\n'),
+    );
+    expect(parsed).toEqual([
+      expect.objectContaining({ serial: 'UGREEN Camera 2K', state: 'no permissions' }),
+      expect.objectContaining({
+        serial: 'J4K6R22906007718',
+        state: 'device',
+        model: 'GOT_W09',
+      }),
+    ]);
+  });
+
   it('rejects ambiguous and offline devices', async () => {
     const ambiguous = new AndroidDeviceProvider(
       new FakeAdb(() => 'a device\nb device\n'),
