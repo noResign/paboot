@@ -5414,3 +5414,15 @@ a.btn {
 .device-empty .hint {
   max-width: 420px;
 }
+
+/* The claims tab wraps its list in a flex child; without this the sidebar
+   never constrains it and the list cannot scroll. */
+.mem-claims-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.mem-claims-pane[hidden] {
+  display: none;
+}
