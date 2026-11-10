@@ -50,6 +50,8 @@ export const ROUTES = {
   workspaceEnds: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/ends`,
   workspaceEndSuggestions: (id: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/end-suggestions`,
+  workspaceEnd: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}`,
   workspaceEndRoots: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/roots`,
   workspaceEndActivate: (id: string, endId: string) =>

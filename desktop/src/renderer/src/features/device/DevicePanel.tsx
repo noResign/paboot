@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'reac
 import { api } from '../../ipc/client';
 import type { CapabilityDeviceDto, EndDto, EndSuggestionDto } from '../../../../shared/contract';
 import { Icon } from '../../ui/Icon';
+import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
 
 interface Props {
   workspaceId: string;
@@ -38,6 +39,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   const [shot, setShot] = useState<Shot | null>(null);
   const [clickEnabled, setClickEnabled] = useState(false);
   const [mirroring, setMirroring] = useState(false);
+  const [rootPicker, setRootPicker] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +156,49 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
     await load();
   }
 
+  async function addRoot(root: string): Promise<void> {
+    if (!activeEnd) return;
+    setBusy(true);
+    setError(null);
+    const bound = await api.bindEndRoot(workspaceId, activeEnd.id, root);
+    setBusy(false);
+    if (!bound.ok) {
+      setError(errorMessage(bound.data, bound.status));
+      return;
+    }
+    setNotice('已添加端目录');
+    await load();
+  }
+
+  async function removeRoot(root: string): Promise<void> {
+    if (!activeEnd) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.unbindEndRoot(workspaceId, activeEnd.id, root);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('已移除端目录');
+    await load();
+  }
+
+  async function removeEnd(): Promise<void> {
+    if (!activeEnd) return;
+    if (!window.confirm(`移除端「${activeEnd.name}」？会话会保留，设备能力随之移除。`)) return;
+    setBusy(true);
+    setError(null);
+    const res = await api.deleteWorkspaceEnd(workspaceId, activeEnd.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('端已移除');
+    await load();
+  }
+
   async function selectDevice(next: string): Promise<void> {
     if (!activeEnd) return;
     setSerial(next);
@@ -250,10 +295,16 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
             <div className="device-toolbar">
               <div className="device-row">
                 <span className="badge subtle">端：{activeEnd.name}</span>
-                <span className="hint device-root" title={activeEnd.roots[0]}>
-                  {activeEnd.roots.length > 0 ? activeEnd.roots[0] : '未绑定目录'}
+                <span className="hint">
+                  {activeEnd.roots.length > 0 ? `${activeEnd.roots.length} 个目录` : '未绑定目录'}
                 </span>
                 <span className="mem-spacer" />
+                <button className="btn" disabled={busy} onClick={() => setRootPicker(true)}>
+                  添加目录
+                </button>
+                <button className="btn" disabled={busy} onClick={() => void removeEnd()}>
+                  移除端
+                </button>
                 <label>
                   <input
                     type="checkbox"
@@ -263,6 +314,25 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                   允许点击操作
                 </label>
               </div>
+              {activeEnd.roots.length > 0 && (
+                <div className="device-roots">
+                  {activeEnd.roots.map((root) => (
+                    <div className="device-root-row" key={root}>
+                      <span className="mono device-root" title={root}>
+                        {root}
+                      </span>
+                      <button
+                        className="icon-btn"
+                        title="移除目录"
+                        disabled={busy}
+                        onClick={() => void removeRoot(root)}
+                      >
+                        <Icon name="x" size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="device-row">
                 <select
                   className="mem-select device-select"
@@ -329,6 +399,19 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
         {notice && <p className="hint">{notice}</p>}
       </div>
     </div>
+    {rootPicker && (
+      <DirectoryPickerDialog
+        mode="add-dir"
+        workspacePaths={[]}
+        busy={busy}
+        error={error}
+        onClose={() => setRootPicker(false)}
+        onPick={(picked) => {
+          setRootPicker(false);
+          void addRoot(picked);
+        }}
+      />
+    )}
     </div>
   );
 }

@@ -509,6 +509,14 @@ export const api = {
       path: ROUTES.workspaceEndRoots(id, endId),
       body: { path: root },
     }),
+  unbindEndRoot: (id: string, endId: string, root: string) =>
+    request<EndResponse>({
+      method: 'DELETE',
+      path: ROUTES.workspaceEndRoots(id, endId),
+      body: { path: root },
+    }),
+  deleteWorkspaceEnd: (id: string, endId: string) =>
+    request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.workspaceEnd(id, endId) }),
   activateEnd: (id: string, endId: string) =>
     request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndActivate(id, endId) }),
   deviceList: (id: string, endId?: string) =>
