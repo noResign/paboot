@@ -191,13 +191,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     }
 
     if (attachmentIds.length > 0) {
-      if (runtime !== 'builtin') {
-        res.status(400).json({
-          error: 'image attachments are only supported by the builtin runtime',
-          code: 'attachments_unsupported_runtime',
-        });
-        return;
-      }
       for (const id of attachmentIds) {
         const attachment = ctx.attachments.get(id);
         if (!attachment) {
@@ -211,12 +204,21 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       }
     }
 
+    let imageInput = runtime === 'builtin';
     if (driver.requiresDetection !== false) {
       const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
       if (!detection?.available) {
         res.status(503).json({ error: `runtime not available: ${runtime}`, code: 'runtime_unavailable' });
         return;
       }
+      imageInput = detection.capabilities?.imageInput === true;
+    }
+    if (attachmentIds.length > 0 && !imageInput) {
+      res.status(400).json({
+        error: `runtime ${runtime} does not support image input`,
+        code: 'attachments_unsupported_runtime',
+      });
+      return;
     }
 
     // Detection may yield before a run row exists. Recheck both guards before

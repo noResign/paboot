@@ -2,7 +2,7 @@ import type { NormalizedEvent } from '../types/api.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import type { ManagedRun } from './active-runs.js';
 import type { RunOutcome } from './engine.js';
-import type { ToolServerSpec } from './types.js';
+import type { RuntimeImageInput, ToolServerSpec } from './types.js';
 
 /**
  * One run's inputs, resolved by the chat route without knowing which runtime it
@@ -29,8 +29,10 @@ export interface RuntimeDriverRequest {
   onNativeSessionId: (id: string) => void;
   /** Workspace dirs beyond `cwd` this run may touch. */
   extraDirs?: string[];
-  /** Image attachments admitted for this prompt. Builtin-only for now. */
+  /** Image attachments admitted for this prompt. */
   attachmentIds?: string[];
+  /** The same attachments resolved to disk rows, ready for the runtime. */
+  images?: RuntimeImageInput[];
   /**
    * Native system-prompt context for runtimes that support one; the driver may
    * ignore it and rely on the caller's prompt prelude instead.

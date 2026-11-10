@@ -69,6 +69,7 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
         extraDirs: req.extraDirs,
         systemContext: req.systemContext,
         dataDir: deps.ctx.config.dataDir,
+        images: req.images,
         onNativeSessionId: req.onNativeSessionId,
         toolServers: req.toolServers ?? [],
         permissionHook:
@@ -107,6 +108,7 @@ function createCodexDriver(ctx: AppContext): RuntimeDriver {
         resumeThreadId: req.resumeNativeSessionId,
         extraDirs: req.extraDirs,
         systemContext: req.systemContext,
+        images: req.images,
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
         env: process.env,
@@ -132,6 +134,7 @@ function createDeepSeekDriver(ctx: AppContext): RuntimeDriver {
         model: req.model,
         modelParameters: req.modelParameters,
         resumeSessionId: req.resumeNativeSessionId,
+        images: req.images,
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
         env: process.env,

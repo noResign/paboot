@@ -65,12 +65,14 @@
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
-| `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
+| `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?,supportsImages?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）；`supportsImages=false` 表示不能接收图片。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
 | `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
-| `POST /api/chat` | 是 | 发指令，返回 SSE 流。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
+| `POST /api/chat` | 是 | 发指令，返回 SSE 流。body 可带 `attachmentIds`（≤8 张图片）。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
+| `POST /api/attachments` | 是 | raw body 上传图片（png/jpeg/webp/gif，≤10MB），返回 `AttachmentDto` |
+| `GET /api/attachments/:id` | operator | 取图片字节；agent token 拒绝 |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
 | `POST /api/runs/:id/rollback` | 是 | **破坏性**：把工作区回滚到该 run 之前，`{confirm:true, force?}`（见下文「每轮 checkpoint 与回滚」） |
@@ -166,7 +168,10 @@ SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（�
 content 说明未返回结果）。客户端因此可以把「没有配对的 tool_use」一律当成"仍在运行"，不必各自兜底；
 历史回放读到的也是同一份自洽的流。
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, model?, runtime?, permissionMode?, commandId? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, model?, runtime?, permissionMode?, commandId?, attachmentIds? }`。
+`attachmentIds` 最多 8 个，来自 `POST /api/attachments`；图片会随用户消息一起送给 runtime，并记录在
+`RunDto.attachmentIds` 供历史回显。runtime 或模型不支持图片时返回 400
+`attachments_unsupported_runtime` / `attachments_unsupported_model`。
 
 - 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd。runtime 优先级：请求 `runtime` → workspace `defaultRuntime` → `claude`；权限优先级：请求 `permissionMode` → workspace `defaultPermissionMode` → 全局 `default_permission_mode`。已有会话始终沿用自身的 runtime / 权限模式。
 - `model` 缺省 / 空串 / `'default'` 都表示沿用 CLI 默认。新建会话通常不带 `model`（`sessions.model` 留空）；会话模型用 `PATCH /api/sessions/:id/model` 切换，下一轮生效。单轮请求仍可用 `body.model` 覆盖（`runs.model` 记录实际使用的值），但不会改写会话。

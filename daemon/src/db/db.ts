@@ -147,6 +147,8 @@ export interface RunRow {
   model_parameters: string | null;
   status: string;
   prompt: string;
+  /** JSON array of AttachmentDto ids admitted with this run. */
+  attachment_ids: string;
   started_at: number;
   ended_at: number | null;
   exit_code: number | null;
@@ -299,6 +301,7 @@ export class Db {
         model TEXT,
         status TEXT NOT NULL,
         prompt TEXT NOT NULL,
+        attachment_ids TEXT NOT NULL DEFAULT '[]',
         started_at INTEGER NOT NULL,
         ended_at INTEGER,
         exit_code INTEGER,
@@ -588,6 +591,7 @@ export class Db {
       `CREATE INDEX IF NOT EXISTS idx_runs_task ON runs (task_id, started_at DESC);`,
     );
     this.ensureColumn('runs', 'model_parameters', 'TEXT');
+    this.ensureColumn('runs', 'attachment_ids', "TEXT NOT NULL DEFAULT '[]'");
     this.ensureColumn('workspaces', 'is_builtin', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('workspaces', 'family', "TEXT NOT NULL DEFAULT 'dev'");
     this.ensureColumn('workspaces', 'profile_mode', "TEXT NOT NULL DEFAULT 'portable'");
@@ -1708,6 +1712,7 @@ export class Db {
     model: string | null;
     modelParameters?: Record<string, string> | null;
     prompt: string;
+    attachmentIds?: string[];
     status: string;
     commandId?: string | null;
     taskId?: string | null;
@@ -1716,8 +1721,8 @@ export class Db {
   }): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -1727,6 +1732,7 @@ export class Db {
         serializeModelParameters(input.modelParameters ?? null),
         input.status,
         input.prompt,
+        JSON.stringify(input.attachmentIds ?? []),
         Date.now(),
         input.commandId ?? null,
         input.taskId ?? null,

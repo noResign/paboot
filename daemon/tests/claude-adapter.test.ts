@@ -79,4 +79,19 @@ describe('claudeAdapter.buildArgs', () => {
       }),
     ).not.toContain('--effort');
   });
+
+  it('encodes images as stream-json content blocks', () => {
+    const encoded = JSON.parse(
+      claudeAdapter
+        .encodeUserMessage('look', [{ mediaType: 'image/png', data: 'AAAA' }])
+        .trim(),
+    ) as { message: { content: unknown[] } };
+    expect(encoded.message.content).toEqual([
+      { type: 'text', text: 'look' },
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+      },
+    ]);
+  });
 });

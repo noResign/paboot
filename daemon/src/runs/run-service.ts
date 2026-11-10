@@ -102,12 +102,16 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     model,
     modelParameters,
     prompt,
+    attachmentIds: input.attachmentIds ?? [],
     status: 'running',
     commandId: input.commandId ?? null,
     taskId: input.taskId ?? null,
     trigger: input.trigger,
     permissionMode,
   });
+  for (const id of input.attachmentIds ?? []) {
+    ctx.attachments.bind(id, { runId });
+  }
 
   const done = (async (): Promise<RunOutcome> => {
     let seq = 0;
@@ -211,6 +215,13 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       enabledCapabilityServers(ctx.db, session),
     );
 
+    const images = (input.attachmentIds ?? []).flatMap((id) => {
+      const row = ctx.attachments.get(id);
+      return row
+        ? [{ id: row.id, mediaType: row.mediaType, storagePath: row.storagePath }]
+        : [];
+    });
+
     try {
       const active = driver.start({
         runId,
@@ -227,6 +238,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
         attachmentIds: input.attachmentIds,
+        images,
         systemContext: nativeSystemPrompt && injected ? injected.prefix : undefined,
         toolServers,
         // The service owns the terminal frame: provider errors may arrive before

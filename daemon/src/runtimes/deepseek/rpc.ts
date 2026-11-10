@@ -32,7 +32,14 @@ export function spawnDeepSeekAcp(options: DeepSeekAcpOptions): StdioRpcConnectio
  * response is the version the agent will speak, and continuing would only
  * produce confusing method errors later.
  */
-export async function initializeDeepSeekAcp(connection: StdioRpcConnection): Promise<void> {
+export interface DeepSeekAcpCapabilities {
+  /** The configured model route accepts inline image prompt blocks. */
+  images: boolean;
+}
+
+export async function initializeDeepSeekAcp(
+  connection: StdioRpcConnection,
+): Promise<DeepSeekAcpCapabilities> {
   const result = await connection.request(
     'initialize',
     {
@@ -46,4 +53,6 @@ export async function initializeDeepSeekAcp(connection: StdioRpcConnection): Pro
   if (typeof negotiated === 'number' && negotiated !== ACP_PROTOCOL_VERSION) {
     throw new Error(`dsh acp speaks ACP v${negotiated}; paboot supports v${ACP_PROTOCOL_VERSION}`);
   }
+  const prompt = asRecord(asRecord(asRecord(result)?.['agentCapabilities'])?.['promptCapabilities']);
+  return { images: prompt?.['image'] === true };
 }

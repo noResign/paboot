@@ -71,11 +71,20 @@ export const claudeAdapter: RuntimeAdapter = {
     return createClaudeStreamParser(onEvent);
   },
 
-  encodeUserMessage(text) {
+  encodeUserMessage(text, images = []) {
     return (
       JSON.stringify({
         type: 'user',
-        message: { role: 'user', content: [{ type: 'text', text }] },
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text },
+            ...images.map((image) => ({
+              type: 'image',
+              source: { type: 'base64', media_type: image.mediaType, data: image.data },
+            })),
+          ],
+        },
       }) + '\n'
     );
   },

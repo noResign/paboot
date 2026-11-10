@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NormalizedEvent } from '../src/types/api';
 import { PermissionManager } from '../src/permissions/permissions';
+import { initializeDeepSeekAcp } from '../src/runtimes/deepseek/rpc';
 
 const rpc = vi.hoisted(() => ({
   notify: null as ((method: string, params: unknown) => void) | null,
@@ -13,7 +17,7 @@ const rpc = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/runtimes/deepseek/rpc', () => ({
-  initializeDeepSeekAcp: vi.fn(async () => {}),
+  initializeDeepSeekAcp: vi.fn(async () => ({ images: true })),
   spawnDeepSeekAcp: vi.fn((options: { bin: string; cwd: string; env: NodeJS.ProcessEnv }) => {
     rpc.spawnOptions.push(options);
     return {
@@ -156,6 +160,80 @@ describe('startDeepSeekRun', () => {
     ]);
     // The prompt has no RPC deadline; the run's idle watchdog is the liveness bound.
     expect(rpc.requests.find((entry) => entry.method === 'session/prompt')?.timeout).toBe(0);
+  });
+
+  it('sends image blocks when the route advertises image input', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'paboot-dsh-image-'));
+    const file = join(dir, 'a.png');
+    writeFileSync(file, 'png');
+    try {
+      rpc.request.mockImplementation(async (method: string, params: unknown) => {
+        rpc.requests.push({ method, params, timeout: 0 });
+        if (method === 'initialize') {
+          return {
+            protocolVersion: 1,
+            agentCapabilities: { promptCapabilities: { image: true } },
+          };
+        }
+        if (method === 'session/new') return { sessionId: 'acp-img', configOptions: [] };
+        if (method === 'session/prompt') return { stopReason: 'end_turn' };
+        return {};
+      });
+
+      const { permissions, notifier, db } = setup();
+      const run = startDeepSeekRun({
+        id: 'run-img',
+        sessionId: 'session-img',
+        prompt: 'look',
+        cwd: '/workspace',
+        bin: 'dsh',
+        permissionMode: 'ask',
+        deps: { permissions, notifier, db },
+        onEvent: () => {},
+        images: [{ id: 'a', mediaType: 'image/png', storagePath: file }],
+      });
+      await expect(run.promise).resolves.toEqual({
+        status: 'succeeded',
+        exitCode: 0,
+        error: null,
+      });
+      const prompt = (
+        rpc.requests.find((entry) => entry.method === 'session/prompt')?.params as {
+          prompt: unknown[];
+        }
+      ).prompt;
+      expect(prompt).toEqual([
+        { type: 'text', text: 'look' },
+        { type: 'image', data: Buffer.from('png').toString('base64'), mimeType: 'image/png' },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects images when the route does not advertise image input', async () => {
+    vi.mocked(initializeDeepSeekAcp).mockResolvedValueOnce({ images: false });
+    rpc.request.mockImplementation(async (method: string, params: unknown) => {
+      rpc.requests.push({ method, params, timeout: 0 });
+      if (method === 'initialize') return { protocolVersion: 1 };
+      if (method === 'session/new') return { sessionId: 'acp-noimg', configOptions: [] };
+      return {};
+    });
+    const { permissions, notifier, db } = setup();
+    const run = startDeepSeekRun({
+      id: 'run-noimg',
+      sessionId: 'session-noimg',
+      prompt: 'look',
+      cwd: '/workspace',
+      bin: 'dsh',
+      permissionMode: 'ask',
+      deps: { permissions, notifier, db },
+      onEvent: () => {},
+      images: [{ id: 'a', mediaType: 'image/png', storagePath: '/tmp/missing.png' }],
+    });
+    const outcome = await run.promise;
+    expect(outcome.status).toBe('failed');
+    expect(outcome.error).toContain('image');
   });
 
   it('resumes a persisted ACP session and forwards a permission request', async () => {
