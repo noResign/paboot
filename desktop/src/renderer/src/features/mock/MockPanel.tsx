@@ -58,9 +58,11 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
         setError(errorMessage(res.data, res.status));
         return;
       }
+      // Never replace an unsaved draft (including a just-added blank API):
+      // the 3s poll would otherwise make it disappear before the user types.
+      if (!initial && dirtyRef.current) return;
       const next = res.data.model;
       setModel(next);
-      if (!initial && dirtyRef.current) return;
       setRules(next.rules);
       const id = next.apis.some((item) => item.id === selectedRef.current)
         ? selectedRef.current
@@ -68,6 +70,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
       setSelectedId(id);
       const selected = next.apis.find((item) => item.id === id);
       setDraft(selected ? JSON.stringify(selected, null, 2) : '');
+      dirtyRef.current = false;
       setDirty(false);
       setError(null);
     };
@@ -84,6 +87,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
   function selectApi(item: MockApiDto): void {
     setSelectedId(item.id);
     setDraft(JSON.stringify(item, null, 2));
+    dirtyRef.current = false;
     setDirty(false);
   }
 
@@ -93,7 +97,9 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
     setModel((current) => ({ ...current, apis: [...current.apis, item] }));
     setSelectedId(id);
     setDraft(JSON.stringify(item, null, 2));
-    setDirty(false);
+    // A new API is an unsaved draft: keep polling from wiping it.
+    dirtyRef.current = true;
+    setDirty(true);
   }
 
   async function deleteApi(): Promise<void> {
@@ -113,6 +119,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
     setDraft(
       res.data.model.apis[0] ? JSON.stringify(res.data.model.apis[0], null, 2) : '',
     );
+    dirtyRef.current = false;
     setDirty(false);
   }
 
@@ -143,6 +150,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
     setNotice('Mock 已保存');
     setModel(res.data.model);
     setSelectedId(parsed.id);
+    dirtyRef.current = false;
     setDirty(false);
   }
 
@@ -214,6 +222,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
             spellCheck={false}
             onChange={(event) => {
               setDraft(event.target.value);
+              dirtyRef.current = true;
               setDirty(true);
             }}
             placeholder='{ "id": "user.list", "method": "GET", "path": "/users", "baseline": { "status": 200 } }'
@@ -227,6 +236,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
             spellCheck={false}
             onChange={(event) => {
               setRules(event.target.value);
+              dirtyRef.current = true;
               setDirty(true);
             }}
             placeholder={'user.list: empty'}
