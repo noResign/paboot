@@ -226,10 +226,19 @@ function requireWritableClaim(
   return claim;
 }
 
+function claimScopeLabel(ctx: AppContext, scope: MemoryScope): string {
+  if (scope === 'user') return '全局';
+  const workspaceId = scope.startsWith('workspace:') ? scope.slice('workspace:'.length) : null;
+  const workspace = workspaceId ? ctx.db.getWorkspace(workspaceId) : undefined;
+  if (!workspace) return scope;
+  return workspace.family === 'life' ? '生活' : workspace.name;
+}
+
 function toClaimDto(claim: MemoryClaim, ctx: AppContext): MemoryClaimDto {
   return {
     id: claim.id,
     scope: claim.scope,
+    scopeLabel: claimScopeLabel(ctx, claim.scope),
     endId: claim.endId,
     predicate: claim.predicate,
     objectText: claim.objectText,

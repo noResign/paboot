@@ -455,8 +455,12 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         cell.textLabel?.font = Typography.body
         cell.textLabel?.textColor = Theme.Colors.textPrimary
         let privateLabel = claim.sensitivity == "private" ? " · 私密" : ""
+        let scopeLabel =
+            claim.scope != "workspace:\(workspaceId)" && !claim.scopeLabel.isEmpty
+                ? " · \(claim.scopeLabel)"
+                : ""
         cell.detailTextLabel?.text =
-            "\(memoryAuthorityLabel(claim))\(privateLabel) · #\(shortClaimId(claim.id)) · \(memoryDateLabel(claim.updatedAt))"
+            "\(memoryAuthorityLabel(claim))\(scopeLabel)\(privateLabel) · #\(shortClaimId(claim.id)) · \(memoryDateLabel(claim.updatedAt))"
         cell.detailTextLabel?.font = Typography.caption
         cell.detailTextLabel?.textColor = Theme.Colors.textSecondary
         cell.accessoryType = .disclosureIndicator
