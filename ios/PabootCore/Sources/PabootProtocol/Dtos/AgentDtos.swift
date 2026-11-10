@@ -73,16 +73,18 @@ public struct ModelOptionDto: Decodable, Equatable, Sendable {
     public let id: String
     public let label: String
     public let parameters: [ModelParameterDto]
+    public let supportsImages: Bool?
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         parameters = try container.decodeIfPresent([ModelParameterDto].self, forKey: .parameters) ?? []
+        supportsImages = try container.decodeIfPresent(Bool.self, forKey: .supportsImages)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, label, parameters
+        case id, label, parameters, supportsImages
     }
 }
 

@@ -1,12 +1,15 @@
 import Combine
 import PabootProtocol
+import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// One conversation: transcript, composer, approvals, session settings.
 final class ChatViewController: UIViewController {
     private let viewModel: ChatViewModel
     var sessionIdentifier: String? { viewModel.state.sessionId }
     private var cancellables = Set<AnyCancellable>()
+    private var attachmentImageCache: [String: UIImage] = [:]
 
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let bottomBar = ChatBottomBar()
@@ -178,6 +181,12 @@ final class ChatViewController: UIViewController {
         inputBar.onStop = { [weak self] in
             self?.viewModel.stop()
         }
+        inputBar.onAddImage = { [weak self] in
+            self?.presentImagePicker()
+        }
+        inputBar.onRemoveAttachment = { [weak self] id in
+            self?.viewModel.removeAttachment(id: id)
+        }
 
         bottomBar.onNavigate = { [weak self] destination in
             guard let self else { return }
@@ -299,7 +308,31 @@ final class ChatViewController: UIViewController {
                     withIdentifier: UserMessageCell.reuseIdentifier,
                     for: indexPath
                 ) as! UserMessageCell
-                cell.configure(text: message.text, sentAt: message.sentAt)
+                cell.configure(
+                    text: message.text,
+                    sentAt: message.sentAt,
+                    attachmentIds: message.attachmentIds
+                ) { [weak self] id, completion in
+                    guard let self else {
+                        completion(nil)
+                        return
+                    }
+                    if let cached = self.attachmentImageCache[id] {
+                        completion(cached)
+                        return
+                    }
+                    Task {
+                        guard
+                            let data = await self.viewModel.attachmentData(id: id),
+                            let image = UIImage(data: data)
+                        else {
+                            completion(nil)
+                            return
+                        }
+                        self.attachmentImageCache[id] = image
+                        completion(image)
+                    }
+                }
                 return cell
 
             case .assistant:
@@ -337,6 +370,7 @@ final class ChatViewController: UIViewController {
         titleLabel.text = state.title
         updateSubtitle(state)
         inputBar.setStreaming(state.streaming)
+        inputBar.setAttachments(state.attachments)
         inputBar.isUserInteractionEnabled = !state.loadingHistory
         inputBar.alpha = state.loadingHistory ? 0.6 : 1
         reconnectBanner.isHidden = !state.reconnecting
@@ -791,5 +825,64 @@ extension ChatViewController: UIGestureRecognizerDelegate {
     ) -> Bool {
         // Card expansion and text selection should still receive the same interaction.
         true
+    }
+}
+
+extension ChatViewController: PHPickerViewControllerDelegate {
+    private func presentImagePicker() {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .images
+        configuration.selectionLimit = 8
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        for result in results.prefix(8) {
+            let provider = result.itemProvider
+            guard provider.canLoadObject(ofClass: UIImage.self) else { continue }
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, _ in
+                guard let self, let data, let prepared = Self.prepareImage(data) else { return }
+                DispatchQueue.main.async {
+                    self.viewModel.attachImage(
+                        prepared.data,
+                        contentType: prepared.mediaType,
+                        previewData: prepared.preview
+                    )
+                }
+            }
+        }
+    }
+
+    private static func prepareImage(
+        _ data: Data
+    ) -> (data: Data, mediaType: String, preview: Data)? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        if data.count <= 4 * 1024 * 1024, longest <= 2048 {
+            return (data, sniffMime(data), data)
+        }
+        let scale = min(1, 2048 / max(longest, 1))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let scaled = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        guard let output = scaled.jpegData(compressionQuality: 0.85) else { return nil }
+        return (output, "image/jpeg", output)
+    }
+
+    private static func sniffMime(_ data: Data) -> String {
+        if data.starts(with: [0x89, 0x50, 0x4e, 0x47]) { return "image/png" }
+        if data.starts(with: [0xff, 0xd8, 0xff]) { return "image/jpeg" }
+        if data.starts(with: Array("GIF8".utf8)) { return "image/gif" }
+        if data.count > 12,
+           data.starts(with: Array("RIFF".utf8)),
+           data.subdata(in: 8..<12) == Data("WEBP".utf8) {
+            return "image/webp"
+        }
+        return "image/jpeg"
     }
 }

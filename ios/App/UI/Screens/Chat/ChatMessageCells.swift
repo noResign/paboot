@@ -11,6 +11,7 @@ final class UserMessageCell: UITableViewCell {
     private let bubble = UIView()
     private let label = UILabel()
     private let timeLabel = UILabel()
+    private let attachmentsStack = UIStackView()
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -36,6 +37,11 @@ final class UserMessageCell: UITableViewCell {
         timeLabel.textAlignment = .right
         timeLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        attachmentsStack.axis = .horizontal
+        attachmentsStack.spacing = 6
+        attachmentsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView.addSubview(attachmentsStack)
         contentView.addSubview(bubble)
         contentView.addSubview(timeLabel)
 
@@ -45,9 +51,13 @@ final class UserMessageCell: UITableViewCell {
             label.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 13),
             label.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -13),
 
+            attachmentsStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
+            attachmentsStack.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 56),
+            attachmentsStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Spacing.xs),
+
             bubble.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
             bubble.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 56),
-            bubble.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Spacing.xs),
+            bubble.topAnchor.constraint(equalTo: attachmentsStack.bottomAnchor, constant: 4),
 
             timeLabel.topAnchor.constraint(equalTo: bubble.bottomAnchor, constant: 4),
             timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Spacing.md),
@@ -61,11 +71,36 @@ final class UserMessageCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(text: String, sentAt: Int64) {
+    func configure(
+        text: String,
+        sentAt: Int64,
+        attachmentIds: [String] = [],
+        loadImage: ((String, @escaping (UIImage?) -> Void) -> Void)? = nil
+    ) {
         label.text = text
         let time = Formatters.messageTime(fromMilliseconds: sentAt)
         timeLabel.text = time
         timeLabel.isHidden = time.isEmpty
+
+        attachmentsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        attachmentsStack.isHidden = attachmentIds.isEmpty
+        for id in attachmentIds.prefix(8) {
+            let imageView = UIImageView()
+            imageView.contentMode = .scaleAspectFill
+            imageView.clipsToBounds = true
+            imageView.layer.cornerRadius = 9
+            imageView.backgroundColor = Theme.Colors.surface2
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                imageView.widthAnchor.constraint(equalToConstant: 68),
+                imageView.heightAnchor.constraint(equalToConstant: 68),
+            ])
+            attachmentsStack.addArrangedSubview(imageView)
+            loadImage?(id) { [weak imageView] image in
+                guard let image else { return }
+                DispatchQueue.main.async { imageView?.image = image }
+            }
+        }
     }
 }
 

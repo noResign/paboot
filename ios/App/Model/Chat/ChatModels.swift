@@ -13,10 +13,21 @@ struct ChatUiMessage: Equatable, Identifiable {
     var text: String = ""
     /// Send time (epoch ms) for a user row; 0 when an old history has none.
     var sentAt: Int64 = 0
+    /// Image attachment ids for a user row.
+    var attachmentIds: [String] = []
     var blocks: [ContentBlock] = []
     var usage: UsageInfo?
     var error: String?
     var done: Bool = true
+}
+
+/// One image picked in the composer, before or after upload.
+struct ChatAttachmentDraft: Identifiable, Equatable {
+    let id: String
+    var remoteId: String?
+    var previewData: Data
+    var uploading: Bool = false
+    var error: String?
 }
 
 /// Ordered assistant content. Tool calls and questions keep their arrival order.

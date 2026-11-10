@@ -104,6 +104,7 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let modelParameters: [String: String]?
     public let status: String
     public let prompt: String
+    public let attachmentIds: [String]
     public let startedAt: Int64
     public let endedAt: Int64?
     public let exitCode: Int?
@@ -123,6 +124,7 @@ public struct RunDto: Decodable, Equatable, Sendable {
         modelParameters = try container.decodeIfPresent([String: String].self, forKey: .modelParameters)
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? ""
         prompt = try container.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+        attachmentIds = try container.decodeIfPresent([String].self, forKey: .attachmentIds) ?? []
         startedAt = try container.decodeIfPresent(Int64.self, forKey: .startedAt) ?? 0
         endedAt = try container.decodeIfPresent(Int64.self, forKey: .endedAt)
         exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
@@ -135,7 +137,7 @@ public struct RunDto: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, sessionId, runtime, model, modelParameters, status, prompt
+        case id, sessionId, runtime, model, modelParameters, status, prompt, attachmentIds
         case startedAt, endedAt, exitCode, error, checkpoint
         case taskId, trigger, permissionMode, output
     }

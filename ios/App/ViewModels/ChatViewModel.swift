@@ -30,6 +30,7 @@ final class ChatViewModel {
         var models: [ModelOptionDto] = []
         var sessionId: String?
         var runId: String?
+        var attachments: [ChatAttachmentDraft] = []
     }
 
     @Published private(set) var state = State()
@@ -135,7 +136,13 @@ final class ChatViewModel {
 
             for run in detail.runs {
                 messages.append(
-                    ChatUiMessage(id: "u-\(run.id)", role: .user, text: run.prompt, sentAt: run.startedAt)
+                    ChatUiMessage(
+                        id: "u-\(run.id)",
+                        role: .user,
+                        text: run.prompt,
+                        sentAt: run.startedAt,
+                        attachmentIds: run.attachmentIds
+                    )
                 )
 
                 if run.id == session.runningRunId {
@@ -225,9 +232,57 @@ final class ChatViewModel {
 
     // MARK: - Sending
 
+    func attachImage(_ imageData: Data, contentType: String, previewData: Data) {
+        guard state.attachments.count < 8 else { return }
+        let localId = UUID().uuidString
+        state.attachments.append(
+            ChatAttachmentDraft(
+                id: localId,
+                previewData: previewData,
+                uploading: true
+            )
+        )
+        Task { [weak self, repository] in
+            do {
+                let dto = try await repository.uploadAttachment(
+                    data: imageData,
+                    contentType: contentType
+                )
+                guard let self, let index = self.state.attachments.firstIndex(where: { $0.id == localId }) else {
+                    return
+                }
+                self.state.attachments[index].remoteId = dto.id
+                self.state.attachments[index].uploading = false
+            } catch {
+                guard let self, let index = self.state.attachments.firstIndex(where: { $0.id == localId }) else {
+                    return
+                }
+                self.state.attachments[index].uploading = false
+                self.state.attachments[index].error = error.localizedDescription
+            }
+        }
+    }
+
+    func removeAttachment(id: String) {
+        state.attachments.removeAll { $0.id == id }
+    }
+
+    func attachmentData(id: String) async -> Data? {
+        try? await repository.attachmentData(id: id)
+    }
+
     func send(_ text: String) {
-        let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !state.streaming, !state.loadingHistory else { return }
+        let uploaded = state.attachments.compactMap(\.remoteId)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = trimmed.isEmpty
+            ? (uploaded.isEmpty ? "" : "请查看这些图片。")
+            : trimmed
+        guard
+            !prompt.isEmpty,
+            !state.streaming,
+            !state.loadingHistory,
+            !state.attachments.contains(where: { $0.uploading })
+        else { return }
 
         if state.sessionId == nil, state.title == "新会话" {
             state.title = String(prompt.prefix(60))
@@ -238,7 +293,8 @@ final class ChatViewModel {
                 id: "u-\(UUID().uuidString)",
                 role: .user,
                 text: prompt,
-                sentAt: Int64(Date().timeIntervalSince1970 * 1000)
+                sentAt: Int64(Date().timeIntervalSince1970 * 1000),
+                attachmentIds: uploaded
             )
         )
         state.messages.append(
@@ -255,6 +311,7 @@ final class ChatViewModel {
             modelParameters: isNewSession && !state.modelParameters.isEmpty ? state.modelParameters : nil,
             runtime: isNewSession ? runtime : nil,
             permissionMode: isNewSession ? state.permissionMode : nil,
+            attachmentIds: uploaded.isEmpty ? nil : uploaded,
             commandId: UUID().uuidString
         )
 
@@ -268,6 +325,7 @@ final class ChatViewModel {
             after: nil,
             resend: resend
         )
+        state.attachments = []
     }
 
     func stop() {

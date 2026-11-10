@@ -1,12 +1,20 @@
 import UIKit
 
-/// Bottom composer: text field + send/stop button.
+/// Bottom composer: attachments row + text field + add/send buttons.
 final class ChatInputBar: UIView {
     var onSend: ((String) -> Void)?
     var onStop: (() -> Void)?
+    var onAddImage: (() -> Void)?
+    var onRemoveAttachment: ((String) -> Void)?
 
     private let textField = UITextField()
     private let actionButton = UIButton(type: .system)
+    private let attachButton = UIButton(type: .system)
+    private let attachmentsScroll = UIScrollView()
+    private let attachmentsStack = UIStackView()
+    private var attachmentsHeight: NSLayoutConstraint!
+    private var hasUploadedAttachment = false
+    private var isUploadingAttachment = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -28,6 +36,21 @@ final class ChatInputBar: UIView {
         textField.translatesAutoresizingMaskIntoConstraints = false
         fieldContainer.addSubview(textField)
 
+        attachButton.setImage(
+            UIImage(
+                systemName: "plus",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            ),
+            for: .normal
+        )
+        attachButton.tintColor = Theme.Colors.textSecondary
+        attachButton.translatesAutoresizingMaskIntoConstraints = false
+        attachButton.addAction(
+            UIAction { [weak self] _ in self?.onAddImage?() },
+            for: .touchUpInside
+        )
+        attachButton.accessibilityLabel = "添加图片"
+
         actionButton.layer.cornerRadius = 22
         actionButton.tintColor = Theme.Colors.onPrimary
         actionButton.translatesAutoresizingMaskIntoConstraints = false
@@ -36,20 +59,41 @@ final class ChatInputBar: UIView {
             for: .touchUpInside
         )
 
-        let row = UIStackView(arrangedSubviews: [fieldContainer, actionButton])
+        attachmentsStack.axis = .horizontal
+        attachmentsStack.spacing = 6
+        attachmentsStack.translatesAutoresizingMaskIntoConstraints = false
+        attachmentsScroll.showsHorizontalScrollIndicator = false
+        attachmentsScroll.translatesAutoresizingMaskIntoConstraints = false
+        attachmentsScroll.addSubview(attachmentsStack)
+
+        let row = UIStackView(arrangedSubviews: [attachButton, fieldContainer, actionButton])
         row.axis = .horizontal
         row.alignment = .center
         row.spacing = Spacing.xs
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(row)
+        let contentStack = UIStackView(arrangedSubviews: [attachmentsScroll, row])
+        contentStack.axis = .vertical
+        contentStack.spacing = Spacing.xs
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(contentStack)
 
+        attachmentsHeight = attachmentsScroll.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: topAnchor),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor),
-            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            attachmentsHeight,
+            contentStack.topAnchor.constraint(equalTo: topAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: trailingAnchor),
 
+            attachmentsStack.topAnchor.constraint(equalTo: attachmentsScroll.contentLayoutGuide.topAnchor),
+            attachmentsStack.bottomAnchor.constraint(equalTo: attachmentsScroll.contentLayoutGuide.bottomAnchor),
+            attachmentsStack.leadingAnchor.constraint(equalTo: attachmentsScroll.contentLayoutGuide.leadingAnchor),
+            attachmentsStack.trailingAnchor.constraint(equalTo: attachmentsScroll.contentLayoutGuide.trailingAnchor),
+            attachmentsStack.heightAnchor.constraint(equalTo: attachmentsScroll.frameLayoutGuide.heightAnchor),
+
+            attachButton.widthAnchor.constraint(equalToConstant: 36),
+            attachButton.heightAnchor.constraint(equalToConstant: 44),
             fieldContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             textField.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: Spacing.sm),
             textField.trailingAnchor.constraint(equalTo: fieldContainer.trailingAnchor, constant: -Spacing.sm),
@@ -77,6 +121,73 @@ final class ChatInputBar: UIView {
         updateEnabled()
     }
 
+    func setAttachments(_ drafts: [ChatAttachmentDraft]) {
+        for view in attachmentsStack.arrangedSubviews {
+            attachmentsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        attachmentsHeight.constant = drafts.isEmpty ? 0 : 64
+        hasUploadedAttachment = drafts.contains { $0.remoteId != nil }
+        isUploadingAttachment = drafts.contains { $0.uploading }
+        attachButton.isEnabled = drafts.count < 8 && !isStreaming && !isUploadingAttachment
+        attachButton.alpha = attachButton.isEnabled ? 1 : 0.4
+
+        for draft in drafts {
+            attachmentsStack.addArrangedSubview(makeAttachmentChip(draft))
+        }
+        updateEnabled()
+    }
+
+    private func makeAttachmentChip(_ draft: ChatAttachmentDraft) -> UIView {
+        let box = UIView()
+        box.backgroundColor = Theme.Colors.surface2
+        box.layer.cornerRadius = 10
+        box.clipsToBounds = true
+        box.translatesAutoresizingMaskIntoConstraints = false
+
+        let imageView = UIImageView(image: UIImage(data: draft.previewData))
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(imageView)
+
+        let remove = UIButton(type: .system)
+        remove.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        remove.tintColor = .white
+        remove.translatesAutoresizingMaskIntoConstraints = false
+        remove.addAction(
+            UIAction { [weak self] _ in self?.onRemoveAttachment?(draft.id) },
+            for: .touchUpInside
+        )
+        box.addSubview(remove)
+
+        if draft.uploading {
+            let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.color = .white
+            spinner.startAnimating()
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: box.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            box.widthAnchor.constraint(equalToConstant: 64),
+            box.heightAnchor.constraint(equalToConstant: 64),
+            imageView.topAnchor.constraint(equalTo: box.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            imageView.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            remove.topAnchor.constraint(equalTo: box.topAnchor, constant: 2),
+            remove.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -2),
+            remove.widthAnchor.constraint(equalToConstant: 20),
+            remove.heightAnchor.constraint(equalToConstant: 20),
+        ])
+        return box
+    }
+
     @objc private func textChanged() {
         updateEnabled()
     }
@@ -91,7 +202,7 @@ final class ChatInputBar: UIView {
 
     private func send() {
         let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !text.isEmpty else { return }
+        guard (!text.isEmpty || hasUploadedAttachment), !isUploadingAttachment else { return }
         textField.text = ""
         updateEnabled()
         onSend?(text)
@@ -113,7 +224,7 @@ final class ChatInputBar: UIView {
 
     private func updateEnabled() {
         let hasText = !(textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        actionButton.isEnabled = isStreaming || hasText
+        actionButton.isEnabled = isStreaming || ((hasText || hasUploadedAttachment) && !isUploadingAttachment)
         actionButton.alpha = actionButton.isEnabled ? 1 : 0.4
     }
 }
@@ -121,11 +232,11 @@ final class ChatInputBar: UIView {
 extension ChatInputBar: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard !isStreaming else { return false }
+        textField.resignFirstResponder()
         send()
         return true
     }
 }
-
 /// Two modes share one footprint; swapping content never changes transcript height.
 final class ChatBottomBar: UIView {
     enum Mode { case input, navigation }
