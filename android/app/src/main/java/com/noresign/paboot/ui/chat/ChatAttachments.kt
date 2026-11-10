@@ -34,7 +34,9 @@ internal fun MessageAttachments(ids: List<String>) {
     if (ids.isEmpty()) return
     val context = LocalContext.current
     val settings = SettingsStore
-    val base = settings.baseUrl?.trimEnd('/')
+    // SettingsStore keeps exactly what the user typed (often just `192.168.x.x`);
+    // the REST client normalizes scheme/port internally, so the image URL must too.
+    val base = settings.baseUrl?.let { PabootClient.normalizeBaseUrl(it).trimEnd('/') }
     val token = settings.token
     if (base.isNullOrEmpty() || token.isNullOrEmpty()) return
     var preview by remember { mutableStateOf<String?>(null) }
