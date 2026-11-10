@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,7 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.ImageLoader
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.network.daemon.PabootClient
 
@@ -45,7 +47,7 @@ internal fun MessageAttachments(ids: List<String>) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ids.forEach { id ->
             val url = "$base/api/attachments/$id"
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = url,
                 imageLoader = imageLoader,
                 contentDescription = "图片附件",
@@ -55,6 +57,20 @@ internal fun MessageAttachments(ids: List<String>) {
                     .clip(RoundedCornerShape(9.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { preview = url },
+                loading = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+                },
+                error = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "加载失败",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
             )
         }
     }
@@ -67,7 +83,7 @@ internal fun MessageAttachments(ids: List<String>) {
                     .padding(12.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = url,
                     imageLoader = imageLoader,
                     contentDescription = "图片预览",
@@ -75,6 +91,19 @@ internal fun MessageAttachments(ids: List<String>) {
                     modifier = Modifier
                         .fillMaxSize()
                         .clickable { preview = null },
+                    loading = {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    },
+                    error = {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                "图片加载失败",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
                 )
             }
         }
