@@ -175,6 +175,15 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   );
 
   return (
+    <div
+      className="kn-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Android 设备"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
     <div className="kn-panel device-panel">
       <header className="kn-head">
         <div className="kn-head-copy">
@@ -285,6 +294,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
         {error && <p className="mem-error">{error}</p>}
         {notice && <p className="hint">{notice}</p>}
       </div>
+    </div>
     </div>
   );
 }

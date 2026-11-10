@@ -147,6 +147,15 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
   }
 
   return (
+    <div
+      className="kn-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Mock API"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
     <div className="kn-panel mock-panel">
       <header className="kn-head">
         <div className="kn-head-copy">
@@ -226,6 +235,7 @@ export function MockPanel({ workspaceId, workspaceName, onClose }: Props) {
           {notice && <p className="hint">{notice}</p>}
         </section>
       </div>
+    </div>
     </div>
   );
 }
