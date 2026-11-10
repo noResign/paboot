@@ -5368,6 +5368,20 @@ a.btn {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.device-roots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.device-root-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.device-root-row .device-root {
+  flex: 1;
+}
 .device-select {
   flex: 0 1 340px;
   min-width: 180px;
