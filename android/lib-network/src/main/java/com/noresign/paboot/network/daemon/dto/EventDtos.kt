@@ -130,6 +130,8 @@ data class ChatRequest(
     val modelParameters: Map<String, String>? = null,
     val runtime: String? = null,
     val permissionMode: String? = null,
+    /** 已上传的图片附件 id；与文字一起发给 runtime。 */
+    val attachmentIds: List<String>? = null,
     /**
      * 幂等键：同一次「发送」重试时带同一个 id，daemon 会重连到它已经起的那个 run，
      * 而不是起第二个——让「请求刚发出就断、run id 都没拿到」能自动重试。

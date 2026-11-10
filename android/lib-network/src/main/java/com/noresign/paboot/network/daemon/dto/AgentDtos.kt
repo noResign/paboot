@@ -44,6 +44,8 @@ data class ModelOptionDto(
     val id: String,
     val label: String = "",
     val parameters: List<ModelParameterDto> = emptyList(),
+    /** False when the model cannot accept image input. */
+    val supportsImages: Boolean? = null,
 )
 
 @Serializable

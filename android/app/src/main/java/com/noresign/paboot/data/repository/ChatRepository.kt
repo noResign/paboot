@@ -32,6 +32,7 @@ class ChatRepository(
         permissionMode: String? = null,
         model: String? = null,
         modelParameters: Map<String, String>? = null,
+        attachmentIds: List<String>? = null,
         commandId: String? = null,
     ): Flow<ChatStreamEvent> {
         val url = settings.baseUrl ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
@@ -47,6 +48,7 @@ class ChatRepository(
                 modelParameters = modelParameters,
                 runtime = runtime,
                 permissionMode = permissionMode,
+                attachmentIds = attachmentIds,
                 commandId = commandId,
             ),
         )
