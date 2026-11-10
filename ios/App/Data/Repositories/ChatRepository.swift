@@ -35,6 +35,8 @@ protocol ChatRepositoryProtocol {
     func updatePermissionMode(sessionId: String, mode: String) async throws
     func updateMemoryMode(sessionId: String, mode: String) async throws
     func models(agentId: String) async throws -> [ModelOptionDto]
+    func uploadAttachment(data: Data, contentType: String) async throws -> AttachmentDto
+    func attachmentData(id: String) async throws -> Data
 }
 
 final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
@@ -94,6 +96,24 @@ final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
             return failedStream(ChatRepositoryError.notConnected)
         }
         return client.stream.runStream(runId: runId, after: after)
+    }
+
+    func uploadAttachment(data: Data, contentType: String) async throws -> AttachmentDto {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.uploadAttachment(data, contentType: contentType)
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func attachmentData(id: String) async throws -> Data {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.attachment(id: id)
+        } catch {
+            throw map(error)
+        }
     }
 
     func cancelRun(id: String) async throws {

@@ -216,6 +216,7 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
     public let modelParameters: [String: String]?
     public let runtime: String?
     public let permissionMode: String?
+    public let attachmentIds: [String]?
     /// Idempotency key: retrying the same send re-attaches to the run it already started.
     public let commandId: String?
 
@@ -227,6 +228,7 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         modelParameters: [String: String]? = nil,
         runtime: String? = nil,
         permissionMode: String? = nil,
+        attachmentIds: [String]? = nil,
         commandId: String? = nil
     ) {
         self.prompt = prompt
@@ -236,8 +238,19 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         self.modelParameters = modelParameters
         self.runtime = runtime
         self.permissionMode = permissionMode
+        self.attachmentIds = attachmentIds
         self.commandId = commandId
     }
+}
+
+/// `POST /api/attachments` — immutable image metadata.
+public struct AttachmentDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let mediaType: String
+    public let bytes: Int
+    public let width: Int
+    public let height: Int
+    public let sha256: String
 }
 
 /// `POST /api/permissions/:id/decision` request body.

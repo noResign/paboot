@@ -695,12 +695,42 @@ public final class PabootAPI {
         return try await http.send(request, as: type)
     }
 
+    public func uploadAttachment(_ data: Data, contentType: String) async throws -> AttachmentDto {
+        let request = try makeRequest(
+            method: "POST",
+            path: "api/attachments",
+            query: [],
+            body: data,
+            authenticated: true,
+            contentType: contentType
+        )
+        let (body, _) = try await http.send(request)
+        do {
+            return try JSONDecoder().decode(AttachmentDto.self, from: body)
+        } catch {
+            throw PabootError.decoding(String(describing: error))
+        }
+    }
+
+    public func attachment(id: String) async throws -> Data {
+        let request = try makeRequest(
+            method: "GET",
+            path: "api/attachments/\(id)",
+            query: [],
+            body: nil,
+            authenticated: true
+        )
+        let (data, _) = try await http.send(request)
+        return data
+    }
+
     private func makeRequest(
         method: String,
         path: String,
         query: [URLQueryItem],
         body: Data?,
-        authenticated: Bool
+        authenticated: Bool,
+        contentType: String? = nil
     ) throws -> URLRequest {
         guard var components = URLComponents(
             url: location.baseURL.appendingPathComponent(path),
@@ -720,7 +750,7 @@ public final class PabootAPI {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let body {
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType ?? "application/json", forHTTPHeaderField: "Content-Type")
         }
         if authenticated {
             request.setValue("Bearer \(location.token)", forHTTPHeaderField: "Authorization")
