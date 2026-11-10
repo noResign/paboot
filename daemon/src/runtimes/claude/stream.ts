@@ -1,4 +1,5 @@
 import type { NormalizedEvent, QuestionDto } from '../../types/api.js';
+import { formatToolResult } from '../tool-result.js';
 import type { StreamParser } from '../types.js';
 
 type EventSink = (ev: NormalizedEvent) => void;
@@ -13,30 +14,6 @@ interface BlockState {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function toolResultBlock(block: unknown): string {
-  if (!isRecord(block)) return JSON.stringify(block);
-  if (block.type === 'text') return String(block.text ?? '');
-  if (block.type === 'image') {
-    // Keep the runtime's live image out of paboot's event log (UI / replay).
-    // MCP blocks use `mimeType`; Anthropic blocks use `source.media_type`.
-    const source = isRecord(block.source) ? block.source : block;
-    const mediaType =
-      typeof block.mimeType === 'string'
-        ? block.mimeType
-        : typeof source.media_type === 'string'
-          ? source.media_type
-          : 'image';
-    return `[image omitted: ${mediaType}]`;
-  }
-  return JSON.stringify(block);
-}
-
-function stringifyToolResult(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map(toolResultBlock).join('\n');
-  return JSON.stringify(content);
 }
 
 function errorResultMessage(obj: Record<string, unknown>): string {
@@ -289,7 +266,7 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         onEvent({
           type: 'tool_result',
           toolUseId: typeof block.tool_use_id === 'string' ? block.tool_use_id : undefined,
-          content: stringifyToolResult(block.content),
+          content: formatToolResult(block.content),
           isError: block.is_error === true,
         });
       }

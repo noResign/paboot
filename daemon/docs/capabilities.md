@@ -112,8 +112,9 @@ paboot-capability android logcat --workspace <id> --lines 50
 
 `stdio-server.ts` 支持 `text | image` 内容块；builtin 的 MCP client 没有图片渲染，截图降级为
 `[image omitted: builtin runtime cannot render images]`，Agent 可用 CLI 兜底。
-Claude 的 `tool_result` 事件同样把 image block 换成 `[image omitted: <mime>]`，模型当轮仍看到
-原图，但 paboot 不把 base64 写进 `events` / 回放。
+Claude / Codex / DeepSeek 的 `tool_result` 统一经 `runtimes/tool-result.ts` 清洗：image block
+换成 `[image omitted: <mime>]`，未知结构里的超长 base64 `data` 也替换掉。模型当轮仍看到原图，
+但 paboot 不把 base64 写进 `events` / 回放。
 
 桌面端：工作区概览「端 / 能力」→ 设备面板（无端时扫描建议并创建，已激活时 1.5s 轮询镜像，
 可选点击 tap）。移动端只显示端名与在线设备数，镜像 / 点击在桌面端。

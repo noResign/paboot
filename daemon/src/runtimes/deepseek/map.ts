@@ -1,4 +1,5 @@
 import type { NormalizedEvent } from '../../types/api.js';
+import { formatToolResult } from '../tool-result.js';
 
 /**
  * Pure projection from ACP `session/update` notifications to the daemon's
@@ -52,19 +53,10 @@ function contentText(value: unknown): string | null {
 
 /** Flatten ACP `ToolCallContent[]` (and bare content blocks) into display text. */
 function toolResultText(content: unknown, rawOutput: unknown): string {
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const item of content) {
-      const record = asRecord(item);
-      const text = record?.['type'] === 'content' ? contentText(record['content']) : contentText(item);
-      if (text !== null) parts.push(text);
-    }
-    if (parts.length > 0) return parts.join('\n');
-  }
-  if (rawOutput !== undefined && rawOutput !== null) {
-    return typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
-  }
-  return '';
+  const rendered = formatToolResult(content);
+  if (rendered !== '') return rendered;
+  if (rawOutput === undefined || rawOutput === null) return '';
+  return formatToolResult(rawOutput);
 }
 
 export interface DeepSeekStreamMapper {

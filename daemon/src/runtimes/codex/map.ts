@@ -1,4 +1,5 @@
 import type { NormalizedEvent } from '../../types/api.js';
+import { formatToolResult } from '../tool-result.js';
 
 /**
  * Codex app-server (protocol v2) → `NormalizedEvent`.
@@ -155,9 +156,9 @@ function codexItemResultText(item: CodexItem): string {
     case 'fileChange':
       return stringify(item['changes']) || `(${readString(item, 'status') ?? 'applied'})`;
     case 'mcpToolCall':
-      return stringify(item['result']) || stringify(item['error']) || '';
+      return formatToolResult(item['result']) || formatToolResult(item['error']) || '';
     case 'dynamicToolCall':
-      return stringify(item['contentItems']) || '';
+      return formatToolResult(item['contentItems']) || '';
     case 'webSearch':
       return stringify(item['results']) || '';
     case 'collabAgentToolCall':

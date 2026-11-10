@@ -30,6 +30,31 @@ describe('codex item → tool_result', () => {
     expect(events.find((ev) => ev.type === 'tool_result')).toMatchObject({ isError: false });
   });
 
+  it('omits image bytes from MCP tool results', () => {
+    const events = collect([
+      ['item/completed', {
+        item: {
+          id: 'mcp-1',
+          type: 'mcpToolCall',
+          server: 'paboot_capability',
+          tool: 'android_screenshot',
+          status: 'completed',
+          arguments: {},
+          result: {
+            content: [
+              { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUg' },
+              { type: 'text', text: 'screenshot 10x20' },
+            ],
+          },
+        },
+      }],
+    ]);
+    const result = events.find((ev) => ev.type === 'tool_result');
+    expect(result?.content).toContain('[image omitted: image/png]');
+    expect(result?.content).toContain('screenshot 10x20');
+    expect(result?.content).not.toContain('iVBOR');
+  });
+
   it('separates terminal writes from shell commands so grants cannot cross over', () => {
     expect(readCodexApproval('item/commandExecution/requestApproval', { command: 'ls', kind: 'command' }))
       .toMatchObject({ toolName: 'Bash' });

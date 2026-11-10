@@ -50,6 +50,58 @@ describe('deepseek ACP updates → NormalizedEvent', () => {
     expect(mapper.toolCall('t1')).toEqual({ name: 'bash', input: { command: 'ls' } });
   });
 
+  it('omits image bytes from content and rawOutput fallbacks', () => {
+    const events = collect([
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 't-img',
+        title: 'android_screenshot',
+        rawInput: {},
+      },
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't-img',
+        status: 'completed',
+        content: [
+          {
+            type: 'content',
+            content: { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo' },
+          },
+          { type: 'text', text: 'shot' },
+        ],
+      },
+      {
+        sessionUpdate: 'tool_call',
+        toolCallId: 't-raw',
+        title: 'android_screenshot',
+        rawInput: {},
+      },
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 't-raw',
+        status: 'completed',
+        content: [],
+        rawOutput: {
+          content: [
+            { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo' },
+            { type: 'text', text: 'raw shot' },
+          ],
+        },
+      },
+    ]);
+    const results = events.filter(
+      (ev): ev is Extract<NormalizedEvent, { type: 'tool_result' }> =>
+        ev.type === 'tool_result',
+    );
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      expect(result.content).toContain('[image omitted: image/png]');
+      expect(result.content).not.toContain('iVBOR');
+    }
+    expect(results[0]?.content).toContain('shot');
+    expect(results[1]?.content).toContain('raw shot');
+  });
+
   it('ignores in-progress tool updates and flags failed results', () => {
     const events = collect([
       { sessionUpdate: 'tool_call', toolCallId: 't2', title: 'edit', status: 'in_progress', rawInput: {} },
