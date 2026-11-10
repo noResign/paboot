@@ -3,6 +3,8 @@ import { IPC } from '../shared/ipc';
 import type {
   PabootBridge,
   AppPrefs,
+  AttachmentGetInput,
+  AttachmentUploadInput,
   ConnectInput,
   DaemonRequest,
   KnowledgeExportInput,
@@ -61,6 +63,9 @@ const api: PabootBridge = {
   },
   revealPath: (input: RevealInput) => ipcRenderer.invoke(IPC.revealPath, input),
   knowledgeExport: (input: KnowledgeExportInput) => ipcRenderer.invoke(IPC.knowledgeExport, input),
+  uploadAttachment: (input: AttachmentUploadInput) =>
+    ipcRenderer.invoke(IPC.attachmentUpload, input),
+  attachmentBytes: (input: AttachmentGetInput) => ipcRenderer.invoke(IPC.attachmentGet, input),
 };
 
 contextBridge.exposeInMainWorld('paboot', api);

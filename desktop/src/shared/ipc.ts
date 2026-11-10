@@ -36,6 +36,8 @@ export const IPC = {
   streamEvent: 'stream:event',
   revealPath: 'app:reveal-path',
   knowledgeExport: 'app:knowledge-export',
+  attachmentUpload: 'attachment:upload',
+  attachmentGet: 'attachment:get',
 } as const;
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -287,6 +289,8 @@ export interface ChatStreamSpec {
   /** null = a new session, created by this very request. */
   sessionId: string | null;
   prompt: string;
+  /** Image attachments already uploaded through `attachment:upload`. */
+  attachmentIds?: string[];
   runtime?: string;
   workspaceId?: string;
   permissionMode?: string;
@@ -407,6 +411,31 @@ export interface StreamCancelInput {
  * The bridge preload exposes on `window.paboot`. Declared here (not derived
  * from preload) so the renderer's tsconfig never has to resolve `electron`.
  */
+export interface AttachmentUploadInput {
+  connectionId: string;
+  bytes: Uint8Array;
+  contentType: string;
+}
+
+export interface AttachmentUploadResult {
+  status: number;
+  ok: boolean;
+  data: unknown;
+}
+
+export interface AttachmentGetInput {
+  connectionId: string;
+  id: string;
+}
+
+export interface AttachmentGetResult {
+  status: number;
+  ok: boolean;
+  contentType: string | null;
+  data: Uint8Array | null;
+  error?: unknown;
+}
+
 export interface PabootBridge {
   /**
    * `process.platform`, read synchronously in the preload. The shell has to know
@@ -463,4 +492,8 @@ export interface PabootBridge {
   revealPath(input: RevealInput): Promise<RevealResult>;
   /** Ask main to fetch the knowledge zip and save it through a native dialog. */
   knowledgeExport(input: KnowledgeExportInput): Promise<KnowledgeExportResult>;
+  /** Upload raw image bytes through main (the renderer never sees the daemon token). */
+  uploadAttachment(input: AttachmentUploadInput): Promise<AttachmentUploadResult>;
+  /** Fetch an attachment's bytes through main for history previews. */
+  attachmentBytes(input: AttachmentGetInput): Promise<AttachmentGetResult>;
 }

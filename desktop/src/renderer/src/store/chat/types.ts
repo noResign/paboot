@@ -27,7 +27,14 @@ export interface UsageInfo {
 
 export type ChatMessage =
   /** `at` is the send time (epoch ms); absent on pre-timestamp histories. */
-  | { kind: 'user'; id: string; text: string; runId?: string; at?: number }
+  | {
+      kind: 'user';
+      id: string;
+      text: string;
+      runId?: string;
+      at?: number;
+      attachmentIds?: string[];
+    }
   | {
       kind: 'assistant';
       id: string;

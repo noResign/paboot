@@ -43,6 +43,8 @@ export interface ModelOptionDto {
   id: string;
   label: string;
   parameters?: ModelParameterDto[];
+  /** False when the model cannot accept image input. */
+  supportsImages?: boolean;
 }
 
 export interface AgentModelsResponse {

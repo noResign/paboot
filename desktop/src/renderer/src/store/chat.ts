@@ -65,7 +65,7 @@ interface ChatStore {
   /** Rename in place: the rail and the open header read different stores. */
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   startNew(connectionId: string, options: NewSessionOptions): void;
-  send(text: string): Promise<void>;
+  send(text: string, attachmentIds?: string[]): Promise<void>;
   /** Send a picked answer for an `AskUserQuestion` card as a continuation turn. */
   answerQuestion(toolUseId: string, answerText: string): void;
   stop(): void;
@@ -176,11 +176,11 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
   },
 
-  async send(text) {
+  async send(text, attachmentIds = []) {
     const key = get().activeKey;
     if (!key) return;
     const chat = get().byKey[key];
-    const prompt = text.trim();
+    const prompt = text.trim() || (attachmentIds.length > 0 ? '请查看这些图片。' : '');
     if (!chat || !prompt || isBusy(chat.phase)) return;
 
     set((state) => ({
@@ -191,7 +191,13 @@ export const useChat = create<ChatStore>((set, get) => ({
         error: null,
         messages: [
           ...current.messages,
-          { kind: 'user', id: nextId('u'), text: prompt, at: Date.now() },
+          {
+            kind: 'user',
+            id: nextId('u'),
+            text: prompt,
+            at: Date.now(),
+            ...(attachmentIds.length ? { attachmentIds } : {}),
+          },
           newAssistant(nextId('a')),
         ],
       })),
@@ -203,6 +209,7 @@ export const useChat = create<ChatStore>((set, get) => ({
       connectionId: chat.connectionId,
       sessionId: chat.sessionId,
       prompt,
+      ...(attachmentIds.length ? { attachmentIds } : {}),
       runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
       workspaceId: chat.pendingNew?.workspaceId ?? undefined,
       permissionMode: chat.pendingNew?.permissionMode,
@@ -652,7 +659,14 @@ async function rebuildHistory(
   let todos: TodoItem[] = [];
 
   runs.forEach((run, index) => {
-    messages.push({ kind: 'user', id: nextId('u'), text: run.prompt, runId: run.id, at: run.startedAt });
+    messages.push({
+      kind: 'user',
+      id: nextId('u'),
+      text: run.prompt,
+      runId: run.id,
+      at: run.startedAt,
+      ...(run.attachmentIds?.length ? { attachmentIds: run.attachmentIds } : {}),
+    });
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.

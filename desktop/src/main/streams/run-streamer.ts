@@ -325,6 +325,7 @@ export class RunStreamer {
           runtime: spec.runtime,
           workspaceId: spec.workspaceId,
           permissionMode: spec.permissionMode,
+          ...(spec.attachmentIds?.length ? { attachmentIds: spec.attachmentIds } : {}),
           commandId: spec.commandId,
         },
       },

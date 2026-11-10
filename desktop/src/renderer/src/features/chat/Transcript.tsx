@@ -9,6 +9,7 @@ import { formatMessageTime, formatTokens } from '../../../../shared/format';
 import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
 import { canRollbackRun } from './runActions';
+import { AttachmentThumbs } from './AttachmentThumbs';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -97,6 +98,7 @@ export function Transcript({
             key={message.id}
             id={message.id}
             text={message.text}
+            attachmentIds={message.attachmentIds}
             at={message.at}
             run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
             onRollback={onRollback}
@@ -135,12 +137,14 @@ function CopyButton({ text, className = '' }: { text: string; className?: string
 function UserRow({
   id,
   text,
+  attachmentIds,
   at,
   run,
   onRollback,
 }: {
   id: string;
   text: string;
+  attachmentIds?: string[];
   at: number | undefined;
   run: RunDto | undefined;
   onRollback(runId: string): void;
@@ -152,6 +156,9 @@ function UserRow({
   return (
     <div className="msg user" data-msg-id={id}>
       <div className="user-stack">
+        {attachmentIds && attachmentIds.length > 0 && (
+          <AttachmentThumbs ids={attachmentIds} />
+        )}
         <div className="bubble">{text}</div>
         {sentAt && (
           <time className="msg-time" dateTime={sentAt.iso}>
