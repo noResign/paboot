@@ -98,6 +98,11 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   }, [activeEnd, loadDevices]);
 
   useEffect(() => {
+    setShot(null);
+    if (!serial) setMirroring(false);
+  }, [serial]);
+
+  useEffect(() => {
     if (!activeEnd || !serial || !mirroring) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -195,7 +200,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
             <span className="badge subtle">{workspaceName}</span>
           </div>
           <p className="hint">
-            通过 adb 镜像设备画面；点击操作默认关闭，开启后点击画面即可发送 tap。
+            进入后不会自动投屏；点「开始投屏」查看设备画面，需要时再停止。点击操作默认关闭。
           </p>
         </div>
         <div className="kn-head-actions">
@@ -242,65 +247,81 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
           </>
         ) : (
           <>
-            <div className="device-row">
-              <span className="badge subtle">端：{activeEnd.name}</span>
-              <span className="hint">
-                {activeEnd.roots.length > 0 ? activeEnd.roots[0] : '未绑定目录'}
-              </span>
-              <span className="mem-spacer" />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={clickEnabled}
-                  onChange={(event) => setClickEnabled(event.target.checked)}
-                />
-                允许点击操作
-              </label>
+            <div className="device-toolbar">
+              <div className="device-row">
+                <span className="badge subtle">端：{activeEnd.name}</span>
+                <span className="hint device-root" title={activeEnd.roots[0]}>
+                  {activeEnd.roots.length > 0 ? activeEnd.roots[0] : '未绑定目录'}
+                </span>
+                <span className="mem-spacer" />
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={clickEnabled}
+                    onChange={(event) => setClickEnabled(event.target.checked)}
+                  />
+                  允许点击操作
+                </label>
+              </div>
+              <div className="device-row">
+                <select
+                  className="mem-select device-select"
+                  value={serial ?? ''}
+                  disabled={online.length === 0}
+                  onChange={(event) => void selectDevice(event.target.value)}
+                >
+                  <option value="">选择设备…</option>
+                  {online.map((device) => (
+                    <option key={device.serial} value={device.serial}>
+                      {device.model ?? device.serial}（{device.serial}）
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className={`btn${mirroring ? '' : ' primary'}`}
+                  disabled={!serial}
+                  onClick={() => {
+                    if (mirroring) {
+                      setMirroring(false);
+                      setShot(null);
+                    } else {
+                      setMirroring(true);
+                    }
+                  }}
+                >
+                  {mirroring ? '停止投屏' : '开始投屏'}
+                </button>
+                {devices.length === 0 && (
+                  <span className="hint">没有发现设备；检查 USB 调试与 adb。</span>
+                )}
+              </div>
             </div>
-            <div className="device-row">
-              <select
-                className="mem-select"
-                value={serial ?? ''}
-                disabled={online.length === 0}
-                onChange={(event) => void selectDevice(event.target.value)}
-              >
-                <option value="">选择设备…</option>
-                {online.map((device) => (
-                  <option key={device.serial} value={device.serial}>
-                    {device.model ?? device.serial}（{device.serial}）
-                  </option>
-                ))}
-              </select>
-              <button
-                className={`btn${mirroring ? '' : ' primary'}`}
-                disabled={!serial}
-                onClick={() => setMirroring((value) => !value)}
-              >
-                {mirroring ? '停止投屏' : '开始投屏'}
-              </button>
-              {devices.length === 0 && (
-                <span className="hint">没有发现设备；检查 USB 调试与 adb。</span>
-              )}
-            </div>
-            {shot ? (
+
+            {mirroring && shot ? (
               <div className="device-stage">
                 <img
                   className="device-mirror"
                   src={`data:image/png;base64,${shot.png}`}
                   alt="Android 设备画面"
-                  style={{ cursor: mirroring && clickEnabled ? 'crosshair' : 'default' }}
+                  style={{ cursor: clickEnabled ? 'crosshair' : 'default' }}
                   onClick={(event) => void onMirrorClick(event)}
                 />
               </div>
             ) : (
-              <p className="hint">
-                {mirroring ? '正在获取设备画面…' : '点击「开始投屏」获取设备画面。'}
-              </p>
+              <div className="device-empty">
+                <b>{mirroring ? '正在获取设备画面…' : '投屏未开始'}</b>
+                <span className="hint">
+                  {mirroring
+                    ? '请稍候，第一帧到达后会显示在这里。'
+                    : '点击「开始投屏」查看设备画面；需要时再点「停止投屏」。'}
+                </span>
+              </div>
             )}
+
             <p className="hint">
               {mirroring
-                ? '投屏中，每 1.5 秒刷新；点击到的坐标会换算为设备像素后发送 tap。'
-                : '投屏已暂停；需要时点击「开始投屏」。开启「允许点击操作」后才会发送 tap。'}
+                ? '投屏中，每 1.5 秒刷新；开启「允许点击操作」后，点击画面会换算成设备像素并发送 tap。'
+                : '未投屏时不会请求设备画面，也不会发送 tap。'}
             </p>
           </>
         )}
