@@ -201,4 +201,37 @@ describe('createClaudeStreamParser', () => {
     expect(result).toBeDefined();
     expect(result).not.toHaveProperty('contextTokens');
   });
+
+  it('keeps base64 image tool results out of persisted events', () => {
+    const events = parse([
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tu-img',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+                  },
+                },
+                { type: 'text', text: 'screenshot 1080x2400 (s1)' },
+              ],
+            },
+          ],
+        },
+      }),
+    ]);
+    const result = events.find(
+      (e): e is Extract<NormalizedEvent, { type: 'tool_result' }> => e.type === 'tool_result',
+    );
+    expect(result?.content).toContain('[image omitted: image/png]');
+    expect(result?.content).toContain('screenshot 1080x2400');
+    expect(result?.content).not.toContain('iVBOR');
+  });
 });
