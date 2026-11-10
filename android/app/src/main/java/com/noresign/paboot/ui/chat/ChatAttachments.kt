@@ -22,9 +22,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import coil.ImageLoader
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.noresign.paboot.data.local.SettingsStore
+import com.noresign.paboot.network.daemon.PabootClient
 
 @Composable
 internal fun MessageAttachments(ids: List<String>) {
@@ -35,16 +36,18 @@ internal fun MessageAttachments(ids: List<String>) {
     val token = settings.token
     if (base.isNullOrEmpty() || token.isNullOrEmpty()) return
     var preview by remember { mutableStateOf<String?>(null) }
+    val imageLoader = remember(base, token) {
+        ImageLoader.Builder(context)
+            .callFactory(PabootClient.authedHttpClient(base, token))
+            .build()
+    }
 
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ids.forEach { id ->
             val url = "$base/api/attachments/$id"
-            val model = ImageRequest.Builder(context)
-                .data(url)
-                .addHeader("Authorization", "Bearer $token")
-                .build()
             AsyncImage(
-                model = model,
+                model = url,
+                imageLoader = imageLoader,
                 contentDescription = "图片附件",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -65,10 +68,8 @@ internal fun MessageAttachments(ids: List<String>) {
                 contentAlignment = Alignment.Center,
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(url)
-                        .addHeader("Authorization", "Bearer $token")
-                        .build(),
+                    model = url,
+                    imageLoader = imageLoader,
                     contentDescription = "图片预览",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
