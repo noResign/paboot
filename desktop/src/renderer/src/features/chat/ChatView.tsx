@@ -352,6 +352,7 @@ export function ChatView({
         model={chat.model}
         models={models}
         modelsError={modelsError}
+        imagesSupported={models.find((option) => option.id === chat.model)?.supportsImages !== false}
         parameters={models.find((option) => option.id === chat.model)?.parameters ?? []}
         modelParameters={chat.modelParameters}
         onModelChange={(model) => {
@@ -374,7 +375,7 @@ export function ChatView({
           else next[parameterId] = valueId;
           void setSessionSelection(chat.model, next);
         }}
-        onSend={(text) => void send(text)}
+        onSend={(text, attachmentIds) => void send(text, attachmentIds)}
         onStop={stop}
       />
 

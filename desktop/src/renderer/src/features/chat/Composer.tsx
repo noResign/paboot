@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { comboLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { Icon } from '../../ui/Icon';
+import { uploadAttachment } from '../../ipc/client';
+import {
+  IMAGE_TYPES,
+  MAX_IMAGES,
+  isImageFile,
+  prepareImage,
+} from './imageDraft';
 import type { ModelOptionDto, ModelParameterDto } from '../../../../shared/contract';
 
 interface Props {
@@ -13,13 +20,22 @@ interface Props {
   model: string | null;
   models: ModelOptionDto[];
   modelsError: string | null;
+  /** False when the selected model cannot receive images. */
+  imagesSupported: boolean;
   /** Dynamic knobs declared by the selected model (e.g. reasoning effort). */
   parameters: ModelParameterDto[];
   modelParameters: Record<string, string>;
   onModelChange(model: string | null): void;
   onParameterChange(parameterId: string, valueId: string | null): void;
-  onSend(text: string): void;
+  onSend(text: string, attachmentIds?: string[]): void;
   onStop(): void;
+}
+
+interface DraftImage {
+  id: string;
+  mediaType: string;
+  previewUrl: string;
+  name: string;
 }
 
 const MAX_ROWS = 8;
@@ -34,6 +50,7 @@ export function Composer({
   model,
   models,
   modelsError,
+  imagesSupported,
   parameters,
   modelParameters,
   onModelChange,
@@ -42,7 +59,13 @@ export function Composer({
   onStop,
 }: Props) {
   const [text, setText] = useState('');
+  const [images, setImages] = useState<DraftImage[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
 
   useEffect(() => {
     const element = ref.current;
@@ -51,11 +74,74 @@ export function Composer({
     element.style.height = `${Math.min(element.scrollHeight, MAX_ROWS * LINE_HEIGHT)}px`;
   }, [text]);
 
+  useEffect(
+    () => () => {
+      for (const image of imagesRef.current) URL.revokeObjectURL(image.previewUrl);
+    },
+    [],
+  );
+
+  function removeImage(id: string): void {
+    setImages((current) => {
+      const target = current.find((image) => image.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((image) => image.id !== id);
+    });
+  }
+
+  async function addFiles(files: readonly File[]): Promise<void> {
+    const list = files.filter(isImageFile);
+    if (list.length === 0) return;
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      setAttachError(`最多添加 ${MAX_IMAGES} 张图片`);
+      return;
+    }
+    const chosen = list.slice(0, room);
+    if (list.length > room) setAttachError(`最多添加 ${MAX_IMAGES} 张图片，已忽略多余图片`);
+    setUploading(true);
+    setAttachError(null);
+    const added: DraftImage[] = [];
+    for (const file of chosen) {
+      try {
+        const prepared = await prepareImage(file);
+        const bytes = new Uint8Array(await prepared.blob.arrayBuffer());
+        const res = await uploadAttachment(bytes, prepared.mediaType);
+        if (!res.ok) {
+          URL.revokeObjectURL(prepared.previewUrl);
+          const data = res.data as { error?: unknown; message?: unknown } | null;
+          throw new Error(
+            (typeof data?.message === 'string' && data.message) ||
+              (typeof data?.error === 'string' && data.error) ||
+              `上传失败（HTTP ${res.status}）`,
+          );
+        }
+        const data = res.data as { id?: unknown };
+        if (typeof data?.id !== 'string') throw new Error('daemon 未返回附件 id');
+        added.push({
+          id: data.id,
+          mediaType: prepared.mediaType,
+          previewUrl: prepared.previewUrl,
+          name: prepared.name,
+        });
+      } catch (err) {
+        setAttachError(err instanceof Error ? err.message : String(err));
+      }
+    }
+    setUploading(false);
+    if (added.length > 0) setImages((current) => [...current, ...added]);
+  }
+
   function submit(): void {
     const value = text.trim();
-    if (!value || disabled) return;
+    if (disabled || uploading) return;
+    if (!value && images.length === 0) return;
+    const ids = images.map((image) => image.id);
+    for (const image of images) URL.revokeObjectURL(image.previewUrl);
     setText('');
-    onSend(value);
+    setImages([]);
+    setAttachError(null);
+    onSend(value, ids.length > 0 ? ids : undefined);
   }
 
   return (
@@ -72,7 +158,46 @@ export function Composer({
         disabled input. The old notice line above the box said it a third time,
         every time, in a full sentence; the explanation now lives in the tooltip.
       */}
-      <div className="box">
+      <div
+        className="box"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (event.dataTransfer.files.length === 0) return;
+          event.preventDefault();
+          void addFiles([...event.dataTransfer.files]);
+        }}
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept={IMAGE_TYPES.join(',')}
+          multiple
+          hidden
+          onChange={(event) => {
+            if (event.target.files) void addFiles([...event.target.files]);
+            event.target.value = '';
+          }}
+        />
+        {images.length > 0 && (
+          <div className="composer-attachments">
+            {images.map((image) => (
+              <div className="composer-attachment" key={image.id}>
+                <img src={image.previewUrl} alt={image.name} />
+                <button
+                  type="button"
+                  className="composer-attachment-remove"
+                  title="移除"
+                  onClick={() => removeImage(image.id)}
+                >
+                  <Icon name="x" size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachError && <p className="composer-attach-error">{attachError}</p>}
         <textarea
           ref={ref}
           rows={2}
@@ -80,6 +205,12 @@ export function Composer({
           disabled={disabled}
           placeholder={placeholder}
           onChange={(event) => setText(event.target.value)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files].filter(isImageFile);
+            if (files.length === 0) return;
+            event.preventDefault();
+            void addFiles(files);
+          }}
           onKeyDown={(event) => {
             // Enter sends, Shift+Enter breaks the line — the desktop convention.
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -89,6 +220,17 @@ export function Composer({
           }}
         />
         <div className="composer-foot">
+          <button
+            type="button"
+            className="icon-btn composer-attach"
+            title={
+              imagesSupported ? '添加图片（也可以直接粘贴或拖入）' : '当前模型不支持图片输入'
+            }
+            disabled={disabled || uploading || !imagesSupported || images.length >= MAX_IMAGES}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Icon name="plus" size={15} />
+          </button>
           {showModel && (
             <select
               className="model-select"
@@ -124,7 +266,13 @@ export function Composer({
               </select>
             ))}
           <span className="hint">
-            {busy ? `${comboLabel('stop-run', IS_MAC)} 停止运行` : 'Enter 发送 · Shift+Enter 换行'}
+            {uploading
+              ? '正在上传图片…'
+              : busy
+                ? `${comboLabel('stop-run', IS_MAC)} 停止运行`
+                : imagesSupported
+                  ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
+                  : '当前模型不支持图片输入'}
           </span>
           {busy ? (
             <button
@@ -136,7 +284,11 @@ export function Composer({
               停止
             </button>
           ) : (
-            <button className="btn primary send" disabled={disabled || !text.trim()} onClick={submit}>
+            <button
+              className="btn primary send"
+              disabled={disabled || uploading || (!text.trim() && images.length === 0)}
+              onClick={submit}
+            >
               发送
             </button>
           )}

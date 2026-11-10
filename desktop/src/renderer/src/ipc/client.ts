@@ -1,6 +1,8 @@
 import { ROUTES } from '../../../shared/routes';
 import type {
   AppPrefs,
+  AttachmentGetResult,
+  AttachmentUploadResult,
   ConnectInput,
   DaemonRequest,
   DaemonResponse,
@@ -114,6 +116,33 @@ export function exportKnowledge(
     return Promise.resolve({ ok: false, code: 'not_connected', message: '尚未连接 daemon' });
   }
   return window.paboot.knowledgeExport({ connectionId: activeConnectionId, workspaceId, suggestedName });
+}
+
+export function uploadAttachment(
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<AttachmentUploadResult> {
+  if (!activeConnectionId) {
+    return Promise.resolve({
+      status: 0,
+      ok: false,
+      data: { error: 'not_connected', message: '尚未连接 daemon' },
+    });
+  }
+  return window.paboot.uploadAttachment({ connectionId: activeConnectionId, bytes, contentType });
+}
+
+export function attachmentBytes(id: string): Promise<AttachmentGetResult> {
+  if (!activeConnectionId) {
+    return Promise.resolve({
+      status: 0,
+      ok: false,
+      contentType: null,
+      data: null,
+      error: { error: 'not_connected', message: '尚未连接 daemon' },
+    });
+  }
+  return window.paboot.attachmentBytes({ connectionId: activeConnectionId, id });
 }
 
 async function request<T>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {

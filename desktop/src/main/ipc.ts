@@ -13,6 +13,8 @@ import type {
   ManagedDaemonStatus,
   ManagedDaemonStopResult,
   ManagedDaemonTokenResult,
+  AttachmentGetInput,
+  AttachmentUploadInput,
   ConnectInput,
   DaemonRequest,
   NotifyInput,
@@ -64,6 +66,39 @@ export function registerIpc(
       return { status: 0, ok: false, data: { error: 'not_connected', message: '尚未连接 daemon' } };
     }
     return client.request(req);
+  });
+
+  ipcMain.handle(IPC.attachmentUpload, async (_event, input: AttachmentUploadInput) => {
+    if (
+      !input ||
+      typeof input.connectionId !== 'string' ||
+      !(input.bytes instanceof Uint8Array) ||
+      typeof input.contentType !== 'string'
+    ) {
+      return { status: 0, ok: false, data: { error: 'bad_request', message: '非法请求' } };
+    }
+    const client = manager.clientFor(input.connectionId);
+    if (!client) {
+      return { status: 0, ok: false, data: { error: 'not_connected', message: '尚未连接 daemon' } };
+    }
+    return client.uploadImage(input.bytes, input.contentType);
+  });
+
+  ipcMain.handle(IPC.attachmentGet, async (_event, input: AttachmentGetInput) => {
+    if (!input || typeof input.connectionId !== 'string' || typeof input.id !== 'string') {
+      return { status: 0, ok: false, contentType: null, data: null, error: 'bad_request' };
+    }
+    const client = manager.clientFor(input.connectionId);
+    if (!client) {
+      return {
+        status: 0,
+        ok: false,
+        contentType: null,
+        data: null,
+        error: { error: 'not_connected', message: '尚未连接 daemon' },
+      };
+    }
+    return client.attachmentImage(input.id);
   });
 
   ipcMain.handle(IPC.connGet, () => manager.views()[0] ?? null);

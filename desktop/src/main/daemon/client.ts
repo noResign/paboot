@@ -1,4 +1,9 @@
-import type { DaemonRequest, DaemonResponse } from '../../shared/ipc';
+import type {
+  AttachmentGetResult,
+  AttachmentUploadResult,
+  DaemonRequest,
+  DaemonResponse,
+} from '../../shared/ipc';
 import type { HealthDto } from '../../shared/contract';
 
 export interface DaemonTarget {
@@ -89,6 +94,68 @@ export class DaemonClient {
       method,
       headers: { Authorization: `Bearer ${this.target.token}`, ...headers },
     });
+  }
+
+  /** Raw image upload: the renderer hands main bytes, main adds the token. */
+  async uploadImage(bytes: Uint8Array, contentType: string): Promise<AttachmentUploadResult> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    try {
+      const res = await fetch(buildUrl(this.target.baseUrl, '/api/attachments'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.target.token}`,
+          'Content-Type': contentType,
+        },
+        body: Buffer.from(bytes),
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      return { status: res.status, ok: res.ok, data: parseBody(text) };
+    } catch (err) {
+      const aborted = (err as Error).name === 'AbortError';
+      return {
+        status: 0,
+        ok: false,
+        data: { error: aborted ? 'timeout' : 'network_error', message: (err as Error).message },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Fetch one attachment's bytes for a history thumbnail. */
+  async attachmentImage(id: string): Promise<AttachmentGetResult> {
+    try {
+      const res = await fetch(
+        buildUrl(this.target.baseUrl, `/api/attachments/${encodeURIComponent(id)}`),
+        { headers: { Authorization: `Bearer ${this.target.token}` } },
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        return {
+          status: res.status,
+          ok: false,
+          contentType: null,
+          data: null,
+          error: parseBody(text),
+        };
+      }
+      return {
+        status: res.status,
+        ok: true,
+        contentType: res.headers.get('content-type'),
+        data: new Uint8Array(await res.arrayBuffer()),
+      };
+    } catch (err) {
+      return {
+        status: 0,
+        ok: false,
+        contentType: null,
+        data: null,
+        error: { error: 'network_error', message: (err as Error).message },
+      };
+    }
   }
 
   /**
