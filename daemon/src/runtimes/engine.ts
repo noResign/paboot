@@ -124,28 +124,10 @@ export function startRun(req: RunRequest): ActiveRun {
           // the server can ask the operator (which looked like「没有授权」with no
           // prompt). `paboot_tasks` stays out: its tools are hook-gated.
           permissions: {
-            allow: [
-              'Read',
-              'Grep',
-              'mcp__paboot_memory__search_memory',
-              'mcp__paboot_memory__memory_timeline',
-              'mcp__paboot_memory__memory_source',
-              'mcp__paboot_memory__list_open_loops',
-              'mcp__paboot_memory__remember',
-              'mcp__paboot_memory__forget',
-              'mcp__paboot_memory__complete_loop',
-              'mcp__paboot_capability__echo',
-              'mcp__paboot_capability__android_device_list',
-              'mcp__paboot_capability__android_screenshot',
-              'mcp__paboot_capability__android_ui_dump',
-              'mcp__paboot_capability__android_tap',
-              'mcp__paboot_capability__android_tap_selector',
-              'mcp__paboot_capability__android_input_text',
-              'mcp__paboot_capability__android_key_event',
-              'mcp__paboot_capability__android_launch_app',
-              'mcp__paboot_capability__android_logcat',
-              'mcp__paboot_capability__android_current_activity',
-            ],
+            // One rule per self-gated server, so adding a tool never requires
+            // touching this list. `mcp__<server>__*` is Claude Code's supported
+            // allow-glob form.
+            allow: ['Read', 'Grep', 'mcp__paboot_memory__*', 'mcp__paboot_capability__*'],
           },
           hooks: {
             PreToolUse: [
