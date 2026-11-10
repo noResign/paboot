@@ -777,6 +777,9 @@ export class Db {
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_permission_grants WHERE session_id = ?`).run(id);
     this.db
+      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'session' AND scope_id = ?`)
+      .run(id);
+    this.db
       .prepare(
         `DELETE FROM native_compactions WHERE thread_id IN
            (SELECT id FROM native_threads WHERE session_id = ?)`,
@@ -1356,6 +1359,15 @@ export class Db {
     this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ?`).run(id);
     // Ends are workspace-owned rows (no FK); clean them up with the workspace.
     this.db
+      .prepare(
+        `DELETE FROM capability_bindings
+         WHERE scope_type = 'end' AND scope_id IN (SELECT id FROM ends WHERE workspace_id = ?)`,
+      )
+      .run(id);
+    this.db
+      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'workspace' AND scope_id = ?`)
+      .run(id);
+    this.db
       .prepare(`DELETE FROM end_roots WHERE end_id IN (SELECT id FROM ends WHERE workspace_id = ?)`)
       .run(id);
     this.db.prepare(`DELETE FROM ends WHERE workspace_id = ?`).run(id);
@@ -1394,6 +1406,25 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM ends WHERE workspace_id = ? ORDER BY created_at ASC`)
       .all(workspaceId) as unknown as EndRow[];
+  }
+
+  /** Sessions belong to the workspace, not the end: deleting an end only clears
+   * their main-end hint. Memory rows keep the historical end id as a label. */
+  deleteEnd(id: string): boolean {
+    this.db.prepare(`UPDATE sessions SET end_id = NULL WHERE end_id = ?`).run(id);
+    this.db
+      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'end' AND scope_id = ?`)
+      .run(id);
+    this.db.prepare(`DELETE FROM end_roots WHERE end_id = ?`).run(id);
+    const result = this.db.prepare(`DELETE FROM ends WHERE id = ?`).run(id);
+    return result.changes > 0;
+  }
+
+  removeEndRoot(endId: string, path: string): boolean {
+    const result = this.db
+      .prepare(`DELETE FROM end_roots WHERE end_id = ? AND path = ?`)
+      .run(endId, path);
+    return result.changes > 0;
   }
 
   setEndStatus(id: string, status: string): EndRow | undefined {

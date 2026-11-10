@@ -18,7 +18,9 @@
   同一 provider 只取最近一层。
 - 只有 `enabled=1` 且 family 与 workspace 匹配的 binding 才会挂载对应 MCP server。
 - `scope=end` 的能力即使有 workspace binding，也必须存在活跃端。
-- 端解析：`sessions.end_id` 优先；否则用 `end_roots` 的最长匹配前缀（客户端传入的 id 不生效）。
+- 端解析：`sessions.end_id` 优先；否则用 `end_roots` 的最长匹配前缀选主端；工作区已有活跃端时，
+  **即使会话 cwd 不在任何端根目录内也解析到该端**——工作区级挂载对该工作区所有会话生效。
+  客户端传入的 id 不生效。
 
 `GET /api/internal/mcp/capability/scope?runId=` 返回 `{ runId, sessionId, workspaceId, endId, family }`，
 供 capability MCP server 反查作用域（只接受 server token）。
@@ -61,8 +63,10 @@
 | `GET /api/workspaces/:id/ends` | 列出端（含 roots） |
 | `GET /api/workspaces/:id/end-suggestions` | 扫描 workspace 根目录（深度 ≤4）中的 Gradle / `AndroidManifest.xml` |
 | `POST /api/workspaces/:id/ends` | `{name, kind?}` 创建 `draft` 端（仅 dev） |
-| `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于 workspace 内 |
+| `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于 workspace 内；可重复添加多个根 |
+| `DELETE /api/workspaces/:id/ends/:endId/roots` | `{path}` 移除一个端根目录 |
 | `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活，并写入 `android-device` 的 end binding |
+| `DELETE /api/workspaces/:id/ends/:endId` | 移除端：删端根与端级 binding，`sessions.end_id` 置空，会话保留 |
 | `GET /api/workspaces/:id/device` | 设备列表 + 当前 serial |
 | `POST /api/workspaces/:id/device/select` | `{endId, serial}` 记住设备 |
 | `GET /api/workspaces/:id/device/screenshot` | PNG 字节（operator；agent 一律 403） |
