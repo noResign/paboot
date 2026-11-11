@@ -848,6 +848,7 @@ export function AppShell() {
               ) : (
                 <ChatView
                   workspaceName={selectedWorkspaceLabel}
+                  workspaceId={workspaceId || null}
                   asideVisible={asideVisible}
                   onToggleAside={toggleAside}
                   onCollapseChat={toggleChat}

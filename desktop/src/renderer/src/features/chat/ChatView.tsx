@@ -19,12 +19,14 @@ import { transcriptSignature } from './transcriptSignature';
 import { TodoPanel } from './TodoPanel';
 import { PermissionDialog, InlinePermissionCard } from '../permissions/PermissionDialog';
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
+import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
 import type { ModelOptionDto, ProductPermissionMode } from '../../../../shared/contract';
 
 interface Props {
   workspaceName: string | null;
+  workspaceId: string | null;
   asideVisible: boolean;
   onToggleAside(): void;
   /** Collapse the conversation column so the right panel gets the width. */
@@ -35,6 +37,7 @@ interface Props {
 
 export function ChatView({
   workspaceName,
+  workspaceId,
   asideVisible,
   onToggleAside,
   onCollapseChat,
@@ -240,6 +243,9 @@ export function ChatView({
               </span>
             ) : (
               workspaceName && <span>{workspaceName}</span>
+            )}
+            {chat.sessionId && workspaceId && (
+              <SessionEndsChips sessionId={chat.sessionId} workspaceId={workspaceId} />
             )}
             {chat.permissionMode && (
               <button className="badge-btn" title="会话权限设置" onClick={() => setShowPerms(true)}>

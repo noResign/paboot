@@ -504,6 +504,7 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
                   onChange={(event) => setForm({ ...form, body: event.target.value })}
                   disabled={busy}
                   spellCheck={false}
+                  wrap="off"
                 />
                 <div className="kn-actions">
                   <button className="btn primary" onClick={() => void save()} disabled={busy}>

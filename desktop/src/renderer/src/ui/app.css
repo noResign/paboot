@@ -670,6 +670,49 @@ kbd {
   font-size: 14px;
   height: 24px;
 }
+.end-chips {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.end-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+}
+button.end-chip {
+  cursor: pointer;
+}
+.end-chip.primary {
+  color: var(--text-primary);
+  border-color: var(--accent, var(--text-secondary));
+}
+.end-chip.muted {
+  color: var(--text-muted);
+}
+.end-chip-caret {
+  margin-left: 3px;
+  font-size: 9px;
+}
+.end-chip-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--elevation-3);
+}
 .chat-sub {
   display: flex;
   align-items: center;
@@ -678,7 +721,7 @@ kbd {
   color: var(--text-muted);
   margin-top: 2px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
 }
 .chat-sub .cwd {
@@ -1093,8 +1136,9 @@ kbd {
   line-height: 1.55;
   max-height: 260px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  /* Approving code: never wrap lines (that hides indentation and columns). */
+  white-space: pre;
+  word-break: normal;
 }
 .perm-diff {
   background: var(--code-bg);
@@ -1106,8 +1150,31 @@ kbd {
 }
 .diff-line {
   padding: 0 10px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  word-break: normal;
+}
+/* Visible rails for the approval diff/code box, same as the file pane. */
+.perm-code::-webkit-scrollbar,
+.perm-diff::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.perm-code::-webkit-scrollbar-track,
+.perm-diff::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border-radius: 6px;
+}
+.perm-code::-webkit-scrollbar-thumb,
+.perm-diff::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+.perm-code::-webkit-scrollbar-thumb:hover,
+.perm-diff::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
 }
 .diff-line.removed {
   color: var(--error);
@@ -2820,6 +2887,9 @@ a.btn {
 .fpane {
   flex: 1;
   min-width: 0;
+  /* Flex items default to min-height:auto, which lets a long diff grow the body
+     past the viewport and pushes its horizontal scrollbar out of reach. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -2907,8 +2977,30 @@ a.btn {
 }
 .fpane-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 10px 12px;
+}
+/* The diff's horizontal bar lives on this pane body (pinned to the viewport,
+   not the end of the diff). Give it a visible rail instead of the global
+   transparent overlay track, otherwise wide diffs look like they cannot scroll. */
+.fpane-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.fpane-body::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border-radius: 6px;
+}
+.fpane-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+.fpane-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
 }
 .fnotice {
   font-size: 12px;
@@ -4405,6 +4497,8 @@ a.btn {
   color: var(--text-primary);
   font-size: 12.5px;
   line-height: 1.55;
+  white-space: pre;
+  overflow: auto;
 }
 .kn-actions {
   display: flex;
@@ -5437,6 +5531,48 @@ a.btn {
 }
 .device-root-row .device-root {
   flex: 1;
+}
+.ends-panel {
+  width: min(1000px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ends-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  overflow: auto;
+}
+.ends-list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.end-detail {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.field input,
+.field textarea {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--text-primary);
+  font: inherit;
 }
 .device-archived {
   display: flex;

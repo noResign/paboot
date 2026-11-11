@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api } from '../../ipc/client';
 import { useSessions, useScope } from '../../store/sessions';
 import {
   directoryName,
@@ -8,15 +9,14 @@ import {
   workspaceLabel,
 } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
-import { DevicePanel } from '../device/DevicePanel';
+import { EndsPanel } from '../device/EndsPanel';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
-import { MockPanel } from '../mock/MockPanel';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { Icon } from '../../ui/Icon';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
 import { runtimeIdentity } from '../../../../shared/runtime-identity';
-import type { SessionDto, WorkspaceDto } from '../../../../shared/contract';
+import type { EndDto, SessionDto, WorkspaceDto } from '../../../../shared/contract';
 
 interface Props {
   connectionId: string;
@@ -61,14 +61,27 @@ export function WorkspaceOverview({
   const [notice, setNotice] = useState<string | null>(null);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [deviceOpen, setDeviceOpen] = useState(false);
-  const [mockOpen, setMockOpen] = useState(false);
+  const [endsOpen, setEndsOpen] = useState(false);
+  const [selectedEndId, setSelectedEndId] = useState<string | null>(null);
+  const [startAddingEnd, setStartAddingEnd] = useState(false);
+  const [ends, setEnds] = useState<EndDto[]>([]);
 
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 2600);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    let cancelled = false;
+    void api.workspaceEnds(workspace.id).then((res) => {
+      if (!cancelled && res.ok) setEnds(res.data.ends);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace?.id, endsOpen]);
 
   function openPicker(mode: PickerMode): void {
     setPickerError(null);
@@ -361,59 +374,56 @@ export function WorkspaceOverview({
       {!isLife && (
         <section className="settings-section">
           <div className="section-head">
-            <h3>端 / 能力</h3>
+            <h3>端</h3>
+            <button
+              className="btn"
+              onClick={() => {
+                setSelectedEndId(null);
+                setStartAddingEnd(true);
+                setEndsOpen(true);
+              }}
+            >
+              添加端
+            </button>
           </div>
-          <button
-            type="button"
-            className="wo-knowledge"
-            onClick={() => setDeviceOpen(true)}
-            aria-label="打开 Android 设备能力"
-          >
-            <span className="wo-knowledge-icon">
-              <Icon name="eye" size={18} />
-            </span>
-            <span className="wo-knowledge-copy">
-              <b>Android 设备</b>
-              <span className="hint">
-                通过 adb 镜像设备画面、点击与输入；需要先在工作区里添加一个 Android 端。
-              </span>
-              <span className="wo-knowledge-meta">
-                <span className="wo-knowledge-chip">device</span>
-                <span className="wo-knowledge-chip">需审批</span>
-                <span className="wo-knowledge-chip">dev 专用</span>
-              </span>
-            </span>
-            <span className="wo-knowledge-action">
-              打开设备
-              <Icon name="chevron-right" size={14} />
-            </span>
-          </button>
-          <button
-            type="button"
-            className="wo-knowledge"
-            onClick={() => setMockOpen(true)}
-            aria-label="打开 Mock API"
-          >
-            <span className="wo-knowledge-icon">
-              <Icon name="file" size={18} />
-            </span>
-            <span className="wo-knowledge-copy">
-              <b>Mock API</b>
-              <span className="hint">
-                一条接口一个 JSON；agent 直接改文件，面板保存后立即生效，可编辑 baseline /
-                scenarios / rules。
-              </span>
-              <span className="wo-knowledge-meta">
-                <span className="wo-knowledge-chip">文件即 fixture</span>
-                <span className="wo-knowledge-chip">热更新</span>
-                <span className="wo-knowledge-chip">dev 专用</span>
-              </span>
-            </span>
-            <span className="wo-knowledge-action">
-              编辑 Mock
-              <Icon name="chevron-right" size={14} />
-            </span>
-          </button>
+          {ends.length === 0 ? (
+            <p className="hint">还没有端。添加一个端（Android / iOS / Web / API…），再挂目录、勾选能力。</p>
+          ) : (
+            ends.map((end) => (
+              <button
+                key={end.id}
+                type="button"
+                className="wo-knowledge"
+                onClick={() => {
+                  setSelectedEndId(end.id);
+                  setStartAddingEnd(false);
+                  setEndsOpen(true);
+                }}
+              >
+                <span className="wo-knowledge-icon"><Icon name="folder" size={18} /></span>
+                <span className="wo-knowledge-copy">
+                  <b>{end.name}</b>
+                  <span className="hint">
+                    {end.kind} · {end.roots.length} 个目录
+                    {end.summary ? ` · ${end.summary}` : ''}
+                  </span>
+                  <span className="wo-knowledge-meta">
+                    <span className="wo-knowledge-chip">
+                      {end.status === 'active' ? '已启用' : end.status === 'archived' ? '已归档' : '草稿'}
+                    </span>
+                    {end.capabilities
+                      .filter((capability) => capability.enabled)
+                      .map((capability) => (
+                        <span key={capability.id} className="wo-knowledge-chip">{capability.name}</span>
+                      ))}
+                  </span>
+                </span>
+                <span className="wo-knowledge-action">
+                  打开 <Icon name="chevron-right" size={14} />
+                </span>
+              </button>
+            ))
+          )}
         </section>
       )}
 
@@ -433,18 +443,17 @@ export function WorkspaceOverview({
           onClose={() => setMemoryOpen(false)}
         />
       )}
-      {deviceOpen && (
-        <DevicePanel
+      {endsOpen && (
+        <EndsPanel
           workspaceId={workspace.id}
           workspaceName={workspaceLabel(workspace) ?? workspace.name}
-          onClose={() => setDeviceOpen(false)}
-        />
-      )}
-      {mockOpen && (
-        <MockPanel
-          workspaceId={workspace.id}
-          workspaceName={workspaceLabel(workspace) ?? workspace.name}
-          onClose={() => setMockOpen(false)}
+          initialEndId={selectedEndId}
+          startAdding={startAddingEnd}
+          onClose={() => {
+            setEndsOpen(false);
+            setSelectedEndId(null);
+            setStartAddingEnd(false);
+          }}
         />
       )}
       {notice && <div className="ws-notice">{notice}</div>}

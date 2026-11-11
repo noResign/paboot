@@ -18,6 +18,8 @@ import {
 interface Props {
   workspaceId: string;
   workspaceName: string;
+  /** When set, the panel is scoped to this end (opened from the end detail). */
+  endId?: string;
   onClose(): void;
 }
 
@@ -46,7 +48,7 @@ function basename(directory: string): string {
   return parts[parts.length - 1] ?? 'Android';
 }
 
-export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
+export function DevicePanel({ workspaceId, workspaceName, endId, onClose }: Props) {
   const [ends, setEnds] = useState<EndDto[]>([]);
   const [suggestions, setSuggestions] = useState<EndSuggestionDto[]>([]);
   const [activeEnd, setActiveEnd] = useState<EndDto | null>(null);
@@ -80,7 +82,9 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
       return;
     }
     setEnds(res.data.ends);
-    const active = splitEnds(res.data.ends).active;
+    const active = endId
+      ? res.data.ends.find((end) => end.id === endId) ?? null
+      : splitEnds(res.data.ends).active;
     setActiveEnd(active);
     setShot(null);
     setDevices([]);
@@ -93,7 +97,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
       setSuggestions([]);
     }
     setLoading(false);
-  }, [workspaceId]);
+  }, [workspaceId, endId]);
 
   useEffect(() => {
     void load();
@@ -362,19 +366,23 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                   {activeEnd.roots.length > 0 ? `${activeEnd.roots.length} 个目录` : '未绑定目录'}
                 </span>
                 <span className="mem-spacer" />
-                <button className="btn" disabled={busy} onClick={() => setRootPicker(true)}>
-                  添加目录
-                </button>
-                <button
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void openImpact('archive', activeEnd)}
-                >
-                  归档
-                </button>
-                <button className="btn" disabled title="请先归档端，再到归档列表移除">
-                  移除端
-                </button>
+                {!endId && (
+                  <>
+                    <button className="btn" disabled={busy} onClick={() => setRootPicker(true)}>
+                      添加目录
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={busy}
+                      onClick={() => void openImpact('archive', activeEnd)}
+                    >
+                      归档
+                    </button>
+                    <button className="btn" disabled title="请先归档端，再到归档列表移除">
+                      移除端
+                    </button>
+                  </>
+                )}
                 <label>
                   <input
                     type="checkbox"
@@ -391,21 +399,25 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                       <span className="mono device-root" title={root}>
                         {root}
                       </span>
-                      <button
-                        className="icon-btn"
-                        title="移除目录"
-                        disabled={busy}
-                        onClick={() => void removeRoot(root)}
-                      >
-                        <Icon name="x" size={14} />
-                      </button>
+                      {!endId && (
+                        <button
+                          className="icon-btn"
+                          title="移除目录"
+                          disabled={busy}
+                          onClick={() => void removeRoot(root)}
+                        >
+                          <Icon name="x" size={14} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
-              <p className="hint">
-                端目录需位于主工作区，或先在「设置 → 工作区管理」中加为附加目录；一个端可以添加多个目录。
-              </p>
+              {!endId && (
+                <p className="hint">
+                  端目录需位于主工作区，或先在「设置 → 工作区管理」中加为附加目录；一个端可以添加多个目录。
+                </p>
+              )}
               <div className="device-row">
                 <select
                   className="mem-select device-select"
@@ -468,7 +480,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
             </p>
           </>
         )}
-        {!loading && groups.archived.length > 0 && (
+        {!endId && !loading && groups.archived.length > 0 && (
           <div className="device-archived">
             <div className="section-head">
               <h3>已归档</h3>

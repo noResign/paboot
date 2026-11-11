@@ -56,6 +56,9 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/roots`,
   workspaceEndActivate: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/activate`,
+  workspaceEndCapabilities: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/capabilities`,
+  sessionEnds: (id: string) => `/api/sessions/${encodeURIComponent(id)}/ends`,
   workspaceEndImpact: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/impact`,
   workspaceEndArchive: (id: string, endId: string) =>
@@ -70,6 +73,7 @@ export const ROUTES = {
   workspaceMock: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/mock`,
   directories: '/api/fs/directories',
   config: '/api/config',
+  capabilities: '/api/capabilities',
   files: '/api/files',
   fileContent: '/api/files/content',
   fileRaw: '/api/files/raw',

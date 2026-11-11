@@ -13,6 +13,9 @@ function end(id: string, status: string, name = id): EndDto {
     roots: [`/repo/${id}`],
     createdAt: 0,
     archivedAt: status === 'archived' ? 1 : null,
+    summary: '',
+    notes: '',
+    capabilities: [],
   };
 }
 
