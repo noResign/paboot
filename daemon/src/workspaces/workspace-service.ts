@@ -44,7 +44,7 @@ export function workspaceRoots(db: Db, workspace: WorkspaceRow): string[] {
 }
 
 /** True when `candidate` is inside any of the workspace's roots. */
-export function workspaceContainsAny(roots: string[], candidate: string): boolean {
+export function workspaceContainsAny(roots: readonly string[], candidate: string): boolean {
   return roots.some((root) => workspaceContains(root, candidate));
 }
 
