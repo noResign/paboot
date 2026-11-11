@@ -1659,6 +1659,13 @@ export class Db {
     return Number(row?.count ?? 0);
   }
 
+  countSessionsByEnd(endId: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE end_id = ?`)
+      .get(endId) as unknown as { count: number } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
   // ---- session permission grants ----
 
   listPermissionGrants(sessionId: string): PermissionGrantRow[] {

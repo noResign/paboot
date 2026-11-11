@@ -28,30 +28,39 @@ function parseConfig(value: string): Record<string, unknown> {
 }
 
 /**
- * Resolve the workspace and end from server-side state only. A session's
- * explicit `end_id` wins; otherwise the longest matching `end_roots` prefix
- * picks the main end, and a workspace with an active end always resolves one,
- * so a client-supplied id is never trusted.
+ * Resolve the session's effective (main) end from server-side state only.
+ * A session's explicit `end_id` is honored only while that end is active —
+ * archiving must stop injection immediately, without falling back to another
+ * end. Otherwise the longest matching `end_roots` prefix picks the main end,
+ * and a workspace with an active end always resolves one, so a client-supplied
+ * id is never trusted.
  */
+export function resolveSessionEnd(db: Db, session: SessionRow): EndRow | null {
+  if (session.end_id) {
+    const explicit = db.getEnd(session.end_id);
+    return explicit?.status === 'active' ? explicit : null;
+  }
+  const workspace = session.workspace_id ? db.getWorkspace(session.workspace_id) ?? null : null;
+  if (!workspace) return null;
+  let best: { end: EndRow; length: number } | null = null;
+  let firstActive: EndRow | null = null;
+  for (const candidate of db.listEnds(workspace.id)) {
+    if (candidate.status !== 'active') continue;
+    firstActive ??= candidate;
+    for (const root of db.listEndRoots(candidate.id)) {
+      if (!workspaceContains(root, session.cwd)) continue;
+      if (!best || root.length > best.length) best = { end: candidate, length: root.length };
+    }
+  }
+  // A workspace-level mount applies to every session in it; the cwd only
+  // disambiguates which end is the main one when several are mounted.
+  return best?.end ?? firstActive;
+}
+
+/** Workspace + effective end for a session. */
 export function resolveCapabilityScope(db: Db, session: SessionRow): CapabilityScope {
   const workspace = session.workspace_id ? db.getWorkspace(session.workspace_id) ?? null : null;
-  let end: EndRow | null = session.end_id ? db.getEnd(session.end_id) ?? null : null;
-  if (!end && workspace) {
-    let best: { end: EndRow; length: number } | null = null;
-    let firstActive: EndRow | null = null;
-    for (const candidate of db.listEnds(workspace.id)) {
-      if (candidate.status !== 'active') continue;
-      firstActive ??= candidate;
-      for (const root of db.listEndRoots(candidate.id)) {
-        if (!workspaceContains(root, session.cwd)) continue;
-        if (!best || root.length > best.length) best = { end: candidate, length: root.length };
-      }
-    }
-    // A workspace-level mount applies to every session in it; the cwd only
-    // disambiguates which end is the main one when several are mounted.
-    end = best?.end ?? firstActive;
-  }
-  return { workspace, end, session };
+  return { workspace, end: resolveSessionEnd(db, session), session };
 }
 
 /** Nearest scope wins per provider: session > end > workspace. */

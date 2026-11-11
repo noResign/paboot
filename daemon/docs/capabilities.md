@@ -66,7 +66,15 @@
 | `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于 workspace 内；可重复添加多个根 |
 | `DELETE /api/workspaces/:id/ends/:endId/roots` | `{path}` 移除一个端根目录 |
 | `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活，并写入 `android-device` 的 end binding |
-| `DELETE /api/workspaces/:id/ends/:endId` | 移除端：删端根与端级 binding，`sessions.end_id` 置空，会话保留 |
+| `GET /api/workspaces/:id/ends/:endId/impact` | 影响预览：显式会话 / cwd 命中会话 / binding / roots / 受影响能力 |
+| `POST /api/workspaces/:id/ends/:endId/archive` | 归档 active 端：停止能力 / 设备 / 端知识注入；保留 roots、binding、`sessions.end_id` |
+| `POST /api/workspaces/:id/ends/:endId/restore` | 恢复 archived 端（需至少一个 root） |
+| `DELETE /api/workspaces/:id/ends/:endId` | 移除端：仅 `draft` / `archived`；active 端返回 409 `end_must_archive`。删除端根与 binding，`sessions.end_id` 置空，会话保留 |
+
+- 归档后，显式 `sessions.end_id` 指向该端时**视为无主端**（不回退到其他端）；cwd 与工作区兜底也只考虑
+  active 端。设备路由显式传 archived `endId` → 409 `end_archived`。
+- 归档 / 恢复 / 删除都写 audit（`end_archive` / `end_restore` / `end_delete`）；life 工作区的端不允许
+  归档 / 恢复 / 删除（403 `end_not_allowed`）。
 | `GET /api/workspaces/:id/device` | 设备列表 + 当前 serial |
 | `POST /api/workspaces/:id/device/select` | `{endId, serial}` 记住设备 |
 | `GET /api/workspaces/:id/device/screenshot` | PNG 字节（operator；agent 一律 403） |

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { AppContext } from '../../app/context.js';
+import { resolveSessionEnd } from '../../capabilities/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
 import type { NormalizedEvent } from '../../types/api.js';
@@ -239,7 +240,7 @@ async function runBuiltin(
           id: session.id,
           workspaceId: workspace.id,
           agentId: 'builtin',
-          endId: session.end_id,
+          endId: resolveSessionEnd(ctx.db, session)?.id ?? null,
           memoryMode: session.memory_mode,
           purpose: session.purpose,
         },

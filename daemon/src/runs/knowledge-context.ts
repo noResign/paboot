@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
+import { resolveSessionEnd } from '../capabilities/scope.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
 import { renderContextPrelude, type ContextPrelude } from '../context/prelude.js';
 import { buildKnowledgeSections } from '../knowledge/index.js';
@@ -35,7 +36,11 @@ export function knowledgeContext(
   if (!ctx.knowledge) return null;
 
   try {
-    const documents = ctx.knowledge.confirmed(workspace.id, session.end_id);
+    // Archived ends stop contributing end-scoped knowledge; workspace docs stay.
+    const documents = ctx.knowledge.confirmed(
+      workspace.id,
+      resolveSessionEnd(ctx.db, session)?.id ?? null,
+    );
     if (documents.length === 0) return null;
 
     const prelude = renderContextPrelude(

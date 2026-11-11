@@ -3,10 +3,13 @@ import path from 'node:path';
 import type { Express, Response } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, WorkspaceRow } from '../db/db.js';
+import { capabilityById } from '../capabilities/registry.js';
 import { authRole } from '../http/auth.js';
 import { workspaceContains } from '../workspaces/workspace-service.js';
 import type {
   EndDto,
+  EndImpactDto,
+  EndImpactResponse,
   EndResponse,
   EndSuggestionDto,
   EndSuggestionsResponse,
@@ -40,11 +43,44 @@ function endDto(ctx: AppContext, end: EndRow): EndDto {
     status: end.status,
     roots: ctx.db.listEndRoots(end.id),
     createdAt: end.created_at,
+    archivedAt: end.archived_at ?? null,
   };
 }
 
 function workspaceFor(ctx: AppContext, id: string): WorkspaceRow | undefined {
   return ctx.db.getWorkspace(id);
+}
+
+/** Life ends are managed by the life workspace; only dev ends can be archived. */
+function requireDevEnd(res: Response, workspace: WorkspaceRow): boolean {
+  if (workspace.family === 'dev') return true;
+  res.status(403).json({ error: 'ends are dev-only', code: 'end_not_allowed' });
+  return false;
+}
+
+function endImpact(ctx: AppContext, workspace: WorkspaceRow, end: EndRow): EndImpactDto {
+  const roots = ctx.db.listEndRoots(end.id);
+  const bindings = ctx.db.listCapabilityBindings('end', end.id);
+  let cwdSessions = 0;
+  for (const session of ctx.db.listAllSessions(workspace.id)) {
+    if (session.kind === 'command' || session.end_id) continue;
+    if (roots.some((root) => workspaceContains(root, session.cwd))) cwdSessions += 1;
+  }
+  return {
+    endId: end.id,
+    status: end.status,
+    explicitSessions: ctx.db.countSessionsByEnd(end.id),
+    cwdSessions,
+    capabilityBindings: bindings.length,
+    roots: roots.length,
+    capabilities: [
+      ...new Set(
+        bindings
+          .filter((binding) => binding.enabled === 1)
+          .map((binding) => capabilityById(binding.provider_id)?.name ?? binding.provider_id),
+      ),
+    ],
+  };
 }
 
 async function scanAndroid(
@@ -194,6 +230,78 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
     res.json(dto);
   });
 
+  app.get('/api/workspaces/:id/ends/:endId/impact', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    const dto: EndImpactResponse = { impact: endImpact(ctx, workspace, end) };
+    res.json(dto);
+  });
+
+  app.post('/api/workspaces/:id/ends/:endId/archive', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    if (!requireDevEnd(res, workspace)) return;
+    if (end.status === 'archived') {
+      res.json({ ok: true, end: endDto(ctx, end) } satisfies EndResponse);
+      return;
+    }
+    if (end.status !== 'active') {
+      res.status(409).json({ error: 'end is not active', code: 'end_not_active' });
+      return;
+    }
+    const impact = endImpact(ctx, workspace, end);
+    const archived = ctx.db.setEndStatus(end.id, 'archived');
+    if (!archived) {
+      res.status(500).json({ error: 'failed to archive end', code: 'internal_error' });
+      return;
+    }
+    ctx.db.audit(
+      'end_archive',
+      JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name, impact }),
+    );
+    res.json({ ok: true, end: endDto(ctx, archived) } satisfies EndResponse);
+  });
+
+  app.post('/api/workspaces/:id/ends/:endId/restore', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    if (!requireDevEnd(res, workspace)) return;
+    if (end.status === 'active') {
+      res.json({ ok: true, end: endDto(ctx, end) } satisfies EndResponse);
+      return;
+    }
+    if (end.status !== 'archived') {
+      res.status(409).json({ error: 'end is not archived', code: 'end_not_archived' });
+      return;
+    }
+    if (ctx.db.listEndRoots(end.id).length === 0) {
+      res.status(409).json({ error: 'bind at least one directory first', code: 'end_has_no_roots' });
+      return;
+    }
+    const restored = ctx.db.setEndStatus(end.id, 'active');
+    if (!restored) {
+      res.status(500).json({ error: 'failed to restore end', code: 'internal_error' });
+      return;
+    }
+    ctx.db.audit('end_restore', JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name }));
+    res.json({ ok: true, end: endDto(ctx, restored) } satisfies EndResponse);
+  });
+
   app.delete('/api/workspaces/:id/ends/:endId', (req, res) => {
     if (!requireOperator(res)) return;
     const workspace = workspaceFor(ctx, req.params['id']!);
@@ -202,8 +310,18 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'end not found', code: 'end_not_found' });
       return;
     }
+    if (!requireDevEnd(res, workspace)) return;
+    if (end.status === 'active') {
+      res.status(409).json({ error: 'archive the end before deleting it', code: 'end_must_archive' });
+      return;
+    }
+    const impact = endImpact(ctx, workspace, end);
     // The end only scopes capabilities and the main-end hint; sessions stay
     // in the workspace after their end is removed.
+    ctx.db.audit(
+      'end_delete',
+      JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name, impact }),
+    );
     ctx.db.deleteEnd(end.id);
     res.json({ ok: true });
   });

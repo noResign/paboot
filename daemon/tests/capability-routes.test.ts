@@ -197,6 +197,7 @@ describe('ends routes', () => {
     expect(removed.status).toBe(200);
     expect(db.listEndRoots(endId)).toEqual([root]);
 
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/archive`, { method: 'POST' });
     const deleted = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}`, {
       method: 'DELETE',
     });
@@ -225,6 +226,86 @@ describe('ends routes', () => {
     );
     expect(outside.status).toBe(400);
     expect(((await outside.json()) as { code: string }).code).toBe('root_outside');
+  });
+
+  it('previews impact, then archives and restores an end', async () => {
+    const { db, workspace, session, root, url } = await boot();
+    const created = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Pixel' }),
+      })
+    ).json()) as { end: { id: string } };
+    const endId = created.end.id;
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/roots`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: root }),
+    });
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/activate`, { method: 'POST' });
+
+    const impact = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/impact`)
+    ).json()) as { impact: Record<string, unknown> };
+    expect(impact.impact).toMatchObject({
+      explicitSessions: 0,
+      cwdSessions: 1,
+      capabilityBindings: 1,
+      roots: 1,
+      capabilities: ['Android 设备'],
+    });
+
+    const archived = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/archive`, { method: 'POST' })
+    ).json()) as { end: { status: string; archivedAt: number | null } };
+    expect(archived.end.status).toBe('archived');
+    expect(archived.end.archivedAt).toBeTypeOf('number');
+    expect(enabledCapabilityServers(db, db.getSession(session.id)!).has('paboot_capability')).toBe(
+      false,
+    );
+
+    const restored = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/restore`, { method: 'POST' })
+    ).json()) as { end: { status: string; archivedAt: number | null } };
+    expect(restored.end.status).toBe('active');
+    expect(restored.end.archivedAt).toBeNull();
+    expect(enabledCapabilityServers(db, db.getSession(session.id)!).has('paboot_capability')).toBe(
+      true,
+    );
+  });
+
+  it('requires archiving before an end can be deleted', async () => {
+    const { db, workspace, root, url } = await boot();
+    const created = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Pixel' }),
+      })
+    ).json()) as { end: { id: string } };
+    const endId = created.end.id;
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/roots`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: root }),
+    });
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/activate`, { method: 'POST' });
+
+    const refused = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}`, {
+      method: 'DELETE',
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('end_must_archive');
+
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/archive`, { method: 'POST' });
+    const deleted = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}`, {
+      method: 'DELETE',
+    });
+    expect(deleted.status).toBe(200);
+    expect(db.getEnd(endId)).toBeUndefined();
+    expect(db.listEndRoots(endId)).toHaveLength(0);
+    expect(db.listCapabilityBindings('end', endId)).toHaveLength(0);
   });
 });
 
@@ -294,6 +375,39 @@ describe('operator device routes', () => {
     setRole('agent');
     const shot = await fetch(`${url}/api/workspaces/${workspace.id}/device/screenshot`);
     expect(shot.status).toBe(403);
+  });
+
+  it('rejects an explicit archived end id', async () => {
+    const { workspace, root, url } = await boot();
+    const created = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Pixel' }),
+      })
+    ).json()) as { end: { id: string } };
+    const endId = created.end.id;
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/roots`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: root }),
+    });
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/activate`, { method: 'POST' });
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${endId}/archive`, { method: 'POST' });
+
+    const listed = await fetch(
+      `${url}/api/workspaces/${workspace.id}/device?endId=${encodeURIComponent(endId)}`,
+    );
+    expect(listed.status).toBe(409);
+    expect(((await listed.json()) as { code: string }).code).toBe('end_archived');
+
+    const action = await fetch(`${url}/api/workspaces/${workspace.id}/device/action`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ endId, action: 'tap', x: 1, y: 2 }),
+    });
+    expect(action.status).toBe(409);
+    expect(((await action.json()) as { code: string }).code).toBe('end_archived');
   });
 });
 

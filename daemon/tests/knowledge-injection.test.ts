@@ -86,6 +86,12 @@ function harness(family: 'dev' | 'life' = 'dev', nativeSystemPrompt = false): Ha
   return { db, knowledge, workspacePath, workspaceId: workspace.id, dataDir, ctx };
 }
 
+function setSessionEnd(db: Db, sessionId: string, endId: string): void {
+  (db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db
+    .prepare('UPDATE sessions SET end_id = ? WHERE id = ?')
+    .run(endId, sessionId);
+}
+
 function createSession(h: Harness, runtime = 'claude') {
   return h.db.createSession({
     id: `session-${runtime}-${Math.random().toString(36).slice(2)}`,
@@ -131,6 +137,34 @@ describe('knowledgePrelude', () => {
     const lifeSession = createSession(life);
     const lifeWorkspace = life.db.getWorkspace(life.workspaceId)!;
     expect(knowledgePrelude(life.ctx, lifeSession, lifeWorkspace)).toBeNull();
+  });
+
+  it('drops end-scoped knowledge once the end is archived', () => {
+    const h = harness();
+    const end = h.db.createEnd({
+      workspaceId: h.workspaceId,
+      family: 'dev',
+      kind: 'android',
+      name: 'Pixel',
+      status: 'active',
+    });
+    h.db.addEndRoot(end.id, h.workspacePath);
+    h.knowledge.create(h.workspaceId, {
+      title: 'Android',
+      body: '# Android',
+      kind: 'convention',
+      endId: end.id,
+    });
+    const session = createSession(h);
+    setSessionEnd(h.db, session.id, end.id);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+
+    const before = knowledgePrelude(h.ctx, h.db.getSession(session.id)!, workspace);
+    expect(before?.documents).toBe(1);
+    expect(before?.prefix).toContain('Android');
+
+    h.db.setEndStatus(end.id, 'archived');
+    expect(knowledgePrelude(h.ctx, h.db.getSession(session.id)!, workspace)).toBeNull();
   });
 
   it('skips builtin because it has no provider-native session id (P3 uses the assembler)', () => {
