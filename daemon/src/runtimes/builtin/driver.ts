@@ -327,6 +327,12 @@ async function runBuiltin(
                     : buildOpenAIBody(record.request)
                   : undefined,
               }),
+            debugStepResult: (result) =>
+              debugRecorder.recordBuiltinStepResult({
+                sessionId: session.id,
+                workspaceId: workspace.id,
+                ...result,
+              }),
           }
         : {}),
     });

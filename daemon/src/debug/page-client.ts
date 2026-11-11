@@ -152,12 +152,20 @@ export const DEBUG_PAGE_SCRIPT = String.raw`
       title.appendChild(el('span', 'muted', ' step ' + snapshot.step));
     }
     var meta = el('div', 'meta');
+    if (snapshot.outcome) {
+      var outcomeClass = snapshot.outcome === 'ok' ? 'badge on' : snapshot.outcome === 'running' ? 'badge' : 'badge off';
+      meta.appendChild(el('span', outcomeClass, snapshot.outcome));
+    }
+    if (snapshot.durationMs !== null && snapshot.durationMs !== undefined) {
+      meta.appendChild(el('span', null, snapshot.durationMs + 'ms'));
+    }
     meta.appendChild(el('span', null, (snapshot.provider || '-') + ':' + (snapshot.model || '-')));
     meta.appendChild(el('span', null, fmtBytes(snapshot.bytes)));
     if (snapshot.truncated) meta.appendChild(el('span', 'err', 'truncated'));
     meta.appendChild(el('span', null, fmtTime(snapshot.createdAt)));
     item.appendChild(title);
     item.appendChild(meta);
+    if (snapshot.error) item.appendChild(el('div', 'meta err', snapshot.error));
     item.addEventListener('click', function () { loadSnapshot(snapshot.id); });
     return item;
   }
@@ -298,15 +306,22 @@ export const DEBUG_PAGE_SCRIPT = String.raw`
     }
 
     if (kind === 'builtin-step') {
+      var outcome = payload.outcome || null;
       box.appendChild(kv([
         ['step', payload.step],
+        ['outcome', outcome ? outcome.status + (outcome.durationMs !== undefined && outcome.durationMs !== null ? '  ' + outcome.durationMs + 'ms' : '') : '-'],
         ['provider', payload.provider + ':' + payload.model],
         ['maxTokens', payload.maxTokens],
         ['estimatedTokens', payload.estimatedTokens],
+        ['finishReason', outcome ? (outcome.finishReason || '-') : '-'],
+        ['usage', outcome && outcome.usage ? JSON.stringify(outcome.usage) : '-'],
+        ['output', outcome ? 'text ' + outcome.textChars + ' / reasoning ' + outcome.reasoningChars + ' / tools ' + outcome.toolCallCount : '-'],
+        ['error', outcome && outcome.error ? (outcome.error.code ? outcome.error.code + ': ' : '') + outcome.error.message : '-'],
         ['systemVersion', payload.systemVersion],
         ['contextVersion', payload.contextVersion],
         ['overBudget', 'system=' + payload.systemOverBudget + ' runtime=' + payload.runtimeContext.overBudget],
       ]));
+      if (outcome && outcome.preview) box.appendChild(preBlock('response preview', outcome.preview, false));
       box.appendChild(preBlock('system', payload.system || '', true));
       box.appendChild(preBlock('runtime context', payload.runtimeContext.text || '', true));
       box.appendChild(preBlock('messages', payload.messages, false));
@@ -317,6 +332,7 @@ export const DEBUG_PAGE_SCRIPT = String.raw`
     }
 
     box.appendChild(kv([
+      ['outcome', snapshot.outcome || '-'],
       ['batchKey', payload.batchKey],
       ['attempt', payload.attempt + ' / ' + payload.maxAttempts],
       ['provider', payload.provider + ':' + payload.model],
@@ -487,6 +503,13 @@ export const DEBUG_PAGE_SCRIPT = String.raw`
       if (selected && msg.runId === selected) loadRun(selected);
       if (state.detail && msg.sessionId && msg.sessionId === state.detail.sessionId) loadMemory(msg.sessionId);
       if (state.follow) loadLive();
+      return;
+    }
+    if (msg.type === 'snapshot-updated') {
+      if (selected && msg.runId === selected) loadRun(selected);
+      if (state.payload && state.payload.snapshot && state.payload.snapshot.id === msg.snapshotId) {
+        loadSnapshot(msg.snapshotId);
+      }
       return;
     }
     if (msg.type === 'run-started' || msg.type === 'run-finished' || msg.type === 'run-removed') {

@@ -1,6 +1,6 @@
 import { sanitizeErrorMessage } from '../../../llm/errors.js';
 import type { ModelPrice } from '../../../llm/catalog.js';
-import type { LlmProvider, LlmRequest, ToolSchema, Usage } from '../../../llm/types.js';
+import type { FinishReason, LlmProvider, LlmRequest, ToolSchema, Usage } from '../../../llm/types.js';
 import type { AgentContextAssembly } from '../context/assembly.js';
 import type { TranscriptStore } from '../transcript/store.js';
 import {
@@ -20,7 +20,7 @@ import type {
 import type { ToolExecutor } from '../tools/executor.js';
 import type { ToolCallRequest, ToolResult } from '../tools/types.js';
 import { estimateRequestTokens, type TokenCalibrator } from '../tokens.js';
-import { consumeAssistantStream } from './stream.js';
+import { consumeAssistantStream, type AssistantStreamResult } from './stream.js';
 
 /** One model step, exposed for the live debug page (no persistence). */
 export interface KernelStepDebugRecord {
@@ -31,6 +31,23 @@ export interface KernelStepDebugRecord {
   request: LlmRequest;
   context: AgentContextAssembly;
   estimatedTokens: number;
+}
+
+/** Outcome of one model step, recorded after the stream settles. */
+export interface KernelStepDebugResult {
+  runId: string;
+  step: number;
+  status: 'ok' | 'error' | 'cancelled';
+  durationMs: number;
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
+  usage?: Usage | null;
+  textChars: number;
+  reasoningChars: number;
+  toolCallCount: number;
+  /** Short assistant text preview; never the full response. */
+  preview?: string;
+  error?: { code?: string; message: string };
 }
 
 export interface AgentKernelDeps {
@@ -47,6 +64,7 @@ export interface AgentKernelDeps {
   resolveImage?: TranscriptImageResolver;
   /** [debug] Debug observability; failures never break the run. */
   debugStep?: (record: KernelStepDebugRecord) => void;
+  debugStepResult?: (result: KernelStepDebugResult) => void;
 }
 
 export interface AgentKernelResult {
@@ -114,11 +132,12 @@ export class AgentKernel {
           tools: toolSchemas,
         });
         // [debug] snapshot the exact model request for the live page
+        const stepNumber = usage.steps + 1;
         if (this.deps.debugStep) {
           try {
             this.deps.debugStep({
               runId: agent.runId,
-              step: usage.steps + 1,
+              step: stepNumber,
               provider: this.deps.provider.id,
               model: this.deps.model,
               request,
@@ -130,7 +149,39 @@ export class AgentKernel {
           }
         }
 
-        const step = await consumeAssistantStream(this.deps.provider.stream(request), agent.eventSink);
+        const startedAt = Date.now();
+        let step: AssistantStreamResult;
+        try {
+          step = await consumeAssistantStream(this.deps.provider.stream(request), agent.eventSink);
+        } catch (err) {
+          this.emitStepResult({
+            runId: agent.runId,
+            step: stepNumber,
+            status: agent.signal.aborted ? 'cancelled' : 'error',
+            durationMs: Date.now() - startedAt,
+            textChars: 0,
+            reasoningChars: 0,
+            toolCallCount: 0,
+            error: {
+              ...(readErrorCode(err) ? { code: readErrorCode(err) } : {}),
+              message: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+            },
+          });
+          throw err;
+        }
+        this.emitStepResult({
+          runId: agent.runId,
+          step: stepNumber,
+          status: 'ok',
+          durationMs: Date.now() - startedAt,
+          finishReason: step.finishReason,
+          ...(step.rawFinishReason ? { rawFinishReason: step.rawFinishReason } : {}),
+          usage: step.usage,
+          textChars: step.text.length,
+          reasoningChars: step.reasoning.length,
+          toolCallCount: step.toolCalls.length,
+          ...(step.text ? { preview: step.text.slice(0, 500) } : {}),
+        });
         usage.steps += 1;
         let stepCostUsd: number | null = null;
         if (step.usage) {
@@ -290,6 +341,16 @@ export class AgentKernel {
     }
   }
 
+  /** [debug] Record the step outcome; a broken sink never affects the run. */
+  private emitStepResult(result: KernelStepDebugResult): void {
+    if (!this.deps.debugStepResult) return;
+    try {
+      this.deps.debugStepResult(result);
+    } catch {
+      // Debug capture must never break the run.
+    }
+  }
+
   private async persistRuntimeContext(
     agent: AgentRunContext,
     context: AgentContextAssembly,
@@ -369,6 +430,11 @@ export class AgentKernel {
     });
     this.appendToolResult(agent, call.id, result, step);
   }
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 function toToolSchema(tool: ToolDescriptor): ToolSchema {

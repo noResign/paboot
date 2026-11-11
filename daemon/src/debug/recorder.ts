@@ -6,6 +6,7 @@ import { createRedactor } from './redact.js';
 import { LiveContextStore, type FinishRunInput, type NewSnapshot, type StartRunInput } from './store.js';
 import type {
   BuiltinStepCaptureInput,
+  BuiltinStepResultInput,
   DebugEvent,
   MemoryExtractionCaptureInput,
   Redactor,
@@ -110,6 +111,9 @@ export class DebugRecorder {
         provider: null,
         model: input.model,
         ...this.encode(payload),
+        outcome: null,
+        durationMs: null,
+        error: null,
         createdAt: this.now(),
       });
     } catch (err) {
@@ -134,11 +138,36 @@ export class DebugRecorder {
         provider: input.provider,
         model: input.model,
         ...this.encode(payload),
+        outcome: 'running',
+        durationMs: null,
+        error: null,
         createdAt: this.now(),
       });
     } catch (err) {
       log.warn('debug capture builtin-step failed', err);
       return null;
+    }
+  }
+
+  /** Merge the model-call outcome into the step snapshot written above. */
+  recordBuiltinStepResult(input: BuiltinStepResultInput): void {
+    if (!this.active) return;
+    try {
+      const run = this.store.getRun(input.runId);
+      const snapshot = run?.steps.find((step) => step.step === input.step);
+      if (!snapshot) return;
+      const base = isRecord(snapshot.payload) ? snapshot.payload : {};
+      const encoded = this.encode({ ...base, outcome: input });
+      this.store.updateSnapshot(snapshot.id, {
+        payload: encoded.payload,
+        bytes: encoded.bytes,
+        truncated: encoded.truncated,
+        outcome: input.status,
+        durationMs: input.durationMs,
+        error: input.error ? this.redactor.text(input.error.message) : null,
+      });
+    } catch (err) {
+      log.warn('debug capture builtin-step result failed', err);
     }
   }
 
@@ -152,6 +181,9 @@ export class DebugRecorder {
         provider: input.provider,
         model: input.model,
         ...this.encode(payload),
+        outcome: input.error ? 'error' : 'ok',
+        durationMs: input.durationMs,
+        error: input.error ? this.redactor.text(input.error) : null,
         createdAt: this.now(),
       });
       return snapshot.id;
@@ -214,4 +246,8 @@ export class DebugRecorder {
     }
     return { payload: parsed, bytes: encoded.bytes, truncated: encoded.truncated };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

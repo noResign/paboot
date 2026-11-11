@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { LlmProvider, LlmRequest } from '../src/llm/types';
 import type { AgentContextAssembly } from '../src/runtimes/builtin/context/assembly';
-import { AgentKernel, type KernelStepDebugRecord } from '../src/runtimes/builtin/kernel/agent';
+import {
+  AgentKernel,
+  type KernelStepDebugRecord,
+  type KernelStepDebugResult,
+} from '../src/runtimes/builtin/kernel/agent';
 import type { TranscriptStore } from '../src/runtimes/builtin/transcript/store';
 import type { AgentRunContext } from '../src/runtimes/builtin/types';
 import type { TokenCalibrator } from '../src/runtimes/builtin/tokens';
@@ -102,6 +106,7 @@ describe('builtin step debug', () => {
   it('records the exact request before each model call', async () => {
     const calls: LlmRequest[] = [];
     const records: KernelStepDebugRecord[] = [];
+    const results: KernelStepDebugResult[] = [];
     const kernel = new AgentKernel({
       provider: fakeProvider(calls),
       model: 'fake-1',
@@ -113,6 +118,7 @@ describe('builtin step debug', () => {
       assembleContext: async () => assembly(),
       tokenCalibrator: calibrator(),
       debugStep: (record) => records.push(record),
+      debugStepResult: (result) => results.push(result),
     });
 
     const result = await kernel.run(agentContext());
@@ -130,6 +136,49 @@ describe('builtin step debug', () => {
     expect(record.context.runtimeContext.text).toBe('RUNTIME CONTEXT');
     expect(record.estimatedTokens).toBeGreaterThan(0);
     expect(calls[0]).toBe(record.request);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      runId: 'r-1',
+      step: 1,
+      status: 'ok',
+      finishReason: 'stop',
+      textChars: 0,
+      toolCallCount: 0,
+    });
+    expect(results[0]!.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('records failed step outcomes before rethrowing', async () => {
+    const results: KernelStepDebugResult[] = [];
+    const provider = {
+      ...fakeProvider([]),
+      async *stream() {
+        throw Object.assign(new Error('provider exploded'), { code: 'provider' });
+      },
+    } as unknown as LlmProvider;
+    const kernel = new AgentKernel({
+      provider,
+      model: 'fake-1',
+      modelSnapshot: { provider: 'fake', model: 'fake-1', supportsTools: false, supportsImages: false },
+      threadId: 't-1',
+      transcript: fakeTranscript(),
+      toolDescriptors: [],
+      toolExecutor: {} as never,
+      assembleContext: async () => assembly(),
+      tokenCalibrator: calibrator(),
+      debugStepResult: (result) => results.push(result),
+    });
+
+    await expect(kernel.run(agentContext())).resolves.toMatchObject({
+      status: 'failed',
+      error: 'provider exploded',
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      step: 1,
+      status: 'error',
+      error: { code: 'provider', message: 'provider exploded' },
+    });
   });
 
   it('never lets a debug failure break the run', async () => {
