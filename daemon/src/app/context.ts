@@ -13,6 +13,7 @@ import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
 import type { DeviceStreamHub } from '../capabilities/device-stream.js';
 import type { MockStore } from '../capabilities/mock-store.js';
 import type { DeviceProvider } from '../capabilities/types.js';
+import type { DebugRecorder } from '../debug/recorder.js';
 
 /**
  * Shared dependency object threaded through route registrars. Keep this the
@@ -56,4 +57,6 @@ export interface AppContext {
   deviceStream?: DeviceStreamHub;
   /** File-backed workspace mock model (Dev Space S2). */
   mockStore?: MockStore;
+  /** [debug] In-memory live context audit behind `/debug`; optional in partial tests. */
+  debug?: DebugRecorder;
 }

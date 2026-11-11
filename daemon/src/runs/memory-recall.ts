@@ -11,9 +11,25 @@ import { recallQuery, shouldRecall } from '../memory/recall.js';
 import { isMemoryInjectionEnabled } from '../memory/settings.js';
 import { log } from '../platform/log.js';
 
+export type RecallDropReason = 'duplicate' | 'not_relevant' | 'max_items' | 'render_rejected';
+
+export interface RecallDrop {
+  kind: 'loop' | 'claim' | 'observation' | 'summary' | 'document' | 'source';
+  refId?: string;
+  reason: RecallDropReason;
+}
+
 export interface RunMemoryRecall extends ContextPrelude {
   hits: number;
+  /** [debug] Recall diagnostics: cue / query / dropped items. */
+  cue: boolean;
+  query: string;
+  terms: string[];
+  dropped: RecallDrop[];
+  droppedCount: number;
 }
+
+const MAX_DROPPED_RECORDS = 100;
 
 const MAX_RECALL_CHARS = 800;
 const MAX_RECALL_ITEMS = 5;
@@ -59,25 +75,46 @@ export function memoryRecall(
 
     const lines: string[] = [];
     const seen = new Set<string>();
+    const dropped: RecallDrop[] = [];
+    let droppedCount = 0;
+    const drop = (item: RecallDrop): void => {
+      droppedCount += 1;
+      if (dropped.length < MAX_DROPPED_RECORDS) dropped.push(item);
+    };
     // Open loops are the best continuation hint when another session left work
     // unfinished; include up to two before regular hits.
     for (const readScope of policy.scopes) {
       if (lines.length >= 2) break;
       for (const loop of ctx.memory.listOpenLoops(readScope.scope)) {
-        if (!cue && !isRelevant(loop.title, terms)) continue;
+        if (!cue && !isRelevant(loop.title, terms)) {
+          drop({ kind: 'loop', refId: loop.id, reason: 'not_relevant' });
+          continue;
+        }
         lines.push(`- [未完成] ${compact(loop.title, 120)} #loop_${short(loop.id)}`);
         if (lines.length >= 2) break;
       }
     }
     for (const hit of hits) {
-      if (lines.length >= MAX_RECALL_ITEMS) break;
       const key = `${hit.kind}:${hit.refId}`;
-      if (seen.has(key)) continue;
+      if (lines.length >= MAX_RECALL_ITEMS) {
+        drop({ kind: hitKind(hit.kind), refId: hit.refId, reason: 'max_items' });
+        continue;
+      }
+      if (seen.has(key)) {
+        drop({ kind: hitKind(hit.kind), refId: hit.refId, reason: 'duplicate' });
+        continue;
+      }
       // Explicit cues may recall broadly; without one, require a real term hit
       // so unrelated new sessions do not get another session's timeline.
-      if (!cue && !isRelevant(hit.text, terms)) continue;
+      if (!cue && !isRelevant(hit.text, terms)) {
+        drop({ kind: hitKind(hit.kind), refId: hit.refId, reason: 'not_relevant' });
+        continue;
+      }
       const line = renderHit(ctx, hit, policy);
-      if (!line) continue;
+      if (!line) {
+        drop({ kind: hitKind(hit.kind), refId: hit.refId, reason: 'render_rejected' });
+        continue;
+      }
       seen.add(key);
       lines.push(line);
     }
@@ -93,7 +130,15 @@ export function memoryRecall(
     const prelude = renderContextPrelude([section], session.runtime);
     if (!prelude) return null;
     log.info(`memory recall: ${lines.length} hit(s) for ${session.runtime}`);
-    return { ...prelude, hits: lines.length };
+    return {
+      ...prelude,
+      hits: lines.length,
+      cue,
+      query,
+      terms,
+      dropped,
+      droppedCount,
+    };
   } catch (err) {
     log.warn(`memory recall failed for workspace ${workspace.id}: ${String(err)}`);
     return null;
@@ -152,6 +197,19 @@ function trimLines(header: string, lines: readonly string[], maxChars: number): 
     length += size;
   }
   return [header, ...kept].join('\n');
+}
+
+function hitKind(kind: string): RecallDrop['kind'] {
+  switch (kind) {
+    case 'claim':
+    case 'observation':
+    case 'summary':
+    case 'document':
+    case 'loop':
+      return kind;
+    default:
+      return 'source';
+  }
 }
 
 function isRelevant(text: string, terms: readonly string[]): boolean {

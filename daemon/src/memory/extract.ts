@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { LlmProvider } from '../llm/types.js';
+import type { LlmCompletion, LlmProvider, LlmRequest } from '../llm/types.js';
 import type {
   ClaimKind,
   EntityKind,
@@ -237,6 +237,13 @@ export async function extractClaims(input: {
   return (await extractMemory(input)).claims;
 }
 
+/** [debug] Optional observer for the background extraction model call. */
+export interface ExtractionDebugSink {
+  onRequest(request: LlmRequest): void;
+  onResponse(completion: LlmCompletion, durationMs: number): void;
+  onError(error: unknown, durationMs: number): void;
+}
+
 /** One call produces claims, observations and the run summary. */
 export async function extractMemory(input: {
   provider: LlmProvider;
@@ -245,8 +252,10 @@ export async function extractMemory(input: {
   sources: readonly MemorySource[];
   contextSources?: readonly MemorySource[];
   signal: AbortSignal;
+  /** [debug] Optional observer; never affects extraction semantics. */
+  debug?: ExtractionDebugSink;
 }): Promise<ExtractionResult> {
-  const completion = await input.provider.complete({
+  const request: LlmRequest = {
     provider: input.providerId,
     model: input.model,
     system: extractionSystemPrompt(),
@@ -257,11 +266,20 @@ export async function extractMemory(input: {
     maxTokens: 2000,
     temperature: 0,
     signal: input.signal,
-  });
-  if (completion.finishReason === 'unavailable') {
-    throw new MemoryExtractionError('memory provider is unavailable', 'provider_unavailable');
+  };
+  const started = Date.now();
+  input.debug?.onRequest(request);
+  try {
+    const completion = await input.provider.complete(request);
+    input.debug?.onResponse(completion, Date.now() - started);
+    if (completion.finishReason === 'unavailable') {
+      throw new MemoryExtractionError('memory provider is unavailable', 'provider_unavailable');
+    }
+    return parseExtractionResult(completion.text, input.sources);
+  } catch (err) {
+    input.debug?.onError(err, Date.now() - started);
+    throw err;
   }
-  return parseExtractionResult(completion.text, input.sources);
 }
 
 /** Stable Tier-0 key; subject is the user in M0 (no entity graph yet). */

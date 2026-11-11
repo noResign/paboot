@@ -8,6 +8,7 @@
 | [runtimes.md](runtimes.md) | 运行时接入（两条路径） |
 | [protocol.md](protocol.md) | 数据模型 · HTTP/SSE 协议 · 会话与跨端续接 · 运行信息文件 |
 | [context.md](context.md) | 上下文装配契约（ContextAssembler）：顺序 / 归属 / 去重 / 预算 / runtime 规则 |
+| [debug.md](debug.md) | 实时上下文监控 `/debug`：使用方式 / 采集与内存 / 页面字段 / API（纯内存） |
 | [llm.md](llm.md) | 共享 LLM 层：类型契约 / provider 目录 / 凭据（只写不读）/ registry / `none` |
 | [knowledge.md](knowledge.md) | K0 curated 知识：磁盘布局 / `.meta.json` 治理 / 扫描 / API / 首轮指针注入 |
 | [memory.md](memory.md) | Memory M0：life 捕获 / 抽取 / brief / API / 配置与边界 |

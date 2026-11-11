@@ -4,10 +4,45 @@ import {
   extractMemory,
   type ExtractionResult,
 } from './extract.js';
+import type { LlmCompletion, LlmRequest } from '../llm/types.js';
 import type { MemoryModelSelection } from './model.js';
 import type { MemoryStore } from './store.js';
 import type { MemoryScope, MemorySource } from './types.js';
 import { log } from '../platform/log.js';
+
+/** [debug] One model call inside a memory extraction batch. */
+export interface MemoryExtractionDebugRecord {
+  batchKey: string;
+  attempt: number;
+  maxAttempts: number;
+  provider: string;
+  model: string;
+  workspaceId: string | null;
+  scope: string;
+  sessionId: string | null;
+  runId: string | null;
+  sourceIds: string[];
+  request: LlmRequest;
+  completion: LlmCompletion | null;
+  error: string | null;
+  durationMs: number;
+  deterministic: boolean;
+  willRetry: boolean;
+  failureState: {
+    consecutiveFailures: number;
+    lastError: string;
+    lastErrorAt: number | null;
+    dead: boolean;
+  } | null;
+}
+
+interface ExtractionAttempt {
+  attempt: number;
+  request: LlmRequest | null;
+  completion: LlmCompletion | null;
+  error: string | null;
+  durationMs: number;
+}
 
 export interface MemoryWorkerOptions {
   store: MemoryStore;
@@ -35,6 +70,8 @@ export interface MemoryWorkerOptions {
   /** Scopes that share one personal identity (user + life); dev is never here. */
   personalScopes?: () => readonly MemoryScope[];
   now?: () => number;
+  /** [debug] Observability hook for the `/debug` live page. Never throws. */
+  onExtractionCall?: (record: MemoryExtractionDebugRecord) => void;
 }
 
 export interface MemoryWorkerResult {
@@ -87,6 +124,9 @@ export class MemoryWorker {
   private readonly failureLimit: number;
   private readonly personalScopes: (() => readonly MemoryScope[]) | undefined;
   private readonly now: () => number;
+  private readonly onExtractionCall:
+    | ((record: MemoryExtractionDebugRecord) => void)
+    | undefined;
   private timer: NodeJS.Timeout | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
   private running = false;
@@ -106,6 +146,7 @@ export class MemoryWorker {
     this.failureLimit = options.failureLimit ?? 3;
     this.personalScopes = options.personalScopes;
     this.now = options.now ?? Date.now;
+    this.onExtractionCall = options.onExtractionCall;
   }
 
   start(): void {
@@ -274,12 +315,14 @@ export class MemoryWorker {
     const batchKey = `extract:${first.scope}:${sources[0]!.id}:${sources.length}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
+    const attempts: ExtractionAttempt[] = [];
     try {
       const extraction = await this.extractWithRetry(
         sources,
         contextSources,
         model,
         controller.signal,
+        attempts,
       );
       const entityIds = new Map<string, string>();
       for (const entity of extraction.entities) {
@@ -405,6 +448,7 @@ export class MemoryWorker {
       this.store.setState('last_success_at', String(this.now()));
       this.store.setState('consecutive_failures', '0');
       this.store.setState('last_extraction_error', '');
+      this.emitExtractionAttempts(batchKey, attempts, model, first, sources, null, false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const deterministic = isDeterministicExtractionFailure(err);
@@ -424,6 +468,7 @@ export class MemoryWorker {
       this.store.setState('last_extraction_error_at', String(this.now()));
       const consecutive = Number(this.store.getState('consecutive_failures') ?? 0) + 1;
       this.store.setState('consecutive_failures', String(consecutive));
+      this.emitExtractionAttempts(batchKey, attempts, model, first, sources, message, deterministic);
     } finally {
       clearTimeout(timer);
     }
@@ -434,33 +479,113 @@ export class MemoryWorker {
     contextSources: MemorySource[],
     model: MemoryModelSelection,
     signal: AbortSignal,
+    attempts: ExtractionAttempt[],
   ): Promise<ExtractionResult> {
+    const first = this.runAttempt(sources, contextSources, model, signal, attempts);
     try {
-      return await extractMemory({
-        provider: model.provider,
-        providerId: model.providerId,
-        model: model.model,
-        sources,
-        contextSources,
-        signal,
-      });
+      return await first;
     } catch (err) {
       // Schema drift is worth one retry; transport/quota failures are not.
       if (
         err instanceof MemoryExtractionError &&
         (err.code === 'invalid_json' || err.code === 'invalid_schema')
       ) {
-        return extractMemory({
-          provider: model.provider,
-          providerId: model.providerId,
-          model: model.model,
-          sources,
-          contextSources,
-          signal,
-        });
+        return await this.runAttempt(sources, contextSources, model, signal, attempts);
       }
       throw err;
     }
+  }
+
+  private runAttempt(
+    sources: MemorySource[],
+    contextSources: MemorySource[],
+    model: MemoryModelSelection,
+    signal: AbortSignal,
+    attempts: ExtractionAttempt[],
+  ): Promise<ExtractionResult> {
+    const capture: ExtractionAttempt = {
+      attempt: attempts.length + 1,
+      request: null,
+      completion: null,
+      error: null,
+      durationMs: 0,
+    };
+    attempts.push(capture);
+    return extractMemory({
+      provider: model.provider,
+      providerId: model.providerId,
+      model: model.model,
+      sources,
+      contextSources,
+      signal,
+      // [debug] capture this attempt for the live page
+      debug: {
+        onRequest: (request) => {
+          capture.request = request;
+        },
+        onResponse: (completion, durationMs) => {
+          capture.completion = completion;
+          capture.durationMs = durationMs;
+        },
+        onError: (error, durationMs) => {
+          capture.error = error instanceof Error ? error.message : String(error);
+          capture.durationMs = durationMs;
+        },
+      },
+    });
+  }
+
+  /** [debug] Emit one debug record per model attempt (no-op without a hook). */
+  private emitExtractionAttempts(
+    batchKey: string,
+    attempts: ExtractionAttempt[],
+    model: MemoryModelSelection,
+    first: MemorySource,
+    sources: readonly MemorySource[],
+    finalError: string | null,
+    deterministic: boolean,
+  ): void {
+    if (!this.onExtractionCall) return;
+    const failureState =
+      finalError === null
+        ? null
+        : {
+            consecutiveFailures: Number(this.store.getState('consecutive_failures') ?? 0),
+            lastError: String(this.store.getState('last_extraction_error') ?? finalError),
+            lastErrorAt: Number(this.store.getState('last_extraction_error_at') ?? 0) || null,
+            dead: sources.every(
+              (source) =>
+                Number(this.store.getState(`extract_failures:${source.id}`) ?? 0) >= this.failureLimit,
+            ),
+          };
+    attempts.forEach((capture, index) => {
+      const request = capture.request;
+      if (!request) return;
+      const isLast = index === attempts.length - 1;
+      try {
+        this.onExtractionCall?.({
+          batchKey,
+          attempt: capture.attempt,
+          maxAttempts: 2,
+          provider: model.providerId,
+          model: model.model,
+          workspaceId: first.workspaceId,
+          scope: first.scope,
+          sessionId: first.sessionId,
+          runId: first.runId,
+          sourceIds: sources.map((source) => source.id),
+          request,
+          completion: capture.completion,
+          error: isLast ? finalError ?? capture.error : capture.error,
+          durationMs: capture.durationMs,
+          deterministic: isLast ? deterministic : true,
+          willRetry: !isLast,
+          failureState: isLast ? failureState : null,
+        });
+      } catch (err) {
+        log.warn('memory extraction debug hook failed', err);
+      }
+    });
   }
 
   private recordFailure(source: MemorySource, message: string): void {

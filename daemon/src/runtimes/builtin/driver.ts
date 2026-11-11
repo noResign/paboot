@@ -13,6 +13,8 @@ import type { RunOutcome } from '../engine.js';
 import type { TranscriptContentBlock } from '../../types/transcript.js';
 import { DEFAULT_BUILTIN_CONFIG } from './config.js';
 import { resolveContextBudget } from './budget.js';
+import { buildAnthropicBody } from '../../llm/anthropic.js';
+import { buildOpenAIBody } from '../../llm/openai.js';
 import { AgentKernel } from './kernel/agent.js';
 import { resolveBuiltinModel } from './models.js';
 import { createTokenCalibrator } from './tokens.js';
@@ -292,6 +294,8 @@ async function runBuiltin(
       return assembled;
     };
 
+    // [debug] wire the per-step snapshot; the recorder no-ops when idle
+    const debugRecorder = ctx.debug;
     const kernel = new AgentKernel({
       provider: resolved.provider,
       model: resolved.model,
@@ -303,6 +307,28 @@ async function runBuiltin(
       assembleContext,
       tokenCalibrator: calibrator,
       ...(imageResolver ? { resolveImage: imageResolver } : {}),
+      ...(debugRecorder
+        ? {
+            debugStep: (record) =>
+              debugRecorder.recordBuiltinStep({
+                sessionId: session.id,
+                workspaceId: workspace.id,
+                runId: record.runId,
+                step: record.step,
+                provider: record.provider,
+                model: record.model,
+                request: record.request,
+                assembly: record.context,
+                estimatedTokens: record.estimatedTokens,
+                // Only build the duplicate wire payload while capture is live.
+                wireBody: debugRecorder.active
+                  ? resolved.providerConfig.kind === 'anthropic'
+                    ? buildAnthropicBody(record.request)
+                    : buildOpenAIBody(record.request)
+                  : undefined,
+              }),
+          }
+        : {}),
     });
     const result = await kernel.run(agent);
     if (result.status === 'succeeded') return { status: 'succeeded', exitCode: 0, error: null };

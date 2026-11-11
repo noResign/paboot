@@ -11,6 +11,7 @@ import { registerAttachmentRoutes } from '../routes/attachments.js';
 import { registerChatRoutes } from '../routes/chat.js';
 import { registerChangesRoutes } from '../routes/changes.js';
 import { registerConfigRoutes } from '../routes/config.js';
+import { registerDebugRoutes } from '../routes/debug.js';
 import { registerDeployRoutes } from '../routes/deploy.js';
 import { registerFileRoutes } from '../routes/files.js';
 import { registerFsRoutes } from '../routes/fs.js';
@@ -76,6 +77,8 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerEndRoutes(app, ctx);
   registerMockRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
+  // [debug] live debug page + operator-only snapshot API (see docs/debug.md)
+  registerDebugRoutes(app, ctx);
   registerSystemRoutes(app, hooks);
 
   app.use('/api', (_req, res) => {

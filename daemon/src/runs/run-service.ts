@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
+import { parseStoredModelParameters } from '../db/model-selection.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import {
@@ -113,6 +114,16 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     ctx.attachments.bind(id, { runId });
   }
 
+  // [debug] Live-only entry so `/debug` can show the run before its first
+  // model step; it disappears from the page when the process ends or it ages out.
+  ctx.debug?.startRun({
+    runId,
+    sessionId: session.id,
+    workspaceId: workspace.id,
+    runtime: session.runtime,
+    model: model ?? session.model ?? null,
+  });
+
   const done = (async (): Promise<RunOutcome> => {
     let seq = 0;
     let assistantText = '';
@@ -215,6 +226,71 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       enabledCapabilityServers(ctx.db, session),
     );
 
+    // [debug] Capture what paboot is about to inject before the driver
+    // starts, so a provider/spawn failure still leaves it in the debug view.
+    const injectionMode =
+      injected === null
+        ? 'none'
+        : nativeSystemPrompt
+          ? 'native-system-prompt'
+          : usePrelude
+            ? 'first-message-prelude'
+            : 'skipped-resume';
+    ctx.debug?.recordRunInjection({
+      sessionId: session.id,
+      workspaceId: workspace.id,
+      runId,
+      runtime: session.runtime,
+      sessionKind: session.kind,
+      purpose: session.purpose,
+      memoryMode: session.memory_mode,
+      model: model ?? session.model ?? null,
+      modelParameters: modelParameters ?? parseStoredModelParameters(session.model_parameters),
+      permissionMode,
+      extraDirs,
+      toolServers,
+      resumeNativeSession: session.native_session_id !== null,
+      knowledge: knowledge === null ? null : {
+        prefix: knowledge.prefix,
+        used: knowledge.used,
+        overBudget: knowledge.overBudget,
+        omitted: knowledge.omitted,
+        documents: knowledge.documents,
+        indexVersion: knowledge.indexVersion,
+      },
+      memory: memory === null ? null : {
+        prefix: memory.prefix,
+        used: memory.used,
+        overBudget: memory.overBudget,
+        omitted: memory.omitted,
+        claims: memory.claims,
+        truncated: memory.truncated,
+        usedClaimIds: memory.usedClaimIds,
+      },
+      recall: recall === null ? null : {
+        prefix: recall.prefix,
+        used: recall.used,
+        overBudget: recall.overBudget,
+        omitted: recall.omitted,
+        hits: recall.hits,
+        cue: recall.cue,
+        query: recall.query,
+        terms: recall.terms,
+        dropped: recall.dropped,
+        droppedCount: recall.droppedCount,
+      },
+      merged: injected === null ? null : {
+        prefix: injected.prefix,
+        used: injected.used,
+        overBudget: injected.overBudget,
+        omitted: injected.omitted,
+      },
+      injectionMode,
+      prompt,
+      promptSent: usePrelude && injected ? `${injected.prefix}\n\n${prompt}` : prompt,
+      systemContext: nativeSystemPrompt && injected ? injected.prefix : null,
+    });
+
     const images = (input.attachmentIds ?? []).flatMap((id) => {
       const row = ctx.attachments.get(id);
       return row
@@ -301,6 +377,11 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         exitCode: finalOutcome.exitCode,
         error: finalOutcome.error,
       });
+      // [debug] mark the live run finished; retention/pruning is in-memory only
+      ctx.debug?.finishRun(runId, {
+        status: runDeleted ? 'deleted' : finalOutcome.status,
+        error: finalOutcome.error,
+      });
       if (finalOutcome.error && finalOutcome.status === 'failed') {
         send({ type: 'error', code: 'run_failed', message: finalOutcome.error, terminal: true });
       }
@@ -310,6 +391,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       log.error('run failed unexpectedly', err);
       const message = err instanceof Error ? err.message : String(err);
       ctx.db.updateRun(runId, { status: 'failed', endedAt: Date.now(), error: message });
+      // [debug]
+      ctx.debug?.finishRun(runId, { status: 'failed', error: message });
       send({ type: 'error', code: 'run_error', message, terminal: true });
       return { status: 'failed', exitCode: null, error: message };
     } finally {

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { expandHome } from '../platform/paths.js';
 import { DEFAULT_LOCKOUT_MS, DEFAULT_MAX_FAILURES } from '../http/auth.js';
+import type { DebugMode } from '../platform/debug-flag.js';
 
 export interface TlsConfig {
   cert: string;
@@ -66,6 +67,17 @@ export interface Config {
    * This is separate from the agent model on purpose (D35).
    */
   memoryModel: string | null;
+  /**
+   * [debug] In-memory context audit for the `/debug` live page (no
+   * persistence). `auto` captures only while a debug client is attached.
+   */
+  debugMode: DebugMode;
+  /** Per-snapshot payload cap after redaction/truncation. */
+  debugMaxBytes: number;
+  /** Total in-memory cap across all live snapshots. */
+  debugMaxTotalBytes: number;
+  /** How long finished runs stay visible in the live page. */
+  debugKeepMinutes: number;
 }
 
 /**
@@ -143,6 +155,44 @@ function resolveRunIdleTimeoutMs(env: NodeJS.ProcessEnv): number {
   return seconds * 1000;
 }
 
+/**
+ * [debug] `PABOOT_DEBUG`：`auto`（默认）只在有 debug 客户端连接时采集；
+ * `on` 常开；`off` 关闭。`0/false` 等价 off，`1/true` 等价 on。
+ */
+function resolveDebugMode(env: NodeJS.ProcessEnv): DebugMode {
+  const raw = env.PABOOT_DEBUG?.trim().toLowerCase();
+  if (!raw || raw === 'auto') return 'auto';
+  if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') return 'off';
+  return 'on';
+}
+
+/** [debug] `PABOOT_DEBUG_MAX_BYTES`，默认 1 MiB；非法值回退默认。 */
+function resolveDebugMaxBytes(env: NodeJS.ProcessEnv): number {
+  const raw = env.PABOOT_DEBUG_MAX_BYTES?.trim();
+  if (!raw) return 1024 * 1024;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 4096) return 1024 * 1024;
+  return Math.min(Math.floor(value), 64 * 1024 * 1024);
+}
+
+/** [debug] `PABOOT_DEBUG_MAX_TOTAL_BYTES`，默认 32 MiB；非法值回退默认。 */
+function resolveDebugMaxTotalBytes(env: NodeJS.ProcessEnv): number {
+  const raw = env.PABOOT_DEBUG_MAX_TOTAL_BYTES?.trim();
+  if (!raw) return 32 * 1024 * 1024;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 64 * 1024) return 32 * 1024 * 1024;
+  return Math.min(Math.floor(value), 512 * 1024 * 1024);
+}
+
+/** [debug] `PABOOT_DEBUG_KEEP_MINUTES`，默认 10；0 = 结束即移除。 */
+function resolveDebugKeepMinutes(env: NodeJS.ProcessEnv): number {
+  const raw = env.PABOOT_DEBUG_KEEP_MINUTES?.trim();
+  if (!raw) return 10;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return 10;
+  return Math.min(Math.floor(value), 24 * 60);
+}
+
 /** CLI flag values that take precedence over env vars. */
 export interface ConfigOverrides {
   host?: string;
@@ -208,5 +258,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
       env.PABOOT_DEPLOY_SCRIPT ?? path.join(process.cwd(), '..', '.claude/skills/deploy/scripts/deploy.sh'),
     ),
     memoryModel: env.PABOOT_MEMORY_MODEL?.trim() || null,
+    debugMode: resolveDebugMode(env),
+    debugMaxBytes: resolveDebugMaxBytes(env),
+    debugMaxTotalBytes: resolveDebugMaxTotalBytes(env),
+    debugKeepMinutes: resolveDebugKeepMinutes(env),
   };
 }
