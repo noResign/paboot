@@ -1,6 +1,7 @@
 # Curated knowledge (K0)
 
-> 代码：`src/knowledge/` · 路由：`src/routes/knowledge.ts` · 注入：`src/runs/knowledge-context.ts`
+> 代码：`src/knowledge/` · 路由：`src/routes/knowledge.ts` · 注入：`src/runs/knowledge-context.ts` ·
+> 附加目录：`src/runs/run-service.ts` 的 `extraDirsForRun`
 > 设计背景见 `docs/local/paboot_memory/knowledge.md`（本机私有笔记，不入库）。
 
 K0 解决「换一个会话也能读到项目约定 / 需求 / 踩坑」：markdown 文件是正文真源，
@@ -25,6 +26,8 @@ daemon 只维护 `.meta.json` 治理状态，**不建 memory.db / FTS**（K2 再
 - 目录用稳定的 `workspaceId`，不用工作区名；life 也复用该布局（K0 UI 暂不展示）。
 - 扫描只认上面这些路径；忽略隐藏文件，不跟随 symlink（旧 `_trash/` 也会被忽略）。
 - 路径 containment 拒绝 `..`、绝对路径、反斜杠和 symlink 逃逸（`knowledge/paths.ts`）。
+- `dev` 工作区的知识根会作为该 run 的**附加目录**传给 runtime（见 §5「AI 读写知识」），
+  它不是 `workspace_dirs` 里的一行，也不参与工作区目录管理 UI。
 
 ## 2. 治理状态（`.meta.json`）
 
@@ -55,6 +58,7 @@ WORKSPACE.md                    # 工作区说明
   - 规范文档：全工作区只有一份（`conventions/`），再次新建返回 `409 knowledge_convention_exists`，
     客户端应打开已有文档编辑；
   - 知识 / 需求：在 `knowledge/` 或 `requirements/` 下新建文档，目录不存在时自动创建；
+  - 桌面端「新建」弹窗提供 **规范文档 / 知识 / 需求 / 自定义** 四个入口；移动端只读 + 核验；
 - 已有工作区不会被回填；后续的「工作区知识智能初始化」会复用
   `knowledge/scaffold.ts` 的 `scaffoldWorkspaceKnowledge`，缺失时补建并调用 AI 生成内容；
 - 只对真实 `dev` 工作区生效；`life` 与内置 fallback 跳过。
@@ -87,6 +91,12 @@ WORKSPACE.md                    # 工作区说明
 - 写 / verify / delete 由 `requireRolePolicy` 自动限制为 **operator token**；agent token 只读。
   写操作写 `audit_log`（`knowledge_create/update/verify/delete`），只记 workspace/id/path/verified，
   不记正文或标题。
+- 新建按 `kind` 落盘：`requirement → requirements/`、`convention → conventions/`，其余 →
+  `knowledge/`；端级统一 `ends/<endId>/knowledge/`，目录不存在时自动创建。
+- 全工作区只允许一份 `convention`。已存在时新建返回
+  `409 knowledge_convention_exists` 并带回 `document`，客户端应打开已有文档编辑。
+- 客户端新建/编辑表单当前只提交 `title / body / kind / summary`；`endId`、`tags` 保留在数据里，
+  但不再从表单修改。新建的文档直接 `confirmed / curated`。
 
 - 删除工作区时整个知识根（`<dataDir>/workspaces/<id>/`）**永久删除**；代码目录不动。
   删除不可恢复，需要保留就先导出 ZIP。
@@ -134,7 +144,9 @@ WORKSPACE.md                    # 工作区说明
 ## 6. 安全边界
 
 自动收录意味着 **agent 自己写进知识目录的文件也会自动注入**（指针带「未核验」）。
-pending 不再是访问控制；agent 仍可读知识根下的任何文件（读不门控）。
+知识根作为附加目录暴露给 runtime，agent 可以直接 Read / Write / Edit：
+Claude / Codex / builtin 预授权，DeepSeek 走提权审批。
+原生写入不写 `audit_log`，也不受「单份规范文档」约束——该约束只作用于知识页 / API 新建。
 真正的隔离留给 dataDir 读门控 / run-scoped token / OS 沙箱，不在 K0。
 
 ## 7. 测试

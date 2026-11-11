@@ -211,7 +211,7 @@ projectDocsTokens = min(ceil(runtimeTokens × shareOfRuntimeContext), projectDoc
 | | `local`（默认，单用户本机） | `server-strict`（服务器部署） |
 |---|---|---|
 | 读 | 不受路径限制、不审批（OS 权限边界） | 仅 workspace 根 + 知识根 |
-| 写/执行 | 仅 workspace 根 + 附加目录；**按 session 权限模式审批**（ask 询问 / acceptEdits 放行编辑 / bypass 放行） | 同左，且仅限授权根 |
+| 写/执行 | 仅 workspace 根 + 附加目录（dev 知识根也作为附加目录）；**按 session 权限模式审批**（ask 询问 / acceptEdits 放行编辑 / bypass 放行） | 同左，且仅限授权根 |
 | workspace 外写入 | 路径拒绝（除非 bypass 被允许并被选中） | 路径拒绝（除非 allowServerBypass=true 且选中 bypass） |
 | `bypass` | 受 `allowLocalBypass` 控制（默认允许） | 受 `allowServerBypass` 控制（默认**静默降级为 `acceptEdits`**） |
 | daemon 敏感文件 | 不在 grant 内（写拒绝） | 硬拒绝 `token` / `paboot.sqlite*` / `providers.json` / `builtin.json` / `paboot.lock` / `attachments`，即使工作区重叠也不放行 |

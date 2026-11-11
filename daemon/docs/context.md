@@ -40,9 +40,13 @@ end / session），不参与排序；记忆隔离是 Memory 的 read-policy，�
 | `task` | 会话 / builtin 任务状态（后续） |
 
 K0 已经提供 workspace / end / requirements section（`src/knowledge/index.ts`）。S1 把它接到
-run 启动（`src/runs/knowledge-context.ts` + `run-service`）：runtime 原生支持 system prompt 时
-（Claude `--append-system-prompt`）每轮传入，否则退化为首条用户消息前导。builtin 的 `runtime`
-段留给 P3。
+run 启动（`src/runs/knowledge-context.ts` + `run-service`）：Claude / Codex 每轮通过
+system prompt / developer instructions 传入；没有原生注入通道的 DeepSeek 只在新建会话的
+首条用户消息前导（resume 不重复）；builtin 走 `runtime` 段的 `workspace-knowledge`
+source（每个模型 step）。
+
+知识根 `<dataDir>/workspaces/<id>/` 同时作为 dev run 的附加目录传给 runtime
+（`run-service.extraDirsForRun`），因此需要正文时模型可以直接 Read/Write，而不是依赖注入正文。
 
 ## 4. 预算
 
