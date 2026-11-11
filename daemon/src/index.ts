@@ -22,6 +22,7 @@ import { ProviderManager } from './providers/provider-manager.js';
 import { PermissionManager } from './permissions/permissions.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
+import { DebugRecorder } from './debug/recorder.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
 import { loadBuiltinConfig, logBuiltinConfigWarnings } from './runtimes/builtin/config.js';
 import { Scheduler } from './scheduling/scheduler.js';
@@ -161,6 +162,13 @@ async function main(): Promise<void> {
 
   const notifier = new RunNotifier();
   const memory = new MemoryStore(config.dataDir);
+  // [debug] process-local debug capture; auto mode is idle without a /debug client
+  const debug = new DebugRecorder({
+    mode: config.debugMode,
+    maxBytes: config.debugMaxBytes,
+    maxTotalBytes: config.debugMaxTotalBytes,
+    secrets: [config.token, config.agentToken, config.serverToken],
+  });
   const ctx: AppContext = {
     config,
     db,
@@ -213,6 +221,7 @@ async function main(): Promise<void> {
       'paboot_memory',
       'server.js',
     ),
+    debug,
   };
   const deviceProvider = new AndroidDeviceProvider(new AdbRunner());
   ctx.deviceProvider = deviceProvider;
@@ -241,6 +250,28 @@ async function main(): Promise<void> {
       const life = db.listWorkspaces().find((workspace) => workspace.family === 'life');
       return life ? ['user', `workspace:${life.id}`] : ['user'];
     },
+    // [debug] mirror background memory model calls into the live page
+    onExtractionCall: (record) => {
+      debug.recordMemoryExtraction({
+        batchKey: record.batchKey,
+        attempt: record.attempt,
+        maxAttempts: record.maxAttempts,
+        provider: record.provider,
+        model: record.model,
+        workspaceId: record.workspaceId,
+        scope: record.scope,
+        sessionId: record.sessionId,
+        runId: record.runId,
+        sourceIds: record.sourceIds,
+        request: record.request,
+        completion: record.completion,
+        error: record.error,
+        durationMs: record.durationMs,
+        deterministic: record.deterministic,
+        willRetry: record.willRetry,
+        failureState: record.failureState,
+      });
+    },
   });
   ctx.memoryWorker = memoryWorker;
   const effectiveMemoryModel = configuredMemoryModel(
@@ -259,6 +290,14 @@ async function main(): Promise<void> {
 
   const scheduler = new Scheduler(ctx);
 
+  // [debug] The store is process-local; this only drops finished runs after
+  // the retention window, matching what the live page may show.
+  const debugPruneTimer = setInterval(
+    () => debug.prune(config.debugKeepMinutes * 60_000),
+    60_000,
+  );
+  debugPruneTimer.unref?.();
+
   // Publish where we are — but only once the socket is actually accepting, so
   // a client that reads the file can connect to what it names.
   let stopHeartbeat: (() => void) | null = null;
@@ -276,6 +315,7 @@ async function main(): Promise<void> {
     log.info(`${reason} received, shutting down`);
     try {
       scheduler.stop();
+      clearInterval(debugPruneTimer);
       await memoryWorker.stop();
       stopHeartbeat?.();
       memory.close();

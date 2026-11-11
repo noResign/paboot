@@ -22,6 +22,17 @@ import type { ToolCallRequest, ToolResult } from '../tools/types.js';
 import { estimateRequestTokens, type TokenCalibrator } from '../tokens.js';
 import { consumeAssistantStream } from './stream.js';
 
+/** One model step, exposed for the live debug page (no persistence). */
+export interface KernelStepDebugRecord {
+  runId: string;
+  step: number;
+  provider: string;
+  model: string;
+  request: LlmRequest;
+  context: AgentContextAssembly;
+  estimatedTokens: number;
+}
+
 export interface AgentKernelDeps {
   provider: LlmProvider;
   model: string;
@@ -34,6 +45,8 @@ export interface AgentKernelDeps {
   /** Learns this model's real token density from provider usage. */
   tokenCalibrator: TokenCalibrator;
   resolveImage?: TranscriptImageResolver;
+  /** [debug] Debug observability; failures never break the run. */
+  debugStep?: (record: KernelStepDebugRecord) => void;
 }
 
 export interface AgentKernelResult {
@@ -100,6 +113,22 @@ export class AgentKernel {
           messages,
           tools: toolSchemas,
         });
+        // [debug] snapshot the exact model request for the live page
+        if (this.deps.debugStep) {
+          try {
+            this.deps.debugStep({
+              runId: agent.runId,
+              step: usage.steps + 1,
+              provider: this.deps.provider.id,
+              model: this.deps.model,
+              request,
+              context,
+              estimatedTokens: requestEstimate.tokens,
+            });
+          } catch {
+            // Debug capture must never break the model call.
+          }
+        }
 
         const step = await consumeAssistantStream(this.deps.provider.stream(request), agent.eventSink);
         usage.steps += 1;

@@ -10,6 +10,8 @@ export interface RunMemoryContext extends ContextPrelude {
   /** Claims that survived budget trimming. */
   claims: number;
   truncated: boolean;
+  /** [debug] Claim ids actually rendered into the brief. */
+  usedClaimIds: string[];
 }
 
 /**
@@ -63,7 +65,12 @@ export function memoryContext(
       `memory brief: ${brief.usedClaimIds.length} claim(s), ${brief.charCount} chars` +
         `${brief.truncated ? ', truncated' : ''}`,
     );
-    return { ...prelude, claims: brief.usedClaimIds.length, truncated: brief.truncated };
+    return {
+      ...prelude,
+      claims: brief.usedClaimIds.length,
+      truncated: brief.truncated,
+      usedClaimIds: brief.usedClaimIds,
+    };
   } catch (err) {
     // Injection is best-effort; a broken memory.db must not block the run.
     log.warn(`memory context failed for workspace ${workspace.id}: ${String(err)}`);
