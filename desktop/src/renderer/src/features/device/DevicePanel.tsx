@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { api } from '../../ipc/client';
-import type { CapabilityDeviceDto, EndDto, EndSuggestionDto } from '../../../../shared/contract';
+import type {
+  CapabilityDeviceDto,
+  EndDto,
+  EndImpactDto,
+  EndSuggestionDto,
+} from '../../../../shared/contract';
 import { Icon } from '../../ui/Icon';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
+import {
+  archiveConfirmLabel,
+  deleteConfirmLabel,
+  impactLines,
+  splitEnds,
+} from './endLifecycle';
 
 interface Props {
   workspaceId: string;
@@ -14,6 +25,11 @@ interface Shot {
   png: string;
   width: number;
   height: number;
+}
+
+interface PendingAction {
+  kind: 'archive' | 'delete';
+  end: EndDto;
 }
 
 function errorMessage(data: unknown, status: number): string {
@@ -40,6 +56,9 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
   const [clickEnabled, setClickEnabled] = useState(false);
   const [mirroring, setMirroring] = useState(false);
   const [rootPicker, setRootPicker] = useState(false);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [impact, setImpact] = useState<EndImpactDto | null>(null);
+  const [impactBusy, setImpactBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +80,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
       return;
     }
     setEnds(res.data.ends);
-    const active = res.data.ends.find((end) => end.status === 'active') ?? null;
+    const active = splitEnds(res.data.ends).active;
     setActiveEnd(active);
     setShot(null);
     setDevices([]);
@@ -184,18 +203,55 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
     await load();
   }
 
-  async function removeEnd(): Promise<void> {
-    if (!activeEnd) return;
-    if (!window.confirm(`移除端「${activeEnd.name}」？会话会保留，设备能力随之移除。`)) return;
+  function closeImpact(): void {
+    setPending(null);
+    setImpact(null);
+    setImpactBusy(false);
+  }
+
+  async function openImpact(kind: PendingAction['kind'], end: EndDto): Promise<void> {
+    setPending({ kind, end });
+    setImpact(null);
+    setImpactBusy(true);
+    setError(null);
+    const res = await api.endImpact(workspaceId, end.id);
+    setImpactBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      closeImpact();
+      return;
+    }
+    setImpact(res.data.impact);
+  }
+
+  async function confirmPending(): Promise<void> {
+    if (!pending) return;
     setBusy(true);
     setError(null);
-    const res = await api.deleteWorkspaceEnd(workspaceId, activeEnd.id);
+    const res =
+      pending.kind === 'archive'
+        ? await api.archiveEnd(workspaceId, pending.end.id)
+        : await api.deleteWorkspaceEnd(workspaceId, pending.end.id);
     setBusy(false);
     if (!res.ok) {
       setError(errorMessage(res.data, res.status));
       return;
     }
-    setNotice('端已移除');
+    setNotice(pending.kind === 'archive' ? '端已归档' : '端已移除');
+    closeImpact();
+    await load();
+  }
+
+  async function restoreEnd(end: EndDto): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.restoreEnd(workspaceId, end.id);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice('端已恢复');
     await load();
   }
 
@@ -225,6 +281,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
     () => devices.filter((device) => device.state === 'device'),
     [devices],
   );
+  const groups = useMemo(() => splitEnds(ends), [ends]);
 
   return (
     <div
@@ -288,7 +345,12 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                 </div>
               ))
             )}
-            {ends.length > 0 && <p className="hint">已有 {ends.length} 个端，但都未激活。</p>}
+            {groups.draft.length > 0 && (
+              <p className="hint">有 {groups.draft.length} 个草稿端尚未激活。</p>
+            )}
+            {groups.archived.length > 0 && (
+              <p className="hint">下方已归档的端可恢复后继续使用。</p>
+            )}
           </>
         ) : (
           <>
@@ -302,7 +364,14 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                 <button className="btn" disabled={busy} onClick={() => setRootPicker(true)}>
                   添加目录
                 </button>
-                <button className="btn" disabled={busy} onClick={() => void removeEnd()}>
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => void openImpact('archive', activeEnd)}
+                >
+                  归档
+                </button>
+                <button className="btn" disabled title="请先归档端，再到归档列表移除">
                   移除端
                 </button>
                 <label>
@@ -395,10 +464,79 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
             </p>
           </>
         )}
+        {!loading && groups.archived.length > 0 && (
+          <div className="device-archived">
+            <div className="section-head">
+              <h3>已归档</h3>
+            </div>
+            {groups.archived.map((end) => (
+              <div className="device-archived-row" key={end.id}>
+                <span className="badge subtle">端：{end.name}</span>
+                <span className="hint device-root" title={end.roots.join('\n')}>
+                  {end.roots.length} 个目录
+                </span>
+                <span className="mem-spacer" />
+                <span className="hint">已归档</span>
+                <button className="btn" disabled={busy} onClick={() => void restoreEnd(end)}>
+                  恢复
+                </button>
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => void openImpact('delete', end)}
+                >
+                  移除
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {error && <p className="mem-error">{error}</p>}
         {notice && <p className="hint">{notice}</p>}
       </div>
     </div>
+    {pending && (
+      <div
+        className="modal-scrim"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeImpact();
+        }}
+      >
+        <div className="modal end-impact-modal" role="dialog" aria-modal="true">
+          <div className="modal-head">
+            <span>
+              {pending.kind === 'archive'
+                ? archiveConfirmLabel(pending.end.name)
+                : deleteConfirmLabel(pending.end.name)}
+            </span>
+            <button className="btn ghost" title="关闭" onClick={closeImpact}>
+              <Icon name="x" size={15} />
+            </button>
+          </div>
+          {impactBusy && <p className="hint">正在计算影响…</p>}
+          {impact && (
+            <ul className="end-impact-list">
+              {impactLines(impact).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">
+            {pending.kind === 'archive'
+              ? '归档后该端停止注入能力，可随时恢复；端目录、能力绑定与会话主端关联保留。'
+              : '移除端会删除端目录与能力绑定，会话保留在工作区。'}
+          </p>
+          <div className="perm-actions">
+            <button className="btn danger" disabled={busy || !impact} onClick={() => void confirmPending()}>
+              {pending.kind === 'archive' ? '归档' : '移除'}
+            </button>
+            <button className="btn" onClick={closeImpact}>
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {rootPicker && (
       <DirectoryPickerDialog
         mode="add-dir"
