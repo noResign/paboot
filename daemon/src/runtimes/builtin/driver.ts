@@ -6,7 +6,6 @@ import { resolveSessionEnd } from '../../capabilities/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
 import type { NormalizedEvent } from '../../types/api.js';
-import { existingDirs, workspaceRoots } from '../../workspaces/workspace-service.js';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../RuntimeDriver.js';
 import { registerActiveRun, type ManagedRun } from '../active-runs.js';
 import type { RunOutcome } from '../engine.js';
@@ -370,8 +369,6 @@ function makeAgentContext(input: {
     root,
     capabilities: ['read', 'write', 'list'],
   }));
-  const knowledgeRoot = input.ctx.knowledge.root(input.workspace.id);
-  grants.push({ root: knowledgeRoot, capabilities: ['read', 'list'] });
   const bypass =
     input.req.permissionMode === 'bypass' && input.allowBypass;
   const pathPolicy: ResolvedPathPolicy = bypass
@@ -392,7 +389,7 @@ function makeAgentContext(input: {
       root: input.workspace.path,
     },
     cwd: input.req.cwd,
-    extraDirs: existingDirs(workspaceRoots(input.ctx.db, input.workspace).filter((root) => root !== input.req.cwd)),
+    extraDirs: input.req.extraDirs ?? [],
     pathPolicy,
     permissionMode: input.req.permissionMode,
     signal: input.signal,

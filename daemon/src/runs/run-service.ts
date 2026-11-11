@@ -12,6 +12,7 @@ import type { RunOutcome } from '../runtimes/engine.js';
 import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
+import { ensureKnowledgeRoot } from '../knowledge/paths.js';
 import { captureRunMessages } from '../memory/ingest.js';
 import { captureRunObservation } from '../memory/observe.js';
 import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
@@ -57,6 +58,32 @@ export interface RunHandle {
   runId: string;
   /** Resolves after the post-checkpoint and terminal status are persisted. */
   done: Promise<RunOutcome>;
+}
+
+/**
+ * Extra directories for one run: workspace roots plus the dev knowledge root.
+ * The knowledge root behaves like any attached directory for runtimes with
+ * add-dir support; DeepSeek reaches it through escalation approvals instead.
+ */
+export function extraDirsForRun(
+  ctx: AppContext,
+  session: SessionRow,
+  workspace: WorkspaceRow,
+): string[] {
+  const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== session.cwd);
+  if (workspace.family === 'dev') {
+    try {
+      wanted.push(ensureKnowledgeRoot(ctx.knowledge.root(workspace.id)));
+    } catch (err) {
+      log.warn(`run ${session.id}: could not prepare knowledge root`, err);
+    }
+  }
+  const extraDirs = existingDirs(wanted);
+  if (extraDirs.length < wanted.length) {
+    const dropped = wanted.filter((root) => !extraDirs.includes(root));
+    log.warn(`run ${session.id}: ignoring missing extra dir(s): ${dropped.join(', ')}`);
+  }
+  return extraDirs;
 }
 
 /**
@@ -181,12 +208,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
     // the primary to be granted explicitly). The engine also exports the same
     // set to the hook as its spawn-time allowlist.
-    const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== session.cwd);
-    const extraDirs = existingDirs(wanted);
-    if (extraDirs.length < wanted.length) {
-      const dropped = wanted.filter((root) => !extraDirs.includes(root));
-      log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
-    }
+    const extraDirs = extraDirsForRun(ctx, session, workspace);
 
     // Knowledge goes to the runtime only: the user message and `runs.prompt`
     // stay raw so replay/capture see what the user actually typed.

@@ -104,7 +104,7 @@ describe('knowledge routes', () => {
       kind: 'convention',
       reviewStatus: 'confirmed',
       authority: 'curated',
-      path: 'knowledge/build-notes.md',
+      path: 'conventions/build-notes.md',
     });
 
     const detail = await fetch(`${base}/api/workspaces/${workspaceId}/knowledge/${id}`);

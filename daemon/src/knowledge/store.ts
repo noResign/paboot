@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  allocateDocumentPath,
+  allocateDocumentPathForKind,
   assertEndId,
+  documentDirForKind,
   ensureKnowledgeRoot,
   knowledgeRoot,
   manifestPath,
@@ -103,6 +104,26 @@ export class KnowledgeStore {
     return toDocuments(workspaceId, manifest.documents);
   }
 
+  /** Mark scaffold-created files as human-trusted without editing their body. */
+  markAuthority(
+    workspaceId: string,
+    relativePaths: readonly string[],
+    authority: KnowledgeDocumentMeta['authority'],
+  ): void {
+    const root = this.root(workspaceId);
+    this.reconcile(workspaceId);
+    const manifest = readManifest(root);
+    let changed = false;
+    for (const relative of relativePaths) {
+      const meta = manifest.documents[relative];
+      if (!meta || meta.authority === authority) continue;
+      meta.authority = authority;
+      meta.updatedAt = Date.now();
+      changed = true;
+    }
+    if (changed) writeManifest(root, manifest);
+  }
+
   list(workspaceId: string, filter: ListKnowledgeFilter = {}): KnowledgeDocument[] {
     const root = this.root(workspaceId);
     const query = filter.q?.trim().toLowerCase();
@@ -160,7 +181,7 @@ export class KnowledgeStore {
 
     const root = ensureKnowledgeRoot(this.root(workspaceId));
     this.reconcile(workspaceId);
-    const relative = allocateDocumentPath(root, title, endId);
+    const relative = allocateDocumentPathForKind(root, kind, title, endId);
     writeFileAtomically(resolveDocumentFile(root, relative), body);
 
     const now = Date.now();
@@ -205,9 +226,11 @@ export class KnowledgeStore {
         ? summaryFromContent(body)
         : meta.summary;
 
+    const desiredDir = kind === 'workspace_context' ? null : documentDirForKind(kind, endId);
+    const moveNeeded = desiredDir !== null && path.posix.dirname(oldRelative) !== desiredDir;
     let relative = oldRelative;
-    if (endId !== meta.endId) {
-      relative = allocateDocumentPath(root, title, endId);
+    if (moveNeeded) {
+      relative = allocateDocumentPathForKind(root, kind, title, endId);
       writeFileAtomically(resolveDocumentFile(root, relative), body);
       if (fs.existsSync(oldAbsolute)) fs.rmSync(oldAbsolute, { force: true });
       delete manifest.documents[oldRelative];
