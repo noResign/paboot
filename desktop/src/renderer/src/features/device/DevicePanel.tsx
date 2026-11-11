@@ -324,7 +324,8 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
               <h3>添加 Android 端</h3>
             </div>
             <p className="hint">
-              在工作区里找到 Android 工程后添加；端只用于设备能力，不改变会话目录。
+              在工作区里找到 Android 工程后添加；端只用于设备能力，不改变会话目录。目录若不在主工作区内，
+              请先在「设置 → 工作区管理」中加为附加目录。
             </p>
             {suggestions.length === 0 ? (
               <p className="hint">没有发现 Gradle / AndroidManifest.xml。可先添加工程目录再重新扫描。</p>
@@ -402,6 +403,9 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
                   ))}
                 </div>
               )}
+              <p className="hint">
+                端目录需位于主工作区，或先在「设置 → 工作区管理」中加为附加目录；一个端可以添加多个目录。
+              </p>
               <div className="device-row">
                 <select
                   className="mem-select device-select"
@@ -539,7 +543,7 @@ export function DevicePanel({ workspaceId, workspaceName, onClose }: Props) {
     )}
     {rootPicker && (
       <DirectoryPickerDialog
-        mode="add-dir"
+        mode="end-root"
         workspacePaths={[]}
         busy={busy}
         error={error}
