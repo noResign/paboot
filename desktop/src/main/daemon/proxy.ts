@@ -14,7 +14,7 @@ export function isAllowedPath(path: string): boolean {
 }
 
 /** Only these methods exist in the daemon's CORS allowlist; keep them in sync. */
-const ALLOWED_METHODS = new Set<DaemonRequest['method']>(['GET', 'POST', 'PATCH', 'DELETE']);
+const ALLOWED_METHODS = new Set<DaemonRequest['method']>(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']);
 
 export function isAllowedMethod(method: string): method is DaemonRequest['method'] {
   return ALLOWED_METHODS.has(method as DaemonRequest['method']);

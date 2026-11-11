@@ -31,8 +31,10 @@ import type {
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
   EndImpactResponse,
+  CapabilitiesResponse,
   EndResponse,
   EndSuggestionsResponse,
+  SessionEndsResponse,
   EndsResponse,
   CapabilityDeviceListDto,
   MemoryBriefDto,
@@ -171,6 +173,7 @@ export const connectionApi = {
 
 export const api = {
   health: () => request<HealthDto>({ method: 'GET', path: ROUTES.health }),
+  capabilities: () => request<CapabilitiesResponse>({ method: 'GET', path: ROUTES.capabilities }),
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
   agentModels: (id: string) =>
     request<AgentModelsResponse>({ method: 'GET', path: ROUTES.agentModels(id) }),
@@ -498,11 +501,11 @@ export const api = {
     request<EndsResponse>({ method: 'GET', path: ROUTES.workspaceEnds(id) }),
   endSuggestions: (id: string) =>
     request<EndSuggestionsResponse>({ method: 'GET', path: ROUTES.workspaceEndSuggestions(id) }),
-  createWorkspaceEnd: (id: string, name: string) =>
+  createWorkspaceEnd: (id: string, name: string, kind?: string) =>
     request<EndResponse>({
       method: 'POST',
       path: ROUTES.workspaceEnds(id),
-      body: { name },
+      body: kind ? { name, kind } : { name },
     }),
   bindEndRoot: (id: string, endId: string, root: string) =>
     request<EndResponse>({
@@ -520,6 +523,25 @@ export const api = {
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.workspaceEnd(id, endId) }),
   activateEnd: (id: string, endId: string) =>
     request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndActivate(id, endId) }),
+  updateEnd: (
+    id: string,
+    endId: string,
+    body: { name?: string; summary?: string; notes?: string },
+  ) => request<EndResponse>({ method: 'PATCH', path: ROUTES.workspaceEnd(id, endId), body }),
+  setEndCapabilities: (id: string, endId: string, enabled: string[]) =>
+    request<EndResponse>({
+      method: 'PUT',
+      path: ROUTES.workspaceEndCapabilities(id, endId),
+      body: { enabled },
+    }),
+  sessionEnds: (sessionId: string) =>
+    request<SessionEndsResponse>({ method: 'GET', path: ROUTES.sessionEnds(sessionId) }),
+  setSessionEnds: (sessionId: string, endIds: string[] | null) =>
+    request<SessionEndsResponse>({
+      method: 'PUT',
+      path: ROUTES.sessionEnds(sessionId),
+      body: { endIds },
+    }),
   endImpact: (id: string, endId: string) =>
     request<EndImpactResponse>({ method: 'GET', path: ROUTES.workspaceEndImpact(id, endId) }),
   archiveEnd: (id: string, endId: string) =>
