@@ -19,12 +19,33 @@ function resolveEnd(
   ctx: AppContext,
   workspace: WorkspaceRow,
   requested: unknown,
-): EndRow | undefined {
+): { end?: EndRow; code?: 'end_archived' | 'end_missing' } {
   if (typeof requested === 'string' && requested !== '') {
     const end = ctx.db.getEnd(requested);
-    return end && end.workspace_id === workspace.id ? end : undefined;
+    if (!end || end.workspace_id !== workspace.id) return { code: 'end_missing' };
+    if (end.status === 'archived') return { code: 'end_archived' };
+    if (end.status !== 'active') return { code: 'end_missing' };
+    return { end };
   }
-  return ctx.db.listEnds(workspace.id).find((end) => end.status === 'active');
+  const fallback = ctx.db.listEnds(workspace.id).find((end) => end.status === 'active');
+  return fallback ? { end: fallback } : { code: 'end_missing' };
+}
+
+/** Resolve the device end or write the 409 and return undefined. */
+function endOrReply(
+  ctx: AppContext,
+  res: Response,
+  workspace: WorkspaceRow,
+  requested: unknown,
+): EndRow | undefined {
+  const resolved = resolveEnd(ctx, workspace, requested);
+  if (resolved.end) return resolved.end;
+  if (resolved.code === 'end_archived') {
+    res.status(409).json({ error: 'end is archived', code: 'end_archived' });
+  } else {
+    res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
+  }
+  return undefined;
 }
 
 function bindingSerial(ctx: AppContext, endId: string): string | undefined {
@@ -66,11 +87,8 @@ export function registerDeviceRoutes(app: Express, ctx: AppContext): void {
       res.status(403).json({ error: 'capability is dev-only', code: 'capability_not_allowed' });
       return;
     }
-    const end = resolveEnd(ctx, workspace, req.query['endId']);
-    if (!end) {
-      res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
-      return;
-    }
+    const end = endOrReply(ctx, res, workspace, req.query['endId']);
+    if (!end) return;
     const provider = providerFor(ctx);
     try {
       const devices = await provider.list();
@@ -107,11 +125,8 @@ export function registerDeviceRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const end = resolveEnd(ctx, workspace, req.body?.['endId']);
-    if (!end) {
-      res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
-      return;
-    }
+    const end = endOrReply(ctx, res, workspace, req.body?.['endId']);
+    if (!end) return;
     const serial = typeof req.body?.['serial'] === 'string' ? req.body['serial'] : '';
     if (!serial) {
       res.status(400).json({ error: 'serial is required', code: 'bad_request' });
@@ -134,11 +149,8 @@ export function registerDeviceRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const end = resolveEnd(ctx, workspace, req.query['endId']);
-    if (!end) {
-      res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
-      return;
-    }
+    const end = endOrReply(ctx, res, workspace, req.query['endId']);
+    if (!end) return;
     const provider = providerFor(ctx);
     try {
       const serial = await serialFor(ctx, provider, end, req.query['serial']);
@@ -162,11 +174,8 @@ export function registerDeviceRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const end = resolveEnd(ctx, workspace, req.query['endId']);
-    if (!end) {
-      res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
-      return;
-    }
+    const end = endOrReply(ctx, res, workspace, req.query['endId']);
+    if (!end) return;
     const provider = providerFor(ctx);
     let serial: string;
     try {
@@ -196,11 +205,8 @@ export function registerDeviceRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const end = resolveEnd(ctx, workspace, body['endId']);
-    if (!end) {
-      res.status(409).json({ error: 'workspace has no active end', code: 'end_missing' });
-      return;
-    }
+    const end = endOrReply(ctx, res, workspace, body['endId']);
+    if (!end) return;
     const action = typeof body['action'] === 'string' ? body['action'] : '';
     if (!action) {
       res.status(400).json({ error: 'action is required', code: 'bad_request' });

@@ -850,6 +850,7 @@ export interface EndDto {
   status: string;
   roots: string[];
   createdAt: number;
+  archivedAt: number | null;
 }
 
 export interface EndsResponse {
@@ -859,6 +860,23 @@ export interface EndsResponse {
 export interface EndResponse {
   ok: boolean;
   end: EndDto;
+}
+
+export interface EndImpactDto {
+  endId: string;
+  status: string;
+  /** Sessions pointing at this end explicitly (`sessions.end_id`). */
+  explicitSessions: number;
+  /** Sessions with no explicit end whose cwd falls under one of its roots. */
+  cwdSessions: number;
+  capabilityBindings: number;
+  roots: number;
+  /** Capability names that stop working while the end is archived. */
+  capabilities: string[];
+}
+
+export interface EndImpactResponse {
+  impact: EndImpactDto;
 }
 
 export interface EndSuggestionDto {

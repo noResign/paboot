@@ -185,6 +185,84 @@ describe('capability bindings and scope', () => {
     expect(db.listCapabilityBindings('workspace', workspace.id)).toHaveLength(0);
   });
 
+  it('never resolves an archived explicit end, even with another active end', () => {
+    const db = openDb();
+    const devPath = tmpDir('archived');
+    const workspace = db.createWorkspace({ name: 'dev', path: devPath, family: 'dev' });
+    const session = db.createSession({
+      id: 's-archived',
+      runtime: 'claude',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: devPath,
+    });
+    const archived = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Old',
+      status: 'archived',
+    });
+    const active = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Pixel',
+      status: 'active',
+    });
+    for (const end of [archived, active]) {
+      db.addEndRoot(end.id, devPath);
+      db.upsertCapabilityBinding({
+        scopeType: 'end',
+        scopeId: end.id,
+        providerId: 'android-device',
+      });
+    }
+    // Simulate an explicit main end that has since been archived.
+    (db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db
+      .prepare('UPDATE sessions SET end_id = ? WHERE id = ?')
+      .run(archived.id, session.id);
+
+    const reloaded = db.getSession(session.id)!;
+    expect(resolveCapabilityScope(db, reloaded).end).toBeNull();
+    expect(enabledCapabilityServers(db, reloaded).has('paboot_capability')).toBe(false);
+
+    db.setEndStatus(archived.id, 'active');
+    expect(resolveCapabilityScope(db, db.getSession(session.id)!).end?.id).toBe(archived.id);
+  });
+
+  it('skips archived ends in the cwd and workspace fallbacks', () => {
+    const db = openDb();
+    const devPath = tmpDir('archived-fallback');
+    const workspace = db.createWorkspace({ name: 'dev', path: devPath, family: 'dev' });
+    const session = db.createSession({
+      id: 's-fallback',
+      runtime: 'claude',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: devPath,
+    });
+    const archived = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Old',
+      status: 'archived',
+    });
+    db.addEndRoot(archived.id, devPath);
+    expect(resolveCapabilityScope(db, session).end).toBeNull();
+
+    const active = db.createEnd({
+      workspaceId: workspace.id,
+      family: 'dev',
+      kind: 'android',
+      name: 'Pixel',
+      status: 'active',
+    });
+    db.addEndRoot(active.id, devPath);
+    expect(resolveCapabilityScope(db, session).end?.id).toBe(active.id);
+  });
+
   it('exposes the resolved scope to the capability MCP server by run id', async () => {
     const db = openDb();
     const devPath = tmpDir('scope-route');
