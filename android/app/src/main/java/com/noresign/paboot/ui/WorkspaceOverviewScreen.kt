@@ -440,18 +440,27 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                     when (state) {
                         is CapabilityStatusUiState.Loading -> "检查中…"
                         is CapabilityStatusUiState.Unavailable -> "能力状态不可用"
-                        is CapabilityStatusUiState.Content ->
-                            if (state.activeEndName == null) {
-                                "尚未添加 Android 端；请在桌面端添加。"
-                            } else {
+                        is CapabilityStatusUiState.Content -> when {
+                            state.activeEndName != null ->
                                 "端：${state.activeEndName} · ${state.onlineDevices} 台设备在线"
-                            }
+                            state.archivedEndNames.isEmpty() -> "尚未添加 Android 端；请在桌面端添加。"
+                            else -> "没有启用的端；已归档的端可在桌面端恢复。"
+                        }
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (state is CapabilityStatusUiState.Content && state.archivedEndNames.isNotEmpty()) {
+                    Text(
+                        "已归档：${state.archivedEndNames.joinToString("、")}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     "镜像 / 点击请在桌面端操作。",
                     style = MaterialTheme.typography.labelSmall,
