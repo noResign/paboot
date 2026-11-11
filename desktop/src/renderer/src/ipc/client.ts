@@ -30,6 +30,7 @@ import type {
   KnowledgeDocsResponse,
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
+  EndImpactResponse,
   EndResponse,
   EndSuggestionsResponse,
   EndsResponse,
@@ -519,6 +520,12 @@ export const api = {
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.workspaceEnd(id, endId) }),
   activateEnd: (id: string, endId: string) =>
     request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndActivate(id, endId) }),
+  endImpact: (id: string, endId: string) =>
+    request<EndImpactResponse>({ method: 'GET', path: ROUTES.workspaceEndImpact(id, endId) }),
+  archiveEnd: (id: string, endId: string) =>
+    request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndArchive(id, endId) }),
+  restoreEnd: (id: string, endId: string) =>
+    request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndRestore(id, endId) }),
   deviceList: (id: string, endId?: string) =>
     request<CapabilityDeviceListDto>({
       method: 'GET',

@@ -56,6 +56,12 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/roots`,
   workspaceEndActivate: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/activate`,
+  workspaceEndImpact: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/impact`,
+  workspaceEndArchive: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/archive`,
+  workspaceEndRestore: (id: string, endId: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/restore`,
   workspaceDevice: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/device`,
   workspaceDeviceSelect: (id: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/device/select`,
