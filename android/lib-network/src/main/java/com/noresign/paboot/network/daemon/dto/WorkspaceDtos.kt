@@ -104,6 +104,39 @@ data class EndDto(
     val roots: List<String> = emptyList(),
     val createdAt: Long = 0L,
     val archivedAt: Long? = null,
+    val summary: String = "",
+    val notes: String = "",
+    val capabilities: List<EndCapabilityDto> = emptyList(),
+)
+
+@Serializable
+data class EndCapabilityDto(
+    val id: String = "",
+    val name: String = "",
+    val enabled: Boolean = false,
+)
+
+@Serializable
+data class SessionEndDto(
+    val id: String = "",
+    val workspaceId: String = "",
+    val family: String = "dev",
+    val kind: String = "android",
+    val name: String = "",
+    val status: String = "active",
+    val roots: List<String> = emptyList(),
+    val createdAt: Long = 0L,
+    val archivedAt: Long? = null,
+    val summary: String = "",
+    val notes: String = "",
+    val capabilities: List<EndCapabilityDto> = emptyList(),
+    val role: String = "active",
+)
+
+@Serializable
+data class SessionEndsResponse(
+    val primaryEndId: String? = null,
+    val ends: List<SessionEndDto> = emptyList(),
 )
 
 @Serializable

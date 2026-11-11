@@ -1221,7 +1221,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         detail.text = "检查中…"
         detail.font = Typography.caption
         detail.textColor = Theme.Colors.textSecondary
-        detail.numberOfLines = 2
+        detail.numberOfLines = 4
         let archivedLabel = UILabel()
         archivedLabel.font = Typography.caption
         archivedLabel.textColor = Theme.Colors.textSecondary
@@ -1259,7 +1259,8 @@ private final class WorkspaceOverviewViewController: UIViewController {
                     archivedLabel.text = "已归档：\(archived.joined(separator: "、"))"
                     archivedLabel.isHidden = false
                 }
-                guard let active = ends.first(where: { $0.status == "active" }) else {
+                let activeEnds = ends.filter { $0.status == "active" }
+                guard let first = activeEnds.first else {
                     detail.text = archived.isEmpty
                         ? "尚未添加 Android 端；请在桌面端添加。"
                         : "没有启用的端；已归档的端可在桌面端恢复。"
@@ -1267,10 +1268,19 @@ private final class WorkspaceOverviewViewController: UIViewController {
                 }
                 let devices = try await repository.deviceList(
                     workspaceId: workspace.id,
-                    endId: active.id
+                    endId: first.id
                 )
                 let online = devices.devices.filter { $0.state == "device" }.count
-                detail.text = "端：\(active.name) · \(online) 台设备在线"
+                detail.text = activeEnds.enumerated().map { index, end in
+                    var line = "\(end.name)（\(end.kind)）"
+                    if index == 0 {
+                        line += " · \(online) 台设备在线"
+                    }
+                    if !end.summary.isEmpty {
+                        line += " · \(end.summary)"
+                    }
+                    return line
+                }.joined(separator: "\n")
             } catch {
                 detail.text = "能力状态不可用"
             }
