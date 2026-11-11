@@ -26,6 +26,9 @@ function snapshotSummary(snapshot: LiveSnapshot): SnapshotSummary {
     bytes: snapshot.bytes,
     truncated: snapshot.truncated,
     createdAt: snapshot.createdAt,
+    outcome: snapshot.outcome,
+    durationMs: snapshot.durationMs,
+    error: snapshot.error,
   };
 }
 

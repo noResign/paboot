@@ -1,5 +1,6 @@
 import type {
   DebugEvent,
+  DebugOutcomeStatus,
   DebugSnapshotKind,
   LiveMemoryRecord,
   LiveRunDetail,
@@ -25,7 +26,14 @@ export interface FinishRunInput {
   error?: string | null;
 }
 
-export type NewSnapshot = Omit<LiveSnapshot, 'id' | 'runId' | 'sessionId'>;
+export type NewSnapshot = Omit<
+  LiveSnapshot,
+  'id' | 'runId' | 'sessionId' | 'outcome' | 'durationMs' | 'error'
+> & {
+  outcome?: DebugOutcomeStatus | null;
+  durationMs?: number | null;
+  error?: string | null;
+};
 
 /**
  * Process-local store behind `/debug`. Nothing is persisted: the map is the
@@ -160,6 +168,38 @@ export class LiveContextStore {
     return this.snapshots.get(id) ?? null;
   }
 
+  /** Replace a snapshot's payload/outcome after a model step settles. */
+  updateSnapshot(
+    id: number,
+    next: {
+      payload: unknown;
+      bytes: number;
+      truncated: boolean;
+      outcome: DebugOutcomeStatus | null;
+      durationMs: number | null;
+      error: string | null;
+    },
+  ): LiveSnapshot | null {
+    const snapshot = this.snapshots.get(id);
+    if (!snapshot) return null;
+    this.totalBytes = Math.max(0, this.totalBytes - snapshot.bytes);
+    Object.assign(snapshot, next);
+    this.totalBytes += snapshot.bytes;
+    this.evictOverflow();
+    this.notify({
+      type: 'snapshot-updated',
+      runId: snapshot.runId,
+      sessionId: snapshot.sessionId,
+      kind: snapshot.kind,
+      step: snapshot.step,
+      snapshotId: snapshot.id,
+      bytes: snapshot.bytes,
+      truncated: snapshot.truncated,
+      createdAt: Date.now(),
+    });
+    return snapshot;
+  }
+
   /** Remove finished runs past the retention window and the finished-run cap. */
   pruneFinished(now: number, keepMs: number, maxFinished = DEBUG_LIMITS.maxFinishedRuns): string[] {
     const removed: string[] = [];
@@ -222,6 +262,9 @@ export class LiveContextStore {
       id: this.nextId,
       runId,
       sessionId,
+      outcome: snapshot.outcome ?? null,
+      durationMs: snapshot.durationMs ?? null,
+      error: snapshot.error ?? null,
     };
     this.nextId += 1;
     this.snapshots.set(stored.id, stored);

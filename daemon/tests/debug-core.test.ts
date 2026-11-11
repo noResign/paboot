@@ -277,6 +277,34 @@ describe('live store', () => {
     ]);
   });
 
+  it('updates a step snapshot with its outcome', () => {
+    const store = new LiveContextStore();
+    store.startRun({ runId: 'r-1', sessionId: 's-1', workspaceId: null, runtime: 'builtin', model: null });
+    const snapshot = store.appendRunSnapshot('r-1', {
+      kind: 'builtin-step',
+      step: 1,
+      provider: 'p',
+      model: 'm',
+      payload: { a: 1 },
+      bytes: 2,
+      truncated: false,
+      createdAt: 1,
+      outcome: 'running',
+    });
+    const events: string[] = [];
+    store.subscribe((event) => events.push(event.type));
+    const updated = store.updateSnapshot(snapshot!.id, {
+      payload: { a: 1, outcome: { status: 'ok' } },
+      bytes: 24,
+      truncated: false,
+      outcome: 'ok',
+      durationMs: 5,
+      error: null,
+    });
+    expect(updated).toMatchObject({ outcome: 'ok', durationMs: 5, error: null });
+    expect(events).toContain('snapshot-updated');
+  });
+
   it('evicts the oldest snapshots when the total byte cap is exceeded', () => {
     const store = new LiveContextStore({ maxTotalBytes: 512 * 1024 });
     store.startRun({ runId: 'r-1', sessionId: 's-1', workspaceId: null, runtime: 'builtin', model: null });

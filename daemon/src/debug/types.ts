@@ -117,6 +117,24 @@ export interface MemoryExtractionFailureState {
   dead: boolean;
 }
 
+/** Result of one builtin model step, merged into its request snapshot. */
+export interface BuiltinStepResultInput {
+  sessionId: string;
+  workspaceId: string | null;
+  runId: string;
+  step: number;
+  status: 'ok' | 'error' | 'cancelled';
+  durationMs: number;
+  finishReason?: string;
+  rawFinishReason?: string;
+  usage?: unknown;
+  textChars: number;
+  reasoningChars: number;
+  toolCallCount: number;
+  preview?: string;
+  error?: { code?: string; message: string };
+}
+
 export interface MemoryExtractionCaptureInput {
   batchKey: string;
   attempt: number;
@@ -137,6 +155,8 @@ export interface MemoryExtractionCaptureInput {
   failureState?: MemoryExtractionFailureState | null;
 }
 
+export type DebugOutcomeStatus = 'running' | 'ok' | 'error' | 'cancelled';
+
 /** One stored snapshot. `payload` is already redacted and size-capped. */
 export interface LiveSnapshot {
   id: number;
@@ -150,6 +170,10 @@ export interface LiveSnapshot {
   bytes: number;
   truncated: boolean;
   createdAt: number;
+  /** Model call / extraction result, so failures are visible without opening it. */
+  outcome: DebugOutcomeStatus | null;
+  durationMs: number | null;
+  error: string | null;
 }
 
 export type LiveRunStatus =
@@ -201,7 +225,7 @@ export interface LiveRunDetail extends LiveRunSummary {
 }
 
 export interface DebugEvent {
-  type: 'run-started' | 'run-finished' | 'run-removed' | 'snapshot';
+  type: 'run-started' | 'run-finished' | 'run-removed' | 'snapshot' | 'snapshot-updated';
   runId: string | null;
   sessionId: string;
   status?: LiveRunStatus;
