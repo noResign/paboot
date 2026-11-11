@@ -225,7 +225,9 @@ describe('capability bindings and scope', () => {
 
     const reloaded = db.getSession(session.id)!;
     expect(resolveCapabilityScope(db, reloaded).end).toBeNull();
-    expect(enabledCapabilityServers(db, reloaded).has('paboot_capability')).toBe(false);
+    // The archived end is no longer the primary, but the other active end still
+    // mounts its capability set for the workspace.
+    expect(enabledCapabilityServers(db, reloaded).has('paboot_capability')).toBe(true);
 
     db.setEndStatus(archived.id, 'active');
     expect(resolveCapabilityScope(db, db.getSession(session.id)!).end?.id).toBe(archived.id);

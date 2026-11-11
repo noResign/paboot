@@ -19,6 +19,7 @@ import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
 import { mergePreludes } from '../context/prelude.js';
 import { enabledCapabilityServers } from '../capabilities/scope.js';
 import { perRunToolServers } from '../mcp/injection.js';
+import { endsContext } from './end-context.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
 import { memoryRecall } from './memory-recall.js';
@@ -217,9 +218,10 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     //     cache warm;
     //   otherwise → first-message prelude only (K0 behavior), never on resume.
     const knowledge = knowledgeContext(ctx, session, workspace);
+    const ends = endsContext(ctx, session, workspace);
     const memory = memoryContext(ctx, session, workspace);
     const recall = memoryRecall(ctx, session, workspace, prompt);
-    const injected = mergePreludes(knowledge, memory, recall);
+    const injected = mergePreludes(knowledge, ends, memory, recall);
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
     const usePrelude = injected !== null && !nativeSystemPrompt && !session.native_session_id;

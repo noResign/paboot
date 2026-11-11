@@ -52,7 +52,7 @@
 | `DELETE /api/workspaces/:id/shortcuts` | 是 | 移除浏览书签，`{path}`；只删书签，不动任何授权 |
 | `GET /api/workspaces/:id/knowledge` | 是 | K0 知识列表；`?endId=&kind=&status=&verified=&q=` 过滤（`endId=workspace` 表示工作区级；`verified=true/false` = 已/未人工核验）。文件自动收录 |
 | `GET /api/workspaces/:id/knowledge/:kid` | 是 | 知识详情：元数据 + `body` + `absolutePath`（正文真源仍是磁盘文件） |
-| `POST /api/workspaces/:id/knowledge` | 是 | 人工新建知识，直接 `confirmed/curated`；body `{title,body,kind?,endId?,tags?,summary?}` |
+| `POST /api/workspaces/:id/knowledge` | 是 | 人工新建知识，直接 `confirmed/curated`；按 kind 落盘（requirement→`requirements/`、convention→`conventions/`、其余 `knowledge/`）；已存在 workspace convention 时 409 `knowledge_convention_exists`。body `{title,body,kind?,endId?,tags?,summary?}` |
 | `PATCH /api/workspaces/:id/knowledge/:kid` | 是 | 编辑知识，保存后保持 `confirmed`；body 同上字段可选 |
 | `POST /api/workspaces/:id/knowledge/:kid/verify` | 是 | `{verified:boolean}`；切换人工核验标记（`curated`/`derived`），不改文件、不影响注入 |
 | `DELETE /api/workspaces/:id/knowledge/:kid` | 是 | **永久删除**文件（不可恢复）；同时清理空的 end 目录 |
@@ -79,6 +79,8 @@
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
 | `GET /api/runs/:id/stream` | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播（重连订阅） |
 | `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
+| `GET /api/sessions/:id/ends` | 是 | 会话端集合（primaryEndId + ends，含 role/能力/summary） |
+| `PUT /api/sessions/:id/ends` | 是 | `{endIds: string[] \| null}`；收窄端集合，空/null 回到工作区默认 |
 | `GET /api/sessions/:id` | 是 | 会话 + 消息 + 运行 |
 | `PATCH /api/sessions/:id` | 是 | 重命名（body `{title}`） |
 | `DELETE /api/sessions/:id` | 是 | 删除会话（先取消进行中的 run，级联删） |
@@ -105,8 +107,12 @@
 并带 `Retry-After`（秒）。触发条件与时长见 [configuration.md](configuration.md) 的「登录失败冷却」。
 
 **附加目录（`workspace_dirs`）与 `--add-dir`**：一个工作区 = 主目录 + N 个附加目录。
-附加目录现在只有**一个来源**：手机在「工作区管理」里手动增删（早期版本还会在批准越界读取时
+`workspace_dirs` 现在只有**一个来源**：手机在「工作区管理」里手动增删（早期版本还会在批准越界读取时
 自动写入，该机制已随读取门控一并移除，见 [permissions.md](permissions.md) 的「读取不门控」）。
+
+运行时还会把 **dev 工作区的知识根** `<dataDir>/workspaces/<id>/` 自动加入本次 run 的附加目录
+（`run-service.extraDirsForRun`）。它不是 `workspace_dirs` 行，不出现在工作区目录管理里；
+支持的 runtime 直接据此 Read/Write，DeepSeek 因 ACP 不接受 `additionalDirectories` 走提权审批。
 
 spawn 时把「主目录 + 附加目录」中**除 cwd 之外**的部分逐个传给 `claude --add-dir`。
 `--add-dir <directories...>` 是**变长参数**，因此它必须排在 argv 最末；prompt 走 stdin

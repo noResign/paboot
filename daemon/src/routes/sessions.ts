@@ -1,6 +1,9 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
-import type { SessionRow } from '../db/db.js';
+import type { EndRow, SessionRow } from '../db/db.js';
+import { resolveSessionEndsScope } from '../capabilities/scope.js';
+import { endDto } from './ends.js';
+import type { SessionEndsResponse } from '../types/api.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { runningRunBySession } from '../runs/session-runs.js';
 import { runDto } from '../db/dto.js';
@@ -133,6 +136,70 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
     res.json({ ok: true, effective: 'next_run', session: sessionDto(ctx, updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
+  });
+
+  function sessionEndsPayload(ctx: AppContext, session: SessionRow): SessionEndsResponse {
+    const scope = resolveSessionEndsScope(ctx.db, session);
+    const rows = ctx.db.listSessionEnds(session.id);
+    const activeIds = new Set(scope.ends.map((end) => end.id));
+    const reference = rows
+      .filter((row) => row.role === 'reference' && !activeIds.has(row.end_id))
+      .map((row) => ctx.db.getEnd(row.end_id))
+      .filter((end): end is EndRow => !!end && end.workspace_id === session.workspace_id);
+    return {
+      primaryEndId: scope.primary?.id ?? null,
+      ends: [
+        ...scope.ends.map((end) => ({ ...endDto(ctx, end), role: 'active' as const })),
+        ...reference.map((end) => ({ ...endDto(ctx, end), role: 'reference' as const })),
+      ],
+    };
+  }
+
+  app.get('/api/sessions/:id/ends', (req, res) => {
+    const s = visibleSession(ctx, req.params.id);
+    if (!s) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    res.json(sessionEndsPayload(ctx, s));
+  });
+
+  app.put('/api/sessions/:id/ends', (req, res) => {
+    const s = visibleSession(ctx, req.params.id);
+    if (!s) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    const raw = (req.body ?? {})['endIds'];
+    if (raw !== null && raw !== undefined && (!Array.isArray(raw) || raw.some((id) => typeof id !== 'string'))) {
+      res.status(400).json({ error: 'endIds must be a string array or null', code: 'bad_request' });
+      return;
+    }
+    // null / [] clears the narrowing and falls back to every active end.
+    const endIds = Array.isArray(raw) ? (raw as string[]) : [];
+    if (endIds.length > 0) {
+      const workspace = s.workspace_id ? ctx.db.getWorkspace(s.workspace_id) : undefined;
+      if (!workspace) {
+        res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+        return;
+      }
+      const valid = new Set(
+        ctx.db
+          .listEnds(workspace.id)
+          .filter((end) => end.status === 'active')
+          .map((end) => end.id),
+      );
+      const invalid = endIds.find((id) => !valid.has(id));
+      if (invalid) {
+        res.status(400).json({ error: `end is not active in this workspace: ${invalid}`, code: 'end_not_allowed' });
+        return;
+      }
+      ctx.db.replaceSessionEnds(s.id, [...new Set(endIds)]);
+    } else {
+      ctx.db.clearSessionEnds(s.id);
+    }
+    ctx.db.audit('session_ends', JSON.stringify({ sessionId: s.id, endIds }));
+    res.json(sessionEndsPayload(ctx, s));
   });
 
   // Delete a session, cancelling any in-flight run first so no child process is

@@ -4,7 +4,9 @@ import type { Express, Response } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, WorkspaceRow } from '../db/db.js';
 import { capabilityById } from '../capabilities/registry.js';
+import { capabilitiesForDomain, domainById } from '../domains/index.js';
 import { authRole } from '../http/auth.js';
+import { log } from '../platform/log.js';
 import {
   workspaceContains,
   workspaceContainsAny,
@@ -37,7 +39,10 @@ function requireOperator(res: Response): boolean {
   return false;
 }
 
-function endDto(ctx: AppContext, end: EndRow): EndDto {
+export function endDto(ctx: AppContext, end: EndRow): EndDto {
+  const bindings = new Map(
+    ctx.db.listCapabilityBindings('end', end.id).map((row) => [row.provider_id, row]),
+  );
   return {
     id: end.id,
     workspaceId: end.workspace_id,
@@ -48,7 +53,68 @@ function endDto(ctx: AppContext, end: EndRow): EndDto {
     roots: ctx.db.listEndRoots(end.id),
     createdAt: end.created_at,
     archivedAt: end.archived_at ?? null,
+    summary: end.summary,
+    notes: end.notes,
+    capabilities: capabilitiesForDomain(end.kind).map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      enabled: bindings.get(capability.id)?.enabled === 1,
+    })),
   };
+}
+
+/** Preserve config (e.g. the selected device serial) when toggling a capability. */
+function setEndCapability(
+  ctx: AppContext,
+  end: EndRow,
+  providerId: string,
+  enabled: boolean,
+): void {
+  const existing = ctx.db
+    .listCapabilityBindings('end', end.id)
+    .find((row) => row.provider_id === providerId);
+  let config: Record<string, unknown> = {};
+  if (existing) {
+    try {
+      const parsed: unknown = JSON.parse(existing.config_json);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        config = parsed as Record<string, unknown>;
+      }
+    } catch {
+      config = {};
+    }
+  }
+  ctx.db.upsertCapabilityBinding({
+    scopeType: 'end',
+    scopeId: end.id,
+    providerId,
+    enabled,
+    config,
+  });
+}
+
+/** Seed the domain's built-in conventions; never overwrite an existing title. */
+function seedEndConventions(ctx: AppContext, workspace: WorkspaceRow, end: EndRow): void {
+  const template = domainById(end.kind);
+  if (!template || !ctx.knowledge || template.conventions.length === 0) return;
+  try {
+    const existing = new Set(
+      ctx.knowledge
+        .list(workspace.id, { kind: 'convention', endId: end.id })
+        .map((doc) => doc.title),
+    );
+    for (const convention of template.conventions) {
+      if (existing.has(convention.title)) continue;
+      ctx.knowledge.create(workspace.id, {
+        title: convention.title,
+        body: convention.body,
+        kind: 'convention',
+        endId: end.id,
+      });
+    }
+  } catch (err) {
+    log.warn(`end ${end.id}: failed to seed domain conventions`, err);
+  }
 }
 
 function workspaceFor(ctx: AppContext, id: string): WorkspaceRow | undefined {
@@ -178,8 +244,18 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
     }
     const name = typeof req.body?.['name'] === 'string' ? req.body['name'].trim() : '';
     const kind = typeof req.body?.['kind'] === 'string' ? req.body['kind'] : 'android';
+    const summary = typeof req.body?.['summary'] === 'string' ? req.body['summary'].trim() : '';
+    const notes = typeof req.body?.['notes'] === 'string' ? req.body['notes'] : '';
     if (!name) {
       res.status(400).json({ error: 'name is required', code: 'bad_request' });
+      return;
+    }
+    if (summary.length > 200) {
+      res.status(400).json({ error: 'summary is too long (max 200)', code: 'bad_request' });
+      return;
+    }
+    if (notes.length > 4000) {
+      res.status(400).json({ error: 'notes are too long (max 4000)', code: 'bad_request' });
       return;
     }
     const end = ctx.db.createEnd({
@@ -189,8 +265,104 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       name,
       status: 'draft',
     });
-    const dto: EndResponse = { ok: true, end: endDto(ctx, end) };
+    if (summary || notes) ctx.db.updateEnd(end.id, { summary, notes });
+    const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };
     res.status(201).json(dto);
+  });
+
+  app.patch('/api/workspaces/:id/ends/:endId', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const input: { name?: string; summary?: string; notes?: string } = {};
+    if (body['name'] !== undefined) {
+      const name = typeof body['name'] === 'string' ? body['name'].trim() : '';
+      if (!name || name.length > 80) {
+        res.status(400).json({ error: 'name must be 1-80 characters', code: 'bad_request' });
+        return;
+      }
+      input.name = name;
+    }
+    if (body['summary'] !== undefined) {
+      if (typeof body['summary'] !== 'string' || body['summary'].length > 200) {
+        res.status(400).json({ error: 'summary must be a string of at most 200 characters', code: 'bad_request' });
+        return;
+      }
+      input.summary = body['summary'].trim();
+    }
+    if (body['notes'] !== undefined) {
+      if (typeof body['notes'] !== 'string' || body['notes'].length > 4000) {
+        res.status(400).json({ error: 'notes must be a string of at most 4000 characters', code: 'bad_request' });
+        return;
+      }
+      input.notes = body['notes'];
+    }
+    if (Object.keys(input).length === 0) {
+      res.status(400).json({ error: 'nothing to update', code: 'bad_request' });
+      return;
+    }
+    let updated: EndRow | undefined;
+    try {
+      updated = ctx.db.updateEnd(end.id, input);
+    } catch (err) {
+      if (String(err).includes('UNIQUE')) {
+        res.status(409).json({ error: 'an end with that name already exists', code: 'end_name_exists' });
+        return;
+      }
+      throw err;
+    }
+    if (!updated) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    ctx.db.audit(
+      'end_update',
+      JSON.stringify({ workspaceId: workspace.id, endId: end.id, fields: Object.keys(input) }),
+    );
+    const dto: EndResponse = { ok: true, end: endDto(ctx, updated) };
+    res.json(dto);
+  });
+
+  app.put('/api/workspaces/:id/ends/:endId/capabilities', (req, res) => {
+    if (!requireOperator(res)) return;
+    const workspace = workspaceFor(ctx, req.params['id']!);
+    const end = ctx.db.getEnd(req.params['endId']!);
+    if (!workspace || !end || end.workspace_id !== workspace.id) {
+      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
+      return;
+    }
+    if (!requireDevEnd(res, workspace)) return;
+    const enabled = (req.body ?? {})['enabled'];
+    if (!Array.isArray(enabled) || enabled.some((id) => typeof id !== 'string')) {
+      res.status(400).json({ error: 'enabled must be a string array', code: 'bad_request' });
+      return;
+    }
+    const allowed = capabilitiesForDomain(end.kind);
+    const allowedIds = new Set(allowed.map((capability) => capability.id));
+    const enabledIds = enabled as string[];
+    const unknown = enabledIds.find((id) => !allowedIds.has(id));
+    if (unknown) {
+      res.status(400).json({
+        error: `capability is not available for this domain: ${unknown}`,
+        code: 'capability_not_in_domain',
+      });
+      return;
+    }
+    const wanted = new Set(enabledIds);
+    for (const capability of allowed) {
+      setEndCapability(ctx, end, capability.id, wanted.has(capability.id));
+    }
+    ctx.db.audit(
+      'end_capabilities',
+      JSON.stringify({ workspaceId: workspace.id, endId: end.id, enabled }),
+    );
+    const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };
+    res.json(dto);
   });
 
   app.post('/api/workspaces/:id/ends/:endId/roots', (req, res) => {
@@ -276,6 +448,11 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       'end_archive',
       JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name, impact }),
     );
+    try {
+      ctx.knowledge?.archiveEndData(workspace.id, end.id);
+    } catch (err) {
+      log.warn(`end ${end.id}: failed to archive knowledge`, err);
+    }
     res.json({ ok: true, end: endDto(ctx, archived) } satisfies EndResponse);
   });
 
@@ -306,6 +483,12 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     ctx.db.audit('end_restore', JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name }));
+    try {
+      ctx.knowledge?.restoreEndData(workspace.id, end.id);
+      seedEndConventions(ctx, workspace, restored);
+    } catch (err) {
+      log.warn(`end ${end.id}: failed to restore knowledge`, err);
+    }
     res.json({ ok: true, end: endDto(ctx, restored) } satisfies EndResponse);
   });
 
@@ -329,6 +512,12 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       'end_delete',
       JSON.stringify({ workspaceId: workspace.id, endId: end.id, name: end.name, impact }),
     );
+    try {
+      // Hard delete removes the end's knowledge; archive keeps it in place.
+      ctx.knowledge?.deleteEndData(workspace.id, end.id);
+    } catch (err) {
+      log.warn(`end ${end.id}: failed to delete knowledge`, err);
+    }
     ctx.db.deleteEnd(end.id);
     res.json({ ok: true });
   });
@@ -350,13 +539,21 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       res.status(500).json({ error: 'failed to activate end', code: 'internal_error' });
       return;
     }
-    ctx.db.upsertCapabilityBinding({
-      scopeType: 'end',
-      scopeId: end.id,
-      providerId: 'android-device',
-      enabled: true,
-    });
-    const dto: EndResponse = { ok: true, end: endDto(ctx, active) };
+    // Enable the domain's default capabilities, keep any capability the user
+    // already enabled, and never wipe config (selected device serial).
+    const template = domainById(active.kind);
+    const defaults = new Set(template?.defaultCapabilities ?? []);
+    const bindings = new Map(
+      ctx.db.listCapabilityBindings('end', active.id).map((row) => [row.provider_id, row]),
+    );
+    for (const capability of capabilitiesForDomain(active.kind)) {
+      const alreadyEnabled = bindings.get(capability.id)?.enabled === 1;
+      if (defaults.has(capability.id) || alreadyEnabled) {
+        setEndCapability(ctx, active, capability.id, true);
+      }
+    }
+    seedEndConventions(ctx, workspace, active);
+    const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };
     res.json(dto);
   });
 }

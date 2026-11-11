@@ -94,6 +94,10 @@ export interface EndRow {
   status: string;
   created_at: number;
   archived_at: number | null;
+  /** One-line description shown in the end index. */
+  summary: string;
+  /** Longer user notes; injected verbatim for the primary end. */
+  notes: string;
 }
 
 export interface EndRootRow {
@@ -407,6 +411,16 @@ export class Db {
         PRIMARY KEY (end_id, path)
       );
 
+      -- 会话的端作用域；没有行 = 使用工作区全部 active 端。
+      CREATE TABLE IF NOT EXISTS session_ends (
+        session_id TEXT NOT NULL,
+        end_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'active' CHECK (role IN ('active', 'reference')),
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, end_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_ends_end ON session_ends(end_id);
+
       -- 记忆开关按 workspace 一行；端没有独立开关（end 只是标签）。
       CREATE TABLE IF NOT EXISTS memory_settings (
         workspace_id TEXT PRIMARY KEY,
@@ -599,6 +613,8 @@ export class Db {
     this.ensureColumn('workspaces', 'default_runtime', 'TEXT');
     this.ensureColumn('workspaces', 'default_permission_mode', 'TEXT');
     this.ensureColumn('sessions', 'end_id', 'TEXT');
+    this.ensureColumn('ends', 'summary', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('ends', 'notes', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('sessions', 'memory_mode', "TEXT NOT NULL DEFAULT 'normal'");
     this.ensureColumn('sessions', 'memory_capture_after_message_id', 'INTEGER NOT NULL DEFAULT 0');
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_command ON runs (command_id);`);
@@ -792,6 +808,7 @@ export class Db {
       )
       .run(id);
     this.db.prepare(`DELETE FROM native_threads WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM session_ends WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
   }
 
@@ -1365,6 +1382,13 @@ export class Db {
       )
       .run(id);
     this.db
+      .prepare(
+        `DELETE FROM session_ends
+         WHERE end_id IN (SELECT id FROM ends WHERE workspace_id = ?)
+            OR session_id IN (SELECT id FROM sessions WHERE workspace_id = ?)`,
+      )
+      .run(id, id);
+    this.db
       .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'workspace' AND scope_id = ?`)
       .run(id);
     this.db
@@ -1412,6 +1436,7 @@ export class Db {
    * their main-end hint. Memory rows keep the historical end id as a label. */
   deleteEnd(id: string): boolean {
     this.db.prepare(`UPDATE sessions SET end_id = NULL WHERE end_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM session_ends WHERE end_id = ?`).run(id);
     this.db
       .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'end' AND scope_id = ?`)
       .run(id);
@@ -1425,6 +1450,47 @@ export class Db {
       .prepare(`DELETE FROM end_roots WHERE end_id = ? AND path = ?`)
       .run(endId, path);
     return result.changes > 0;
+  }
+
+  updateEnd(
+    id: string,
+    input: { name?: string; summary?: string; notes?: string },
+  ): EndRow | undefined {
+    const current = this.getEnd(id);
+    if (!current) return undefined;
+    this.db
+      .prepare(`UPDATE ends SET name = ?, summary = ?, notes = ? WHERE id = ?`)
+      .run(
+        input.name ?? current.name,
+        input.summary ?? current.summary,
+        input.notes ?? current.notes,
+        id,
+      );
+    return this.getEnd(id);
+  }
+
+  // ---- session ends (multi-end sessions) ----
+
+  listSessionEnds(sessionId: string): Array<{ end_id: string; role: string; added_at: number }> {
+    return this.db
+      .prepare(
+        `SELECT end_id, role, added_at FROM session_ends WHERE session_id = ? ORDER BY added_at ASC`,
+      )
+      .all(sessionId) as unknown as Array<{ end_id: string; role: string; added_at: number }>;
+  }
+
+  /** Replace the session's narrowing list; empty = default (all workspace ends). */
+  replaceSessionEnds(sessionId: string, endIds: readonly string[]): void {
+    this.db.prepare(`DELETE FROM session_ends WHERE session_id = ?`).run(sessionId);
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO session_ends (session_id, end_id, role, added_at) VALUES (?, ?, 'active', ?)`,
+    );
+    const now = Date.now();
+    for (const endId of endIds) insert.run(sessionId, endId, now);
+  }
+
+  clearSessionEnds(sessionId: string): void {
+    this.db.prepare(`DELETE FROM session_ends WHERE session_id = ?`).run(sessionId);
   }
 
   setEndStatus(id: string, status: string): EndRow | undefined {

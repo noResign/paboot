@@ -296,6 +296,83 @@ export class KnowledgeStore {
     writeManifest(root, manifest);
   }
 
+  /**
+   * Move an end's knowledge aside on archive. The manifest entries travel in a
+   * sidecar so restore keeps their kind (a bare file under ends/<id>/knowledge
+   * would be re-inferred as tech_doc). Archived docs are out of the manifest,
+   * so they stop being injected.
+   */
+  archiveEndData(workspaceId: string, endId: string): boolean {
+    const root = this.root(workspaceId);
+    const relative = `ends/${assertEndId(endId)}`;
+    const archiveRelative = `archive/ends/${assertEndId(endId)}`;
+    const from = path.join(root, ...relative.split('/'));
+    const to = path.join(root, ...archiveRelative.split('/'));
+    if (!fs.existsSync(from)) return false;
+    this.reconcile(workspaceId);
+    const manifest = readManifest(root);
+    const moved: Record<string, unknown> = {};
+    for (const [key, meta] of Object.entries(manifest.documents)) {
+      if (key !== relative && !key.startsWith(`${relative}/`)) continue;
+      moved[key] = meta;
+      delete manifest.documents[key];
+    }
+    writeManifest(root, manifest);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    fs.writeFileSync(path.join(to, '.archive-meta.json'), JSON.stringify({ documents: moved }));
+    return true;
+  }
+
+  /** Restore an archived end's knowledge and its manifest entries. */
+  restoreEndData(workspaceId: string, endId: string): boolean {
+    const root = this.root(workspaceId);
+    const relative = `ends/${assertEndId(endId)}`;
+    const archiveRelative = `archive/ends/${assertEndId(endId)}`;
+    const from = path.join(root, ...archiveRelative.split('/'));
+    const to = path.join(root, ...relative.split('/'));
+    if (!fs.existsSync(from)) return false;
+    const sidecar = path.join(from, '.archive-meta.json');
+    let documents: Record<string, unknown> = {};
+    try {
+      if (fs.existsSync(sidecar)) {
+        const parsed = JSON.parse(fs.readFileSync(sidecar, 'utf8')) as { documents?: Record<string, unknown> };
+        documents = parsed.documents ?? {};
+      }
+    } catch {
+      documents = {};
+    }
+    fs.rmSync(sidecar, { force: true });
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    const manifest = readManifest(root);
+    Object.assign(manifest.documents, documents);
+    writeManifest(root, manifest);
+    this.reconcile(workspaceId);
+    return true;
+  }
+
+  /** Hard-deleting an end removes its knowledge (conventions included). */
+  deleteEndData(workspaceId: string, endId: string): string | null {
+    const root = this.root(workspaceId);
+    const relative = `ends/${assertEndId(endId)}`;
+    const dir = path.join(root, ...relative.split('/'));
+    this.reconcile(workspaceId);
+    const manifest = readManifest(root);
+    let changed = false;
+    for (const key of Object.keys(manifest.documents)) {
+      if (key !== relative && !key.startsWith(`${relative}/`)) continue;
+      delete manifest.documents[key];
+      changed = true;
+    }
+    if (changed) writeManifest(root, manifest);
+    const archived = path.join(root, 'archive', 'ends', assertEndId(endId));
+    if (fs.existsSync(archived)) fs.rmSync(archived, { recursive: true, force: true });
+    if (!fs.existsSync(dir)) return null;
+    fs.rmSync(dir, { recursive: true, force: true });
+    return dir;
+  }
+
   /** Workspace deletion removes its knowledge root permanently. */
   deleteWorkspaceData(workspaceId: string): string | null {
     const root = this.root(workspaceId);

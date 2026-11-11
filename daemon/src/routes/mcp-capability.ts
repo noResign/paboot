@@ -1,11 +1,14 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
-import { resolveCapabilityScope } from '../capabilities/scope.js';
+import {
+  resolveCapabilityBindingsForEnd,
+  resolveSessionEndsScope,
+} from '../capabilities/scope.js';
 import type { CapabilityScopeDto } from '../types/api.js';
 
 /**
  * Scope lookup for the `paboot_capability` MCP server. The agent only sends
- * its run id; workspace and end are resolved server-side.
+ * its run id; workspace and ends are resolved server-side.
  */
 export function registerMcpCapabilityRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/internal/mcp/capability/scope', (req, res) => {
@@ -20,17 +23,28 @@ export function registerMcpCapabilityRoutes(app: Express, ctx: AppContext): void
       res.status(404).json({ error: 'run not found', code: 'run_not_found' });
       return;
     }
-    const { workspace, end } = resolveCapabilityScope(ctx.db, session);
-    if (!workspace) {
+    const scope = resolveSessionEndsScope(ctx.db, session);
+    if (!scope.workspace) {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
     const dto: CapabilityScopeDto = {
       runId,
       sessionId: session.id,
-      workspaceId: workspace.id,
-      endId: end?.id ?? null,
-      family: workspace.family === 'life' ? 'life' : 'dev',
+      workspaceId: scope.workspace.id,
+      endId: scope.primary?.id ?? null,
+      family: scope.workspace.family === 'life' ? 'life' : 'dev',
+      ends: scope.ends.map((end) => ({
+        id: end.id,
+        name: end.name,
+        kind: end.kind,
+        primary: end.id === scope.primary?.id,
+        providers: resolveCapabilityBindingsForEnd(ctx.db, session, end, scope.workspace)
+          .filter((binding) => binding.enabled && binding.descriptor.scope === 'end')
+          .map((binding) => binding.descriptor.id),
+        summary: end.summary,
+        notes: end.notes,
+      })),
     };
     res.json(dto);
   });
