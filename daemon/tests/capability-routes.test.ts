@@ -228,6 +228,35 @@ describe('ends routes', () => {
     expect(((await outside.json()) as { code: string }).code).toBe('root_outside');
   });
 
+  it('accepts roots inside an attached workspace directory', async () => {
+    const { db, workspace, url } = await boot();
+    const extra = tmpDir('attached');
+    fs.writeFileSync(path.join(extra, 'build.gradle'), 'android {}');
+    db.addWorkspaceDir(workspace.id, extra);
+    const created = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Pixel' }),
+      })
+    ).json()) as { end: { id: string } };
+
+    const bound = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${created.end.id}/roots`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: extra }),
+      })
+    ).json()) as { end: { roots: string[] } };
+    expect(bound.end.roots).toContain(extra);
+
+    // Suggestions scan the same root set, so the attached project is listed.
+    const suggestions = (await (
+      await fetch(`${url}/api/workspaces/${workspace.id}/end-suggestions`)
+    ).json()) as { suggestions: { path: string }[] };
+    expect(suggestions.suggestions.map((item) => item.path)).toContain(extra);
+  });
+
   it('previews impact, then archives and restores an end', async () => {
     const { db, workspace, session, root, url } = await boot();
     const created = (await (

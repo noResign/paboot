@@ -5,7 +5,11 @@ import type { AppContext } from '../app/context.js';
 import type { EndRow, WorkspaceRow } from '../db/db.js';
 import { capabilityById } from '../capabilities/registry.js';
 import { authRole } from '../http/auth.js';
-import { workspaceContains } from '../workspaces/workspace-service.js';
+import {
+  workspaceContains,
+  workspaceContainsAny,
+  workspaceRoots,
+} from '../workspaces/workspace-service.js';
 import type {
   EndDto,
   EndImpactDto,
@@ -86,7 +90,6 @@ function endImpact(ctx: AppContext, workspace: WorkspaceRow, end: EndRow): EndIm
 async function scanAndroid(
   roots: readonly string[],
   ctx: AppContext,
-  workspace: WorkspaceRow,
 ): Promise<EndSuggestionDto[]> {
   const queue = roots.map((root) => ({ dir: root, depth: 0 }));
   const found = new Map<string, Set<string>>();
@@ -94,7 +97,9 @@ async function scanAndroid(
   while (queue.length > 0 && visited < MAX_DIRS) {
     const item = queue.shift()!;
     visited += 1;
-    if (!workspaceContains(workspace.path, item.dir)) continue;
+    // Scan roots include attached dirs, so containment must be checked against
+    // the whole root set or attached suggestions get silently dropped.
+    if (!workspaceContainsAny(roots, item.dir)) continue;
     let entries;
     try {
       entries = await fs.readdir(item.dir, { withFileTypes: true });
@@ -154,9 +159,8 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       res.json(dto);
       return;
     }
-    const roots = [workspace.path, ...ctx.db.listWorkspaceDirs(workspace.id)];
     const dto: EndSuggestionsResponse = {
-      suggestions: await scanAndroid(roots, ctx, workspace),
+      suggestions: await scanAndroid(workspaceRoots(ctx.db, workspace), ctx),
     };
     res.json(dto);
   });
@@ -203,8 +207,11 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const absolute = path.resolve(root);
-    if (!workspaceContains(workspace.path, absolute)) {
-      res.status(400).json({ error: 'root must be inside the workspace', code: 'root_outside' });
+    if (!workspaceContainsAny(workspaceRoots(ctx.db, workspace), absolute)) {
+      res.status(400).json({
+        error: 'root must be inside the workspace or one of its extra dirs',
+        code: 'root_outside',
+      });
       return;
     }
     ctx.db.addEndRoot(end.id, absolute);

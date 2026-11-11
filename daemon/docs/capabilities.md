@@ -63,7 +63,7 @@
 | `GET /api/workspaces/:id/ends` | 列出端（含 roots） |
 | `GET /api/workspaces/:id/end-suggestions` | 扫描 workspace 根目录（深度 ≤4）中的 Gradle / `AndroidManifest.xml` |
 | `POST /api/workspaces/:id/ends` | `{name, kind?}` 创建 `draft` 端（仅 dev） |
-| `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于 workspace 内；可重复添加多个根 |
+| `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于主工作区或某个附加目录内；可重复添加多个根 |
 | `DELETE /api/workspaces/:id/ends/:endId/roots` | `{path}` 移除一个端根目录 |
 | `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活，并写入 `android-device` 的 end binding |
 | `GET /api/workspaces/:id/ends/:endId/impact` | 影响预览：显式会话 / cwd 命中会话 / binding / roots / 受影响能力 |
