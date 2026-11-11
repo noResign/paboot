@@ -10,7 +10,11 @@ import kotlinx.coroutines.launch
 
 sealed class CapabilityStatusUiState {
     object Loading : CapabilityStatusUiState()
-    data class Content(val activeEndName: String?, val onlineDevices: Int) : CapabilityStatusUiState()
+    data class Content(
+        val activeEndName: String?,
+        val onlineDevices: Int,
+        val archivedEndNames: List<String> = emptyList(),
+    ) : CapabilityStatusUiState()
     object Unavailable : CapabilityStatusUiState()
 }
 
@@ -29,6 +33,7 @@ class CapabilityStatusViewModel(
                 is NetworkResult.Success -> CapabilityStatusUiState.Content(
                     activeEndName = result.data.activeEndName,
                     onlineDevices = result.data.onlineDevices,
+                    archivedEndNames = result.data.archivedEndNames,
                 )
                 is NetworkResult.Error -> CapabilityStatusUiState.Unavailable
             }

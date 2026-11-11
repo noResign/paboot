@@ -174,6 +174,7 @@ public struct EndDto: Decodable, Equatable, Sendable {
     public let status: String
     public let roots: [String]
     public let createdAt: Int
+    public let archivedAt: Int?
 }
 
 public struct EndsResponse: Decodable, Equatable, Sendable {

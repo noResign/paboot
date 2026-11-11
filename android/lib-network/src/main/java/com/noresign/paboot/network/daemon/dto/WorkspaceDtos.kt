@@ -103,6 +103,7 @@ data class EndDto(
     val status: String = "draft",
     val roots: List<String> = emptyList(),
     val createdAt: Long = 0L,
+    val archivedAt: Long? = null,
 )
 
 @Serializable

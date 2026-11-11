@@ -1222,13 +1222,18 @@ private final class WorkspaceOverviewViewController: UIViewController {
         detail.font = Typography.caption
         detail.textColor = Theme.Colors.textSecondary
         detail.numberOfLines = 2
+        let archivedLabel = UILabel()
+        archivedLabel.font = Typography.caption
+        archivedLabel.textColor = Theme.Colors.textSecondary
+        archivedLabel.numberOfLines = 2
+        archivedLabel.isHidden = true
         let hint = UILabel()
         hint.text = "镜像 / 点击请在桌面端操作。"
         hint.font = Typography.caption
         hint.textColor = Theme.Colors.textMuted
         hint.numberOfLines = 2
 
-        let textStack = UIStackView(arrangedSubviews: [title, detail, hint])
+        let textStack = UIStackView(arrangedSubviews: [title, detail, archivedLabel, hint])
         textStack.axis = .vertical
         textStack.spacing = 2
 
@@ -1249,8 +1254,15 @@ private final class WorkspaceOverviewViewController: UIViewController {
             guard let self else { return }
             do {
                 let ends = try await repository.listEnds(workspaceId: workspace.id)
+                let archived = ends.filter { $0.status == "archived" }.map(\.name)
+                if !archived.isEmpty {
+                    archivedLabel.text = "已归档：\(archived.joined(separator: "、"))"
+                    archivedLabel.isHidden = false
+                }
                 guard let active = ends.first(where: { $0.status == "active" }) else {
-                    detail.text = "尚未添加 Android 端；请在桌面端添加。"
+                    detail.text = archived.isEmpty
+                        ? "尚未添加 Android 端；请在桌面端添加。"
+                        : "没有启用的端；已归档的端可在桌面端恢复。"
                     return
                 }
                 let devices = try await repository.deviceList(
