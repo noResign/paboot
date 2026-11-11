@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.noresign.paboot.data.repository.WorkspaceRepository
 import com.noresign.paboot.model.session.WorkspaceDirectory
 import com.noresign.paboot.model.session.workspaceDirectoryRows
 import com.noresign.paboot.network.daemon.dto.WorkspaceDto
@@ -54,6 +55,8 @@ import com.noresign.paboot.viewmodel.CapabilityStatusUiState
 import com.noresign.paboot.viewmodel.CapabilityStatusViewModel
 import com.noresign.paboot.viewmodel.SessionListUiState
 import com.noresign.paboot.viewmodel.SessionListViewModel
+import kotlin.collections.isNotEmpty
+import kotlin.collections.mapIndexed
 
 /**
  * 工作区概览（只读；docs/ui/mobile/pages/sessions.md §6.2）。
@@ -201,7 +204,7 @@ private fun WorkspaceHero(
                         workspace.path,
                         style = CodeBody,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -392,7 +395,7 @@ private fun KnowledgeCard(workspace: WorkspaceDto, onOpenKnowledge: (String) -> 
                     "项目约定、决策与踩坑；自动收录，新会话按路径注入。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -440,16 +443,29 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                     when (state) {
                         is CapabilityStatusUiState.Loading -> "检查中…"
                         is CapabilityStatusUiState.Unavailable -> "能力状态不可用"
-                        is CapabilityStatusUiState.Content -> when {
-                            state.activeEndName != null ->
-                                "端：${state.activeEndName} · ${state.onlineDevices} 台设备在线"
-                            state.archivedEndNames.isEmpty() -> "尚未添加 Android 端；请在桌面端添加。"
-                            else -> "没有启用的端；已归档的端可在桌面端恢复。"
+                        is CapabilityStatusUiState.Content -> {
+                            val activeEnds = state.activeEnds
+                            val onlineDevices = state.onlineDevices
+                            when {
+                                activeEnds.isNotEmpty() -> activeEnds
+                                    .mapIndexed { index: Int, end: WorkspaceRepository.CapabilityEndSummary ->
+                                        buildString {
+                                            append(end.name).append("（").append(end.kind).append("）")
+                                            if (index == 0 && onlineDevices > 0) {
+                                                append(" · ").append(onlineDevices).append(" 台设备在线")
+                                            }
+                                            if (end.summary.isNotBlank()) append(" · ").append(end.summary)
+                                        }
+                                    }
+                                    .joinToString("\n")
+                                state.archivedEndNames.isEmpty() -> "尚未添加 Android 端；请在桌面端添加。"
+                                else -> "没有启用的端；已归档的端可在桌面端恢复。"
+                            }
                         }
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (state is CapabilityStatusUiState.Content && state.archivedEndNames.isNotEmpty()) {
@@ -457,7 +473,7 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                         "已归档：${state.archivedEndNames.joinToString("、")}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -516,7 +532,7 @@ private fun MemoryCard(workspace: WorkspaceDto, onOpenMemory: (String) -> Unit) 
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

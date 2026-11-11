@@ -14,6 +14,7 @@ sealed class CapabilityStatusUiState {
         val activeEndName: String?,
         val onlineDevices: Int,
         val archivedEndNames: List<String> = emptyList(),
+        val activeEnds: List<WorkspaceRepository.CapabilityEndSummary> = emptyList(),
     ) : CapabilityStatusUiState()
     object Unavailable : CapabilityStatusUiState()
 }
@@ -34,6 +35,7 @@ class CapabilityStatusViewModel(
                     activeEndName = result.data.activeEndName,
                     onlineDevices = result.data.onlineDevices,
                     archivedEndNames = result.data.archivedEndNames,
+                    activeEnds = result.data.activeEnds,
                 )
                 is NetworkResult.Error -> CapabilityStatusUiState.Unavailable
             }

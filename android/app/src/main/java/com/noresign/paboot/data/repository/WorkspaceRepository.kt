@@ -23,10 +23,13 @@ class WorkspaceRepository(
         return PabootClient.create(url, token)
     }
 
+    data class CapabilityEndSummary(val name: String, val kind: String, val summary: String)
+
     data class CapabilityStatus(
         val activeEndName: String?,
         val onlineDevices: Int,
         val archivedEndNames: List<String> = emptyList(),
+        val activeEnds: List<CapabilityEndSummary> = emptyList(),
     )
 
     suspend fun capabilityStatus(workspaceId: String): NetworkResult<CapabilityStatus> {
@@ -36,13 +39,17 @@ class WorkspaceRepository(
             is NetworkResult.Error -> return r
         }
         val archived = ends.filter { it.status == "archived" }.map { it.name }
-        val active = ends.firstOrNull { it.status == "active" }
-            ?: return NetworkResult.Success(CapabilityStatus(null, 0, archived))
+        val activeEnds = ends.filter { it.status == "active" }
+        val summaries = activeEnds.map {
+            CapabilityEndSummary(name = it.name, kind = it.kind, summary = it.summary)
+        }
+        val active = activeEnds.firstOrNull()
+            ?: return NetworkResult.Success(CapabilityStatus(null, 0, archived, summaries))
         val online = when (val r = safeApiCall { api.workspaceDevice(workspaceId, active.id) }) {
             is NetworkResult.Success -> r.data.devices.count { it.state == "device" }
             is NetworkResult.Error -> 0
         }
-        return NetworkResult.Success(CapabilityStatus(active.name, online, archived))
+        return NetworkResult.Success(CapabilityStatus(active.name, online, archived, summaries))
     }
 
     suspend fun listWorkspaces(): NetworkResult<List<WorkspaceDto>> {

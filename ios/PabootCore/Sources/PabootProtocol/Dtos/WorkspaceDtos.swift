@@ -165,6 +165,12 @@ public struct DirectoriesResponse: Decodable, Equatable, Sendable {
     }
 }
 
+public struct EndCapabilityDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let enabled: Bool
+}
+
 public struct EndDto: Decodable, Equatable, Sendable {
     public let id: String
     public let workspaceId: String
@@ -175,6 +181,30 @@ public struct EndDto: Decodable, Equatable, Sendable {
     public let roots: [String]
     public let createdAt: Int
     public let archivedAt: Int?
+    public let summary: String
+    public let notes: String
+    public let capabilities: [EndCapabilityDto]
+}
+
+public struct SessionEndDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let workspaceId: String
+    public let family: String
+    public let kind: String
+    public let name: String
+    public let status: String
+    public let roots: [String]
+    public let createdAt: Int
+    public let archivedAt: Int?
+    public let summary: String
+    public let notes: String
+    public let capabilities: [EndCapabilityDto]
+    public let role: String
+}
+
+public struct SessionEndsResponse: Decodable, Equatable, Sendable {
+    public let primaryEndId: String?
+    public let ends: [SessionEndDto]
 }
 
 public struct EndsResponse: Decodable, Equatable, Sendable {
