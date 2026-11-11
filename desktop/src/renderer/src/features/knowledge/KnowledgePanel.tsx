@@ -90,6 +90,8 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
   const [detail, setDetail] = useState<KnowledgeDocDetailDto | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
+  const [customKind, setCustomKind] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -126,11 +128,16 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      if (showCreateMenu) {
+        setShowCreateMenu(false);
+        return;
+      }
+      onClose();
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, showCreateMenu]);
 
   useEffect(() => {
     if (!notice) return;
@@ -152,12 +159,41 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
     setForm(formFrom(loaded));
   }
 
-  function startCreate(): void {
+  function openCreateMenu(): void {
+    setShowCreateMenu(true);
+  }
+
+  function startCreate(
+    kind: KnowledgeDocumentKind,
+    options: { custom?: boolean; title?: string } = {},
+  ): void {
     setCreating(true);
+    setCustomKind(options.custom === true);
+    setShowCreateMenu(false);
     setSelectedId(null);
     setDetail(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, kind, title: options.title ?? '' });
     setError(null);
+  }
+
+  async function startWithPreset(
+    kind: 'convention' | 'note' | 'requirement',
+  ): Promise<void> {
+    if (kind === 'convention') {
+      const res = await api.knowledge(workspaceId, {});
+      if (res.ok) {
+        const existing = (res.data as { documents: KnowledgeDocDto[] }).documents.find(
+          (doc) => doc.kind === 'convention' && doc.endId === null,
+        );
+        if (existing) {
+          setShowCreateMenu(false);
+          setNotice('规范文档已存在，已打开现有文档');
+          void open(existing);
+          return;
+        }
+      }
+    }
+    startCreate(kind, kind === 'convention' ? { title: '开发约定' } : {});
   }
 
   async function save(): Promise<void> {
@@ -187,6 +223,13 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
     setBusy(false);
     if (!res) return;
     if (!res.ok) {
+      const data = res.data as { code?: unknown; document?: KnowledgeDocDto } | null;
+      if (data && data.code === 'knowledge_convention_exists' && data.document) {
+        setCreating(false);
+        setNotice('规范文档已存在，已打开现有文档');
+        void open(data.document);
+        return;
+      }
       setError(errorMessage(res.data, res.status));
       return;
     }
@@ -276,11 +319,11 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
               <span className="kn-workspace-chip">{workspaceName}</span>
             </div>
             <p className="hint">
-              文件自动收录，新会话首条消息按路径注入；未核验的条目会标注，可随时人工核验。
+              文件自动收录，按指针注入；规范/知识/需求可按需新建，未核验条目可人工核验。
             </p>
           </div>
           <div className="kn-head-actions">
-            <button className="btn primary" onClick={startCreate} disabled={busy}>
+            <button className="btn primary" onClick={openCreateMenu} disabled={busy}>
               <Icon name="plus" size={14} />
               新建
             </button>
@@ -366,9 +409,9 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
                 <h3>{emptyTitle}</h3>
                 <p className="hint">{emptyHint}</p>
                 <div className="kn-empty-actions">
-                  <button className="btn primary" onClick={startCreate} disabled={busy}>
+                  <button className="btn primary" onClick={openCreateMenu} disabled={busy}>
                     <Icon name="plus" size={14} />
-                    新建知识
+                    新建
                   </button>
                   <button className="btn" onClick={() => void doExport()} disabled={busy}>
                     导出 ZIP
@@ -376,14 +419,14 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
                 </div>
                 <div className="kn-empty-steps">
                   <span>自动收录</span>
-                  <span>按路径注入</span>
+                  <span>指针注入</span>
                   <span>未核验标注</span>
                 </div>
               </div>
             ) : (
               <>
                 <div className="kn-detail-head">
-                  <h3>{creating ? '新建知识' : '编辑知识'}</h3>
+                  <h3>{creating ? '新建文档' : '编辑文档'}</h3>
                   {detail && (
                     <span
                       className={`kn-status ${
@@ -411,39 +454,27 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
                       disabled={busy}
                     />
                   </label>
-                  <label>
-                    <span>类型</span>
-                    <select
-                      value={form.kind}
-                      onChange={(event) =>
-                        setForm({ ...form, kind: event.target.value as KnowledgeDocumentKind })
-                      }
-                      disabled={busy}
-                    >
-                      {KINDS.map((kind) => (
-                        <option key={kind.id} value={kind.id}>
-                          {kind.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>端（可选）</span>
-                    <input
-                      value={form.endId}
-                      placeholder="例如 android"
-                      onChange={(event) => setForm({ ...form, endId: event.target.value })}
-                      disabled={busy}
-                    />
-                  </label>
-                  <label>
-                    <span>标签（逗号分隔）</span>
-                    <input
-                      value={form.tags}
-                      onChange={(event) => setForm({ ...form, tags: event.target.value })}
-                      disabled={busy}
-                    />
-                  </label>
+                  {(!creating || customKind) && (
+                    <label>
+                      <span>类型</span>
+                      <select
+                        value={form.kind}
+                        onChange={(event) =>
+                          setForm({ ...form, kind: event.target.value as KnowledgeDocumentKind })
+                        }
+                        disabled={busy}
+                      >
+                        {(creating
+                          ? KINDS.filter((kind) => kind.id !== 'workspace_context')
+                          : KINDS
+                        ).map((kind) => (
+                          <option key={kind.id} value={kind.id}>
+                            {kind.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
                 <label className="kn-summary">
                   <span>摘要（留空自动取第一段）</span>
@@ -497,6 +528,61 @@ export function KnowledgePanel({ workspaceId, workspaceName, onClose }: Props) {
             {error && <div className="kn-error">{error}</div>}
           </section>
         </div>
+        {showCreateMenu && (
+          <div
+            className="kn-create-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="新建文档"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowCreateMenu(false);
+            }}
+          >
+            <div className="kn-create-dialog">
+              <h3>新建文档</h3>
+              <p className="hint">先选一个常用类型，或完全自定义。</p>
+              <div className="kn-create-options">
+                <button
+                  type="button"
+                  className="btn kn-create-option"
+                  onClick={() => void startWithPreset('convention')}
+                >
+                  <strong>规范文档</strong>
+                  <span>全工作区一份，写硬规矩与约束</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn kn-create-option"
+                  onClick={() => void startWithPreset('note')}
+                >
+                  <strong>知识</strong>
+                  <span>知识目录下的普通文档</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn kn-create-option"
+                  onClick={() => void startWithPreset('requirement')}
+                >
+                  <strong>需求</strong>
+                  <span>需求目录下的文档</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn kn-create-option"
+                  onClick={() => startCreate('note', { custom: true })}
+                >
+                  <strong>自定义</strong>
+                  <span>类型、标题和内容全部自己填</span>
+                </button>
+              </div>
+              <div className="kn-create-actions">
+                <button className="btn" onClick={() => setShowCreateMenu(false)}>
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {notice && <div className="ws-notice kn-notice">{notice}</div>}
       </div>
     </div>

@@ -8,6 +8,7 @@ import { acquireDataDirLock, lockPath } from './app/data-dir-lock.js';
 import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
+import { scaffoldWorkspaceKnowledge } from './knowledge/scaffold.js';
 import { DeviceStreamHub } from './capabilities/device-stream.js';
 import { MockStore } from './capabilities/mock-store.js';
 import { AdbRunner } from './capabilities/providers/android/adb.js';
@@ -121,7 +122,8 @@ async function main(): Promise<void> {
   // (and don't print Node's experimental-sqlite warning on stderr).
   const { Db } = await import('./db/db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
-  db.seedDefaultWorkspace(
+  const workspacePathsBeforeSeed = new Set(db.listWorkspaces().map((workspace) => workspace.path));
+  const seededWorkspace = db.seedDefaultWorkspace(
     config.workspace,
     fromLegacyPermissionMode(config.permissionMode),
     config.workspaceSource,
@@ -223,6 +225,16 @@ async function main(): Promise<void> {
     ),
     debug,
   };
+  // Only a workspace created by this boot gets the universal docs; existing
+  // workspaces are never backfilled (the knowledge page gets an init action).
+  if (
+    seededWorkspace &&
+    !workspacePathsBeforeSeed.has(seededWorkspace.path) &&
+    seededWorkspace.is_builtin !== 1 &&
+    seededWorkspace.family === 'dev'
+  ) {
+    scaffoldWorkspaceKnowledge(ctx.knowledge, seededWorkspace.id);
+  }
   const deviceProvider = new AndroidDeviceProvider(new AdbRunner());
   ctx.deviceProvider = deviceProvider;
   ctx.deviceStream = new DeviceStreamHub(deviceProvider);

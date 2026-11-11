@@ -88,7 +88,8 @@ function readStatus(value: unknown): ReviewStatus | undefined {
 
 function readEndId(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
-  if (value === null || value === '') return null;
+  // `workspace` is the explicit "no end" value used by list filters and tools.
+  if (value === null || value === '' || value === 'workspace') return null;
   if (typeof value !== 'string') {
     throw new KnowledgeError('endId must be a string', 'bad_request', 400);
   }
@@ -216,7 +217,9 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
     const workspace = requireWorkspace(ctx, req, res);
     if (!workspace) return;
     try {
-      const document = ctx.knowledge.create(workspace.id, parseCreate(req.body));
+      const input = parseCreate(req.body);
+      if (rejectExistingConvention(ctx, workspace.id, input.kind, input.endId, res)) return;
+      const document = ctx.knowledge.create(workspace.id, input);
       syncKnowledgeIndex(ctx, workspace.id);
       ctx.db.audit(
         'knowledge_create',
@@ -282,4 +285,29 @@ export function registerKnowledgeRoutes(app: Express, ctx: AppContext): void {
       sendKnowledgeError(res, err);
     }
   });
+
 }
+
+/** A workspace keeps a single convention document; callers edit it instead. */
+function rejectExistingConvention(
+  ctx: AppContext,
+  workspaceId: string,
+  kind: DocumentKind | undefined,
+  endId: string | null | undefined,
+  res: Response,
+): boolean {
+  if (kind !== 'convention' || (endId ?? null) !== null) return false;
+  const existing = ctx.knowledge.list(workspaceId, {
+    kind: 'convention',
+    status: 'confirmed',
+    endId: 'workspace',
+  })[0];
+  if (!existing) return false;
+  res.status(409).json({
+    error: 'a workspace convention document already exists; edit it instead',
+    code: 'knowledge_convention_exists',
+    document: toDocDto(existing),
+  });
+  return true;
+}
+

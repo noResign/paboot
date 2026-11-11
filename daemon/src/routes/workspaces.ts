@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { WorkspaceRow } from '../db/db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspaces/workspace-service.js';
+import { scaffoldWorkspaceKnowledge } from '../knowledge/scaffold.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
 import {
@@ -90,6 +91,9 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       const hasUserWorkspace = workspaces.some((w) => w.is_builtin !== 1 && w.enabled === 1);
       const created = ctx.db.createWorkspace({ name, path: realPath, isDefault: !hasUserWorkspace });
       ctx.db.audit('create_workspace', JSON.stringify({ id: created.id, path: created.path }));
+      // Universal docs (description / hard rules / knowledge) start as editable
+      // placeholders; they are not injected until the user gives them content.
+      scaffoldWorkspaceKnowledge(ctx.knowledge, created.id);
       res.status(201).json({ ok: true, workspace: workspaceDto(created, ctx.builtinConfig, 0) });
     } catch (err) {
       sendValidationError(res, err);

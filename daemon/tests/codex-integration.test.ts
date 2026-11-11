@@ -136,8 +136,9 @@ describe('Codex HTTP integration', () => {
   it.each(['ask', 'acceptEdits', 'bypass'])('refreshes workspace grants on new and resumed %s runs', async permissionMode => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'paboot-codex-grant-')));
     try {
-      const { db, post } = await api();
+      const { ctx, db, post } = await api();
       const workspace = db.getDefaultWorkspace()!;
+      const knowledgeRoot = ctx.knowledge.root(workspace.id);
       db.addWorkspaceDir(workspace.id, dir);
       db.addWorkspaceDir(workspace.id, join(dir, 'missing'));
       const first = await post('/api/chat', { prompt: 'first', runtime: 'codex', permissionMode });
@@ -145,7 +146,11 @@ describe('Codex HTTP integration', () => {
       expect(peer.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
         sandboxPolicy: permissionMode === 'bypass'
           ? { type: 'dangerFullAccess' }
-          : { type: 'workspaceWrite', writableRoots: [workspace.path, dir], networkAccess: false },
+          : {
+              type: 'workspaceWrite',
+              writableRoots: [workspace.path, dir, knowledgeRoot],
+              networkAccess: false,
+            },
         // Without this Codex reports empty summaries and the phone shows no
         // thinking card at all.
         summary: 'concise',
@@ -158,7 +163,11 @@ describe('Codex HTTP integration', () => {
       expect(resumed.request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
         sandboxPolicy: permissionMode === 'bypass'
           ? { type: 'dangerFullAccess' }
-          : { type: 'workspaceWrite', writableRoots: [workspace.path], networkAccess: false },
+          : {
+              type: 'workspaceWrite',
+              writableRoots: [workspace.path, knowledgeRoot],
+              networkAccess: false,
+            },
       }));
       complete(resumed);
       await second.text();

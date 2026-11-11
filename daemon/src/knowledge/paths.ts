@@ -155,9 +155,30 @@ export function slugify(title: string): string {
   return slug || 'untitled';
 }
 
+/** Directory a created document belongs to, based on kind and end scope. */
+export function documentDirForKind(kind: DocumentKind, endId: string | null): string {
+  if (endId) return `ends/${assertEndId(endId)}/knowledge`;
+  if (kind === 'requirement') return 'requirements';
+  if (kind === 'convention') return 'conventions';
+  return 'knowledge';
+}
+
 /** Pick a free `knowledge/<slug>.md` or `ends/<id>/knowledge/<slug>.md`. */
 export function allocateDocumentPath(root: string, title: string, endId: string | null): string {
-  const dirRelative = endId ? `ends/${assertEndId(endId)}/knowledge` : 'knowledge';
+  return allocateIn(root, endId ? `ends/${assertEndId(endId)}/knowledge` : 'knowledge', title);
+}
+
+/** Kind-aware allocation: requirements/conventions land in their scanned dirs. */
+export function allocateDocumentPathForKind(
+  root: string,
+  kind: DocumentKind,
+  title: string,
+  endId: string | null,
+): string {
+  return allocateIn(root, documentDirForKind(kind, endId), title);
+}
+
+function allocateIn(root: string, dirRelative: string, title: string): string {
   const dir = path.join(root, ...dirRelative.split('/'));
   fs.mkdirSync(dir, { recursive: true });
   const slug = slugify(title);
