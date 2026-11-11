@@ -833,12 +833,46 @@ export interface MemoryEntityLinkResponse {
 }
 
 /** Server-resolved scope for a capability MCP server (`PABOOT_RUN_ID`). */
+export interface CapabilityCatalogDto {
+  id: string;
+  name: string;
+  families: string[];
+  scope: string;
+  domains: string[];
+  tools: string[];
+  approval: string;
+  surfaces: string[];
+}
+
+export interface CapabilitiesResponse {
+  capabilities: CapabilityCatalogDto[];
+}
+
+export interface CapabilityScopeEndDto {
+  id: string;
+  name: string;
+  kind: string;
+  primary: boolean;
+  /** Enabled end-scope providers on this end. */
+  providers: string[];
+  summary: string;
+  /** Full user notes; returned only by the end_list detail lookup. */
+  notes: string;
+}
+
 export interface CapabilityScopeDto {
   runId: string;
   sessionId: string;
   workspaceId: string;
+  /** Primary end (backwards compatible with the single-end shape). */
   endId: string | null;
   family: 'dev' | 'life';
+  ends: CapabilityScopeEndDto[];
+}
+
+export interface SessionEndsResponse {
+  primaryEndId: string | null;
+  ends: Array<EndDto & { role: 'active' | 'reference' }>;
 }
 
 export interface EndDto {
@@ -851,6 +885,16 @@ export interface EndDto {
   roots: string[];
   createdAt: number;
   archivedAt: number | null;
+  summary: string;
+  notes: string;
+  /** Capabilities declared by the domain template and whether they are enabled. */
+  capabilities: EndCapabilityDto[];
+}
+
+export interface EndCapabilityDto {
+  id: string;
+  name: string;
+  enabled: boolean;
 }
 
 export interface EndsResponse {

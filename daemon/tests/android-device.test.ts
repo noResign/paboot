@@ -217,6 +217,12 @@ describe('capability device route', () => {
         status: 'active',
       });
       db.addEndRoot(end.id, root);
+      db.upsertCapabilityBinding({
+        scopeType: 'end',
+        scopeId: end.id,
+        providerId: 'android-device',
+        enabled: true,
+      });
     }
     db.createRun({
       id: `r-${family}`,

@@ -65,7 +65,9 @@
 | `POST /api/workspaces/:id/ends` | `{name, kind?}` 创建 `draft` 端（仅 dev） |
 | `POST /api/workspaces/:id/ends/:endId/roots` | `{path}` 绑定目录；必须位于主工作区或某个附加目录内；可重复添加多个根 |
 | `DELETE /api/workspaces/:id/ends/:endId/roots` | `{path}` 移除一个端根目录 |
-| `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活，并写入 `android-device` 的 end binding |
+| `POST /api/workspaces/:id/ends/:endId/activate` | 至少一个 root 后激活；按领域模板启用默认能力并种入默认规范 |
+| `PATCH /api/workspaces/:id/ends/:endId` | `{name?, summary?, notes?}`；summary ≤200 / notes ≤4000 |
+| `PUT /api/workspaces/:id/ends/:endId/capabilities` | `{enabled: string[]}`；只能选该领域模板声明的能力 |
 | `GET /api/workspaces/:id/ends/:endId/impact` | 影响预览：显式会话 / cwd 命中会话 / binding / roots / 受影响能力 |
 | `POST /api/workspaces/:id/ends/:endId/archive` | 归档 active 端：停止能力 / 设备 / 端知识注入；保留 roots、binding、`sessions.end_id` |
 | `POST /api/workspaces/:id/ends/:endId/restore` | 恢复 archived 端（需至少一个 root） |
@@ -75,6 +77,7 @@
   active 端。设备路由显式传 archived `endId` → 409 `end_archived`。
 - 归档 / 恢复 / 删除都写 audit（`end_archive` / `end_restore` / `end_delete`）；life 工作区的端不允许
   归档 / 恢复 / 删除（403 `end_not_allowed`）。
+| `GET /api/capabilities` | 全局能力目录（id / name / 适用端 domains / tools / approval）；端从中勾选 |
 | `GET /api/workspaces/:id/device` | 设备列表 + 当前 serial |
 | `POST /api/workspaces/:id/device/select` | `{endId, serial}` 记住设备 |
 | `GET /api/workspaces/:id/device/screenshot` | PNG 字节（operator；agent 一律 403） |
@@ -119,7 +122,7 @@ paboot-capability android logcat --workspace <id> --lines 50
 
 - 需要审批（`requireToolPermission`，服务端自 gate）：screenshot、ui_dump、tap、tap_selector、
   input_text、key_event、launch_app。
-- 只读诊断不弹窗：device_list、logcat、current_activity。
+- 只读诊断不弹窗：device_list、logcat、current_activity、end_list。
 - builtin runtime 由 `ToolExecutor` 统一审批，server 不重复弹窗（`PABOOT_RUNTIME=builtin`）。
 
 `stdio-server.ts` 支持 `text | image` 内容块；builtin 的 MCP client 没有图片渲染，截图降级为
@@ -128,8 +131,8 @@ Claude / Codex / DeepSeek 的 `tool_result` 统一经 `runtimes/tool-result.ts` 
 换成 `[image omitted: <mime>]`，未知结构里的超长 base64 `data` 也替换掉。模型当轮仍看到原图，
 但 paboot 不把 base64 写进 `events` / 回放。
 
-桌面端：工作区概览「端 / 能力」→ 设备面板（无端时扫描建议并创建，已激活时 1.5s 轮询镜像，
-可选点击 tap）。移动端只显示端名与在线设备数，镜像 / 点击在桌面端。
+桌面端：工作区概览直接平铺端；点端进详情，设备能力里打开固定 endId 的设备面板（1.5s 轮询镜像，
+可选点击 tap）。能力目录在设置页查看。移动端只读列出多个端名 / kind / summary，镜像与点击在桌面端。
 
 ## 5. 兼容性
 

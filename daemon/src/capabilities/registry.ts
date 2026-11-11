@@ -17,6 +17,8 @@ export interface CapabilityDescriptor {
   approval: 'hook-exact' | 'server-gate';
   tools: readonly string[];
   surfaces: readonly ('desktop' | 'mobile')[];
+  /** End kinds this capability can be mounted on; omitted for workspace scope. */
+  domains?: readonly string[];
 }
 
 const ANDROID_DEVICE_TOOLS = [
@@ -52,6 +54,7 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
     approval: 'server-gate',
     tools: ANDROID_DEVICE_TOOLS,
     surfaces: ['desktop', 'mobile'],
+    domains: ['android'],
   },
   {
     id: 'mock',
@@ -62,6 +65,7 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
     approval: 'server-gate',
     tools: [],
     surfaces: ['desktop'],
+    domains: ['android', 'ios', 'web', 'api', 'data', 'test'],
   },
 ];
 

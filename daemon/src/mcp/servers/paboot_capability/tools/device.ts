@@ -2,6 +2,10 @@ import { requireToolPermission } from '../../../gate.js';
 import type { McpTool, ToolContext } from '../../../types.js';
 
 const SERIAL = { type: 'string', description: 'Target device serial; defaults to the only online device.' };
+const END_ID = {
+  type: 'string',
+  description: 'Target end id; omit when only one end provides this capability.',
+};
 
 async function callDevice(
   ctx: ToolContext,
@@ -54,7 +58,7 @@ export const androidScreenshotTool: McpTool = {
   definition: {
     name: 'android_screenshot',
     description: 'Capture a PNG screenshot from the Android device.',
-    inputSchema: { type: 'object', properties: { serial: SERIAL } },
+    inputSchema: { type: 'object', properties: { serial: SERIAL, endId: END_ID } },
   },
   async run(args, ctx) {
     await requireToolPermission(ctx, 'mcp__paboot_capability__android_screenshot', args);
@@ -81,7 +85,7 @@ export const androidUiDumpTool = deviceTool({
   name: 'android_ui_dump',
   action: 'ui-dump',
   description: 'Dump the visible UI hierarchy (text, resource-id, class, clickable, bounds).',
-  properties: { serial: SERIAL },
+  properties: { serial: SERIAL, endId: END_ID },
 });
 
 export const androidTapTool = deviceTool({
@@ -90,6 +94,7 @@ export const androidTapTool = deviceTool({
   description: 'Tap absolute screen coordinates.',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     x: { type: 'number', description: 'Screen x in pixels.' },
     y: { type: 'number', description: 'Screen y in pixels.' },
   },
@@ -102,6 +107,7 @@ export const androidTapSelectorTool = deviceTool({
   description: 'Tap the center of the first node matching text / resource-id / content-desc / class.',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     selector: {
       type: 'object',
       description: 'Fields are matched exactly; clickable matches are preferred.',
@@ -122,6 +128,7 @@ export const androidInputTextTool = deviceTool({
   description: 'Type printable ASCII into the focused field (spaces become %s).',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     text: { type: 'string', description: 'Printable ASCII text.' },
   },
   required: ['text'],
@@ -133,6 +140,7 @@ export const androidKeyEventTool = deviceTool({
   description: 'Send a key event, e.g. HOME, BACK, ENTER, DEL or KEYCODE_*.',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     key: { type: 'string', description: 'Key name or numeric key code.' },
   },
   required: ['key'],
@@ -144,6 +152,7 @@ export const androidLaunchAppTool = deviceTool({
   description: 'Launch an app by package name through its launcher intent.',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     package: { type: 'string', description: 'Android package id.' },
   },
   required: ['package'],
@@ -155,6 +164,7 @@ export const androidLogcatTool = deviceTool({
   description: 'Read the last N lines of logcat.',
   properties: {
     serial: SERIAL,
+    endId: END_ID,
     lines: { type: 'number', description: 'Line count (default 200, max 2000).' },
   },
   gate: false,
@@ -164,7 +174,7 @@ export const androidCurrentActivityTool = deviceTool({
   name: 'android_current_activity',
   action: 'current-activity',
   description: 'Report the currently focused activity.',
-  properties: { serial: SERIAL },
+  properties: { serial: SERIAL, endId: END_ID },
   gate: false,
 });
 

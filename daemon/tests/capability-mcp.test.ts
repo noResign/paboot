@@ -129,7 +129,8 @@ describe('paboot_capability MCP server', () => {
     expect(names).toContain('echo');
     expect(names).toContain('android_device_list');
     expect(names).toContain('android_screenshot');
-    expect(names).toHaveLength(11);
+    expect(names).toContain('end_list');
+    expect(names).toHaveLength(12);
     client.stop();
   });
 
