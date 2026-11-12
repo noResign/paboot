@@ -31,16 +31,12 @@ import type {
   KnowledgeVerifyResponse,
   UpdateKnowledgeDocRequest,
   EndImpactResponse,
-  CapabilitiesResponse,
   EndResponse,
   EndSuggestionsResponse,
   SessionEndsResponse,
   EndsResponse,
-  CapabilityDeviceListDto,
   MemoryBriefDto,
   MemoryClaimDto,
-  MockModelDto,
-  MockModelResponse,
   MemoryClaimResponse,
   MemoryClaimsResponse,
   MemoryCorrectClaimRequest,
@@ -173,7 +169,6 @@ export const connectionApi = {
 
 export const api = {
   health: () => request<HealthDto>({ method: 'GET', path: ROUTES.health }),
-  capabilities: () => request<CapabilitiesResponse>({ method: 'GET', path: ROUTES.capabilities }),
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
   agentModels: (id: string) =>
     request<AgentModelsResponse>({ method: 'GET', path: ROUTES.agentModels(id) }),
@@ -528,12 +523,6 @@ export const api = {
     endId: string,
     body: { name?: string; summary?: string; notes?: string },
   ) => request<EndResponse>({ method: 'PATCH', path: ROUTES.workspaceEnd(id, endId), body }),
-  setEndCapabilities: (id: string, endId: string, enabled: string[]) =>
-    request<EndResponse>({
-      method: 'PUT',
-      path: ROUTES.workspaceEndCapabilities(id, endId),
-      body: { enabled },
-    }),
   sessionEnds: (sessionId: string) =>
     request<SessionEndsResponse>({ method: 'GET', path: ROUTES.sessionEnds(sessionId) }),
   setSessionEnds: (sessionId: string, endIds: string[] | null) =>
@@ -548,32 +537,6 @@ export const api = {
     request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndArchive(id, endId) }),
   restoreEnd: (id: string, endId: string) =>
     request<EndResponse>({ method: 'POST', path: ROUTES.workspaceEndRestore(id, endId) }),
-  deviceList: (id: string, endId?: string) =>
-    request<CapabilityDeviceListDto>({
-      method: 'GET',
-      path: ROUTES.workspaceDevice(id),
-      query: endId ? { endId } : undefined,
-    }),
-  selectDevice: (id: string, endId: string, serial: string) =>
-    request<{ ok: boolean }>({
-      method: 'POST',
-      path: ROUTES.workspaceDeviceSelect(id),
-      body: { endId, serial },
-    }),
-  deviceAction: <T = unknown>(id: string, body: Record<string, unknown>) =>
-    request<T>({
-      method: 'POST',
-      path: ROUTES.workspaceDeviceAction(id),
-      body,
-    }),
-  workspaceMock: (id: string) =>
-    request<MockModelResponse>({ method: 'GET', path: ROUTES.workspaceMock(id) }),
-  saveWorkspaceMock: (id: string, model: MockModelDto, remove: string[] = []) =>
-    request<MockModelResponse>({
-      method: 'PUT',
-      path: ROUTES.workspaceMock(id),
-      body: { ...model, remove },
-    }),
   updateWorkspaceMemory: (
     id: string,
     patch: {

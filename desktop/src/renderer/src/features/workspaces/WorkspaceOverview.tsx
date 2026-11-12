@@ -9,7 +9,7 @@ import {
   workspaceLabel,
 } from '../../store/workspaceList';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
-import { EndsPanel } from '../device/EndsPanel';
+import { EndsPanel } from '../ends/EndsPanel';
 import { KnowledgePanel } from '../knowledge/KnowledgePanel';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
@@ -387,7 +387,7 @@ export function WorkspaceOverview({
             </button>
           </div>
           {ends.length === 0 ? (
-            <p className="hint">还没有端。添加一个端（Android / iOS / Web / API…），再挂目录、勾选能力。</p>
+            <p className="hint">还没有端。添加一个端（Android / iOS / Web / API…），再挂目录、写规范。</p>
           ) : (
             ends.map((end) => (
               <button
@@ -411,11 +411,6 @@ export function WorkspaceOverview({
                     <span className="wo-knowledge-chip">
                       {end.status === 'active' ? '已启用' : end.status === 'archived' ? '已归档' : '草稿'}
                     </span>
-                    {end.capabilities
-                      .filter((capability) => capability.enabled)
-                      .map((capability) => (
-                        <span key={capability.id} className="wo-knowledge-chip">{capability.name}</span>
-                      ))}
                   </span>
                 </span>
                 <span className="wo-knowledge-action">

@@ -17,18 +17,11 @@ export function splitEnds(ends: readonly EndDto[]): EndGroups {
 
 /** Human lines for the impact preview modal. */
 export function impactLines(impact: EndImpactDto): string[] {
-  const lines = [
+  return [
     `显式指向该端的会话：${impact.explicitSessions}`,
     `工作目录位于端目录的会话：${impact.cwdSessions}`,
     `端目录：${impact.roots} 个`,
-    `能力绑定：${impact.capabilityBindings} 个`,
   ];
-  lines.push(
-    impact.capabilities.length > 0
-      ? `受影响能力：${impact.capabilities.join('、')}`
-      : '该端当前没有可用的能力绑定',
-  );
-  return lines;
 }
 
 export function archiveConfirmLabel(name: string): string {
