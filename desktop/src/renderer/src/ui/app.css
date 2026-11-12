@@ -5301,107 +5301,6 @@ a.btn {
   }
 }
 
-/* ---- device panel (Dev Space S2) ---- */
-.device-panel {
-  width: min(980px, 94vw);
-  max-height: 88vh;
-}
-.device-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
-  overflow: auto;
-}
-.device-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.device-row label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.device-stage {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-2);
-  min-height: 240px;
-}
-.device-mirror {
-  max-width: 100%;
-  max-height: 62vh;
-  object-fit: contain;
-  border-radius: 8px;
-  user-select: none;
-}
-.device-suggestion {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-/* ---- mock editor (Dev Space S2) ---- */
-.mock-panel {
-  width: min(1100px, 94vw);
-  max-height: 88vh;
-}
-.mock-body {
-  display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  gap: 14px;
-  padding: 16px 20px;
-  overflow: auto;
-  min-height: 0;
-}
-.mock-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-content: start;
-}
-.mock-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.mock-textarea {
-  width: 100%;
-  min-height: 260px;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-2);
-  color: var(--text-primary);
-  font: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.mock-textarea.rules {
-  min-height: 90px;
-}
-@media (max-width: 900px) {
-  .mock-body {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ---- composer image input ---- */
 .composer-attachments {
   display: flex;
@@ -5489,29 +5388,6 @@ a.btn {
   border-radius: 8px;
 }
 
-/* ---- device panel layout (manual mirror) ---- */
-.device-panel {
-  width: min(980px, 94vw);
-  height: min(860px, calc(100vh - 48px));
-}
-.device-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px 14px;
-  overflow: hidden;
-}
-.device-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.device-row {
-  min-width: 0;
-}
 .device-root {
   min-width: 0;
   overflow: hidden;
@@ -5574,21 +5450,6 @@ a.btn {
   color: var(--text-primary);
   font: inherit;
 }
-.device-archived {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.device-archived-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-2);
-}
 .end-impact-modal {
   width: min(460px, 92vw);
   padding: 14px 16px;
@@ -5605,53 +5466,6 @@ a.btn {
   font-size: 12px;
   color: var(--text-secondary);
 }
-.device-select {
-  flex: 0 1 340px;
-  min-width: 180px;
-}
-.device-stage {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-.device-mirror {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-  user-select: none;
-}
-.device-empty {
-  flex: 1 1 auto;
-  min-height: 180px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 24px;
-  text-align: center;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: var(--surface-2);
-}
-.device-empty b {
-  color: var(--text-primary);
-  font-size: 13px;
-}
-.device-empty .hint {
-  max-width: 420px;
-}
-
 /* The claims tab wraps its list in a flex child; without this the sidebar
    never constrains it and the list cannot scroll. */
 .mem-claims-pane {

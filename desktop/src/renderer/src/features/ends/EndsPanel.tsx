@@ -7,8 +7,6 @@ import type {
 } from '../../../../shared/contract';
 import { Icon } from '../../ui/Icon';
 import { DirectoryPickerDialog } from '../workspaces/DirectoryPickerDialog';
-import { DevicePanel } from './DevicePanel';
-import { MockPanel } from '../mock/MockPanel';
 import { impactLines } from './endLifecycle';
 
 interface Props {
@@ -53,8 +51,6 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
   const [editingDoc, setEditingDoc] = useState<string | null>(null);
   const [pending, setPending] = useState<{ kind: 'archive' | 'delete'; end: EndDto } | null>(null);
   const [impact, setImpact] = useState<EndImpactDto | null>(null);
-  const [deviceEndId, setDeviceEndId] = useState<string | null>(null);
-  const [mockOpen, setMockOpen] = useState(false);
   const [docFormOpen, setDocFormOpen] = useState(false);
 
   useEffect(() => {
@@ -164,22 +160,6 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
     await load();
   }
 
-  async function toggleCapability(id: string, enabled: boolean): Promise<void> {
-    if (!selected) return;
-    const next = selected.capabilities
-      .filter((cap) => (cap.id === id ? enabled : cap.enabled))
-      .map((cap) => cap.id);
-    setBusy(true);
-    const res = await api.setEndCapabilities(workspaceId, selected.id, next);
-    setBusy(false);
-    if (!res.ok) {
-      setError(errorMessage(res.data, res.status));
-      return;
-    }
-    setNotice('能力设置已更新');
-    await load();
-  }
-
   async function openImpact(kind: 'archive' | 'delete', end: EndDto): Promise<void> {
     setPending({ kind, end });
     setImpact(null);
@@ -285,7 +265,7 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
               <h2>端</h2>
               <span className="badge subtle">{workspaceName}</span>
             </div>
-            <p className="hint">先加端（领域 + 目录），再在端里启用能力与维护规范。</p>
+            <p className="hint">先加端（领域 + 目录），再维护端规范与知识。</p>
           </div>
           <div className="kn-head-actions">
             <button className="icon-btn" title="刷新" onClick={() => void load()}>
@@ -352,37 +332,6 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
               <button className="btn" disabled={busy} onClick={() => setRootPicker(true)}>
                 添加目录
               </button>
-
-              <div className="section-head"><h3>能力</h3></div>
-              {selected.capabilities.length === 0 && (
-                <p className="hint">该领域还没有已实现的能力。</p>
-              )}
-              {selected.capabilities.map((capability) => (
-                <div className="device-root-row" key={capability.id}>
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      checked={capability.enabled}
-                      disabled={busy || selected.status !== 'active'}
-                      onChange={(event) => void toggleCapability(capability.id, event.target.checked)}
-                    />
-                    <span>{capability.name}</span>
-                  </label>
-                  <span className="mem-spacer" />
-                  {capability.enabled && capability.id === 'android-device' && (
-                    <button className="btn" onClick={() => setDeviceEndId(selected.id)}>
-                      打开面板
-                      <Icon name="chevron-right" size={14} />
-                    </button>
-                  )}
-                  {capability.enabled && capability.id === 'mock' && (
-                    <button className="btn" onClick={() => setMockOpen(true)}>
-                      打开面板
-                      <Icon name="chevron-right" size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
 
               <div className="section-head">
                 <h3>端规范与知识</h3>
@@ -533,8 +482,8 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
             )}
             <p className="hint">
               {pending.kind === 'archive'
-                ? '归档后停止能力与端知识注入，可随时恢复。'
-                : '移除会删除端目录绑定、能力与端知识；会话保留。'}
+                ? '归档后停止端上下文与知识注入，可随时恢复。'
+                : '移除会删除端目录绑定与端知识；会话保留。'}
             </p>
             <div className="perm-actions">
               <button className="btn danger" disabled={busy || !impact} onClick={() => void confirmPending()}>
@@ -578,22 +527,6 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
         />
       )}
 
-      {mockOpen && (
-        <MockPanel
-          workspaceId={workspaceId}
-          workspaceName={workspaceName}
-          onClose={() => setMockOpen(false)}
-        />
-      )}
-
-      {deviceEndId && (
-        <DevicePanel
-          workspaceId={workspaceId}
-          workspaceName={workspaceName}
-          endId={deviceEndId}
-          onClose={() => setDeviceEndId(null)}
-        />
-      )}
     </div>
   );
 }

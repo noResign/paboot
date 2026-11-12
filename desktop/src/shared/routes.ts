@@ -56,8 +56,6 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/roots`,
   workspaceEndActivate: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/activate`,
-  workspaceEndCapabilities: (id: string, endId: string) =>
-    `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/capabilities`,
   sessionEnds: (id: string) => `/api/sessions/${encodeURIComponent(id)}/ends`,
   workspaceEndImpact: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/impact`,
@@ -65,15 +63,8 @@ export const ROUTES = {
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/archive`,
   workspaceEndRestore: (id: string, endId: string) =>
     `/api/workspaces/${encodeURIComponent(id)}/ends/${encodeURIComponent(endId)}/restore`,
-  workspaceDevice: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/device`,
-  workspaceDeviceSelect: (id: string) =>
-    `/api/workspaces/${encodeURIComponent(id)}/device/select`,
-  workspaceDeviceAction: (id: string) =>
-    `/api/workspaces/${encodeURIComponent(id)}/device/action`,
-  workspaceMock: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/mock`,
   directories: '/api/fs/directories',
   config: '/api/config',
-  capabilities: '/api/capabilities',
   files: '/api/files',
   fileContent: '/api/files/content',
   fileRaw: '/api/files/raw',

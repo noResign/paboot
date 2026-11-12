@@ -15,7 +15,6 @@ function end(id: string, status: string, name = id): EndDto {
     archivedAt: status === 'archived' ? 1 : null,
     summary: '',
     notes: '',
-    capabilities: [],
   };
 }
 
@@ -35,31 +34,16 @@ describe('splitEnds', () => {
 });
 
 describe('impactLines', () => {
-  it('renders counts and capability names', () => {
+  it('renders session and directory counts', () => {
     const lines = impactLines({
       endId: 'a',
       status: 'active',
       explicitSessions: 2,
       cwdSessions: 3,
-      capabilityBindings: 1,
       roots: 2,
-      capabilities: ['Android 设备'],
     });
     expect(lines).toContain('显式指向该端的会话：2');
     expect(lines).toContain('工作目录位于端目录的会话：3');
-    expect(lines).toContain('受影响能力：Android 设备');
-  });
-
-  it('explains when no capability binding exists', () => {
-    const lines = impactLines({
-      endId: 'a',
-      status: 'active',
-      explicitSessions: 0,
-      cwdSessions: 0,
-      capabilityBindings: 0,
-      roots: 0,
-      capabilities: [],
-    });
-    expect(lines).toContain('该端当前没有可用的能力绑定');
+    expect(lines).toContain('端目录：2 个');
   });
 });
