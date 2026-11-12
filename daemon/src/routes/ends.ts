@@ -3,8 +3,7 @@ import path from 'node:path';
 import type { Express, Response } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, WorkspaceRow } from '../db/db.js';
-import { capabilityById } from '../capabilities/registry.js';
-import { capabilitiesForDomain, domainById } from '../domains/index.js';
+import { domainById } from '../domains/index.js';
 import { authRole } from '../http/auth.js';
 import { log } from '../platform/log.js';
 import {
@@ -40,9 +39,6 @@ function requireOperator(res: Response): boolean {
 }
 
 export function endDto(ctx: AppContext, end: EndRow): EndDto {
-  const bindings = new Map(
-    ctx.db.listCapabilityBindings('end', end.id).map((row) => [row.provider_id, row]),
-  );
   return {
     id: end.id,
     workspaceId: end.workspace_id,
@@ -55,42 +51,7 @@ export function endDto(ctx: AppContext, end: EndRow): EndDto {
     archivedAt: end.archived_at ?? null,
     summary: end.summary,
     notes: end.notes,
-    capabilities: capabilitiesForDomain(end.kind).map((capability) => ({
-      id: capability.id,
-      name: capability.name,
-      enabled: bindings.get(capability.id)?.enabled === 1,
-    })),
   };
-}
-
-/** Preserve config (e.g. the selected device serial) when toggling a capability. */
-function setEndCapability(
-  ctx: AppContext,
-  end: EndRow,
-  providerId: string,
-  enabled: boolean,
-): void {
-  const existing = ctx.db
-    .listCapabilityBindings('end', end.id)
-    .find((row) => row.provider_id === providerId);
-  let config: Record<string, unknown> = {};
-  if (existing) {
-    try {
-      const parsed: unknown = JSON.parse(existing.config_json);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        config = parsed as Record<string, unknown>;
-      }
-    } catch {
-      config = {};
-    }
-  }
-  ctx.db.upsertCapabilityBinding({
-    scopeType: 'end',
-    scopeId: end.id,
-    providerId,
-    enabled,
-    config,
-  });
 }
 
 /** Seed the domain's built-in conventions; never overwrite an existing title. */
@@ -130,7 +91,6 @@ function requireDevEnd(res: Response, workspace: WorkspaceRow): boolean {
 
 function endImpact(ctx: AppContext, workspace: WorkspaceRow, end: EndRow): EndImpactDto {
   const roots = ctx.db.listEndRoots(end.id);
-  const bindings = ctx.db.listCapabilityBindings('end', end.id);
   let cwdSessions = 0;
   for (const session of ctx.db.listAllSessions(workspace.id)) {
     if (session.kind === 'command' || session.end_id) continue;
@@ -141,15 +101,7 @@ function endImpact(ctx: AppContext, workspace: WorkspaceRow, end: EndRow): EndIm
     status: end.status,
     explicitSessions: ctx.db.countSessionsByEnd(end.id),
     cwdSessions,
-    capabilityBindings: bindings.length,
     roots: roots.length,
-    capabilities: [
-      ...new Set(
-        bindings
-          .filter((binding) => binding.enabled === 1)
-          .map((binding) => capabilityById(binding.provider_id)?.name ?? binding.provider_id),
-      ),
-    ],
   };
 }
 
@@ -328,43 +280,6 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
     res.json(dto);
   });
 
-  app.put('/api/workspaces/:id/ends/:endId/capabilities', (req, res) => {
-    if (!requireOperator(res)) return;
-    const workspace = workspaceFor(ctx, req.params['id']!);
-    const end = ctx.db.getEnd(req.params['endId']!);
-    if (!workspace || !end || end.workspace_id !== workspace.id) {
-      res.status(404).json({ error: 'end not found', code: 'end_not_found' });
-      return;
-    }
-    if (!requireDevEnd(res, workspace)) return;
-    const enabled = (req.body ?? {})['enabled'];
-    if (!Array.isArray(enabled) || enabled.some((id) => typeof id !== 'string')) {
-      res.status(400).json({ error: 'enabled must be a string array', code: 'bad_request' });
-      return;
-    }
-    const allowed = capabilitiesForDomain(end.kind);
-    const allowedIds = new Set(allowed.map((capability) => capability.id));
-    const enabledIds = enabled as string[];
-    const unknown = enabledIds.find((id) => !allowedIds.has(id));
-    if (unknown) {
-      res.status(400).json({
-        error: `capability is not available for this domain: ${unknown}`,
-        code: 'capability_not_in_domain',
-      });
-      return;
-    }
-    const wanted = new Set(enabledIds);
-    for (const capability of allowed) {
-      setEndCapability(ctx, end, capability.id, wanted.has(capability.id));
-    }
-    ctx.db.audit(
-      'end_capabilities',
-      JSON.stringify({ workspaceId: workspace.id, endId: end.id, enabled }),
-    );
-    const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };
-    res.json(dto);
-  });
-
   app.post('/api/workspaces/:id/ends/:endId/roots', (req, res) => {
     if (!requireOperator(res)) return;
     const workspace = workspaceFor(ctx, req.params['id']!);
@@ -506,7 +421,7 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const impact = endImpact(ctx, workspace, end);
-    // The end only scopes capabilities and the main-end hint; sessions stay
+    // The end only scopes context and the main-end hint; sessions stay
     // in the workspace after their end is removed.
     ctx.db.audit(
       'end_delete',
@@ -538,19 +453,6 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
     if (!active) {
       res.status(500).json({ error: 'failed to activate end', code: 'internal_error' });
       return;
-    }
-    // Enable the domain's default capabilities, keep any capability the user
-    // already enabled, and never wipe config (selected device serial).
-    const template = domainById(active.kind);
-    const defaults = new Set(template?.defaultCapabilities ?? []);
-    const bindings = new Map(
-      ctx.db.listCapabilityBindings('end', active.id).map((row) => [row.provider_id, row]),
-    );
-    for (const capability of capabilitiesForDomain(active.kind)) {
-      const alreadyEnabled = bindings.get(capability.id)?.enabled === 1;
-      if (defaults.has(capability.id) || alreadyEnabled) {
-        setEndCapability(ctx, active, capability.id, true);
-      }
     }
     seedEndConventions(ctx, workspace, active);
     const dto: EndResponse = { ok: true, end: endDto(ctx, ctx.db.getEnd(end.id)!) };

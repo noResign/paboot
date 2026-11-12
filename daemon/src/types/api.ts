@@ -832,44 +832,6 @@ export interface MemoryEntityLinkResponse {
   link: MemoryEntityLinkDto;
 }
 
-/** Server-resolved scope for a capability MCP server (`PABOOT_RUN_ID`). */
-export interface CapabilityCatalogDto {
-  id: string;
-  name: string;
-  families: string[];
-  scope: string;
-  domains: string[];
-  tools: string[];
-  approval: string;
-  surfaces: string[];
-}
-
-export interface CapabilitiesResponse {
-  capabilities: CapabilityCatalogDto[];
-}
-
-export interface CapabilityScopeEndDto {
-  id: string;
-  name: string;
-  kind: string;
-  primary: boolean;
-  /** Enabled end-scope providers on this end. */
-  providers: string[];
-  summary: string;
-  /** Full user notes; returned only by the end_list detail lookup. */
-  notes: string;
-}
-
-export interface CapabilityScopeDto {
-  runId: string;
-  sessionId: string;
-  workspaceId: string;
-  /** Primary end (backwards compatible with the single-end shape). */
-  endId: string | null;
-  family: 'dev' | 'life';
-  ends: CapabilityScopeEndDto[];
-}
-
 export interface SessionEndsResponse {
   primaryEndId: string | null;
   ends: Array<EndDto & { role: 'active' | 'reference' }>;
@@ -887,14 +849,6 @@ export interface EndDto {
   archivedAt: number | null;
   summary: string;
   notes: string;
-  /** Capabilities declared by the domain template and whether they are enabled. */
-  capabilities: EndCapabilityDto[];
-}
-
-export interface EndCapabilityDto {
-  id: string;
-  name: string;
-  enabled: boolean;
 }
 
 export interface EndsResponse {
@@ -913,10 +867,7 @@ export interface EndImpactDto {
   explicitSessions: number;
   /** Sessions with no explicit end whose cwd falls under one of its roots. */
   cwdSessions: number;
-  capabilityBindings: number;
   roots: number;
-  /** Capability names that stop working while the end is archived. */
-  capabilities: string[];
 }
 
 export interface EndImpactResponse {
@@ -930,35 +881,6 @@ export interface EndSuggestionDto {
 
 export interface EndSuggestionsResponse {
   suggestions: EndSuggestionDto[];
-}
-
-export interface CapabilityDeviceDto {
-  serial: string;
-  state: string;
-  model?: string;
-  product?: string;
-  device?: string;
-}
-
-export interface CapabilityDeviceListDto {
-  endId: string;
-  serial: string | null;
-  devices: CapabilityDeviceDto[];
-}
-
-/** One mock API file (`<dataDir>/workspaces/<id>/mock/apis/<id>.json`). */
-export interface MockApiDto {
-  id: string;
-  [key: string]: unknown;
-}
-
-export interface MockModelDto {
-  apis: MockApiDto[];
-  rules: string;
-}
-
-export interface MockModelResponse {
-  model: MockModelDto;
 }
 
 export interface MemoryDisputeClaimDto {

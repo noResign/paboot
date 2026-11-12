@@ -6,12 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppContext } from '../src/app/context';
-import {
-  enabledCapabilityServers,
-  resolveCapabilityTargetEnd,
-  resolvePrimaryEnd,
-  resolveSessionEnds,
-} from '../src/capabilities/scope';
+import { resolvePrimaryEnd, resolveSessionEnds } from '../src/ends/scope';
 import { Db } from '../src/db/db';
 import { KnowledgeStore } from '../src/knowledge/store';
 import { endsContext } from '../src/runs/end-context';
@@ -122,98 +117,19 @@ describe('multi-end session scope', () => {
     expect(workspace.id).toBeTruthy();
   });
 
-  it('routes same-kind capabilities by cwd, endId, or reports ambiguity', async () => {
-    const { db, workspace } = await boot();
-    const appPath = tmpDir('app');
-    const libPath = tmpDir('lib');
-    const one = db.createEnd({
-      workspaceId: workspace.id,
-      family: 'dev',
-      kind: 'android',
-      name: 'App',
-      status: 'active',
-    });
-    const two = db.createEnd({
-      workspaceId: workspace.id,
-      family: 'dev',
-      kind: 'android',
-      name: 'Lib',
-      status: 'active',
-    });
-    for (const [end, dir] of [
-      [one, appPath],
-      [two, libPath],
-    ] as const) {
-      db.addEndRoot(end.id, dir);
-      db.upsertCapabilityBinding({
-        scopeType: 'end',
-        scopeId: end.id,
-        providerId: 'android-device',
-        enabled: true,
-      });
-    }
-    const appSession = db.createSession({
-      id: 's-app',
-      runtime: 'claude',
-      workspaceId: workspace.id,
-      permissionMode: 'ask',
-      cwd: appPath,
-    });
-    const libSession = db.createSession({
-      id: 's-lib',
-      runtime: 'claude',
-      workspaceId: workspace.id,
-      permissionMode: 'ask',
-      cwd: libPath,
-    });
-    const outside = db.createSession({
-      id: 's-outside',
-      runtime: 'claude',
-      workspaceId: workspace.id,
-      permissionMode: 'ask',
-      cwd: tmpDir('elsewhere'),
-    });
-
-    expect(resolveCapabilityTargetEnd(db, appSession, 'android-device', undefined).end?.id).toBe(one.id);
-    expect(resolveCapabilityTargetEnd(db, libSession, 'android-device', undefined).end?.id).toBe(two.id);
-    expect(resolveCapabilityTargetEnd(db, outside, 'android-device', undefined).code).toBe('end_ambiguous');
-    expect(resolveCapabilityTargetEnd(db, outside, 'android-device', one.id).end?.id).toBe(one.id);
-    expect(resolveCapabilityTargetEnd(db, outside, 'android-device', 'missing').code).toBe('end_not_allowed');
-
-    db.upsertCapabilityBinding({
-      scopeType: 'end',
-      scopeId: two.id,
-      providerId: 'android-device',
-      enabled: false,
-    });
-    // Only one candidate left, so it is used without an explicit endId.
-    expect(resolveCapabilityTargetEnd(db, libSession, 'android-device', undefined).end?.id).toBe(one.id);
-    db.upsertCapabilityBinding({
-      scopeType: 'end',
-      scopeId: one.id,
-      providerId: 'android-device',
-      enabled: false,
-    });
-    expect(resolveCapabilityTargetEnd(db, libSession, 'android-device', undefined).code).toBe('end_missing');
-  });
 });
 
 describe('end lifecycle and session ends routes', () => {
-  it('patches text, toggles capabilities and seeds domain conventions on activation', async () => {
+  it('patches text and seeds domain conventions on activation', async () => {
     const { db, knowledge, workspace, url, root } = await boot();
     const end = await createEnd(url, workspace.id, { name: 'App', kind: 'android' });
     await bindRoot(url, workspace.id, end.id, root);
 
-    const activated = (await (
-      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${end.id}/activate`, { method: 'POST' })
-    ).json()) as { end: { capabilities: Array<{ id: string; enabled: boolean }> } };
-    expect(activated.end.capabilities.map((capability) => capability.id).sort()).toEqual([
-      'android-device',
-      'mock',
-    ]);
-    expect(
-      activated.end.capabilities.find((capability) => capability.id === 'android-device')?.enabled,
-    ).toBe(true);
+    const activated = await fetch(
+      `${url}/api/workspaces/${workspace.id}/ends/${end.id}/activate`,
+      { method: 'POST' },
+    );
+    expect(activated.status).toBe(200);
 
     const seeded = knowledge.list(workspace.id, { kind: 'convention', endId: end.id });
     expect(seeded).toHaveLength(1);
@@ -228,23 +144,7 @@ describe('end lifecycle and session ends routes', () => {
     ).json()) as { end: { summary: string; notes: string } };
     expect(patched.end.summary).toBe('主 App');
     expect(patched.end.notes).toContain('versionCode');
-
-    const disabled = (await (
-      await fetch(`${url}/api/workspaces/${workspace.id}/ends/${end.id}/capabilities`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ enabled: [] }),
-      })
-    ).json()) as { end: { capabilities: Array<{ id: string; enabled: boolean }> } };
-    expect(disabled.end.capabilities[0]?.enabled).toBe(false);
     expect(db.listSessionEnds('s-main')).toHaveLength(0);
-
-    const bad = await fetch(`${url}/api/workspaces/${workspace.id}/ends/${end.id}/capabilities`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ enabled: ['not-a-capability'] }),
-    });
-    expect(bad.status).toBe(400);
   });
 
   it('moves end knowledge aside on archive and restores its kind', async () => {
@@ -295,7 +195,6 @@ describe('end lifecycle and session ends routes', () => {
     ).json()) as { primaryEndId: string | null; ends: Array<{ id: string }> };
     expect(narrowed.ends.map((end) => end.id)).toEqual([ios.id]);
     expect(narrowed.primaryEndId).toBe(ios.id);
-    expect(enabledCapabilityServers(db, db.getSession('s-main')!).size).toBe(0);
 
     const invalid = await fetch(`${url}/api/sessions/s-main/ends`, {
       method: 'PUT',

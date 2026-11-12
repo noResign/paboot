@@ -1,5 +1,5 @@
 /**
- * Permission gate for self-gating MCP servers (capability / memory).
+ * Permission gate for self-gating MCP servers (memory).
  *
  * The server process owns the decision point: it asks the daemon's internal
  * permission API and only runs the tool once the operator allows it. This keeps

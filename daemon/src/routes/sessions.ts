@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, SessionRow } from '../db/db.js';
-import { resolveSessionEndsScope } from '../capabilities/scope.js';
+import { resolveSessionEndsScope } from '../ends/scope.js';
 import { endDto } from './ends.js';
 import type { SessionEndsResponse } from '../types/api.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';

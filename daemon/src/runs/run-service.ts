@@ -17,7 +17,6 @@ import { captureRunMessages } from '../memory/ingest.js';
 import { captureRunObservation } from '../memory/observe.js';
 import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
 import { mergePreludes } from '../context/prelude.js';
-import { enabledCapabilityServers } from '../capabilities/scope.js';
 import { perRunToolServers } from '../mcp/injection.js';
 import { endsContext } from './end-context.js';
 import { knowledgeContext } from './knowledge-context.js';
@@ -242,13 +241,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     ctx.notifier.register(runId, send);
     // One list for every runtime: argv/RPC drivers translate these specs into
     // their own MCP config, the builtin driver consumes them in-process.
-    const toolServers = perRunToolServers(
-      ctx,
-      runId,
-      session.runtime,
-      session.id,
-      enabledCapabilityServers(ctx.db, session),
-    );
+    const toolServers = perRunToolServers(ctx, runId, session.runtime, session.id);
 
     // [debug] Capture what paboot is about to inject before the driver
     // starts, so a provider/spawn failure still leaves it in the debug view.

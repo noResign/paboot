@@ -79,7 +79,7 @@
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
 | `GET /api/runs/:id/stream` | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播（重连订阅） |
 | `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
-| `GET /api/sessions/:id/ends` | 是 | 会话端集合（primaryEndId + ends，含 role/能力/summary） |
+| `GET /api/sessions/:id/ends` | 是 | 会话端集合（primaryEndId + ends，含 role/summary） |
 | `PUT /api/sessions/:id/ends` | 是 | `{endIds: string[] \| null}`；收窄端集合，空/null 回到工作区默认 |
 | `GET /api/sessions/:id` | 是 | 会话 + 消息 + 运行 |
 | `PATCH /api/sessions/:id` | 是 | 重命名（body `{title}`） |

@@ -1,5 +1,5 @@
 import type { AppContext } from '../app/context.js';
-import { resolveSessionEndsScope } from '../capabilities/scope.js';
+import { resolveSessionEndsScope } from '../ends/scope.js';
 import { renderContextPrelude, type ContextPrelude } from '../context/prelude.js';
 import type { ContextSection } from '../context/types.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
@@ -53,7 +53,7 @@ export function endsContext(
     lines.push(`- ${end.name}（${end.kind}）${summary}`);
   }
   if (others.length > shown.length) {
-    lines.push(`- 还有 ${others.length - shown.length} 个端，用 end_list 查询`);
+    lines.push(`- 还有 ${others.length - shown.length} 个端`);
   }
   sections.push({
     kind: 'end',

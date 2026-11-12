@@ -12,7 +12,6 @@ import type { ToolServerSpec } from '../src/runtimes/types';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const taskServerPath = path.join(here, '../src/mcp/servers/paboot_tasks/server.ts');
-const capabilityServerPath = path.join(here, '../src/mcp/servers/paboot_capability/server.ts');
 const tsxBin = path.join(here, '../node_modules/.bin/tsx');
 
 const servers: Server[] = [];
@@ -186,54 +185,6 @@ describe('paboot_tasks MCP vertical slice', () => {
       );
       expect(result.isError).toBe(false);
       expect(result.content).toContain('"id": "task-1"');
-    } finally {
-      await provider.close();
-    }
-  }, 20_000);
-});
-
-describe('paboot_capability MCP vertical slice', () => {
-  it('lists echo and skips the server-side gate for the builtin runtime', async () => {
-    const app = express();
-    app.use(express.json());
-    const gateCalls: unknown[] = [];
-    app.post('/api/internal/permissions/create', (req, res) => {
-      gateCalls.push(req.body);
-      res.json({ id: 'permission-1', status: 'pending' });
-    });
-    const server = app.listen(0);
-    servers.push(server);
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const daemonUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-    const spec: ToolServerSpec = {
-      name: 'paboot_capability',
-      command: tsxBin,
-      args: [capabilityServerPath],
-      env: {
-        ...process.env,
-        PABOOT_DAEMON_URL: daemonUrl,
-        PABOOT_TOKEN: 'test-token',
-        PABOOT_RUN_ID: 'run-1',
-        PABOOT_RUNTIME: 'builtin',
-      } as Record<string, string>,
-    };
-    const provider = new McpToolProvider([spec], { requestTimeoutMs: 10_000 });
-    try {
-      const tools = await provider.list({
-        agent: agent(process.cwd()),
-        signal: new AbortController().signal,
-      });
-      expect(tools.map((tool) => tool.name)).toContain('mcp__paboot_capability__echo');
-      const result = await provider.call(
-        { agent: agent(process.cwd()), signal: new AbortController().signal, callId: 'call-1' },
-        'mcp__paboot_capability__echo',
-        { text: 'hello' },
-      );
-      expect(result.isError).toBe(false);
-      expect(result.content).toContain('"echoed": "hello"');
-      // The builtin ToolExecutor is the only approver.
-      expect(gateCalls).toEqual([]);
     } finally {
       await provider.close();
     }

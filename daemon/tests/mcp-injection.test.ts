@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AppContext } from '../src/app/context';
-import {
-  capabilityToolServer,
-  perRunToolServers,
-  taskToolServer,
-} from '../src/mcp/injection';
+import { perRunToolServers, taskToolServer } from '../src/mcp/injection';
 
 function ctx(overrides: Partial<AppContext> = {}): AppContext {
   return {
@@ -17,7 +13,6 @@ function ctx(overrides: Partial<AppContext> = {}): AppContext {
       serverToken: 'server-token',
     },
     mcpServerPath: '/opt/paboot/mcp/servers/paboot_tasks/server.js',
-    capabilityMcpServerPath: '/opt/paboot/mcp/servers/paboot_capability/server.js',
     memoryMcpServerPath: '/opt/paboot/mcp/servers/paboot_memory/server.js',
     ...overrides,
   } as unknown as AppContext;
@@ -33,48 +28,20 @@ describe('taskToolServer', () => {
   });
 });
 
-describe('capabilityToolServer', () => {
-  it('carries the run id, server token and launching runtime', () => {
-    const spec = capabilityToolServer(ctx(), 'run-1', 'codex');
-    expect(spec.name).toBe('paboot_capability');
-    expect(spec.args).toEqual(['/opt/paboot/mcp/servers/paboot_capability/server.js']);
-    expect(spec.env).toMatchObject({
-      PABOOT_RUN_ID: 'run-1',
-      PABOOT_TOKEN: 'server-token',
-      PABOOT_RUNTIME: 'codex',
-    });
-  });
-});
-
 describe('perRunToolServers', () => {
-  it('mounts tasks, an enabled capability and memory', () => {
-    const specs = perRunToolServers(
-      ctx(),
-      'run-1',
-      'builtin',
-      'session-1',
-      new Set(['paboot_capability']),
-    );
-    expect(specs.map((spec) => spec.name)).toEqual([
-      'paboot_tasks',
-      'paboot_capability',
-      'paboot_memory',
-    ]);
-    expect(specs[1]?.env.PABOOT_RUNTIME).toBe('builtin');
-    expect(specs[2]?.env).toMatchObject({
+  it('mounts tasks and memory', () => {
+    const specs = perRunToolServers(ctx(), 'run-1', 'builtin', 'session-1');
+    expect(specs.map((spec) => spec.name)).toEqual(['paboot_tasks', 'paboot_memory']);
+    expect(specs[1]?.env).toMatchObject({
       PABOOT_SESSION_ID: 'session-1',
       PABOOT_TOKEN: 'server-token',
+      PABOOT_RUNTIME: 'builtin',
     });
-  });
-
-  it('omits capability until a binding enables it', () => {
-    const specs = perRunToolServers(ctx(), 'run-1', 'claude', 'session-1');
-    expect(specs.map((spec) => spec.name)).toEqual(['paboot_tasks', 'paboot_memory']);
   });
 
   it('omits entries whose path is not wired (partial test contexts)', () => {
     const specs = perRunToolServers(
-      ctx({ mcpServerPath: '', capabilityMcpServerPath: '', memoryMcpServerPath: '' }),
+      ctx({ mcpServerPath: '', memoryMcpServerPath: '' }),
       'run-1',
       'claude',
       'session-1',

@@ -10,9 +10,6 @@ import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
 import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
-import type { DeviceStreamHub } from '../capabilities/device-stream.js';
-import type { MockStore } from '../capabilities/mock-store.js';
-import type { DeviceProvider } from '../capabilities/types.js';
 import type { DebugRecorder } from '../debug/recorder.js';
 
 /**
@@ -49,14 +46,6 @@ export interface AppContext {
   hookPath: string;
   /** Absolute path to the compiled `paboot_tasks` MCP server entry. */
   mcpServerPath: string;
-  /** Absolute path to the compiled `paboot_capability` MCP server entry. */
-  capabilityMcpServerPath: string;
-  /** Device provider shared by capability routes; optional in partial tests. */
-  deviceProvider?: DeviceProvider;
-  /** On-demand screenshot mirror loops for the desktop device tab. */
-  deviceStream?: DeviceStreamHub;
-  /** File-backed workspace mock model (Dev Space S2). */
-  mockStore?: MockStore;
   /** [debug] In-memory live context audit behind `/debug`; optional in partial tests. */
   debug?: DebugRecorder;
 }

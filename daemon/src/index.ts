@@ -9,10 +9,6 @@ import { log } from './platform/log.js';
 import { listLocalAddresses } from './platform/network.js';
 import { KnowledgeStore } from './knowledge/store.js';
 import { scaffoldWorkspaceKnowledge } from './knowledge/scaffold.js';
-import { DeviceStreamHub } from './capabilities/device-stream.js';
-import { MockStore } from './capabilities/mock-store.js';
-import { AdbRunner } from './capabilities/providers/android/adb.js';
-import { AndroidDeviceProvider } from './capabilities/providers/android/index.js';
 import { MemoryKnowledgeIndexer } from './memory/knowledge-index.js';
 import { configuredMemoryModel, resolveMemoryModel } from './memory/model.js';
 import { MemoryStore } from './memory/store.js';
@@ -209,13 +205,6 @@ async function main(): Promise<void> {
       'paboot_tasks',
       'server.js',
     ),
-    capabilityMcpServerPath: path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      'mcp',
-      'servers',
-      'paboot_capability',
-      'server.js',
-    ),
     memoryMcpServerPath: path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       'mcp',
@@ -235,11 +224,6 @@ async function main(): Promise<void> {
   ) {
     scaffoldWorkspaceKnowledge(ctx.knowledge, seededWorkspace.id);
   }
-  const deviceProvider = new AndroidDeviceProvider(new AdbRunner());
-  ctx.deviceProvider = deviceProvider;
-  ctx.deviceStream = new DeviceStreamHub(deviceProvider);
-  ctx.mockStore = new MockStore(config.dataDir);
-
   // K2 lives in memory.db but the files stay authoritative; rebuild the mirror
   // for every known workspace at boot, then keep it fresh from knowledge routes.
   const knowledgeIndex = new MemoryKnowledgeIndexer(memory, ctx.knowledge);

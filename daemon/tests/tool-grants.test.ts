@@ -22,13 +22,9 @@ describe('toGrantKey', () => {
     expect(toGrantKey('mcp__')).toBe('mcp__');
   });
 
-  it('keeps capability / memory tools exact (forget must be re-confirmed)', () => {
+  it('keeps memory tools exact (forget must be re-confirmed)', () => {
     expect(toGrantKey('mcp__paboot_memory__forget')).toBe('mcp__paboot_memory__forget');
     expect(grantKeyCandidates('mcp__paboot_memory__forget')).toEqual(['mcp__paboot_memory__forget']);
-    expect(toGrantKey('mcp__paboot_capability__read')).toBe('mcp__paboot_capability__read');
-    expect(grantKeyCandidates('mcp__paboot_capability__read')).toEqual([
-      'mcp__paboot_capability__read',
-    ]);
     expect(toGrantKey('mcp__paboot_memory__search')).toBe('mcp__paboot_memory__search');
   });
 
