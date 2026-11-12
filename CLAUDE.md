@@ -220,7 +220,7 @@ paboot/
   客户端**不展示「设为默认」**：打开时按本机上次选择的工作区（Android/iOS/桌面都本地持久化，
   桌面按 `serverId` 存 localStorage），daemon 的 `is_default` 只作为「客户端没指定工作区」时的兜底。
   **`workspaces.family = dev | life`**：life 是内置工作区（cwd `<dataDir>/life/`，不可删 / 停用 /
-  设默认），客户端渲染为「生活」入口；family 互斥由 `ends` trigger 保证，end 只做上下文 / 能力 /
+  设默认），客户端渲染为「生活」入口；family 互斥由 `ends` trigger 保证，end 只做上下文 /
   记忆标签，不做记忆隔离。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
