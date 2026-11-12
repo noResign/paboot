@@ -1,7 +1,7 @@
 /**
  * Generic stdio MCP server loop. Each server owns its tool catalogue; this
  * module owns the JSON-RPC framing, initialization and dispatch so the
- * `paboot_tasks` / `paboot_capability` entries stay declarative.
+ * `paboot_tasks` / `paboot_memory` entries stay declarative.
  *
  * Only JSON-RPC frames go to stdout. Diagnostics go to stderr, and any
  * daemon/transport failure is returned as an MCP tool error (fail closed).

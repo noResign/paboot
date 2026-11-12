@@ -92,17 +92,17 @@ cancel 全部复用 `startSessionRun`。
 
 ## 通用工具桥（MCP）
 
-daemon 按 run 组装 `ToolServerSpec[]`（`paboot_tasks` + `paboot_capability`），每个 runtime 只负责把
+daemon 按 run 组装 `ToolServerSpec[]`（`paboot_tasks` + `paboot_memory`），每个 runtime 只负责把
 这份列表注册进自己的配置：
 
 - **Claude**：探测到 `--mcp-config` 后内联 JSON（env 携带
   `PABOOT_DAEMON_URL/TOKEN/RUN_ID`）。`paboot_tasks` 走既有 `mcp__.*` PreToolUse matcher；
-  `paboot_capability` 被 matcher 排除，由 server 自己 gate；bypass 不挂 hook。
+  `paboot_memory` 被 matcher 排除，由 server 自己 gate；bypass 不挂 hook。
 - **Codex**：通过 `codex app-server -c mcp_servers.<name>.*` 注入，并设
   `default_tools_approval_mode="approve"`——Codex 在 `approvalPolicy=never` 下会拒绝未预批准的
   MCP 调用。
 - **DeepSeek Harness**：作为 `session/new.mcpServers` 的 stdio 条目传入（每次 resume 重新挂载）。
-  DSH 不会为 MCP 工具本身发起审批，因此能力工具靠 `paboot_capability` 的 server 内部 gate。
+  DSH 不会为 MCP 工具本身发起审批，因此记忆写工具靠 `paboot_memory` 的 server 内部 gate。
 - **Builtin**：`McpToolProvider` 直接消费同一份列表；原生 `ToolExecutor` 负责审批，server 读到
   `PABOOT_RUNTIME=builtin` 时跳过内部 gate，避免双弹。
 - **未来 runtime**：实现「把 `ToolServerSpec` 注册进自己的配置」这一件事即可；工具实现、内部端点、

@@ -22,8 +22,8 @@ bypass       -> bypassPermissions
 
 `Read` / `Grep` **不纳入门禁**：读工作区外的文件不审批（见下文「读取不门控」）。`ask` 模式下 PreToolUse
 hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch|mcp__.*`，但用负向
-lookahead 排除 `mcp__paboot_capability__*` / `mcp__paboot_memory__*`（这两个 server 自己 gate，
-见下文）；`acceptEdits` 同理；`bypass` 不注入 hook。`WebSearch` / `WebFetch` 在 `ask` /
+lookahead 排除 `mcp__paboot_memory__*`（该 server 自己 gate，见下文）；`acceptEdits` 同理；
+`bypass` 不注入 hook。`WebSearch` / `WebFetch` 在 `ask` /
 `acceptEdits` 下都审批：它们会把查询、URL 和上下文发往外部服务，和「读本机文件」不是一类操作。
 
 `Glob` **不纳入**：它只返回文件名、不返回内容，却是探索阶段最频繁的调用，
@@ -53,10 +53,10 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   → hook 轮询 status → permissionDecision allow/deny → claude 放行/阻止
 ```
 
-### MCP server 自 gate（capability / memory）
+### MCP server 自 gate（memory）
 
-`paboot_tasks` 仍由 Claude hook / Codex / DeepSeek 的审批通道处理；`paboot_capability` /
-`paboot_memory` 在 MCP server 进程内自己 gate：工具执行前调
+`paboot_tasks` 仍由 Claude hook / Codex / DeepSeek 的审批通道处理；`paboot_memory`
+在 MCP server 进程内自己 gate：工具执行前调
 `POST /api/internal/permissions/create` 并轮询 `/status`，非 `allowed` 一律返回 MCP error。
 这样不依赖 runtime 是否 gate MCP 调用：
 
@@ -148,10 +148,9 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   `target` 可选当前会话 / 同 workspace 的已有会话 / 首次触发新建；目标会话由 daemon 校验，
   agent 不能跨 workspace 指定。记录 `created_by='mcp'` 与 audit；每会话最多 20 个；定时 run 内再次
   创建会被 `recursion_blocked`。AI 配置会话使用会话自身的权限模式（通常 `ask`），因此创建任务时
-  仍会经过现有 MCP 审批卡。`paboot_tasks` / `paboot_capability` / `paboot_memory` 都是
+  仍会经过现有 MCP 审批卡。`paboot_tasks` / `paboot_memory` 都是
   **精确授权 server**：「允许全部」只授权当前工具，不扩到未来工具；`forget` 必须逐次确认。
-  `paboot_capability` / `paboot_memory` 由 MCP server 自己 gate，Claude 的 PreToolUse matcher
-  会排除这两个前缀，避免双重弹窗。
+  `paboot_memory` 由 MCP server 自己 gate，Claude 的 PreToolUse matcher 会排除该前缀，避免双重弹窗。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
 
 ### ⚠️ 重要边界：`workspace` 不是沙箱

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { AppContext } from '../../app/context.js';
-import { resolveSessionEnd } from '../../capabilities/scope.js';
+import { resolveSessionEnd } from '../../ends/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
 import type { NormalizedEvent } from '../../types/api.js';

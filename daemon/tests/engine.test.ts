@@ -98,7 +98,6 @@ describe('run event stream', () => {
       'Read',
       'Grep',
       'mcp__paboot_memory__*',
-      'mcp__paboot_capability__*',
     ]);
     // Task tools still go through the PreToolUse hook.
     expect(settings!.permissions.allow).not.toContain('mcp__paboot_tasks__schedule_task');

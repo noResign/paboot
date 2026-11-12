@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
-import { resolveSessionEnd } from '../capabilities/scope.js';
+import { resolveSessionEnd } from '../ends/scope.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
 import { renderContextPrelude, type ContextPrelude } from '../context/prelude.js';
 import { buildKnowledgeSections } from '../knowledge/index.js';

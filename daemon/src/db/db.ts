@@ -105,15 +105,6 @@ export interface EndRootRow {
   path: string;
 }
 
-export interface CapabilityBindingRow {
-  scope_type: 'workspace' | 'end' | 'session';
-  scope_id: string;
-  provider_id: string;
-  enabled: number;
-  config_json: string;
-  updated_at: number;
-}
-
 export interface PermissionGrantRow {
   session_id: string;
   tool_name: string;
@@ -429,20 +420,6 @@ export class Db {
         provider_override TEXT,
         updated_at INTEGER NOT NULL
       );
-
-      -- 能力绑定：provider 在 workspace / end / session 上的启用与配置；
-      -- 解析时最近作用域优先（session > end > workspace）。
-      CREATE TABLE IF NOT EXISTS capability_bindings (
-        scope_type TEXT NOT NULL CHECK (scope_type IN ('workspace', 'end', 'session')),
-        scope_id TEXT NOT NULL,
-        provider_id TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        config_json TEXT NOT NULL DEFAULT '{}',
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (scope_type, scope_id, provider_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_capability_bindings_scope
-        ON capability_bindings(scope_type, scope_id);
 
       -- 提醒 / 删除 outbox（M1/M3 使用；P0 只建表，主库仍是唯一通知链路）。
       CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -792,9 +769,6 @@ export class Db {
     this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_permission_grants WHERE session_id = ?`).run(id);
-    this.db
-      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'session' AND scope_id = ?`)
-      .run(id);
     this.db
       .prepare(
         `DELETE FROM native_compactions WHERE thread_id IN
@@ -1377,20 +1351,11 @@ export class Db {
     // Ends are workspace-owned rows (no FK); clean them up with the workspace.
     this.db
       .prepare(
-        `DELETE FROM capability_bindings
-         WHERE scope_type = 'end' AND scope_id IN (SELECT id FROM ends WHERE workspace_id = ?)`,
-      )
-      .run(id);
-    this.db
-      .prepare(
         `DELETE FROM session_ends
          WHERE end_id IN (SELECT id FROM ends WHERE workspace_id = ?)
             OR session_id IN (SELECT id FROM sessions WHERE workspace_id = ?)`,
       )
       .run(id, id);
-    this.db
-      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'workspace' AND scope_id = ?`)
-      .run(id);
     this.db
       .prepare(`DELETE FROM end_roots WHERE end_id IN (SELECT id FROM ends WHERE workspace_id = ?)`)
       .run(id);
@@ -1437,9 +1402,6 @@ export class Db {
   deleteEnd(id: string): boolean {
     this.db.prepare(`UPDATE sessions SET end_id = NULL WHERE end_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_ends WHERE end_id = ?`).run(id);
-    this.db
-      .prepare(`DELETE FROM capability_bindings WHERE scope_type = 'end' AND scope_id = ?`)
-      .run(id);
     this.db.prepare(`DELETE FROM end_roots WHERE end_id = ?`).run(id);
     const result = this.db.prepare(`DELETE FROM ends WHERE id = ?`).run(id);
     return result.changes > 0;
@@ -1511,67 +1473,6 @@ export class Db {
     this.db
       .prepare(`INSERT OR IGNORE INTO end_roots (end_id, path) VALUES (?, ?)`)
       .run(endId, path);
-  }
-
-  // ---- capability bindings (nearest scope wins) ----
-
-  listCapabilityBindings(
-    scopeType: CapabilityBindingRow['scope_type'],
-    scopeId: string,
-  ): CapabilityBindingRow[] {
-    return this.db
-      .prepare(
-        `SELECT * FROM capability_bindings
-         WHERE scope_type = ? AND scope_id = ? ORDER BY provider_id ASC`,
-      )
-      .all(scopeType, scopeId) as unknown as CapabilityBindingRow[];
-  }
-
-  upsertCapabilityBinding(input: {
-    scopeType: CapabilityBindingRow['scope_type'];
-    scopeId: string;
-    providerId: string;
-    enabled?: boolean;
-    config?: Record<string, unknown>;
-  }): CapabilityBindingRow {
-    const now = Date.now();
-    this.db
-      .prepare(
-        `INSERT INTO capability_bindings
-           (scope_type, scope_id, provider_id, enabled, config_json, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(scope_type, scope_id, provider_id)
-         DO UPDATE SET enabled = excluded.enabled,
-                       config_json = excluded.config_json,
-                       updated_at = excluded.updated_at`,
-      )
-      .run(
-        input.scopeType,
-        input.scopeId,
-        input.providerId,
-        input.enabled === false ? 0 : 1,
-        JSON.stringify(input.config ?? {}),
-        now,
-      );
-    return this.db
-      .prepare(
-        `SELECT * FROM capability_bindings
-         WHERE scope_type = ? AND scope_id = ? AND provider_id = ?`,
-      )
-      .get(input.scopeType, input.scopeId, input.providerId) as unknown as CapabilityBindingRow;
-  }
-
-  deleteCapabilityBinding(
-    scopeType: CapabilityBindingRow['scope_type'],
-    scopeId: string,
-    providerId: string,
-  ): void {
-    this.db
-      .prepare(
-        `DELETE FROM capability_bindings
-         WHERE scope_type = ? AND scope_id = ? AND provider_id = ?`,
-      )
-      .run(scopeType, scopeId, providerId);
   }
 
   /**

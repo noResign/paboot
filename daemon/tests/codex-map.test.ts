@@ -36,8 +36,8 @@ describe('codex item → tool_result', () => {
         item: {
           id: 'mcp-1',
           type: 'mcpToolCall',
-          server: 'paboot_capability',
-          tool: 'android_screenshot',
+          server: 'paboot_memory',
+          tool: 'search_memory',
           status: 'completed',
           arguments: {},
           result: {

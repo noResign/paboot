@@ -70,14 +70,14 @@ async function harness(permissionMode: string | null) {
 describe('internal permission create', () => {
   it('rejects an unknown run instead of parking an invisible request', async () => {
     const h = await harness('ask');
-    const response = await h.create({ runId: 'missing', toolName: 'mcp__paboot_capability__echo' });
+    const response = await h.create({ runId: 'missing', toolName: 'mcp__paboot_memory__remember' });
     expect(response.status).toBe(404);
     expect(h.permissions.get('missing')).toBeUndefined();
   });
 
   it('asks under ask and announces the request to the run stream', async () => {
     const h = await harness('ask');
-    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_capability__echo' });
+    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_memory__remember' });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { id: string; status: string };
     expect(body.status).toBe('pending');
@@ -87,7 +87,7 @@ describe('internal permission create', () => {
 
   it('auto-allows under bypass without announcing', async () => {
     const h = await harness('bypass');
-    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_capability__echo' });
+    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_memory__remember' });
     expect(response.status).toBe(200);
     const body = (await response.json()) as { id: string; status: string };
     expect(body.status).toBe('allowed');
@@ -97,8 +97,8 @@ describe('internal permission create', () => {
 
   it('auto-allows a tool covered by a saved grant', async () => {
     const h = await harness('ask');
-    h.db.addPermissionGrant('session-1', 'mcp__paboot_capability__echo');
-    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_capability__echo' });
+    h.db.addPermissionGrant('session-1', 'mcp__paboot_memory__remember');
+    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_memory__remember' });
     const body = (await response.json()) as { id: string; status: string };
     expect(body.status).toBe('allowed');
     expect(h.events).toEqual([]);
@@ -106,7 +106,7 @@ describe('internal permission create', () => {
 
   it('reports the current status for a pending request', async () => {
     const h = await harness('ask');
-    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_capability__echo' });
+    const response = await h.create({ runId: 'run-1', toolName: 'mcp__paboot_memory__remember' });
     const { id } = (await response.json()) as { id: string };
     const status = await fetch(`${h.base}/api/internal/permissions/${id}/status`);
     expect(await status.json()).toMatchObject({ status: 'pending' });

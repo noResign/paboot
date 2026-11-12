@@ -22,10 +22,9 @@ describe('claudePermissionHookMatcher', () => {
     expect(re.test('mcp__paboot_tasks__schedule_task')).toBe(true);
   });
 
-  it('excludes the self-gating capability and memory servers', () => {
+  it('excludes the self-gating memory server', () => {
     for (const mode of ['ask', 'acceptEdits'] as const) {
       const re = matcher(mode);
-      expect(re.test('mcp__paboot_capability__read')).toBe(false);
       expect(re.test('mcp__paboot_memory__forget')).toBe(false);
       expect(re.test('mcp__paboot_memory__search')).toBe(false);
     }

@@ -118,8 +118,8 @@ export function startRun(req: RunRequest): ActiveRun {
           // outside the working directories. Explicit allow rules do that;
           // user/managed deny and ask rules still take precedence.
           //
-          // Memory/capability servers self-gate inside their own process (see
-          // mcp/gate.ts); they are excluded from the PreToolUse matcher. Claude
+          // The memory server self-gates inside its own process (see
+          // mcp/gate.ts); it is excluded from the PreToolUse matcher. Claude
           // still needs its own allow rule, otherwise the call is denied before
           // the server can ask the operator (which looked like「没有授权」with no
           // prompt). `paboot_tasks` stays out: its tools are hook-gated.
@@ -127,7 +127,7 @@ export function startRun(req: RunRequest): ActiveRun {
             // One rule per self-gated server, so adding a tool never requires
             // touching this list. `mcp__<server>__*` is Claude Code's supported
             // allow-glob form.
-            allow: ['Read', 'Grep', 'mcp__paboot_memory__*', 'mcp__paboot_capability__*'],
+            allow: ['Read', 'Grep', 'mcp__paboot_memory__*'],
           },
           hooks: {
             PreToolUse: [
