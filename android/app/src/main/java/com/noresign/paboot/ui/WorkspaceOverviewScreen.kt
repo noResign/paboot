@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,8 +50,8 @@ import com.noresign.paboot.model.session.workspaceDirectoryRows
 import com.noresign.paboot.network.daemon.dto.WorkspaceDto
 import com.noresign.paboot.ui.theme.CodeBody
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.noresign.paboot.viewmodel.CapabilityStatusUiState
-import com.noresign.paboot.viewmodel.CapabilityStatusViewModel
+import com.noresign.paboot.viewmodel.EndStatusUiState
+import com.noresign.paboot.viewmodel.EndStatusViewModel
 import com.noresign.paboot.viewmodel.SessionListUiState
 import com.noresign.paboot.viewmodel.SessionListViewModel
 import kotlin.collections.isNotEmpty
@@ -79,9 +78,9 @@ fun WorkspaceOverviewScreen(
     val workspaces by viewModel.workspaces.collectAsState()
     val workspace = workspaces.find { it.id == workspaceId }
     val sessions = (uiState as? SessionListUiState.Content)?.model?.allSessions
-    val capabilityViewModel: CapabilityStatusViewModel = viewModel()
-    val capabilityState by capabilityViewModel.state.collectAsState()
-    LaunchedEffect(workspaceId) { capabilityViewModel.load(workspaceId) }
+    val endViewModel: EndStatusViewModel = viewModel()
+    val endState by endViewModel.state.collectAsState()
+    LaunchedEffect(workspaceId) { endViewModel.load(workspaceId) }
 
     Scaffold(
         topBar = {
@@ -115,7 +114,7 @@ fun WorkspaceOverviewScreen(
                     DirectorySection(dirs)
                     if (workspace.family != "life") {
                         KnowledgeCard(workspace, onOpenKnowledge)
-                        CapabilityCard(capabilityState)
+                        EndsCard(endState)
                     }
                     MemoryCard(workspace, onOpenMemory)
                     if (workspace.isBuiltin && workspace.family != "life") {
@@ -409,7 +408,7 @@ private fun KnowledgeCard(workspace: WorkspaceDto, onOpenKnowledge: (String) -> 
 }
 
 @Composable
-private fun CapabilityCard(state: CapabilityStatusUiState) {
+private fun EndsCard(state: EndStatusUiState) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -428,7 +427,7 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Rounded.PhoneAndroid,
+                    Icons.Rounded.Folder,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(19.dp),
@@ -438,27 +437,23 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text("Android 设备（只读）", style = MaterialTheme.typography.titleSmall)
+                Text("端（只读）", style = MaterialTheme.typography.titleSmall)
                 Text(
                     when (state) {
-                        is CapabilityStatusUiState.Loading -> "检查中…"
-                        is CapabilityStatusUiState.Unavailable -> "能力状态不可用"
-                        is CapabilityStatusUiState.Content -> {
+                        is EndStatusUiState.Loading -> "检查中…"
+                        is EndStatusUiState.Unavailable -> "端状态不可用"
+                        is EndStatusUiState.Content -> {
                             val activeEnds = state.activeEnds
-                            val onlineDevices = state.onlineDevices
                             when {
                                 activeEnds.isNotEmpty() -> activeEnds
-                                    .mapIndexed { index: Int, end: WorkspaceRepository.CapabilityEndSummary ->
+                                    .mapIndexed { _: Int, end: WorkspaceRepository.EndSummary ->
                                         buildString {
                                             append(end.name).append("（").append(end.kind).append("）")
-                                            if (index == 0 && onlineDevices > 0) {
-                                                append(" · ").append(onlineDevices).append(" 台设备在线")
-                                            }
                                             if (end.summary.isNotBlank()) append(" · ").append(end.summary)
                                         }
                                     }
                                     .joinToString("\n")
-                                state.archivedEndNames.isEmpty() -> "尚未添加 Android 端；请在桌面端添加。"
+                                state.archivedEndNames.isEmpty() -> "尚未添加端；请在桌面端添加。"
                                 else -> "没有启用的端；已归档的端可在桌面端恢复。"
                             }
                         }
@@ -468,7 +463,7 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (state is CapabilityStatusUiState.Content && state.archivedEndNames.isNotEmpty()) {
+                if (state is EndStatusUiState.Content && state.archivedEndNames.isNotEmpty()) {
                     Text(
                         "已归档：${state.archivedEndNames.joinToString("、")}",
                         style = MaterialTheme.typography.labelSmall,
@@ -478,7 +473,7 @@ private fun CapabilityCard(state: CapabilityStatusUiState) {
                     )
                 }
                 Text(
-                    "镜像 / 点击请在桌面端操作。",
+                    "端的增删与目录调整请在桌面端操作。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -17,7 +17,6 @@ import com.noresign.paboot.network.daemon.dto.KnowledgeDocResponse
 import com.noresign.paboot.network.daemon.dto.KnowledgeDocsResponse
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyRequest
 import com.noresign.paboot.network.daemon.dto.KnowledgeVerifyResponse
-import com.noresign.paboot.network.daemon.dto.CapabilityDeviceListDto
 import com.noresign.paboot.network.daemon.dto.EndsResponse
 import com.noresign.paboot.network.daemon.dto.MemoryBriefDto
 import com.noresign.paboot.network.daemon.dto.MemoryClaimResponse
@@ -347,10 +346,4 @@ interface PabootApi {
 
     @GET("api/workspaces/{id}/ends")
     suspend fun workspaceEnds(@Path("id") id: String): EndsResponse
-
-    @GET("api/workspaces/{id}/device")
-    suspend fun workspaceDevice(
-        @Path("id") id: String,
-        @Query("endId") endId: String? = null,
-    ): CapabilityDeviceListDto
 }

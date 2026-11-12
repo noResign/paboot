@@ -165,12 +165,6 @@ public struct DirectoriesResponse: Decodable, Equatable, Sendable {
     }
 }
 
-public struct EndCapabilityDto: Decodable, Equatable, Sendable {
-    public let id: String
-    public let name: String
-    public let enabled: Bool
-}
-
 public struct EndDto: Decodable, Equatable, Sendable {
     public let id: String
     public let workspaceId: String
@@ -183,7 +177,6 @@ public struct EndDto: Decodable, Equatable, Sendable {
     public let archivedAt: Int?
     public let summary: String
     public let notes: String
-    public let capabilities: [EndCapabilityDto]
 }
 
 public struct SessionEndDto: Decodable, Equatable, Sendable {
@@ -198,7 +191,6 @@ public struct SessionEndDto: Decodable, Equatable, Sendable {
     public let archivedAt: Int?
     public let summary: String
     public let notes: String
-    public let capabilities: [EndCapabilityDto]
     public let role: String
 }
 
@@ -209,18 +201,4 @@ public struct SessionEndsResponse: Decodable, Equatable, Sendable {
 
 public struct EndsResponse: Decodable, Equatable, Sendable {
     public let ends: [EndDto]
-}
-
-public struct CapabilityDeviceDto: Decodable, Equatable, Sendable {
-    public let serial: String
-    public let state: String
-    public let model: String?
-    public let product: String?
-    public let device: String?
-}
-
-public struct CapabilityDeviceListDto: Decodable, Equatable, Sendable {
-    public let endId: String
-    public let serial: String?
-    public let devices: [CapabilityDeviceDto]
 }

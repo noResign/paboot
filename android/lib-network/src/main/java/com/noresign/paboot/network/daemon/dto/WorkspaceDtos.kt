@@ -106,14 +106,6 @@ data class EndDto(
     val archivedAt: Long? = null,
     val summary: String = "",
     val notes: String = "",
-    val capabilities: List<EndCapabilityDto> = emptyList(),
-)
-
-@Serializable
-data class EndCapabilityDto(
-    val id: String = "",
-    val name: String = "",
-    val enabled: Boolean = false,
 )
 
 @Serializable
@@ -129,7 +121,6 @@ data class SessionEndDto(
     val archivedAt: Long? = null,
     val summary: String = "",
     val notes: String = "",
-    val capabilities: List<EndCapabilityDto> = emptyList(),
     val role: String = "active",
 )
 
@@ -142,20 +133,4 @@ data class SessionEndsResponse(
 @Serializable
 data class EndsResponse(
     val ends: List<EndDto> = emptyList(),
-)
-
-@Serializable
-data class CapabilityDeviceDto(
-    val serial: String = "",
-    val state: String = "offline",
-    val model: String? = null,
-    val product: String? = null,
-    val device: String? = null,
-)
-
-@Serializable
-data class CapabilityDeviceListDto(
-    val endId: String = "",
-    val serial: String? = null,
-    val devices: List<CapabilityDeviceDto> = emptyList(),
 )

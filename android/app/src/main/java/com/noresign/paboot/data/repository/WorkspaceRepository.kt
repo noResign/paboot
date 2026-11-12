@@ -23,33 +23,27 @@ class WorkspaceRepository(
         return PabootClient.create(url, token)
     }
 
-    data class CapabilityEndSummary(val name: String, val kind: String, val summary: String)
+    data class EndSummary(val name: String, val kind: String, val summary: String)
 
-    data class CapabilityStatus(
-        val activeEndName: String?,
-        val onlineDevices: Int,
+    data class EndsStatus(
         val archivedEndNames: List<String> = emptyList(),
-        val activeEnds: List<CapabilityEndSummary> = emptyList(),
+        val activeEnds: List<EndSummary> = emptyList(),
     )
 
-    suspend fun capabilityStatus(workspaceId: String): NetworkResult<CapabilityStatus> {
+    suspend fun endsStatus(workspaceId: String): NetworkResult<EndsStatus> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         val ends = when (val r = safeApiCall { api.workspaceEnds(workspaceId) }) {
             is NetworkResult.Success -> r.data.ends
             is NetworkResult.Error -> return r
         }
-        val archived = ends.filter { it.status == "archived" }.map { it.name }
-        val activeEnds = ends.filter { it.status == "active" }
-        val summaries = activeEnds.map {
-            CapabilityEndSummary(name = it.name, kind = it.kind, summary = it.summary)
-        }
-        val active = activeEnds.firstOrNull()
-            ?: return NetworkResult.Success(CapabilityStatus(null, 0, archived, summaries))
-        val online = when (val r = safeApiCall { api.workspaceDevice(workspaceId, active.id) }) {
-            is NetworkResult.Success -> r.data.devices.count { it.state == "device" }
-            is NetworkResult.Error -> 0
-        }
-        return NetworkResult.Success(CapabilityStatus(active.name, online, archived, summaries))
+        return NetworkResult.Success(
+            EndsStatus(
+                archivedEndNames = ends.filter { it.status == "archived" }.map { it.name },
+                activeEnds = ends
+                    .filter { it.status == "active" }
+                    .map { EndSummary(name = it.name, kind = it.kind, summary = it.summary) },
+            ),
+        )
     }
 
     suspend fun listWorkspaces(): NetworkResult<List<WorkspaceDto>> {
