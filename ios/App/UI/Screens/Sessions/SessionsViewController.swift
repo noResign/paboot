@@ -940,7 +940,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
 
         if workspace.family != "life" {
             contentStack.addArrangedSubview(knowledgeCard())
-            contentStack.addArrangedSubview(capabilityCard())
+            contentStack.addArrangedSubview(endsCard())
         }
         contentStack.addArrangedSubview(memoryCard())
 
@@ -1210,11 +1210,11 @@ private final class WorkspaceOverviewViewController: UIViewController {
         return card
     }
 
-    private func capabilityCard() -> UIView {
+    private func endsCard() -> UIView {
         let card = makeCard()
-        let iconBox = makeIconBox(systemName: "iphone", boxSize: 38, iconSize: 19)
+        let iconBox = makeIconBox(systemName: "folder", boxSize: 38, iconSize: 19)
         let title = UILabel()
-        title.text = "Android 设备（只读）"
+        title.text = "端（只读）"
         title.font = Typography.cardTitle
         title.textColor = Theme.Colors.textPrimary
         let detail = UILabel()
@@ -1228,7 +1228,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         archivedLabel.numberOfLines = 2
         archivedLabel.isHidden = true
         let hint = UILabel()
-        hint.text = "镜像 / 点击请在桌面端操作。"
+        hint.text = "端的增删与目录调整请在桌面端操作。"
         hint.font = Typography.caption
         hint.textColor = Theme.Colors.textMuted
         hint.numberOfLines = 2
@@ -1260,29 +1260,21 @@ private final class WorkspaceOverviewViewController: UIViewController {
                     archivedLabel.isHidden = false
                 }
                 let activeEnds = ends.filter { $0.status == "active" }
-                guard let first = activeEnds.first else {
+                guard !activeEnds.isEmpty else {
                     detail.text = archived.isEmpty
-                        ? "尚未添加 Android 端；请在桌面端添加。"
+                        ? "尚未添加端；请在桌面端添加。"
                         : "没有启用的端；已归档的端可在桌面端恢复。"
                     return
                 }
-                let devices = try await repository.deviceList(
-                    workspaceId: workspace.id,
-                    endId: first.id
-                )
-                let online = devices.devices.filter { $0.state == "device" }.count
-                detail.text = activeEnds.enumerated().map { index, end in
+                detail.text = activeEnds.map { end in
                     var line = "\(end.name)（\(end.kind)）"
-                    if index == 0 {
-                        line += " · \(online) 台设备在线"
-                    }
                     if !end.summary.isEmpty {
                         line += " · \(end.summary)"
                     }
                     return line
                 }.joined(separator: "\n")
             } catch {
-                detail.text = "能力状态不可用"
+                detail.text = "端状态不可用"
             }
         }
         return card
