@@ -111,21 +111,6 @@ export interface PermissionGrantRow {
   created_at: number;
 }
 
-export interface SessionTodoRow {
-  session_id: string;
-  position: number;
-  content: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  active_form: string;
-  updated_at: number;
-}
-
-export interface SessionTodoInput {
-  content: string;
-  status: SessionTodoRow['status'];
-  activeForm: string;
-}
-
 /** Per-workspace memory switches. Missing row = product defaults (life on, dev off). */
 export interface MemorySettingsRow {
   workspace_id: string;
@@ -468,16 +453,6 @@ export class Db {
       -- Builtin runtime transcript. One thread per agent run lineage; P3 uses
       -- one fixed builtin thread per session, while group chat/subagents can add
       -- sibling or child threads without changing this schema.
-      -- 当前会话的待办列表；TodoWrite 整表替换，随会话级联删除。
-      CREATE TABLE IF NOT EXISTS session_todos (
-        session_id TEXT NOT NULL,
-        position INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed')),
-        active_form TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, position)
-      );
 
       CREATE TABLE IF NOT EXISTS native_threads (
         id TEXT PRIMARY KEY,
@@ -795,7 +770,6 @@ export class Db {
     this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_permission_grants WHERE session_id = ?`).run(id);
-    this.db.prepare(`DELETE FROM session_todos WHERE session_id = ?`).run(id);
     this.db
       .prepare(
         `DELETE FROM native_compactions WHERE thread_id IN
@@ -811,28 +785,6 @@ export class Db {
     this.db.prepare(`DELETE FROM native_threads WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_ends WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
-  }
-
-  // ---- session todos ----
-
-  listSessionTodos(sessionId: string): SessionTodoRow[] {
-    return this.db
-      .prepare(`SELECT * FROM session_todos WHERE session_id = ? ORDER BY position ASC`)
-      .all(sessionId) as unknown as SessionTodoRow[];
-  }
-
-  replaceSessionTodos(sessionId: string, todos: readonly SessionTodoInput[]): SessionTodoRow[] {
-    const now = Date.now();
-    this.db.prepare(`DELETE FROM session_todos WHERE session_id = ?`).run(sessionId);
-    const insert = this.db.prepare(
-      `INSERT INTO session_todos
-         (session_id, position, content, status, active_form, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    );
-    todos.forEach((todo, position) => {
-      insert.run(sessionId, position, todo.content, todo.status, todo.activeForm, now);
-    });
-    return this.listSessionTodos(sessionId);
   }
 
   // ---- attachments ----

@@ -1,4 +1,3 @@
-import type { SessionTodoInput } from '../../../db/db.js';
 import type { ToolDescriptor } from '../types.js';
 import { isRecord } from './file-utils.js';
 import type { ToolCallContext, ToolImplementation, ToolResult } from './types.js';
@@ -7,13 +6,18 @@ import { ToolError } from './types.js';
 const MAX_TODOS = 50;
 const STATUSES = new Set(['pending', 'in_progress', 'completed']);
 
-export interface TodoToolOptions {
-  /** Replace the session's list; returns nothing (the tool renders from input). */
-  save: (sessionId: string, todos: readonly SessionTodoInput[]) => void;
+interface TodoInput {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  activeForm: string;
 }
 
-/** Claude-compatible todo list replacement. */
-export function createTodoTool(options: TodoToolOptions): ToolImplementation {
+/**
+ * Claude-compatible todo list replacement. The list is not persisted here:
+ * clients rebuild it from the TodoWrite tool_use events already stored with
+ * the run transcript, so a second store would only create two sources of truth.
+ */
+export function createTodoTool(): ToolImplementation {
   const descriptor: ToolDescriptor = {
     name: 'TodoWrite',
     title: 'TodoWrite',
@@ -47,12 +51,8 @@ export function createTodoTool(options: TodoToolOptions): ToolImplementation {
   return {
     descriptor,
     call(input: unknown, context: ToolCallContext): ToolResult {
+      void context;
       const todos = parseTodos(input);
-      const sessionId = context.agent.sessionId;
-      if (!sessionId) {
-        throw new ToolError('todos require a session', 'todo_unavailable');
-      }
-      options.save(sessionId, todos);
       return {
         content: todos.length === 0
           ? 'Todo list cleared.'
@@ -66,7 +66,7 @@ export function createTodoTool(options: TodoToolOptions): ToolImplementation {
   };
 }
 
-function parseTodos(input: unknown): SessionTodoInput[] {
+function parseTodos(input: unknown): TodoInput[] {
   if (!isRecord(input) || !Array.isArray(input['todos'])) {
     throw new ToolError('todos must be an array', 'todo_invalid_input');
   }
@@ -90,7 +90,7 @@ function parseTodos(input: unknown): SessionTodoInput[] {
     }
     return {
       content,
-      status: status as SessionTodoInput['status'],
+      status: status as TodoInput['status'],
       activeForm: typeof activeForm === 'string' ? activeForm : content,
     };
   });
