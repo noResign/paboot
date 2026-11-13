@@ -237,11 +237,7 @@ async function runBuiltin(
         maxLineChars: builtinConfig.tools.grep.maxLineChars,
       }),
       createGlobTool({ maxResults: builtinConfig.tools.glob.maxResults }),
-      createTodoTool({
-        save: (sessionId, todos) => {
-          ctx.db.replaceSessionTodos(sessionId, todos);
-        },
-      }),
+      createTodoTool(),
       createLoadSkillTool(skills, {
         allowedSkills: profile.allowedSkills,
       }),

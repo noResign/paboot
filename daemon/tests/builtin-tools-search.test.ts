@@ -10,7 +10,6 @@ import {
   type AgentRunContext,
   type ToolCallContext,
 } from '../src/runtimes/builtin/index';
-import { Db } from '../src/db/db';
 
 const tempDirs: string[] = [];
 
@@ -155,13 +154,8 @@ describe('Glob tool', () => {
 });
 
 describe('TodoWrite tool', () => {
-  it('validates the Claude-compatible shape and saves the list', () => {
-    const saved: unknown[] = [];
-    const tool = createTodoTool({
-      save: (_sessionId, todos) => {
-        saved.push(todos);
-      },
-    });
+  it('validates the Claude-compatible shape and renders the list', () => {
+    const tool = createTodoTool();
     const agent = makeAgent(tempDir());
 
     const result = tool.call(
@@ -176,12 +170,10 @@ describe('TodoWrite tool', () => {
 
     expect(result.isError).toBe(false);
     expect(result.content).toContain('[in_progress] write tests');
-    expect(saved).toHaveLength(1);
-    expect(saved[0]).toHaveLength(2);
   });
 
   it('rejects invalid statuses', () => {
-    const tool = createTodoTool({ save: () => undefined });
+    const tool = createTodoTool();
     const agent = makeAgent(tempDir());
     expect(() =>
       tool.call(
@@ -189,30 +181,5 @@ describe('TodoWrite tool', () => {
         callContext(agent),
       ),
     ).toThrow(/invalid status/);
-  });
-
-  it('persists through the sessions table helper and cascades on delete', () => {
-    const db = new Db(':memory:');
-    const root = tempDir();
-    const session = db.createSession({
-      id: 's-todos',
-      runtime: 'builtin',
-      workspaceId: 'ws-1',
-      permissionMode: 'ask',
-      cwd: root,
-    });
-
-    db.replaceSessionTodos(session.id, [
-      { content: 'one', status: 'pending', activeForm: 'doing one' },
-      { content: 'two', status: 'completed', activeForm: 'doing two' },
-    ]);
-    expect(db.listSessionTodos(session.id)).toMatchObject([
-      { position: 0, content: 'one', status: 'pending' },
-      { position: 1, content: 'two', status: 'completed' },
-    ]);
-
-    db.deleteSession(session.id);
-    expect(db.listSessionTodos(session.id)).toEqual([]);
-    db.close();
   });
 });
