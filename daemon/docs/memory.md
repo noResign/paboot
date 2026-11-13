@@ -18,10 +18,14 @@
 - **M2**：Tier-0 精确去重 + Tier-1 近似候选（只记候选，不自动合并）；冲突 / 取代 / `disputed`
   裁决；强化（`reinforcement_dates`）与 ACT-R 选材；实体归一 + 显式 merge / unmerge + 跨 scope
   link；memory MCP 只读 + 写工具（写工具走审批 gate）。
+- **计划生命周期（D36 / D37，M2 之后的小步）**：`focus` 单值谓词（当前主线）走取代逻辑；
+  brief 增加 `## 当前计划` 分区，并在注入前收敛计划类 claim。
+- **反馈与 loop 完成（D38）**：`mem_feedback` 进入 brief 选材与按轮召回（`wrong` 直接排除）；
+  summary 的 `completed` 与 open loop 做句级比对，命中标 `candidate_done`（不自动 done）。
 
-**未做**（M3 / M4 及已知缺口）：loop 完成匹配、主动提醒与 outbox 契约、周叙事、episode（M3）；
-connector、user scope 导出 / 重置（M4）；实体参与检索与自动 link；`provider_override` 目前只持久化，
-尚未参与抽取模型解析（详见 §8）。
+**未做**（M3 / M4 及已知缺口）：loop 完成候选的三端审核 UI 与主动提醒 / outbox 契约、周叙事、
+episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与检索与自动 link；
+`provider_override` 目前只持久化，尚未参与抽取模型解析（详见 §8）。
 
 ## 2. 存储
 
@@ -71,6 +75,9 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
     Bash 不猜。
   - LLM summary 覆盖 request / investigated / learned / completed / notes；`nextSteps`
     同时写一条 open `followup` loop 候选（同 scope + 标题去重）。
+  - **loop 完成候选（D38）**：`completed` 与本 scope 每个 open loop 做句级比对（见 §4），
+    命中则标 `candidate_done` 并记 `mem_ops`。**不自动置 done**；`candidate_done` 不再出现在
+    open 列表里，因此 `[未完成]` 召回不会把已做完的事当未完成注入。
   - `(scope, source_id, content_hash)` / `(session_id, run_id)` 保证幂等。
   - provider=none 时机械基线仍保留；配置 provider 后 LLM 结果替换基线。
 
@@ -93,10 +100,13 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
 - **Tier-0 精确**：`dedupKey` 相同或 `(scope, end, predicate, normalized object)` 相同 →
   合并证据、追加 `reinforcement_dates`；不新增行。`derived` 重复不会降级
   `user_confirmed`，反向会升级并采用新 summary。
-- **功能型谓词冲突**：`lives_in` / `works_at` / `name` / `birthday` 的旧值在新值有更晚
+- **功能型谓词冲突**：`lives_in` / `works_at` / `name` / `birthday` / `focus` 的旧值在新值有更晚
   `validFrom` 时标记 `superseded`（`valid_to = 新.valid_from`）；同起点且置信度接近 →
-  双双 `disputed`；`user_confirmed` 永不被自动 supersede。多值谓词（likes / plans / goals /
-  relations）保留多条 active。
+  双双 `disputed`；`user_confirmed` 永不被自动 supersede。
+- **单值收敛（D36）**：取代后继续扫候选，一次新值会清掉该谓词所有冲突的 active 值，不残留
+  「只压掉最新一条」的旧值。`focus` 是「当前主线」，两边都没有 `validFrom` 时按捕获顺序取代
+  （`CAPTURE_ORDER_PREDICATES`）；事实谓词不做这个兜底——无日期的旧事实可能是回填历史。
+- 多值谓词（likes / plans / goals / relations）保留多条 active。
 - **Tier-1 近似**（D33）：语料 ≥ 20 条后启用，同 scope + predicate 上做 IDF 加权 cosine
   （CJK bigram + Latin token）；≥ 0.72 写入 `mem_claim_duplicates(status=pending)`，
   **不自动合并**；对称差里的稀有 identifier token（如 `ffmpeg-7.1` vs `6.1`）否决候选。
@@ -105,6 +115,14 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
   `distinct` / `dismiss` 只更新候选状态；`user_confirmed` 仍然优先。
 - **强化 / 排序**（D34）：重复确认按天追加 `reinforcement_dates`（FIFO 10，不改 confidence）；
   brief 用 ACT-R recency 选材（α=0），并保护最新 25% 不被预算裁掉。
+- **反馈排序**（D38）：`mem_feedback` 近 30 天记录参与选材。`wrong` 直接排除（brief 与按轮召回
+  都不再出现）；`stale` / `not_relevant` 只降权（各 -300 / -150，可累计 2 次封顶）；`helpful`
+  每次 +10、封顶 +50。feedback 权重始终低于 `user_confirmed` 的 +1000，且不改
+  `confidence` / `reinforcement_dates`。
+- **loop 完成匹配**（D38）：`memory/loop-match.ts` 对 `completed` **逐句**与 loop 标题比对
+  （CJK 2-gram + 整段 latin identifier），要求单句覆盖 ≥ 50% 标题 token 且共享 ≥ 2 个 token；
+  含「还剩 / 尚未 / 待办 / 下一步」等未完成措辞的句子直接跳过。句级而非整段是实测结论：
+  整段包含会在「实现 / 测试 / 路由」这类通用词上大面积误判。
 - worker 单写者。捕获即时，抽取防抖：
   - 每次 run 结束只写 pending；单条消息不会立刻触发 LLM；
   - **按会话统计**：同一会话 pending 达到 6 条消息，立即抽取；
@@ -119,8 +137,15 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
 
 ## 5. 注入
 
-- brief 由 `memory/brief.ts` 确定性拼装：`## 关于你` / `## 偏好` / `## 注意`；
-  每条带短 ID（`#claim_ab12`）与有效期。
+- brief 由 `memory/brief.ts` 确定性拼装：`## 关于你` / `## 当前计划` / `## 偏好` /
+  `## 注意`；每条带短 ID（`#claim_ab12`）与有效期。
+- **分区（D37）**：`关于你` 是 fact / profile / relation（含 `habit` / `schedule` 这类既有习惯），
+  `当前计划` 是 `focus` / `plan` / `goal`，`偏好` 是 kind=preference。`## 注意` 是固定免责声明，
+  并说明「当前计划只列最近几条，更早的可用 search_memory 查到」。
+- **计划收敛（D37）**：在排序和预算之前先收敛，被收敛掉的 claim 不进 brief、不计入
+  `usedClaimIds`，但仍在库里可检索。规则：`focus` 只取最新 1 条并标 `[当前主线]`；`plan` /
+  `goal` 只取时间最新的 2 条，且超过 14 天又没有 `reinforcement_dates` 的视为已过期、不再列出。
+  「时间」取 `validFrom`，缺失时退回捕获时间。
 - **read-policy**（`memory/read-policy.ts`）：
   - dev：只读当前 workspace；
   - life：`user`（按 `profileMode` 过滤）+ life workspace + 每个 `life_readable=1` 且已启用的
@@ -169,11 +194,12 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
 | `/api/memory/disputes` | GET | 待裁决的冲突对（来自 `mem_ops` 的 dispute 记录） |
 | `/api/memory/disputes/:newId/resolve` | POST | `{ oldId, keep: 'new'\|'old' }` 裁决冲突；保留方标记 `user_confirmed`（operator） |
 | `/api/memory/entity-links` | GET / POST / DELETE | 跨 scope 身份 link（仅 user ↔ life，operator）；POST `{ a, b }`，relation 由 kind 推导；自动 link 写 `created_by=auto` |
-| `/api/memory/feedback` | POST | 记录 helpful / wrong / stale / corrected |
+| `/api/memory/feedback` | POST | 记录 helpful / wrong / stale / not_relevant / corrected（进 D38 排序） |
 | `/api/memory/remember` | POST | 客户端「记住这个」（`sessionId` + `messageId`） |
 | `/api/memory/search` | GET | `q` + `sessionId`/`scope`（可选 `files`）；D31 检索阶梯，返回 claim / source / observation / summary / document 命中 |
 | `/api/memory/timeline` | GET | observation + session summary 时间线 |
-| `/api/memory/loops` | GET | 当前可读 scope 的 open loops |
+| `/api/memory/loops` | GET | 当前可读 scope 的 loops；`status=open`（默认）/ `candidate_done` / `all` |
+| `/api/memory/loops/:id` | PATCH | `{action:'confirm'\|'reopen'}`：确认完成 / 撤回候选（operator） |
 | `/api/memory/sources/:id` | GET | L0 原文（read-policy 过滤） |
 | `/api/memory/status` | GET | pending / 最近整理 / 失败次数 / extraction model / modelAvailable |
 | `/api/memory/session` | PATCH | 会话级 `memory_mode` |
@@ -218,20 +244,31 @@ connector、user scope 导出 / 重置（M4）；实体参与检索与自动 lin
 - Tier-1 候选：桌面端可审核（merge / distinct / dismiss），Android / iOS 只读展示；`disputed`
   裁决同理（桌面端 `disputes` 面板，移动端只读）。
 - memory MCP 读 / 写工具已接；`remember` 只写当前 workspace note，跨 workspace `target=life`
-  仍未提供；loop 完成匹配仍靠模型显式调用 `complete_loop`。
+  仍未提供；loop 也可由模型显式调用 `complete_loop` 直接置 done。
 - 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度待接入；builtin 暂未接按轮召回。
-- loop 候选只落库，没有完成匹配 / 提醒 / UI。
+- **loop 完成候选已接三端**：桌面端「跟进」tab（确认完成 / 仍在进行）、Android 跟进卡片
+  （TextButton）、iOS 跟进 section（左滑操作）。三端都只展示 `open` 与 `candidate_done`，
+  完成态不再返回；仍**没有提醒 / outbox**（属 M3）。
+- **loop 匹配是词面的**：句级 2-gram 覆盖 + 未完成措辞过滤，实测在 170 open loop × 203 条摘要的
+  真实语料上产出 3 个候选（其中 2 个人工核对为真）。它抓不到「改叫法描述同一件事」的完成，
+  也不做跨 scope 匹配；宁可漏，不可错。
 - 观察压缩与 claim 共用一次 LLM 调用；超长事件的 `<elided>` 二次压缩尚未实现。
 - 客户端「记住这个」按钮尚未接线（API 已就绪）；会话级记忆三档已接桌面 / Android / iOS；
   移动端只读设置 + 时间线，没有搜索 / 晋升（按只读范围）。
 - 真实 provider 的抽取质量尚未评估；自动化 fixture 只验证管线与护栏。
-- **计划类 claim 没有生命周期**：`FUNCTIONAL_PREDICATES` 只有 `lives_in` / `works_at` / `name` /
-  `birthday`，`plan` / `goal` / `habit` 按多值保留、永不 supersede，也没有 `done` / `abandoned`
-  状态。同一路线图被反复记录时会同时 active，brief 里出现互相矛盾的「计划」。
-- **`mem_feedback` 只落库，不参与排序**：`brief.ts` 的 rank 只看 `authority` / `importance` /
-  ACT-R / `confidence`，没有任何 feedback 项；`wrong` / `stale` 不会降低权重，只能靠 operator
-  手工 PATCH。被标 `user_confirmed` 的条目拿固定 +1000 且永不被自动 supersede，确认错的记忆
-  没有自然淘汰路径。
+- **计划类 claim 只在注入侧收敛，没有真正的生命周期**：`focus` 是单值谓词，会 supersede、会
+  `disputed`、受 `user_confirmed` 保护；`plan` / `goal` 仍多值、永不 supersede，也没有
+  `done` / `abandoned` 状态，brief 只是靠 D37 的「最新 2 条 + 14 天新鲜度」把噪声挡在外面。
+  所以库里 `plan` 仍会持续堆积 active 行，`GET /api/memory/claims` 与 timeline 仍是全量；
+  「这条计划已经做完」没有被表达的地方，只能靠新的 plan 覆盖旧 plan。
+- **D37 的取舍**：收敛按「时间最新」选，不是按相关性。用户同时推进多条并行主线时，落选的那条
+  只是从 brief 消失（仍可 search），不会被标成过期；14 天窗口对长期主线偏紧，`focus` 不参与该
+  滤镜（它是当前主线，过期由新 `focus` 取代）。
+- **`mem_feedback` 已进入排序且三端可写**：`wrong` / `stale` / `not_relevant` / `helpful` 都影响
+  brief 选材，`wrong` 还会被按轮召回排除。桌面端 claim 详情有三个按钮（有用 / 过时了 / 不准确），
+  Android 在底部弹层的「这条记忆」一行，iOS 在详情页同位置；`wrong` 会二次确认。
+  `corrected` 仍由 PATCH 自动写入。反馈没有回显（用户看不到自己标过什么），也没有撤销入口。
 - **dev 与 life 共用同一套抽取口径**：`extractionSystemPrompt()` 面向「生活会话」，predicate 全是
-  人生属性，没有 `decision` / `constraint` / `convention` 之类表达项目约定；`render()` 只有
-  `## 关于你` / `## 偏好` 两块（`## 注意` 是固定免责声明）。dev 的决策与约定只能挤进这两个分类。
+  人生属性，没有 `decision` / `constraint` / `convention` 之类表达项目约定；brief 的
+  `## 关于你` / `## 当前计划` / `## 偏好` 三块也没有一个适合装「这个模块的边界」。
+  dev 的决策与约定只能挤进这三类里。

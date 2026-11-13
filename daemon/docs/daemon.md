@@ -11,7 +11,7 @@
 | [debug.md](debug.md) | 实时上下文监控 `/debug`：使用方式 / 采集与内存 / 页面字段 / API（纯内存） |
 | [llm.md](llm.md) | 共享 LLM 层：类型契约 / provider 目录 / 凭据（只写不读）/ registry / `none` |
 | [knowledge.md](knowledge.md) | K0 curated 知识：磁盘布局 / `.meta.json` 治理 / 扫描 / API / 指针注入 / 附加目录 |
-| [memory.md](memory.md) | Memory M0：life 捕获 / 抽取 / brief / API / 配置与边界 |
+| [memory.md](memory.md) | Memory M0 – M2：捕获 / 抽取 / 观察与摘要 / 去重与冲突 / 实体 / brief 与召回 / API / 配置与边界 |
 | [permissions.md](permissions.md) | 权限审批 · 安全模型 |
 | [configuration.md](configuration.md) | 配置参数参考 |
 | [docker.md](docker.md) | Docker 部署（镜像只含 daemon；默认工作区隔离，可选挂宿主机项目） |
