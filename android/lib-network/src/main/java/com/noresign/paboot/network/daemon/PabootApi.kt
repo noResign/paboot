@@ -26,6 +26,9 @@ import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
 import com.noresign.paboot.network.daemon.dto.MemoryDisputesResponse
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicatesResponse
 import com.noresign.paboot.network.daemon.dto.MemoryEntitiesResponse
+import com.noresign.paboot.network.daemon.dto.MemoryFeedbackRequest
+import com.noresign.paboot.network.daemon.dto.MemoryLoopActionRequest
+import com.noresign.paboot.network.daemon.dto.MemoryLoopsResponse
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeResponse
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineResponse
@@ -340,6 +343,25 @@ interface PabootApi {
 
     @GET("api/memory/disputes")
     suspend fun memoryDisputes(@Query("scope") scope: String): MemoryDisputesResponse
+
+    @GET("api/memory/loops")
+    suspend fun memoryLoops(
+        @Query("scope") scope: String,
+        @Query("status") status: String = "all",
+    ): MemoryLoopsResponse
+
+    @PATCH("api/memory/loops/{id}")
+    suspend fun resolveMemoryLoop(
+        @Path("id") id: String,
+        @Query("scope") scope: String,
+        @Body body: MemoryLoopActionRequest,
+    ): OkResponse
+
+    @POST("api/memory/feedback")
+    suspend fun memoryFeedback(
+        @Query("scope") scope: String,
+        @Body body: MemoryFeedbackRequest,
+    ): OkResponse
 
     @GET("api/workspaces/{id}/memory")
     suspend fun workspaceMemory(@Path("id") id: String): WorkspaceMemoryDto

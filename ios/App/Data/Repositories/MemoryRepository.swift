@@ -2,7 +2,7 @@ import Foundation
 import PabootClient
 import PabootProtocol
 
-/// Memory M0: life claims read + correct / forget. Configuration stays on desktop.
+/// Memory: read + correct / forget / feedback / follow-up review. Configuration stays on desktop.
 final class MemoryRepository {
     private let session: DaemonSession
 
@@ -101,6 +101,42 @@ final class MemoryRepository {
         let client = try clientOrThrow()
         do {
             _ = try await client.api.forgetMemoryClaim(id: id, scope: scope(workspaceId))
+        } catch {
+            throw map(error)
+        }
+    }
+
+    /// D38: open loops plus the auto-detected "maybe finished" candidates.
+    func loops(workspaceId: String) async throws -> [MemoryLoopDto] {
+        let client = try clientOrThrow()
+        do {
+            return try await client.api.memoryLoops(scope: scope(workspaceId)).loops
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func resolveLoop(workspaceId: String, id: String, confirm: Bool) async throws {
+        let client = try clientOrThrow()
+        do {
+            _ = try await client.api.resolveMemoryLoop(
+                id: id,
+                scope: scope(workspaceId),
+                confirm: confirm
+            )
+        } catch {
+            throw map(error)
+        }
+    }
+
+    func feedback(claimId: String, workspaceId: String, action: String) async throws {
+        let client = try clientOrThrow()
+        do {
+            _ = try await client.api.memoryFeedback(
+                scope: scope(workspaceId),
+                claimId: claimId,
+                action: action
+            )
         } catch {
             throw map(error)
         }

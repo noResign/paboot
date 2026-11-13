@@ -109,6 +109,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var duplicates: [MemoryDuplicateDto] = []
     private var entities: [MemoryEntityDto] = []
     private var disputes: [MemoryDisputeDto] = []
+    private var loops: [MemoryLoopDto] = []
     private var statusUnavailable = false
     private var query = ""
     private var hasLoaded = false
@@ -263,6 +264,9 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
                 duplicates = items
                 UIView.performWithoutAnimation { tableView.reloadData() }
             }
+            if let items = try? await repository.loops(workspaceId: workspaceId) {
+                loops = items
+            }
             if let items = try? await repository.entities(workspaceId: workspaceId) {
                 guard generation == loadGeneration else { return }
                 entities = items
@@ -307,7 +311,8 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private func rebuildGroups() {
         groups = groupedMemory(claims, query: query)
         emptyLabel.isHidden =
-            !groups.isEmpty || showsTimeline || showsDisputes || showsDuplicates || showsEntities
+            !groups.isEmpty || showsTimeline || showsDisputes || showsDuplicates ||
+            showsEntities || showsLoops
         emptyLabel.text = query.isEmpty
             ? (family == "life"
                 ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
@@ -325,9 +330,10 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var showsDisputes: Bool { !disputes.isEmpty }
     private var showsDuplicates: Bool { !duplicates.isEmpty }
     private var showsEntities: Bool { !entities.isEmpty }
+    private var showsLoops: Bool { !loops.isEmpty }
     private var fixedSections: Int {
         (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0) +
-            (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0)
+            (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0) + (showsLoops ? 1 : 0)
     }
     private var disputesSection: Int? {
         guard showsDisputes else { return nil }
@@ -340,6 +346,11 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
     private var entitiesSection: Int? {
         guard showsEntities else { return nil }
         return (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0) + (showsDuplicates ? 1 : 0)
+    }
+    private var loopsSection: Int? {
+        guard showsLoops else { return nil }
+        return (showsTimeline ? 1 : 0) + (showsDisputes ? 1 : 0) +
+            (showsDuplicates ? 1 : 0) + (showsEntities ? 1 : 0)
     }
 
     private func groupIndex(for section: Int) -> Int {
@@ -361,6 +372,10 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         if let entitiesSection, section == entitiesSection {
             return "实体（只读，共 \(entities.count)）"
         }
+        if let loopsSection, section == loopsSection {
+            let pending = loops.filter { $0.status == "candidate_done" }.count
+            return pending > 0 ? "跟进（\(pending) 个可能已完成）" : "跟进（\(loops.count)）"
+        }
         let group = groups[groupIndex(for: section)]
         return "\(group.label)（\(group.claims.count)）"
     }
@@ -370,6 +385,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         if let disputesSection, section == disputesSection { return disputes.count }
         if let duplicatesSection, section == duplicatesSection { return duplicates.count }
         if let entitiesSection, section == entitiesSection { return entities.count }
+        if let loopsSection, section == loopsSection { return loops.count }
         return groups[groupIndex(for: section)].claims.count
     }
 
@@ -447,6 +463,26 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             cell.backgroundColor = Theme.Colors.surface
             return cell
         }
+        if let loopsSection, indexPath.section == loopsSection {
+            let loop = loops[indexPath.row]
+            let cell = tableView.dequeueReusableCell(withIdentifier: "memory-loop")
+                ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-loop")
+            cell.textLabel?.text = loop.title
+            cell.textLabel?.numberOfLines = 3
+            cell.textLabel?.font = Typography.body
+            cell.textLabel?.textColor = Theme.Colors.textPrimary
+            let isCandidate = loop.status == "candidate_done"
+            cell.detailTextLabel?.text = isCandidate
+                ? "可能已完成 · 确认后才关闭"
+                : "未完成 · 左滑可标记完成"
+            cell.detailTextLabel?.font = Typography.caption
+            cell.detailTextLabel?.textColor = isCandidate
+                ? Theme.Colors.warning
+                : Theme.Colors.textSecondary
+            cell.accessoryType = .none
+            cell.backgroundColor = Theme.Colors.surface
+            return cell
+        }
         let claim = groups[groupIndex(for: indexPath.section)].claims[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "memory-row")
             ?? UITableViewCell(style: .subtitle, reuseIdentifier: "memory-row")
@@ -466,6 +502,47 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
         cell.accessoryType = .disclosureIndicator
         cell.backgroundColor = Theme.Colors.surface
         return cell
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard let loopsSection, indexPath.section == loopsSection else { return nil }
+        let loop = loops[indexPath.row]
+        let isCandidate = loop.status == "candidate_done"
+        // D38: a candidate is only a proposal — confirming or rejecting it is
+        // the whole point of the review list.
+        let confirm = UIContextualAction(style: .normal, title: "确认完成") { [weak self] _, _, done in
+            self?.resolveLoop(loop, confirm: true, completion: done)
+        }
+        confirm.backgroundColor = Theme.Colors.success
+        var actions = [confirm]
+        if isCandidate {
+            let reopen = UIContextualAction(style: .normal, title: "仍在进行") { [weak self] _, _, done in
+                self?.resolveLoop(loop, confirm: false, completion: done)
+            }
+            reopen.backgroundColor = Theme.Colors.textSecondary
+            actions.append(reopen)
+        }
+        return UISwipeActionsConfiguration(actions: actions)
+    }
+
+    private func resolveLoop(_ loop: MemoryLoopDto, confirm: Bool, completion: @escaping (Bool) -> Void) {
+        Task { @MainActor in
+            do {
+                try await repository.resolveLoop(
+                    workspaceId: workspaceId,
+                    id: loop.id,
+                    confirm: confirm
+                )
+                load()
+                completion(true)
+            } catch {
+                presentError(error)
+                completion(false)
+            }
+        }
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -646,6 +723,57 @@ private final class MemoryDetailViewController: UIViewController {
         actions.addArrangedSubview(forget)
         actions.addArrangedSubview(UIView())
         stack.addArrangedSubview(actions)
+
+        // D38: feedback re-ranks or retires a claim without deleting it;
+        // `wrong` keeps it out of both the brief and per-turn recall.
+        let feedbackLabel = UILabel()
+        feedbackLabel.text = "这条记忆"
+        feedbackLabel.font = Typography.caption
+        feedbackLabel.textColor = Theme.Colors.textSecondary
+        stack.addArrangedSubview(feedbackLabel)
+
+        let feedback = UIStackView()
+        feedback.axis = .horizontal
+        feedback.spacing = Spacing.sm
+        for (action, title) in [("helpful", "有用"), ("stale", "过时了"), ("wrong", "不准确")] {
+            let button = UIButton(type: .system)
+            button.setTitle(title, for: .normal)
+            button.titleLabel?.font = Typography.body
+            button.tintColor = action == "wrong" ? Theme.Colors.error : Theme.Colors.primary
+            button.addAction(
+                UIAction { [weak self] _ in self?.sendFeedback(action) },
+                for: .touchUpInside
+            )
+            feedback.addArrangedSubview(button)
+        }
+        feedback.addArrangedSubview(UIView())
+        stack.addArrangedSubview(feedback)
+
+        let feedbackHint = UILabel()
+        feedbackHint.text = "「不准确」后不会再注入或召回，但不会删除。"
+        feedbackHint.font = Typography.caption
+        feedbackHint.textColor = Theme.Colors.textSecondary
+        feedbackHint.numberOfLines = 0
+        stack.addArrangedSubview(feedbackHint)
+    }
+
+    private func sendFeedback(_ action: String) {
+        Task { @MainActor in
+            do {
+                try await repository.feedback(
+                    claimId: claim.id,
+                    workspaceId: workspaceId,
+                    action: action
+                )
+                navigationController?.popViewController(animated: true)
+                onChanged()
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                let alert = UIAlertController(title: "操作失败", message: message, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "好", style: .default))
+                present(alert, animated: true)
+            }
+        }
     }
 
     @objc private func startEdit() {

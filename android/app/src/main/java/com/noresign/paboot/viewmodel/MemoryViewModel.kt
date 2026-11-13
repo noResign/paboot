@@ -7,6 +7,7 @@ import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryDisputeDto
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
+import com.noresign.paboot.network.daemon.dto.MemoryLoopDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -26,11 +27,12 @@ sealed class MemoryUiState {
         val duplicates: List<MemoryDuplicateDto> = emptyList(),
         val entities: List<MemoryEntityDto> = emptyList(),
         val disputes: List<MemoryDisputeDto> = emptyList(),
+        val loops: List<MemoryLoopDto> = emptyList(),
     ) : MemoryUiState()
     data class Error(val message: String) : MemoryUiState()
 }
 
-/** Memory M0：只读 + 改正 / 忘记。 */
+/** Memory：改正 / 忘记 / 反馈 / 跟进项审核。 */
 class MemoryViewModel(
     private val repository: MemoryRepository = MemoryRepository(),
 ) : ViewModel() {
@@ -58,6 +60,7 @@ class MemoryViewModel(
             val duplicates = repository.duplicates(workspaceId)
             val entities = repository.entities(workspaceId)
             val disputes = repository.disputes(workspaceId)
+            val loops = repository.loops(workspaceId)
             val currentSettings = (settings as? NetworkResult.Success)?.data
             when {
                 claims is NetworkResult.Error &&
@@ -70,6 +73,7 @@ class MemoryViewModel(
                     duplicates = emptyList(),
                     entities = emptyList(),
                     disputes = emptyList(),
+                    loops = emptyList(),
                 )
                 claims is NetworkResult.Error -> _state.value = MemoryUiState.Error(friendlyError(claims))
                 claims is NetworkResult.Success -> _state.value = MemoryUiState.Content(
@@ -80,6 +84,7 @@ class MemoryViewModel(
                     duplicates = (duplicates as? NetworkResult.Success)?.data ?: emptyList(),
                     entities = (entities as? NetworkResult.Success)?.data ?: emptyList(),
                     disputes = (disputes as? NetworkResult.Success)?.data ?: emptyList(),
+                    loops = (loops as? NetworkResult.Success)?.data ?: emptyList(),
                 )
             }
         }
@@ -107,6 +112,42 @@ class MemoryViewModel(
             when (val result = repository.forget(workspaceId, id)) {
                 is NetworkResult.Success -> {
                     _message.value = "已忘记"
+                    load(workspaceId, refresh = true)
+                }
+                is NetworkResult.Error -> _message.value = friendlyError(result)
+            }
+            _busy.value = false
+        }
+    }
+
+    /** D38: `wrong` retires a claim from injection / recall without deleting it. */
+    fun feedback(claimId: String, action: String) {
+        val workspaceId = workspaceId ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            when (val result = repository.feedback(workspaceId, claimId, action)) {
+                is NetworkResult.Success -> {
+                    _message.value = when (action) {
+                        "wrong" -> "已标记不准确，之后不再注入"
+                        "stale" -> "已标记过时，排序会靠后"
+                        else -> "已标记为有用"
+                    }
+                    load(workspaceId, refresh = true)
+                }
+                is NetworkResult.Error -> _message.value = friendlyError(result)
+            }
+            _busy.value = false
+        }
+    }
+
+    /** D38: confirm closes a loop; reopen returns a candidate to open. */
+    fun resolveLoop(id: String, confirm: Boolean) {
+        val workspaceId = workspaceId ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            when (val result = repository.resolveLoop(workspaceId, id, confirm)) {
+                is NetworkResult.Success -> {
+                    _message.value = if (confirm) "已确认完成" else "已放回未完成"
                     load(workspaceId, refresh = true)
                 }
                 is NetworkResult.Error -> _message.value = friendlyError(result)

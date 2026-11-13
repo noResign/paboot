@@ -5172,6 +5172,19 @@ a.btn {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
+/* D38: a loop the summary suggests is finished but nobody confirmed yet. */
+.mem-tag.is-pending {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+}
+/* Loop rows carry action buttons, so they are layout containers, not buttons. */
+.mem-loop-row {
+  align-items: flex-start;
+}
+.mem-loop-row .mem-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
 .mem-row-date {
   margin-left: auto;
 }

@@ -70,6 +70,7 @@ import com.noresign.paboot.network.daemon.dto.MemoryClaimDto
 import com.noresign.paboot.network.daemon.dto.MemoryDisputeDto
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
+import com.noresign.paboot.network.daemon.dto.MemoryLoopDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
@@ -251,6 +252,15 @@ fun MemoryScreen(
                     if (current.duplicates.isNotEmpty()) {
                         item(key = "duplicates") { MemoryDuplicatesCard(current.duplicates.take(5)) }
                     }
+                    if (current.loops.isNotEmpty()) {
+                        item(key = "loops") {
+                            MemoryLoopsCard(
+                                items = current.loops,
+                                busy = busy,
+                                onResolve = { id, confirm -> viewModel.resolveLoop(id, confirm) },
+                            )
+                        }
+                    }
                     if (current.entities.isNotEmpty()) {
                         item(key = "entities") { MemoryEntitiesCard(current.entities.take(6)) }
                     }
@@ -323,6 +333,11 @@ fun MemoryScreen(
                     selected = null
                     forgetting = claim
                 },
+                onFeedback = { action ->
+                    selected = null
+                    viewModel.feedback(claim.id, action)
+                },
+                busy = busy,
             )
         }
     }
@@ -589,6 +604,78 @@ private fun MemoryTimelineCard(items: List<MemoryTimelineItemDto>) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MemoryLoopsCard(
+    items: List<MemoryLoopDto>,
+    busy: Boolean,
+    onResolve: (String, Boolean) -> Unit,
+) {
+    val pending = items.count { it.status == "candidate_done" }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                if (pending > 0) "跟进（$pending 个可能已完成）" else "跟进",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            items.forEach { loop ->
+                val isCandidate = loop.status == "candidate_done"
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        loop.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MemoryTag(
+                            if (isCandidate) "可能已完成" else "未完成",
+                            contentColor = if (isCandidate) {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            containerColor = if (isCandidate) {
+                                MaterialTheme.colorScheme.tertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        if (isCandidate) {
+                            TextButton(onClick = { onResolve(loop.id, false) }, enabled = !busy) {
+                                Text("仍在进行", style = MaterialTheme.typography.labelMedium)
+                            }
+                            TextButton(onClick = { onResolve(loop.id, true) }, enabled = !busy) {
+                                Text("确认完成", style = MaterialTheme.typography.labelMedium)
+                            }
+                        } else {
+                            TextButton(onClick = { onResolve(loop.id, true) }, enabled = !busy) {
+                                Text("标记完成", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                "「可能已完成」是自动比对摘要得出的，确认后才关闭。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -971,6 +1058,8 @@ private fun MemoryDetail(
     claim: MemoryClaimDto,
     onEdit: () -> Unit,
     onForget: () -> Unit,
+    onFeedback: (String) -> Unit,
+    busy: Boolean,
 ) {
     Column(
         modifier = Modifier
@@ -1130,6 +1219,36 @@ private fun MemoryDetail(
             ) {
                 Text("忘记")
             }
+        }
+
+        // D38: feedback is what re-ranks or retires a claim without deleting it;
+        // `wrong` keeps it out of both the brief and per-turn recall.
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "这条记忆",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "helpful" to "有用",
+                    "stale" to "过时了",
+                    "wrong" to "不准确",
+                ).forEach { (action, label) ->
+                    OutlinedButton(
+                        onClick = { onFeedback(action) },
+                        enabled = !busy,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            Text(
+                "「不准确」后不会再注入或召回，但不会删除。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
