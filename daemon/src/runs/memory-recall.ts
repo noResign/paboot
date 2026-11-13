@@ -11,7 +11,12 @@ import { recallQuery, shouldRecall } from '../memory/recall.js';
 import { isMemoryInjectionEnabled } from '../memory/settings.js';
 import { log } from '../platform/log.js';
 
-export type RecallDropReason = 'duplicate' | 'not_relevant' | 'max_items' | 'render_rejected';
+export type RecallDropReason =
+  | 'duplicate'
+  | 'not_relevant'
+  | 'max_items'
+  | 'render_rejected'
+  | 'feedback_wrong';
 
 export interface RecallDrop {
   kind: 'loop' | 'claim' | 'observation' | 'summary' | 'document' | 'source';
@@ -33,6 +38,9 @@ const MAX_DROPPED_RECORDS = 100;
 
 const MAX_RECALL_CHARS = 800;
 const MAX_RECALL_ITEMS = 5;
+
+/** Must stay in sync with `brief.ts`: one feedback window for the whole write. */
+const FEEDBACK_WINDOW_MS = 30 * 86_400_000;
 
 /**
  * Search memory when the prompt explicitly refers to the past. Results follow
@@ -81,6 +89,13 @@ export function memoryRecall(
       droppedCount += 1;
       if (dropped.length < MAX_DROPPED_RECORDS) dropped.push(item);
     };
+    // D38: a claim the operator marked `wrong` must not be recalled either —
+    // one grouped query for the whole batch, not one per hit.
+    const claimHits = hits.filter((hit) => hit.kind === 'claim').map((hit) => hit.refId);
+    const feedback =
+      claimHits.length === 0
+        ? new Map<string, Record<string, number>>()
+        : ctx.memory.listFeedbackCounts(claimHits, Date.now() - FEEDBACK_WINDOW_MS);
     // Open loops are the best continuation hint when another session left work
     // unfinished; include up to two before regular hits.
     for (const readScope of policy.scopes) {
@@ -102,6 +117,10 @@ export function memoryRecall(
       }
       if (seen.has(key)) {
         drop({ kind: hitKind(hit.kind), refId: hit.refId, reason: 'duplicate' });
+        continue;
+      }
+      if (hit.kind === 'claim' && (feedback.get(hit.refId)?.['wrong'] ?? 0) > 0) {
+        drop({ kind: 'claim', refId: hit.refId, reason: 'feedback_wrong' });
         continue;
       }
       // Explicit cues may recall broadly; without one, require a real term hit

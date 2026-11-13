@@ -1497,6 +1497,38 @@ export class MemoryStore {
       );
   }
 
+  /**
+   * Feedback aggregates for ranking (D38). One grouped query instead of one
+   * query per claim, so the brief stays a single pass over the store.
+   */
+  listFeedbackCounts(
+    claimIds: readonly string[],
+    sinceMs: number,
+  ): Map<string, Record<string, number>> {
+    const counts = new Map<string, Record<string, number>>();
+    if (claimIds.length === 0) return counts;
+    const placeholders = claimIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT target_id AS targetId, action, COUNT(*) AS count
+           FROM mem_feedback
+          WHERE target_type = 'claim' AND created_at >= ?
+            AND target_id IN (${placeholders})
+          GROUP BY target_id, action`,
+      )
+      .all(sinceMs, ...claimIds) as unknown as {
+      targetId: string;
+      action: string;
+      count: number;
+    }[];
+    for (const row of rows) {
+      const bucket = counts.get(row.targetId) ?? {};
+      bucket[row.action] = Number(row.count);
+      counts.set(row.targetId, bucket);
+    }
+    return counts;
+  }
+
   claimEvidence(claimId: string): { sourceId: string; relation: string; quote: string | null }[] {
     return this.db
       .prepare(`SELECT source_id AS sourceId, relation, quote FROM mem_claim_evidence WHERE claim_id = ?`)
@@ -1883,19 +1915,67 @@ export class MemoryStore {
     const result = this.db
       .prepare(
         `UPDATE mem_loops SET status = 'done', updated_at = ?
-         WHERE id = ? AND scope = ? AND status = 'open'`,
+         WHERE id = ? AND scope = ? AND status IN ('open', 'candidate_done')`,
       )
       .run(Date.now(), id, scope);
     return Number(result.changes) > 0;
   }
 
-  listOpenLoops(scope: MemoryScope): { id: string; title: string; detail: string | null }[] {
+  /**
+   * A later summary reported work that looks like this loop's topic (D38).
+   * Deliberately not `done`: same philosophy as Tier-1 duplicates — propose,
+   * never auto-close. `listOpenLoops` stops returning it, so `[未完成]` recall
+   * no longer presents finished work as pending.
+   */
+  markLoopCandidateDone(scope: MemoryScope, id: string, reason: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE mem_loops SET status = 'candidate_done', updated_at = ?
+         WHERE id = ? AND scope = ? AND status = 'open'`,
+      )
+      .run(Date.now(), id, scope);
+    if (Number(result.changes) === 0) return false;
+    this.recordOp({
+      batchKey: `loop_candidate_done:${id}`,
+      opIndex: 0,
+      op: 'loop_candidate_done',
+      targetType: 'loop',
+      targetId: id,
+      payload: { reason },
+    });
+    return true;
+  }
+
+  /** Restore a candidate back to open (user disagrees with the proposal). */
+  reopenLoop(scope: MemoryScope, id: string): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE mem_loops SET status = 'open', updated_at = ?
+         WHERE id = ? AND scope = ? AND status = 'candidate_done'`,
+      )
+      .run(Date.now(), id, scope);
+    return Number(result.changes) > 0;
+  }
+
+  listLoops(
+    scope: MemoryScope,
+    status: 'open' | 'candidate_done' = 'open',
+  ): { id: string; title: string; detail: string | null; status: string }[] {
     return this.db
       .prepare(
-        `SELECT id, title, detail FROM mem_loops
-         WHERE scope = ? AND status = 'open' ORDER BY created_at DESC`,
+        `SELECT id, title, detail, status FROM mem_loops
+         WHERE scope = ? AND status = ? ORDER BY created_at DESC`,
       )
-      .all(scope) as unknown as { id: string; title: string; detail: string | null }[];
+      .all(scope, status) as unknown as {
+      id: string;
+      title: string;
+      detail: string | null;
+      status: string;
+    }[];
+  }
+
+  listOpenLoops(scope: MemoryScope): { id: string; title: string; detail: string | null }[] {
+    return this.listLoops(scope, 'open');
   }
 
   // ---- search (D31) ----

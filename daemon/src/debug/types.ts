@@ -34,7 +34,12 @@ export interface MemoryBriefMeta extends PreludeMeta {
   usedClaimIds: string[];
 }
 
-export type RecallDropReason = 'duplicate' | 'not_relevant' | 'max_items' | 'render_rejected';
+export type RecallDropReason =
+  | 'duplicate'
+  | 'not_relevant'
+  | 'max_items'
+  | 'render_rejected'
+  | 'feedback_wrong';
 
 export interface RecallDrop {
   kind: 'loop' | 'claim' | 'observation' | 'summary' | 'document' | 'source';

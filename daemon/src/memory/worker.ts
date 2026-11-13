@@ -5,6 +5,7 @@ import {
   type ExtractionResult,
 } from './extract.js';
 import type { LlmCompletion, LlmRequest } from '../llm/types.js';
+import { createCompletionMatcher, isCompletionMatch } from './loop-match.js';
 import type { MemoryModelSelection } from './model.js';
 import type { MemoryStore } from './store.js';
 import type { MemoryScope, MemorySource } from './types.js';
@@ -421,6 +422,20 @@ export class MemoryWorker {
           filesRead: baseline?.filesRead ?? [],
           filesEdited: baseline?.filesModified ?? [],
         });
+        // D38: a loop whose topic shows up in this batch's `completed` becomes
+        // a candidate, never `done`. Run this before creating the new
+        // nextSteps loop so a freshly created loop cannot match itself.
+        if (extraction.summary.completed.trim() !== '') {
+          const match = createCompletionMatcher(extraction.summary.completed);
+          for (const loop of this.store.listOpenLoops(first.scope)) {
+            const candidate = match(loop.title);
+            if (!isCompletionMatch(candidate)) continue;
+            this.store.markLoopCandidateDone(first.scope, loop.id, candidate.sentence);
+            log.info(
+              `run ${first.runId ?? '-'}: loop ${loop.id.slice(0, 8)} marked candidate_done`,
+            );
+          }
+        }
         if (extraction.summary.nextSteps.trim() !== '') {
           this.store.upsertLoopCandidate({
             scope: first.scope,

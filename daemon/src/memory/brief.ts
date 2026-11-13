@@ -5,7 +5,32 @@ import type { MemoryClaim, MemoryScope } from './types.js';
 export const DEFAULT_MEMORY_BRIEF_CHARS = 1200;
 export const MAX_CLAIM_LINE_CHARS = 220;
 
-const NOTE = '以上是本机长期记忆，可能过时；与用户当前说法冲突时，以当前为准。';
+/**
+ * Plan-shaped predicates get their own block (D37). `focus` is single-valued
+ * (D36) and is the current main line; `plan` / `goal` accumulate across
+ * sessions, so without convergence the brief shows stale, mutually
+ * contradictory roadmaps as if they were all still planned.
+ */
+const PLAN_PREDICATES = new Set(['focus', 'plan', 'goal']);
+const FOCUS_PREDICATE = 'focus';
+/** Besides the single `focus` line, keep at most this many other plans. */
+const MAX_PLAN_LINES = 2;
+/** An unreinforced plan older than this is treated as decayed, not current. */
+const PLAN_STALE_MS = 14 * 86_400_000;
+
+/**
+ * Feedback window (D38). Operator feedback was stored but never read by the
+ * selector, so `wrong` / `stale` changed nothing. 30 days keeps a correction
+ * effective long enough to matter without pinning a claim forever.
+ */
+const FEEDBACK_WINDOW_MS = 30 * 86_400_000;
+const FEEDBACK_PENALTY = { stale: 300, not_relevant: 150 } as const;
+const FEEDBACK_HELPFUL_BONUS = 10;
+const FEEDBACK_HELPFUL_CAP = 50;
+
+const NOTE =
+  '以上是本机长期记忆，可能过时；与用户当前说法冲突时，以当前为准。' +
+  '「当前计划」只列最近确定的几条，更早的计划可用 search_memory 查到。';
 
 export interface MemoryBrief {
   markdown: string;
@@ -54,15 +79,36 @@ export function buildMemoryBrief(
     }
   }
 
+  // D38: `wrong` is an explicit "this is not true" — keep it out of injection
+  // entirely rather than merely ranking it lower. `stale` / `not_relevant`
+  // only down-weight, because they say "not now", not "false".
+  const feedback = store.listFeedbackCounts(
+    current.map((claim) => claim.id),
+    now - FEEDBACK_WINDOW_MS,
+  );
+  const usable = current.filter((claim) => (feedback.get(claim.id)?.['wrong'] ?? 0) === 0);
+
   const unique = new Map<string, MemoryClaim>();
-  for (const claim of current) {
+  for (const claim of usable) {
     const key = `${claim.predicate}|${normalize(claim.objectText ?? claim.summary)}`;
     const existing = unique.get(key);
-    if (!existing || rank(claim, now) > rank(existing, now)) unique.set(key, claim);
+    if (
+      !existing ||
+      rank(claim, now, feedback.get(claim.id)) >
+        rank(existing, now, feedback.get(existing.id))
+    ) {
+      unique.set(key, claim);
+    }
   }
 
-  const ordered = [...unique.values()].sort(
-    (a, b) => rank(b, now) - rank(a, now) || a.id.localeCompare(b.id),
+  // D37: plan convergence happens before ranking and before the budget, so a
+  // stale roadmap cannot consume the character budget or evict current facts.
+  // Converged-out plans stay in the store and remain searchable.
+  const { plans, rest } = convergePlans([...unique.values()], now);
+  const ordered = [...plans, ...rest].sort(
+    (a, b) =>
+      rank(b, now, feedback.get(b.id)) - rank(a, now, feedback.get(a.id)) ||
+      a.id.localeCompare(b.id),
   );
   if (ordered.length === 0) return null;
 
@@ -126,15 +172,58 @@ export function renderClaimLine(claim: MemoryClaim): string {
   const summary = truncate(claim.summary.replace(/\s+/g, ' ').trim(), MAX_CLAIM_LINE_CHARS);
   const date = dateLabel(claim);
   const id = shortId(claim.id);
-  return `- ${summary}${date} #claim_${id}`;
+  const marker = claim.predicate === FOCUS_PREDICATE ? '[当前主线] ' : '';
+  return `- ${marker}${summary}${date} #claim_${id}`;
+}
+
+/**
+ * Converge plan claims (D37). `focus` is single-valued, so only the newest one
+ * is shown. `plan` / `goal` are legitimately multi-valued, so the newest few
+ * survive — but only while they are fresh or were reinforced.
+ */
+function convergePlans(
+  claims: readonly MemoryClaim[],
+  now: number,
+): { plans: MemoryClaim[]; rest: MemoryClaim[] } {
+  const plans: MemoryClaim[] = [];
+  const rest: MemoryClaim[] = [];
+  for (const claim of claims) {
+    (PLAN_PREDICATES.has(claim.predicate) ? plans : rest).push(claim);
+  }
+  // Tie-break by recency only: plan selection must stay feedback-independent so
+  // a `stale` mark cannot resurrect an older roadmap into the current block.
+  const byRecency = (a: MemoryClaim, b: MemoryClaim): number => recency(b) - recency(a);
+
+  const focus = plans
+    .filter((claim) => claim.predicate === FOCUS_PREDICATE)
+    .sort(byRecency)
+    .slice(0, 1);
+  const others = plans
+    .filter((claim) => claim.predicate !== FOCUS_PREDICATE)
+    .filter((claim) => now - recency(claim) <= PLAN_STALE_MS || claim.reinforcementDates.length > 0)
+    .sort(byRecency)
+    .slice(0, MAX_PLAN_LINES);
+
+  return { plans: [...focus, ...others], rest };
+}
+
+/** Wall-clock the decision belongs to: `validFrom` when known, else capture. */
+function recency(claim: MemoryClaim): number {
+  return claim.validFrom ?? claim.createdAt;
 }
 
 function render(claims: readonly MemoryClaim[]): string {
-  const about = claims.filter((claim) => claim.kind !== 'preference');
-  const preferences = claims.filter((claim) => claim.kind === 'preference');
+  const about = claims.filter((claim) => claim.kind !== 'preference' && !PLAN_PREDICATES.has(claim.predicate));
+  const plans = claims.filter((claim) => PLAN_PREDICATES.has(claim.predicate));
+  const preferences = claims.filter(
+    (claim) => claim.kind === 'preference' && !PLAN_PREDICATES.has(claim.predicate),
+  );
   const blocks: string[] = [];
   if (about.length > 0) {
     blocks.push(`## 关于你\n${about.map(renderClaimLine).join('\n')}`);
+  }
+  if (plans.length > 0) {
+    blocks.push(`## 当前计划\n${plans.map(renderClaimLine).join('\n')}`);
   }
   if (preferences.length > 0) {
     blocks.push(`## 偏好\n${preferences.map(renderClaimLine).join('\n')}`);
@@ -143,12 +232,36 @@ function render(claims: readonly MemoryClaim[]): string {
   return blocks.join('\n\n');
 }
 
-/** D34 ACT-R selection. α = 0 for now: pure recency, reinforcement stored only. */
-function rank(claim: MemoryClaim, now: number): number {
+/**
+ * D34 ACT-R selection. α = 0 for now: pure recency, reinforcement stored only.
+ * D38 folds operator feedback in as a bounded adjustment — never above the
+ * `user_confirmed` authority bonus, so a confirmed claim still wins.
+ */
+function rank(
+  claim: MemoryClaim,
+  now: number,
+  feedback: Record<string, number> | undefined,
+): number {
   const authority = claim.authority === 'user_confirmed' ? 1000 : 0;
   const ageDays = Math.max(1, (now - claim.createdAt) / 86_400_000);
   const actr = Math.log(1 + 1 / Math.sqrt(ageDays));
-  return authority + (claim.importance * 0.6 + actr * 0.4) * 100 + claim.confidence * 10;
+  return (
+    authority +
+    (claim.importance * 0.6 + actr * 0.4) * 100 +
+    claim.confidence * 10 +
+    feedbackAdjustment(feedback)
+  );
+}
+
+function feedbackAdjustment(feedback: Record<string, number> | undefined): number {
+  if (!feedback) return 0;
+  const helpful = Math.min((feedback['helpful'] ?? 0) * FEEDBACK_HELPFUL_BONUS, FEEDBACK_HELPFUL_CAP);
+  const stale = Math.min((feedback['stale'] ?? 0) * FEEDBACK_PENALTY.stale, FEEDBACK_PENALTY.stale * 2);
+  const notRelevant = Math.min(
+    (feedback['not_relevant'] ?? 0) * FEEDBACK_PENALTY.not_relevant,
+    FEEDBACK_PENALTY.not_relevant * 2,
+  );
+  return helpful - stale - notRelevant;
 }
 
 function dateLabel(claim: MemoryClaim): string {

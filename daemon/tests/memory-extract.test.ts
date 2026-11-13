@@ -589,6 +589,63 @@ describe('memory worker', () => {
     expect(store.listOpenLoops('workspace:life-1')).toHaveLength(1);
   });
 
+  it('marks a matching open loop as candidate_done but never auto-completes it', async () => {
+    const store = openStore();
+    const pendingLoop = store.upsertLoopCandidate({
+      scope: 'workspace:life-1',
+      endId: 'life-end',
+      title: '补登录重构集成测试',
+    });
+    const unrelatedLoop = store.upsertLoopCandidate({
+      scope: 'workspace:life-1',
+      endId: 'life-end',
+      title: '给桌面端换图标配色',
+    });
+    addSource(store, '补了登录重构的集成测试，下一步写发布脚本。', 1, 'r-1');
+    const provider = fakeProvider(() =>
+      JSON.stringify({
+        claims: [],
+        summary: {
+          request: '补测试',
+          investigated: '',
+          learned: '',
+          completed: '补完登录重构集成测试，全部通过',
+          nextSteps: '写发布脚本',
+        },
+      }),
+    );
+    const worker = new MemoryWorker({ store, resolveModel: async () => model(provider) });
+    await worker.runOnce();
+
+    const candidates = store.listLoops('workspace:life-1', 'candidate_done');
+    expect(candidates.map((loop) => loop.id)).toEqual([pendingLoop]);
+
+    const open = store.listOpenLoops('workspace:life-1');
+    // The unrelated loop is untouched, and the fresh nextSteps loop is not
+    // instantly proposed as done by its own summary.
+    expect(open.map((loop) => loop.title).sort()).toEqual(['写发布脚本', '给桌面端换图标配色'].sort());
+    expect(open.map((loop) => loop.id)).toContain(unrelatedLoop);
+  });
+
+  it('lets a candidate_done loop be confirmed or reopened', () => {
+    const store = openStore();
+    const loopId = store.upsertLoopCandidate({
+      scope: 'workspace:life-1',
+      endId: 'life-end',
+      title: '补集成测试',
+    });
+    expect(store.markLoopCandidateDone('workspace:life-1', loopId, 'completed')).toBe(true);
+    expect(store.listOpenLoops('workspace:life-1')).toHaveLength(0);
+    expect(store.listLoops('workspace:life-1', 'candidate_done')).toHaveLength(1);
+
+    expect(store.reopenLoop('workspace:life-1', loopId)).toBe(true);
+    expect(store.listOpenLoops('workspace:life-1')).toHaveLength(1);
+
+    store.markLoopCandidateDone('workspace:life-1', loopId, 'completed again');
+    expect(store.completeLoop('workspace:life-1', loopId)).toBe(true);
+    expect(store.listLoops('workspace:life-1', 'candidate_done')).toHaveLength(0);
+  });
+
   it('upserts extracted entities and links claims to them', async () => {
     const store = openStore();
     const source = addSource(store, '我妈张女士下周来上海。', 1, 'r-1');

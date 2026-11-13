@@ -347,6 +347,41 @@ describe('memory routes (M0)', () => {
     expect(body.loops.map((loop) => loop.title)).toContain('补集成测试');
   });
 
+  it('lists loops by status and lets an operator confirm or reopen a candidate', async () => {
+    const { url, store, workspace, session } = await setup();
+    const scope = `workspace:${workspace.id}` as const;
+    const loopId = store.upsertLoopCandidate({ scope, endId: null, title: '补集成测试' });
+    store.markLoopCandidateDone(scope, loopId, 'completed: 补完集成测试');
+
+    // Default listing stays "open only" so `[未完成]` recall is unaffected.
+    const openOnly = (await (
+      await fetch(`${url}/api/memory/loops?sessionId=${session.id}`)
+    ).json()) as { loops: unknown[] };
+    expect(openOnly.loops).toHaveLength(0);
+
+    const candidates = (await (
+      await fetch(`${url}/api/memory/loops?sessionId=${session.id}&status=candidate_done`)
+    ).json()) as { loops: { title: string; status: string }[] };
+    expect(candidates.loops).toMatchObject([{ title: '补集成测试', status: 'candidate_done' }]);
+
+    const reopen = await fetch(`${url}/api/memory/loops/${loopId}?sessionId=${session.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'reopen' }),
+    });
+    expect(reopen.status).toBe(200);
+    expect(store.listOpenLoops(scope)).toHaveLength(1);
+
+    store.markLoopCandidateDone(scope, loopId, 'completed again');
+    const confirm = await fetch(`${url}/api/memory/loops/${loopId}?sessionId=${session.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'confirm' }),
+    });
+    expect(confirm.status).toBe(200);
+    expect(store.listLoops(scope, 'candidate_done')).toHaveLength(0);
+  });
+
   it('lists and resolves duplicate candidates', async () => {
     const { url, store, workspace, session } = await setup();
     for (let index = 0; index < 20; index += 1) {

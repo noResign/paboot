@@ -111,6 +111,40 @@ describe('memory recall', () => {
     expect(result?.prefix).toContain('补登录重构集成测试');
   });
 
+  it('does not recall a claim the operator marked wrong', () => {
+    const { store, workspace, session, ctx } = setup();
+    const claim = store.insertClaim({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      predicate: 'auth',
+      objectText: 'JWT',
+      kind: 'fact',
+      summary: '登录页使用 JWT 鉴权',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    expect(memoryRecall(ctx, session, workspace, '登录页是怎么鉴权的？')).not.toBeNull();
+
+    store.addFeedback({ targetType: 'claim', targetId: claim.id, action: 'wrong' });
+    expect(memoryRecall(ctx, session, workspace, '登录页是怎么鉴权的？')).toBeNull();
+  });
+
+  it('still recalls a claim marked stale (down-weighted, not dropped)', () => {
+    const { store, workspace, session, ctx } = setup();
+    const claim = store.insertClaim({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      predicate: 'auth',
+      objectText: 'JWT',
+      kind: 'fact',
+      summary: '登录页使用 JWT 鉴权',
+      confidence: 0.8,
+      importance: 0.8,
+    });
+    store.addFeedback({ targetType: 'claim', targetId: claim.id, action: 'stale' });
+    expect(memoryRecall(ctx, session, workspace, '登录页是怎么鉴权的？')).not.toBeNull();
+  });
+
   it('does not recall without a cue or when injection is disabled', () => {
     const { db, store, workspace, session, ctx } = setup();
     store.insertClaim({

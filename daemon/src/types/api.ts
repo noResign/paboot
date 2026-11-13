@@ -832,6 +832,28 @@ export interface MemoryEntityLinkResponse {
   link: MemoryEntityLinkDto;
 }
 
+/** D38: `candidate_done` is a proposed completion awaiting operator review. */
+export type MemoryLoopStatusDto = 'open' | 'candidate_done';
+
+export interface MemoryLoopDto {
+  id: string;
+  scope: MemoryScopeDto;
+  title: string;
+  detail: string | null;
+  status: MemoryLoopStatusDto;
+}
+
+export interface MemoryLoopsResponse {
+  loops: MemoryLoopDto[];
+}
+
+/** `confirm` closes the loop; `reopen` sends a candidate back to open. */
+export type MemoryLoopActionDto = 'confirm' | 'reopen';
+
+export interface MemoryLoopActionRequest {
+  action: MemoryLoopActionDto;
+}
+
 export interface SessionEndsResponse {
   primaryEndId: string | null;
   ends: Array<EndDto & { role: 'active' | 'reference' }>;
