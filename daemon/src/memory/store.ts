@@ -39,8 +39,20 @@ const CLAIM_COLUMNS = `
   dedup_key AS dedupKey, sensitivity, status, superseded_by AS supersededBy,
   created_at AS createdAt, updated_at AS updatedAt`;
 
-/** Predicates where a newer value replaces the previous one. */
-const FUNCTIONAL_PREDICATES = new Set(['lives_in', 'works_at', 'name', 'birthday']);
+/**
+ * Predicates where a newer value replaces the previous one. `focus` belongs
+ * here because "what is the current main line" is single-valued by definition:
+ * leaving old main lines active makes the brief inject contradictory plans.
+ */
+const FUNCTIONAL_PREDICATES = new Set(['lives_in', 'works_at', 'name', 'birthday', 'focus']);
+
+/**
+ * Subset of the above where a missing `validFrom` falls back to capture order.
+ * A decision's capture order is its decision order, so an undated new `focus`
+ * must still retire the previous one. Facts stay conservative: an undated
+ * backfilled history claim must not evict the current value.
+ */
+const CAPTURE_ORDER_PREDICATES = new Set(['focus']);
 
 /** D33: approximate dedup only starts once the scope has some history. */
 const TIER1_MIN_CORPUS = 20;
@@ -1067,9 +1079,9 @@ export class MemoryStore {
   }
 
   /**
-   * Deterministic conflict handling for functional predicates. Multi-valued
-   * predicates (likes, plans, goals, relations) may legitimately have several
-   * active objects, so they are left alone here.
+   * Deterministic conflict handling for functional predicates (`focus`
+   * included, D36). Multi-valued predicates (likes, plans, goals, relations)
+   * may legitimately have several active objects, so they are left alone here.
    */
   private resolveClaimConflicts(claim: MemoryClaim): void {
     if (claim.status !== 'active') return;
@@ -1101,6 +1113,23 @@ export class MemoryStore {
         this.recordConflictOp('dispute', claim, old);
         return;
       }
+
+      // Fallback for decision predicates (D36): when neither side carries a
+      // date, capture order decides. Extraction does not always emit
+      // `validFrom` and the prompt cannot force it, so without this `focus`
+      // would accumulate contradictory active main lines.
+      if (newFrom === null && oldFrom === null && CAPTURE_ORDER_PREDICATES.has(claim.predicate)) {
+        this.updateClaim(old.id, {
+          status: 'superseded',
+          supersededBy: claim.id,
+          validTo: claim.createdAt,
+        });
+        this.recordConflictOp('supersede', claim, old);
+        // Keep going: a single-valued predicate must not stay with several
+        // active values because an earlier contradicting row was left behind.
+        continue;
+      }
+
       if (newFrom !== null && (oldFrom === null || newFrom >= oldFrom)) {
         const sameStart = oldFrom !== null && newFrom === oldFrom;
         if (sameStart && Math.abs(claim.confidence - old.confidence) < 0.15) {
@@ -1115,7 +1144,7 @@ export class MemoryStore {
           validTo: newFrom,
         });
         this.recordConflictOp('supersede', claim, old);
-        return;
+        continue;
       }
     }
   }
