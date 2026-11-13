@@ -10,6 +10,7 @@ import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
 import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
+import type { SpillStore } from '../runtimes/builtin/tools/spill.js';
 import type { DebugRecorder } from '../debug/recorder.js';
 
 /**
@@ -39,6 +40,8 @@ export interface AppContext {
   providers: ProviderManager;
   /** Central builtin runtime budgets (`<dataDir>/builtin.json`, defaults in code). */
   builtinConfig: BuiltinRuntimeConfig;
+  /** Oversized builtin tool output (`<dataDir>/spill/`); optional in partial tests. */
+  spill?: SpillStore;
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;

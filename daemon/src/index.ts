@@ -22,6 +22,7 @@ import { RunNotifier } from './runs/run-notifier.js';
 import { DebugRecorder } from './debug/recorder.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
 import { loadBuiltinConfig, logBuiltinConfigWarnings } from './runtimes/builtin/config.js';
+import { SpillStore } from './runtimes/builtin/tools/spill.js';
 import { Scheduler } from './scheduling/scheduler.js';
 import { createRegistry } from './runtimes/registry.js';
 import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './app/runtime-info.js';
@@ -157,6 +158,9 @@ async function main(): Promise<void> {
 
   const builtinConfig = await loadBuiltinConfig(config.dataDir);
   logBuiltinConfigWarnings(builtinConfig);
+  const spill = new SpillStore(config.dataDir, builtinConfig.config.tools.spill.retentionDays);
+  const prunedSpill = spill.prune();
+  if (prunedSpill > 0) log.info(`spill: pruned ${prunedSpill} expired file(s)`);
 
   const notifier = new RunNotifier();
   const memory = new MemoryStore(config.dataDir);
@@ -177,6 +181,7 @@ async function main(): Promise<void> {
       providersFile: process.env.PABOOT_LLM_PROVIDERS_FILE?.trim() || DEFAULT_PROVIDERS_FILE(),
     }),
     builtinConfig: builtinConfig.config,
+    spill,
     registry,
     permissions: new PermissionManager(
       config.permissionTimeoutMs,

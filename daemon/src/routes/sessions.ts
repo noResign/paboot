@@ -219,6 +219,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     await ctx.attachments?.deleteForSession(s.id);
     ctx.db.deleteSession(s.id);
     ctx.permissions.clearSession(s.id);
+    ctx.spill?.removeSession(s.id);
     ctx.db.audit('delete_session', s.id);
     res.json({ ok: true, id: s.id });
   });

@@ -370,6 +370,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       await ctx.attachments?.deleteForSession(session.id);
       ctx.db.deleteSession(session.id);
       ctx.permissions.clearSession(session.id);
+      ctx.spill?.removeSession(session.id);
     }
     await ctx.attachments?.deleteForWorkspace(workspace.id);
     // Knowledge belongs to the workspace: deleting the workspace removes its

@@ -78,7 +78,20 @@ describe('builtin config', () => {
         securityProfile: 'server-strict',
         allowServerBypass: true,
         context: { runtimeContextRatio: 0.2 },
-        tools: { read: { defaultLimit: 10, maxLimit: 10 } },
+        tools: {
+          read: { defaultLimit: 10, maxLimit: 10 },
+          write: { maxFileBytes: 2048 },
+          edit: { maxFileBytes: 1024 },
+          bash: {
+            defaultTimeoutMs: 5000,
+            maxTimeoutMs: 6000,
+            maxOutputBytes: 2048,
+            envAllow: ['FOO'],
+          },
+          spill: { retentionDays: 3 },
+          grep: { maxResults: 50, maxFileBytes: 1024, maxLineChars: 100 },
+          glob: { maxResults: 25 },
+        },
       }),
     );
 
@@ -95,13 +108,25 @@ describe('builtin config', () => {
     expect(loaded.config.tools.read.maxFileBytes).toBe(
       DEFAULT_BUILTIN_CONFIG.tools.read.maxFileBytes,
     );
+    expect(loaded.config.tools.write.maxFileBytes).toBe(2048);
+    expect(loaded.config.tools.edit.maxFileBytes).toBe(1024);
+    expect(loaded.config.tools.bash.defaultTimeoutMs).toBe(5000);
+    expect(loaded.config.tools.bash.envAllow).toEqual(['FOO']);
+    expect(loaded.config.tools.spill.retentionDays).toBe(3);
+    expect(loaded.config.tools.grep.maxResults).toBe(50);
+    expect(loaded.config.tools.grep.maxLineChars).toBe(100);
+    expect(loaded.config.tools.glob.maxResults).toBe(25);
   });
 
   it('warns and falls back per field for invalid values', () => {
     const { config, warnings } = parseBuiltinConfig({
       version: 1,
       context: { systemPromptRatio: 2, runtimeContextRatio: 'lots' },
-      tools: { read: { defaultLimit: 10, maxLimit: 5 } },
+      tools: {
+        read: { defaultLimit: 10, maxLimit: 5 },
+        write: { maxFileBytes: 0 },
+        bash: { defaultTimeoutMs: 10, maxTimeoutMs: 5, envAllow: 'nope' },
+      },
       unknown: true,
     });
 
@@ -115,7 +140,17 @@ describe('builtin config', () => {
     expect(config.tools.read.maxLimit).toBe(DEFAULT_BUILTIN_CONFIG.tools.read.maxLimit);
     expect(warnings.join('\n')).toContain('context.systemPromptRatio');
     expect(warnings.join('\n')).toContain('context.runtimeContextRatio');
+    expect(config.tools.write.maxFileBytes).toBe(
+      DEFAULT_BUILTIN_CONFIG.tools.write.maxFileBytes,
+    );
+    expect(config.tools.bash.defaultTimeoutMs).toBe(
+      DEFAULT_BUILTIN_CONFIG.tools.bash.defaultTimeoutMs,
+    );
+    expect(config.tools.bash.envAllow).toEqual([]);
     expect(warnings.join('\n')).toContain('defaultLimit must not exceed maxLimit');
+    expect(warnings.join('\n')).toContain('tools.write.maxFileBytes');
+    expect(warnings.join('\n')).toContain('defaultTimeoutMs must not exceed maxTimeoutMs');
+    expect(warnings.join('\n')).toContain('envAllow must be a string array');
     expect(warnings.join('\n')).toContain('unknown key "unknown"');
   });
 

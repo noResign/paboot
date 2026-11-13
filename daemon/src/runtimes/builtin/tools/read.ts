@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import { resolvePathAccess } from '../security/path-policy.js';
 import { estimateTokens } from '../tokens.js';
 import type { ToolDescriptor } from '../types.js';
+import { isRecord, looksBinary } from './file-utils.js';
 import type { ToolCallContext, ToolImplementation, ToolResult } from './types.js';
 import { ToolError } from './types.js';
 
@@ -19,6 +20,8 @@ export interface ReadToolOptions {
   maxOutputTokens?: number;
   maxLineChars?: number;
   measure?: (text: string) => number;
+  /** Called with the canonical path after a successful read. */
+  recordRead?: (resolvedPath: string) => void;
 }
 
 interface ReadArgs {
@@ -111,6 +114,7 @@ export function createReadTool(options: ReadToolOptions = {}): ToolImplementatio
         outputTokens += tokens;
       }
       if (truncatedOutput) output.push(`[output truncated at ${maxOutputTokens} tokens]`);
+      options.recordRead?.(access.path);
       return {
         content: output.join('\n'),
         isError: false,
@@ -148,11 +152,3 @@ function positiveInteger(value: unknown, fallback: number, field: string): numbe
   return value;
 }
 
-function looksBinary(buffer: Buffer): boolean {
-  const probe = buffer.subarray(0, Math.min(buffer.length, 8_192));
-  return probe.includes(0);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
