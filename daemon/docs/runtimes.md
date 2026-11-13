@@ -36,6 +36,12 @@ Registry 缓存。两种驱动共用 `runtimes/stdio-rpc.ts` 的通用 peer 传�
 `ToolServerSpec[]`（MCP 由进程内 `McpToolProvider` 挂载；server 侧看到
 `PABOOT_RUNTIME=builtin` 会跳过自己的审批 gate）。
 
+builtin 的原生工具：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite`。
+Write / Edit 覆盖已有文件前必须在本会话 Read 过（readFiles 从 transcript 重建，重启不丢）；
+Bash 复用平台 shell 与进程树取消，环境变量只透传白名单，超限输出写 `~/.paboot/spill/`；
+Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，其余按 Session 权限模式审批。
+工具预算与 spill 保留期在 [configuration.md](configuration.md) 的 `builtin.json` 中配置。
+
 所有运行时都通过 `RuntimeDriver` 注册执行驱动，`routes/chat.ts` 只按 id 取
 `registry.driver(id)` 并调用 `start`，**接入新运行时不需要改 chat 路由**。
 
