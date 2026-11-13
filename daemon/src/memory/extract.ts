@@ -21,6 +21,7 @@ export const MEMORY_PREDICATES = [
   'health',
   'schedule',
   'plan',
+  'focus',
   'habit',
   'goal',
 ] as const;
@@ -134,6 +135,10 @@ export function extractionSystemPrompt(): string {
     '    nextSteps 写下一步计划（没有就空字符串）。',
     '11. 可选输出 entities：{tempId, kind: person|place|org|pet|project|thing, name, aliases}；',
     '    claim 可用 subjectEntity/objectEntity 填 tempId；用户本人不需要建实体。',
+    '12. focus 与 plan 的区别：focus 是「当前主线 / 下一步优先做什么」，同一时刻只有一条，',
+    '    新主线出现时旧主线作废（kind 用 profile）；plan 是「有依赖、有备选、可并行推进」的计划，',
+    '    可以有多条。同一件事不要同时输出 focus 和 plan。输出 focus 时必须给 validFrom',
+    '    （写作出该决定的时间），否则新主线无法取代旧主线。',
     '输出格式：',
     '{"entities":[{"tempId":"e1","kind":"person","name":"张女士","aliases":["我妈"]}],',
     '"claims":[{"predicate":"lives_in","object":"上海","kind":"fact",',
