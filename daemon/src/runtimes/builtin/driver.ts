@@ -31,6 +31,13 @@ import { createTranscriptStore } from './transcript/store.js';
 import { createAttachmentImageResolver } from './transcript/render.js';
 import { NativeToolProvider } from './tools/native.js';
 import { createReadTool } from './tools/read.js';
+import { ReadFilesTracker } from './tools/read-files.js';
+import { createWriteTool } from './tools/write.js';
+import { createEditTool } from './tools/edit.js';
+import { createBashTool } from './tools/bash.js';
+import { createGrepTool } from './tools/grep.js';
+import { createGlobTool } from './tools/glob.js';
+import { createTodoTool } from './tools/todo.js';
 import { createLoadSkillTool } from './skills/load-tool.js';
 import { SkillRegistry, type SkillRoot } from './skills/registry.js';
 import { createPermissionBroker } from './tools/permission-broker.js';
@@ -195,6 +202,8 @@ async function runBuiltin(
     });
     agent.permissionBroker = permissionBroker;
 
+    // Read-before-write survives resume: seed from the persisted transcript.
+    const readFiles = ReadFilesTracker.fromTranscript(transcript.list(thread.id), session.cwd);
     const nativeProvider = new NativeToolProvider([
       createReadTool({
         maxFileBytes: builtinConfig.tools.read.maxFileBytes,
@@ -203,6 +212,35 @@ async function runBuiltin(
         maxLineChars: builtinConfig.tools.read.maxLineChars,
         maxOutputTokens: budget.maxResultTokens,
         measure,
+        recordRead: (path) => readFiles.add(path),
+      }),
+      createWriteTool({
+        maxFileBytes: builtinConfig.tools.write.maxFileBytes,
+        wasRead: (path) => readFiles.has(path),
+        recordWrite: (path) => readFiles.add(path),
+      }),
+      createEditTool({
+        maxFileBytes: builtinConfig.tools.edit.maxFileBytes,
+        wasRead: (path) => readFiles.has(path),
+        recordWrite: (path) => readFiles.add(path),
+      }),
+      createBashTool({
+        defaultTimeoutMs: builtinConfig.tools.bash.defaultTimeoutMs,
+        maxTimeoutMs: builtinConfig.tools.bash.maxTimeoutMs,
+        maxOutputBytes: builtinConfig.tools.bash.maxOutputBytes,
+        envAllow: builtinConfig.tools.bash.envAllow,
+        ...(ctx.spill ? { spill: ctx.spill } : {}),
+      }),
+      createGrepTool({
+        maxResults: builtinConfig.tools.grep.maxResults,
+        maxFileBytes: builtinConfig.tools.grep.maxFileBytes,
+        maxLineChars: builtinConfig.tools.grep.maxLineChars,
+      }),
+      createGlobTool({ maxResults: builtinConfig.tools.glob.maxResults }),
+      createTodoTool({
+        save: (sessionId, todos) => {
+          ctx.db.replaceSessionTodos(sessionId, todos);
+        },
       }),
       createLoadSkillTool(skills, {
         allowedSkills: profile.allowedSkills,

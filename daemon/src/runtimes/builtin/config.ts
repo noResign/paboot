@@ -45,6 +45,30 @@ export interface BuiltinRuntimeConfig {
       maxLimit: number;
       maxLineChars: number;
     };
+    write: {
+      maxFileBytes: number;
+    };
+    edit: {
+      maxFileBytes: number;
+    };
+    bash: {
+      defaultTimeoutMs: number;
+      maxTimeoutMs: number;
+      maxOutputBytes: number;
+      /** Extra env vars passed to shell commands (default: none beyond the base set). */
+      envAllow: string[];
+    };
+    spill: {
+      retentionDays: number;
+    };
+    grep: {
+      maxResults: number;
+      maxFileBytes: number;
+      maxLineChars: number;
+    };
+    glob: {
+      maxResults: number;
+    };
   };
   skills: {
     maxFileBytes: number;
@@ -80,6 +104,29 @@ export const DEFAULT_BUILTIN_CONFIG: BuiltinRuntimeConfig = {
       defaultLimit: 2_000,
       maxLimit: 2_000,
       maxLineChars: 4_000,
+    },
+    write: {
+      maxFileBytes: 8 * 1024 * 1024,
+    },
+    edit: {
+      maxFileBytes: 8 * 1024 * 1024,
+    },
+    bash: {
+      defaultTimeoutMs: 120_000,
+      maxTimeoutMs: 600_000,
+      maxOutputBytes: 32 * 1024,
+      envAllow: [],
+    },
+    spill: {
+      retentionDays: 7,
+    },
+    grep: {
+      maxResults: 1_000,
+      maxFileBytes: 8 * 1024 * 1024,
+      maxLineChars: 500,
+    },
+    glob: {
+      maxResults: 2_000,
     },
   },
   skills: {
@@ -287,7 +334,12 @@ export function parseBuiltinConfig(raw: unknown): {
 
   const tools = section(raw['tools'], 'tools', warnings);
   if (tools) {
-    warnUnknown(tools, ['maxResultTokens', 'read'], 'tools', warnings);
+    warnUnknown(
+      tools,
+      ['maxResultTokens', 'read', 'write', 'edit', 'bash', 'spill', 'grep', 'glob'],
+      'tools',
+      warnings,
+    );
     config.tools.maxResultTokens = intField(
       tools['maxResultTokens'],
       'tools.maxResultTokens',
@@ -336,6 +388,118 @@ export function parseBuiltinConfig(raw: unknown): {
         config.tools.read.defaultLimit = DEFAULT_BUILTIN_CONFIG.tools.read.defaultLimit;
         config.tools.read.maxLimit = DEFAULT_BUILTIN_CONFIG.tools.read.maxLimit;
       }
+    }
+    const write = section(tools['write'], 'tools.write', warnings);
+    if (write) {
+      warnUnknown(write, ['maxFileBytes'], 'tools.write', warnings);
+      config.tools.write.maxFileBytes = intField(
+        write['maxFileBytes'],
+        'tools.write.maxFileBytes',
+        1_024,
+        config.tools.write.maxFileBytes,
+        warnings,
+      );
+    }
+    const edit = section(tools['edit'], 'tools.edit', warnings);
+    if (edit) {
+      warnUnknown(edit, ['maxFileBytes'], 'tools.edit', warnings);
+      config.tools.edit.maxFileBytes = intField(
+        edit['maxFileBytes'],
+        'tools.edit.maxFileBytes',
+        1_024,
+        config.tools.edit.maxFileBytes,
+        warnings,
+      );
+    }
+    const bash = section(tools['bash'], 'tools.bash', warnings);
+    if (bash) {
+      warnUnknown(
+        bash,
+        ['defaultTimeoutMs', 'maxTimeoutMs', 'maxOutputBytes', 'envAllow'],
+        'tools.bash',
+        warnings,
+      );
+      config.tools.bash.defaultTimeoutMs = intField(
+        bash['defaultTimeoutMs'],
+        'tools.bash.defaultTimeoutMs',
+        1,
+        config.tools.bash.defaultTimeoutMs,
+        warnings,
+      );
+      config.tools.bash.maxTimeoutMs = intField(
+        bash['maxTimeoutMs'],
+        'tools.bash.maxTimeoutMs',
+        1,
+        config.tools.bash.maxTimeoutMs,
+        warnings,
+      );
+      config.tools.bash.maxOutputBytes = intField(
+        bash['maxOutputBytes'],
+        'tools.bash.maxOutputBytes',
+        1_024,
+        config.tools.bash.maxOutputBytes,
+        warnings,
+      );
+      if (config.tools.bash.defaultTimeoutMs > config.tools.bash.maxTimeoutMs) {
+        warnings.push('tools.bash.defaultTimeoutMs must not exceed maxTimeoutMs; using defaults');
+        config.tools.bash.defaultTimeoutMs = DEFAULT_BUILTIN_CONFIG.tools.bash.defaultTimeoutMs;
+        config.tools.bash.maxTimeoutMs = DEFAULT_BUILTIN_CONFIG.tools.bash.maxTimeoutMs;
+      }
+      const envAllow = bash['envAllow'];
+      if (envAllow !== undefined) {
+        if (!Array.isArray(envAllow) || envAllow.some((item) => typeof item !== 'string')) {
+          warnings.push('tools.bash.envAllow must be a string array');
+        } else {
+          config.tools.bash.envAllow = envAllow as string[];
+        }
+      }
+    }
+    const spill = section(tools['spill'], 'tools.spill', warnings);
+    if (spill) {
+      warnUnknown(spill, ['retentionDays'], 'tools.spill', warnings);
+      config.tools.spill.retentionDays = intField(
+        spill['retentionDays'],
+        'tools.spill.retentionDays',
+        1,
+        config.tools.spill.retentionDays,
+        warnings,
+      );
+    }
+    const grep = section(tools['grep'], 'tools.grep', warnings);
+    if (grep) {
+      warnUnknown(grep, ['maxResults', 'maxFileBytes', 'maxLineChars'], 'tools.grep', warnings);
+      config.tools.grep.maxResults = intField(
+        grep['maxResults'],
+        'tools.grep.maxResults',
+        1,
+        config.tools.grep.maxResults,
+        warnings,
+      );
+      config.tools.grep.maxFileBytes = intField(
+        grep['maxFileBytes'],
+        'tools.grep.maxFileBytes',
+        1_024,
+        config.tools.grep.maxFileBytes,
+        warnings,
+      );
+      config.tools.grep.maxLineChars = intField(
+        grep['maxLineChars'],
+        'tools.grep.maxLineChars',
+        20,
+        config.tools.grep.maxLineChars,
+        warnings,
+      );
+    }
+    const glob = section(tools['glob'], 'tools.glob', warnings);
+    if (glob) {
+      warnUnknown(glob, ['maxResults'], 'tools.glob', warnings);
+      config.tools.glob.maxResults = intField(
+        glob['maxResults'],
+        'tools.glob.maxResults',
+        1,
+        config.tools.glob.maxResults,
+        warnings,
+      );
     }
   }
 
@@ -393,6 +557,15 @@ function cloneDefault(): BuiltinRuntimeConfig {
     tools: {
       ...DEFAULT_BUILTIN_CONFIG.tools,
       read: { ...DEFAULT_BUILTIN_CONFIG.tools.read },
+      write: { ...DEFAULT_BUILTIN_CONFIG.tools.write },
+      edit: { ...DEFAULT_BUILTIN_CONFIG.tools.edit },
+      bash: {
+        ...DEFAULT_BUILTIN_CONFIG.tools.bash,
+        envAllow: [...DEFAULT_BUILTIN_CONFIG.tools.bash.envAllow],
+      },
+      spill: { ...DEFAULT_BUILTIN_CONFIG.tools.spill },
+      grep: { ...DEFAULT_BUILTIN_CONFIG.tools.grep },
+      glob: { ...DEFAULT_BUILTIN_CONFIG.tools.glob },
     },
     skills: { ...DEFAULT_BUILTIN_CONFIG.skills },
     agent: { ...DEFAULT_BUILTIN_CONFIG.agent },

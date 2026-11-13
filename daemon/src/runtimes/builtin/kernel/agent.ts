@@ -265,6 +265,30 @@ export class AgentKernel {
           return { status: 'failed', error: `agent budget exceeded: ${afterStepBudget}` };
         }
 
+        // Fast path: a fully parsed batch that fits the budget goes through the
+        // executor once. Concurrency-safe reads run in parallel; any write /
+        // execute call keeps the whole batch ordered inside executeBatch.
+        const parsedCalls = step.toolCalls.map((call) => parseToolInput(call.arguments));
+        const batchFitsBudget =
+          agent.budget.maxToolCalls - usage.toolCalls >= step.toolCalls.length;
+        if (!agent.signal.aborted && batchFitsBudget && parsedCalls.every((parsed) => parsed.ok)) {
+          usage.toolCalls += step.toolCalls.length;
+          const calls = step.toolCalls.map((call, index) => ({
+            id: call.id,
+            name: call.name,
+            input: (parsedCalls[index] as { ok: true; input: unknown }).input,
+          }));
+          const results = await this.deps.toolExecutor.executeBatch(calls, agent);
+          for (let index = 0; index < results.length; index += 1) {
+            this.appendToolResult(agent, calls[index]!.id, results[index]!, usage.steps);
+          }
+          if (agent.signal.aborted || results.some((result) => result.interrupted)) {
+            emitTurnEnd(agent.eventSink, 'cancelled');
+            return { status: 'cancelled', error: 'cancelled' };
+          }
+          continue;
+        }
+
         for (let index = 0; index < step.toolCalls.length; index += 1) {
           const call = step.toolCalls[index]!;
           if (agent.signal.aborted) {

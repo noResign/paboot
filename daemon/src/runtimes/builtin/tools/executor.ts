@@ -14,6 +14,8 @@ export interface ToolExecutorOptions {
   /** Model-visible tool result cap; applied before the event and transcript. */
   maxResultTokens?: number;
   measure?: (text: string) => number;
+  /** Upper bound for concurrent calls in one all-safe batch. */
+  maxParallel?: number;
 }
 
 /**
@@ -27,12 +29,14 @@ export class ToolExecutor {
   private readonly defaultTimeoutMs: number;
   private readonly maxResultTokens: number | undefined;
   private readonly measure: ((text: string) => number) | undefined;
+  private readonly maxParallel: number;
 
   constructor(private readonly options: ToolExecutorOptions) {
     this.policy = options.policy ?? defaultToolApprovalPolicy;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
     this.maxResultTokens = options.maxResultTokens;
     this.measure = options.measure;
+    this.maxParallel = options.maxParallel ?? 4;
   }
 
   async execute(call: ToolCallRequest, agent: AgentRunContext): Promise<ToolResult> {
@@ -64,6 +68,48 @@ export class ToolExecutor {
       ...(result.interrupted ? { interrupted: true } : {}),
     });
     return result;
+  }
+
+  /**
+   * Run one step's tool calls. A batch runs concurrently only when every
+   * descriptor is `concurrencySafe`; otherwise the whole batch stays ordered
+   * (a write or shell command must not race a read). Results keep the model's
+   * call order regardless of completion order.
+   */
+  async executeBatch(
+    calls: readonly ToolCallRequest[],
+    agent: AgentRunContext,
+  ): Promise<ToolResult[]> {
+    if (calls.length === 0) return [];
+    let descriptors: Awaited<ReturnType<ToolRegistry['get']>>[];
+    try {
+      descriptors = await Promise.all(
+        calls.map((call) => this.options.registry.get({ agent, signal: agent.signal }, call.name)),
+      );
+    } catch {
+      // Registry lookup failures must not skip results; the serial path turns
+      // them into per-call error results.
+      descriptors = [];
+    }
+    const parallel =
+      descriptors.length === calls.length &&
+      descriptors.every((descriptor) => descriptor?.concurrencySafe === true);
+    if (!parallel) {
+      const results: ToolResult[] = [];
+      for (const call of calls) results.push(await this.execute(call, agent));
+      return results;
+    }
+
+    const results = new Array<ToolResult>(calls.length);
+    for (let start = 0; start < calls.length; start += this.maxParallel) {
+      const chunk = calls.slice(start, start + this.maxParallel);
+      await Promise.all(
+        chunk.map(async (call, offset) => {
+          results[start + offset] = await this.execute(call, agent);
+        }),
+      );
+    }
+    return results;
   }
 
   async close(): Promise<void> {
