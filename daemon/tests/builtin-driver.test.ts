@@ -261,10 +261,12 @@ describe('builtin driver E2E with fake provider', () => {
     const usage = frames
       .filter((frame) => frame.event.type === 'usage')
       .map((frame) => frame.event as Extract<SseFrame['event'], { type: 'usage' }>);
-    expect(usage[0]?.usage).toMatchObject({ input_tokens: 8, output_tokens: 2 });
-    expect(usage[0]?.costUsd).toBeCloseTo(0.000012, 9);
-    expect(usage[1]?.usage).toMatchObject({ input_tokens: 18, output_tokens: 6 });
-    expect(usage[1]?.costUsd).toBeCloseTo(0.00003, 9);
+    // Mid-run frames only carry context occupancy; the cumulative token total
+    // is emitted once, when the turn ends (same timing as Claude / Codex).
+    expect(usage.filter((frame) => frame.usage === null).length).toBeGreaterThan(0);
+    const finalUsage = usage.filter((frame) => frame.usage !== null).at(-1);
+    expect(finalUsage?.usage).toMatchObject({ input_tokens: 18, output_tokens: 6 });
+    expect(finalUsage?.costUsd).toBeCloseTo(0.00003, 9);
     expect(frames.find((frame) => frame.event.type === 'tool_result')?.event).toMatchObject({
       toolUseId: 'call_read',
       isError: false,
