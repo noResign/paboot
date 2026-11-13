@@ -208,6 +208,9 @@ class ChatViewModel(
         cancelStream()
         // 上下文占用属于上一个会话，必须先清；打开会话时由历史重建填回。
         _contextUsage.value = null
+        // 待办列表同理：先在本地归约完最后一次 TodoWrite，再一次性写回，
+        // 避免重建多个 run 时中间态在 UI 上闪现。
+        _todos.value = emptyList()
         // 模型与目录同理：打开会话后从详情填回。
         _sessionModel.value = null
         _sessionModelParameters.value = emptyMap()
@@ -274,6 +277,7 @@ class ChatViewModel(
         messages: List<MessageDto>,
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
+        var latestTodos = emptyList<TodoItem>()
         for (run in runs) {
             list += ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds)
             if (run.id == runningRunId) {
@@ -281,7 +285,8 @@ class ChatViewModel(
                 list += ChatUiMessage.Assistant()
             } else {
                 when (val ev = repository.runEvents(run.id)) {
-                    is NetworkResult.Success -> list += buildAssistantFromEvents(ev.data.events)
+                    is NetworkResult.Success ->
+                        list += buildAssistantFromEvents(ev.data.events) { latestTodos = it }
                     is NetworkResult.Error -> list += ChatUiMessage.Assistant(done = true)
                 }
             }
@@ -293,16 +298,21 @@ class ChatViewModel(
                 else ChatUiMessage.Assistant(blocks = listOf(ContentBlock.Text(m.content)), done = true)
             }
         }
+        // 只在整段历史归约完成后写一次，避免跨 run 的中间态闪现。
+        _todos.value = latestTodos
         return list
     }
 
-    private fun buildAssistantFromEvents(events: List<SseFrame>): ChatUiMessage.Assistant {
+    private fun buildAssistantFromEvents(
+        events: List<SseFrame>,
+        onTodos: (List<TodoItem>) -> Unit = {},
+    ): ChatUiMessage.Assistant {
         var a = ChatUiMessage.Assistant()
         for (frame in events) {
             val e = frame.event
             if (e is NormalizedEvent.PermissionRequest) continue // 审批请求是瞬态，不进历史
             if (e is NormalizedEvent.ToolUse && e.name == "TodoWrite") {
-                _todos.value = parseTodos(e.input)
+                onTodos(parseTodos(e.input))
                 continue
             }
             // 重建这条路不经过 applyEvent，所以上下文占用要在这里也喂一次，
