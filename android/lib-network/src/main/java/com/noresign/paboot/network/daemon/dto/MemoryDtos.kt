@@ -122,6 +122,26 @@ data class MemoryDuplicatesResponse(
     val duplicates: List<MemoryDuplicateDto> = emptyList(),
 )
 
+/** D38: `candidate_done` is a proposed completion awaiting review. */
+@Serializable
+data class MemoryLoopDto(
+    val id: String = "",
+    val scope: String = "",
+    val title: String = "",
+    val detail: String? = null,
+    val status: String = "open",
+)
+
+@Serializable
+data class MemoryLoopsResponse(
+    val loops: List<MemoryLoopDto> = emptyList(),
+)
+
+@Serializable
+data class MemoryLoopActionRequest(
+    val action: String,
+)
+
 @Serializable
 data class MemoryDisputeClaimDto(
     val id: String = "",
@@ -182,6 +202,15 @@ data class WorkspaceMemoryDto(
 data class MemoryCorrectClaimRequest(
     val summary: String? = null,
     val objectText: String? = null,
+)
+
+/** D38: `wrong` hides a claim from injection and recall; others re-rank it. */
+@Serializable
+data class MemoryFeedbackRequest(
+    val targetType: String = "claim",
+    val targetId: String,
+    val action: String,
+    val note: String? = null,
 )
 
 @Serializable

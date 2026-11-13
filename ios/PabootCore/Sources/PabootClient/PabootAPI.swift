@@ -212,6 +212,44 @@ public final class PabootAPI {
         )
     }
 
+    /// D38: open loops plus auto-detected "maybe finished" candidates.
+    public func memoryLoops(scope: String, status: String = "all") async throws -> MemoryLoopsResponse {
+        try await get(
+            "api/memory/loops",
+            query: [
+                URLQueryItem(name: "scope", value: scope),
+                URLQueryItem(name: "status", value: status),
+            ],
+            authenticated: true,
+            as: MemoryLoopsResponse.self
+        )
+    }
+
+    /// `confirm` closes the loop; `reopen` returns a candidate to open.
+    public func resolveMemoryLoop(id: String, scope: String, confirm: Bool) async throws -> OkResponse {
+        try await request(
+            "PATCH",
+            path: "api/memory/loops/\(id)",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            body: try encode(MemoryLoopActionRequest(action: confirm ? "confirm" : "reopen")),
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
+    /// D38: `wrong` retires a claim from injection / recall without deleting it.
+    public func memoryFeedback(scope: String, claimId: String, action: String) async throws -> OkResponse {
+        let body = MemoryFeedbackRequest(targetId: claimId, action: action)
+        return try await request(
+            "POST",
+            path: "api/memory/feedback",
+            query: [URLQueryItem(name: "scope", value: scope)],
+            body: try encode(body),
+            authenticated: true,
+            as: OkResponse.self
+        )
+    }
+
     public func memoryTimeline(scope: String) async throws -> MemoryTimelineResponse {
         try await get(
             "api/memory/timeline",

@@ -8,13 +8,16 @@ import com.noresign.paboot.network.daemon.dto.MemoryCorrectClaimRequest
 import com.noresign.paboot.network.daemon.dto.MemoryDisputeDto
 import com.noresign.paboot.network.daemon.dto.MemoryDuplicateDto
 import com.noresign.paboot.network.daemon.dto.MemoryEntityDto
+import com.noresign.paboot.network.daemon.dto.MemoryFeedbackRequest
+import com.noresign.paboot.network.daemon.dto.MemoryLoopActionRequest
+import com.noresign.paboot.network.daemon.dto.MemoryLoopDto
 import com.noresign.paboot.network.daemon.dto.MemoryStatusDto
 import com.noresign.paboot.network.daemon.dto.MemoryTimelineItemDto
 import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 
-/** Memory M0：生活记忆的只读列表 + 改正 / 忘记。整理配置留在桌面 / daemon。 */
+/** Memory：生活记忆的只读列表 + 改正 / 忘记 / 反馈 / 跟进项审核。整理配置留在桌面 / daemon。 */
 class MemoryRepository(
     private val settings: SettingsStore = SettingsStore,
 ) {
@@ -103,6 +106,41 @@ class MemoryRepository(
     suspend fun forget(workspaceId: String, id: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.forgetMemoryClaim(id, scope(workspaceId)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    /** D38: open loops plus the auto-detected "maybe finished" candidates. */
+    suspend fun loops(workspaceId: String): NetworkResult<List<MemoryLoopDto>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.memoryLoops(scope(workspaceId)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.loops)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun resolveLoop(
+        workspaceId: String,
+        id: String,
+        confirm: Boolean,
+    ): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        val body = MemoryLoopActionRequest(action = if (confirm) "confirm" else "reopen")
+        return when (val r = safeApiCall { api.resolveMemoryLoop(id, scope(workspaceId), body) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun feedback(
+        workspaceId: String,
+        claimId: String,
+        action: String,
+    ): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        val body = MemoryFeedbackRequest(targetId = claimId, action = action)
+        return when (val r = safeApiCall { api.memoryFeedback(scope(workspaceId), body) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }

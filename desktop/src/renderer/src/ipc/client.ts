@@ -47,6 +47,7 @@ import type {
   MemoryEntitiesResponse,
   MemoryEntityLinkResponse,
   MemoryEntityLinksResponse,
+  MemoryLoopsResponse,
   MemoryEntityResponse,
   MemorySearchResponse,
   MemorySessionModeRequest,
@@ -469,6 +470,19 @@ export const api = {
       method: 'GET',
       path: ROUTES.memoryEntityLinks,
       query: { scope },
+    }),
+  memoryLoops: (scope: string, status: 'open' | 'candidate_done' | 'all' = 'all') =>
+    request<MemoryLoopsResponse>({
+      method: 'GET',
+      path: ROUTES.memoryLoops,
+      query: { scope, status },
+    }),
+  resolveMemoryLoop: (scope: string, id: string, action: 'confirm' | 'reopen') =>
+    request<{ ok: true; id: string; action: string }>({
+      method: 'PATCH',
+      path: ROUTES.memoryLoop(id),
+      query: { scope },
+      body: { action },
     }),
   linkMemoryEntities: (scope: string, a: string, b: string) =>
     request<MemoryEntityLinkResponse>({

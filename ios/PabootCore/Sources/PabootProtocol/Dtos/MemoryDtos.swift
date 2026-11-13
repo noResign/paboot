@@ -199,6 +199,62 @@ public struct MemoryDuplicatesResponse: Decodable, Equatable, Sendable {
     }
 }
 
+/// D38: `candidate_done` is a proposed completion awaiting review.
+public struct MemoryLoopDto: Decodable, Equatable, Sendable {
+    public let id: String
+    public let scope: String
+    public let title: String
+    public let detail: String?
+    public let status: String
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        scope = try container.decodeIfPresent(String.self, forKey: .scope) ?? ""
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "open"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, scope, title, detail, status
+    }
+}
+
+public struct MemoryLoopsResponse: Decodable, Equatable, Sendable {
+    public let loops: [MemoryLoopDto]
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        loops = try container.decodeIfPresent([MemoryLoopDto].self, forKey: .loops) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case loops
+    }
+}
+
+public struct MemoryLoopActionRequest: Encodable, Equatable, Sendable {
+    public let action: String
+
+    public init(action: String) {
+        self.action = action
+    }
+}
+
+/// D38: `wrong` hides a claim from injection and recall; others re-rank it.
+public struct MemoryFeedbackRequest: Encodable, Equatable, Sendable {
+    public let targetType: String
+    public let targetId: String
+    public let action: String
+
+    public init(targetType: String = "claim", targetId: String, action: String) {
+        self.targetType = targetType
+        self.targetId = targetId
+        self.action = action
+    }
+}
+
 public struct MemoryDisputeClaimDto: Decodable, Equatable, Sendable {
     public let id: String
     public let summary: String

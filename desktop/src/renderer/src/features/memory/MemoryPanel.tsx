@@ -7,6 +7,7 @@ import type {
   MemoryDuplicateDto,
   MemoryEntityDto,
   MemoryEntityLinkDto,
+  MemoryLoopDto,
   MemorySearchHitDto,
   MemoryStatusDto,
   MemoryTimelineItemDto,
@@ -20,7 +21,7 @@ interface Props {
   onClose(): void;
 }
 
-type Tab = 'claims' | 'timeline' | 'search' | 'duplicates' | 'entities' | 'disputes';
+type Tab = 'claims' | 'timeline' | 'search' | 'loops' | 'duplicates' | 'entities' | 'disputes';
 
 const GROUPS: Array<{ kind: MemoryClaimDto['kind']; label: string }> = [
   { kind: 'fact', label: '关于你' },
@@ -132,6 +133,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
   const [linkPeerId, setLinkPeerId] = useState<string | null>(null);
   const [disputes, setDisputes] = useState<MemoryDisputeDto[]>([]);
   const [selectedDisputeId, setSelectedDisputeId] = useState<string | null>(null);
+  const [loops, setLoops] = useState<MemoryLoopDto[]>([]);
 
   const load = useCallback(async () => {
     const [claimsRes, statusRes, settingsRes] = await Promise.all([
@@ -163,6 +165,11 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     void load();
   }, [load]);
 
+  const refreshLoops = useCallback(async () => {
+    const res = await api.memoryLoops(scope, 'all');
+    if (res.ok) setLoops(res.data.loops);
+  }, [scope]);
+
   useEffect(() => {
     if (tab !== 'timeline') return;
     void api.memoryTimeline(scope).then((res) => {
@@ -188,6 +195,11 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
       }
     });
   }, [tab, scope]);
+
+  useEffect(() => {
+    if (tab !== 'loops') return;
+    void refreshLoops();
+  }, [tab, refreshLoops]);
 
   useEffect(() => {
     if (tab !== 'disputes') return;
@@ -232,6 +244,52 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
       if (res.ok) setGlobalEntities(res.data.entities);
     });
   }, [tab, family]);
+
+  /**
+   * D38: feedback is the only way `wrong` / `stale` reach the selector, and it
+   * also feeds the duplicate / dispute review decisions. `wrong` is destructive
+   * enough to confirm first; `stale` / `helpful` are one click.
+   */
+  async function sendFeedback(
+    claim: MemoryClaimDto,
+    action: 'helpful' | 'stale' | 'wrong',
+  ): Promise<void> {
+    if (action === 'wrong') {
+      const confirmed = window.confirm(
+        `把「${claim.summary}」标记为不准确？它之后不会再被注入或召回，但不会被删除。`,
+      );
+      if (!confirmed) return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await api.memoryFeedback(scope, { targetId: claim.id, action });
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(
+      action === 'wrong'
+        ? '已标记不准确，之后不再注入'
+        : action === 'stale'
+          ? '已标记过时，排序会靠后'
+          : '已标记为有用',
+    );
+    void load();
+  }
+
+  async function resolveLoop(loop: MemoryLoopDto, action: 'confirm' | 'reopen'): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const res = await api.resolveMemoryLoop(scope, loop.id, action);
+    setBusy(false);
+    if (!res.ok) {
+      setError(errorMessage(res.data, res.status));
+      return;
+    }
+    setNotice(action === 'confirm' ? '已确认完成' : '已放回未完成');
+    await refreshLoops();
+  }
 
   async function resolveDuplicate(
     duplicate: MemoryDuplicateDto,
@@ -621,6 +679,17 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
             搜索
           </button>
           <button
+            className={`btn${tab === 'loops' ? ' primary' : ''}`}
+            onClick={() => setTab('loops')}
+          >
+            跟进
+            {loops.filter((loop) => loop.status === 'candidate_done').length > 0 && (
+              <span className="badge subtle">
+                {loops.filter((loop) => loop.status === 'candidate_done').length}
+              </span>
+            )}
+          </button>
+          <button
             className={`btn${tab === 'disputes' ? ' primary' : ''}`}
             onClick={() => setTab('disputes')}
           >
@@ -911,6 +980,63 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
               </div>
             )}
 
+            {tab === 'loops' && (
+              <div className="mem-groups">
+                {loops.length === 0 ? (
+                  <p className="hint">没有未完成的跟进项。</p>
+                ) : (
+                  <>
+                    <p className="hint">
+                      「可能已完成」是自动比对摘要得出的候选，确认后才会关闭；未确认的仍算未完成。
+                    </p>
+                    {loops.map((loop) => (
+                      <div key={loop.id} className="mem-row mem-loop-row">
+                        <span className="mem-row-summary">{loop.title}</span>
+                        <span className="mem-row-meta">
+                          <span
+                            className={
+                              loop.status === 'candidate_done' ? 'mem-tag is-pending' : 'mem-tag'
+                            }
+                          >
+                            {loop.status === 'candidate_done' ? '可能已完成' : '未完成'}
+                          </span>
+                          {loop.detail && <span className="mem-row-date">{loop.detail}</span>}
+                        </span>
+                        <div className="mem-actions">
+                          {loop.status === 'candidate_done' ? (
+                            <>
+                              <button
+                                className="btn"
+                                disabled={busy}
+                                onClick={() => void resolveLoop(loop, 'confirm')}
+                              >
+                                确认完成
+                              </button>
+                              <button
+                                className="btn ghost"
+                                disabled={busy}
+                                onClick={() => void resolveLoop(loop, 'reopen')}
+                              >
+                                仍在进行
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="btn ghost"
+                              disabled={busy}
+                              onClick={() => void resolveLoop(loop, 'confirm')}
+                            >
+                              标记完成
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
             {tab === 'duplicates' && (
               <div className="mem-groups">
                 {duplicates.length === 0 ? (
@@ -1119,6 +1245,34 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                         </>
                       )}
                     </div>
+                    {/* D38: only feedback can retire a wrong claim without
+                        deleting it; `wrong` hides it from injection + recall. */}
+                    {selected.scope === scope && (
+                      <div className="mem-actions mem-detail-actions">
+                        <span className="hint">这条记忆：</span>
+                        <button
+                          className="btn ghost"
+                          disabled={busy}
+                          onClick={() => void sendFeedback(selected, 'helpful')}
+                        >
+                          有用
+                        </button>
+                        <button
+                          className="btn ghost"
+                          disabled={busy}
+                          onClick={() => void sendFeedback(selected, 'stale')}
+                        >
+                          过时了
+                        </button>
+                        <button
+                          className="btn ghost"
+                          disabled={busy}
+                          onClick={() => void sendFeedback(selected, 'wrong')}
+                        >
+                          不准确
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
                 {family === 'life' && selected.scope.startsWith('workspace:') && (
