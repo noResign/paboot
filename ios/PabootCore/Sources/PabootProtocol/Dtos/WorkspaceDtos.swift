@@ -9,7 +9,7 @@ public struct WorkspaceDto: Decodable, Equatable, Sendable {
     /// 文件 Tab 的浏览书签。**不授予 agent 任何权限**。
     public let shortcutDirs: [String]
     public let isDefault: Bool
-    /// daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。
+    /// 唯一内置的「个人空间」工作区；不可删/不可停用，但可作为默认。
     public let isBuiltin: Bool
     /// `dev` | `life`；旧 daemon 不发时按 dev 处理。
     public let family: String

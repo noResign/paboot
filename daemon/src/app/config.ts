@@ -18,12 +18,16 @@ export interface Config {
   host: string;
   port: number;
   dataDir: string;
-  /** 初始 Workspace 根目录；首次启动时注册为默认 Workspace，之后可在手机上切换/新增。 */
+  /**
+   * 显式启动目录（`--workspace` / `PABOOT_WORKSPACE`）。没有显式指定时指向
+   * 内置「个人空间」工作区，仅用于日志与 health；个人空间本身由
+   * `ensureLifeWorkspace` 创建。
+   */
   workspace: string;
   /**
    * 初始 workspace 的来源。`flag`(显式 `--workspace`)是**权威值**——每次启动都
-   * 确保该目录存在并设为默认工作区;`env` / `default`(cwd) 只是首次安装的一次性
-   * 种子,沿用旧语义(删掉的工作区不会重启后复活)。
+   * 确保该目录存在并设为默认工作区;`env` 只是首次安装的一次性种子；`default`
+   * 表示没有显式目录，启动时以「个人空间」为默认工作区。
    */
   workspaceSource: WorkspaceSource;
   token: string;
@@ -210,12 +214,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
   const dataDir = path.join(os.homedir(), '.paboot');
   fs.mkdirSync(dataDir, { recursive: true });
 
-  // The workspace is the directory agent runtimes operate in directly. With no
-  // flag or env it defaults to the built-in fallback under the data dir, next
-  // to SQLite/token — so a bare `paboot` never registers wherever it happened
-  // to be launched from (and the path is marked built-in, see seedDefaultWorkspace).
+  // With no explicit --workspace / PABOOT_WORKSPACE the only workspace is the
+  // built-in life workspace. Keeping that path here means a bare `paboot` never
+  // registers wherever it happened to be launched from.
   const workspace = path.resolve(
-    expandHome(overrides.workspace ?? env.PABOOT_WORKSPACE ?? path.join(dataDir, 'defaultworkspace')),
+    expandHome(overrides.workspace ?? env.PABOOT_WORKSPACE ?? path.join(dataDir, 'life')),
   );
   const workspaceSource: WorkspaceSource =
     overrides.workspace !== undefined ? 'flag' : env.PABOOT_WORKSPACE?.trim() ? 'env' : 'default';

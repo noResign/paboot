@@ -59,8 +59,8 @@ Install an installer from the [releases](https://github.com/noResign/paboot/rele
 it. The desktop app ships a daemon runtime: if no daemon is running, it starts one automatically
 (auto-start can be turned off in Settings), so **you do not need Node / npm**.
 
-- After connecting, add or switch working directories under **Settings → Workspaces**; a local
-  daemon defaults to the built-in fallback workspace `~/.paboot/defaultworkspace`;
+- After connecting, the app opens the built-in **Personal** workspace; add or switch project
+  directories under **Settings → Workspaces**;
 - Android / iOS on the same network can connect to that daemon too: use the LAN address shown by the
   desktop app and the token at `~/.paboot/token`.
 
@@ -76,7 +76,7 @@ client.
 npm install -g @noresign/paboot      # the global command is `paboot`
 
 paboot --workspace /path/to/your/project
-# without --workspace the default workspace is ~/.paboot/defaultworkspace
+# without --workspace the daemon opens the built-in Personal workspace (~/.paboot/life)
 ```
 
 - The token is persisted at `~/.paboot/token` (delete the file to rotate); pass

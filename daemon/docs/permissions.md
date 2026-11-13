@@ -122,7 +122,7 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   权限模式审批；`server-strict` 的读写都只允许授权根，并硬拒绝 daemon 敏感文件。详见
   [configuration.md](configuration.md) 的「安全档位」。
 - **工作目录**：显式 `--workspace` 每次启动都生效（权威值）；`PABOOT_WORKSPACE` / 无参
-  （默认 `~/.paboot/defaultworkspace`）只在**工作区表为空时**注册一次（首次安装），之后不再
+  （默认进入 `<dataDir>/life` 的个人空间；显式项目目录只在首次安装时作为一次性种子）之后不再
   自动重建——用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时
   客户端可随时新增。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
@@ -133,12 +133,12 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
   会话级授权）一起删。级联会先取消这些 Session 在跑的 run。**级联不删**
   `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的会话记录，删了会破坏电脑上的续接。
 - **默认工作区可以删**：删除时 daemon 先把默认切给另一个启用的真实工作区，没有就切给内置
-  fallback（`<dataDir>/defaultworkspace`）；两者都没有才 409 `workspace_is_default`。内置 fallback
-  本身不可删、不可停用（409 `workspace_is_builtin`），因此「零工作区」这个状态仍然不可达，
+  「个人空间」工作区；两者都没有才 409 `workspace_is_default`。内置个人空间
+  本身不可删、不可停用（409 `workspace_is_life`），因此「零工作区」这个状态仍然不可达，
   `resolveWorkspaceForRequest` 不会拿到 null。
-- **内置 fallback 工作区**：桌面端首次启动预填 `<dataDir>/defaultworkspace`，daemon 按路径把它标记
-  为内置。没有启用的真实工作区时它是默认并出现在列表里；一旦有真实工作区，它自动让位并隐藏
-  （行与其中的会话仍在库里，只是客户端列表不再返回）。
+- **内置「个人空间」工作区**：桌面端首次启动直接落在 `<dataDir>/life`，daemon 把它标记
+  为内置。它始终出现在列表里；没有启用的真实工作区时它是默认，添加第一个真实工作区后会先让位，
+  但用户随时可以把它切回默认。
 - **Workspace 嵌套**：允许父子包含关系（典型场景：daemon `--workspace` 指向根目录，之后把其下的
   子目录注册成独立 Workspace）。Session 的归属靠自身 `workspace_id`，不从路径前缀推导；前缀只用于
   校验 cwd 位于所属 Workspace 内，因此嵌套不影响归属正确性。唯一的语义放宽：查询外层 Workspace 的

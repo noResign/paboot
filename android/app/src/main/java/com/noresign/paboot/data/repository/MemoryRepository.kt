@@ -17,7 +17,7 @@ import com.noresign.paboot.network.daemon.dto.WorkspaceMemoryDto
 import com.noresign.paboot.network.http.NetworkResult
 import com.noresign.paboot.network.http.safeApiCall
 
-/** Memory：生活记忆的只读列表 + 改正 / 忘记 / 反馈 / 跟进项审核。整理配置留在桌面 / daemon。 */
+/** Memory：个人记忆的只读列表 + 改正 / 忘记 / 反馈 / 跟进项审核。整理配置留在桌面 / daemon。 */
 class MemoryRepository(
     private val settings: SettingsStore = SettingsStore,
 ) {

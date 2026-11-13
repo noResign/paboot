@@ -86,8 +86,8 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         return;
       }
       const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : path.basename(realPath) || realPath;
-      // The first real workspace replaces the built-in fallback as the default;
-      // later ones only become default when the user asks for it.
+      // The first real workspace becomes the default. The life workspace is
+      // the fallback before that and can be made default again at any time.
       const hasUserWorkspace = workspaces.some((w) => w.is_builtin !== 1 && w.enabled === 1);
       const created = ctx.db.createWorkspace({ name, path: realPath, isDefault: !hasUserWorkspace });
       ctx.db.audit('create_workspace', JSON.stringify({ id: created.id, path: created.path }));
@@ -113,20 +113,11 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       defaultRuntime?: unknown;
       defaultPermissionMode?: unknown;
     };
-    // The life workspace is reset-only: allow a display-name change, nothing else.
-    if (workspace.family === 'life' && (body.enabled !== undefined || body.isDefault === true)) {
-      res.status(409).json({ error: 'life workspace is reset-only', code: 'workspace_is_life' });
+    // The life workspace is reset-only: it may be renamed, configured and made
+    // the default, but it cannot be disabled.
+    if (workspace.family === 'life' && body.enabled === false) {
+      res.status(409).json({ error: 'life workspace cannot be disabled', code: 'workspace_is_life' });
       return;
-    }
-    // The built-in fallback is not a user choice: keep it enabled, and never let
-    // it hold the default while a real workspace exists (clients would be
-    // pointed at a workspace they cannot see).
-    if (workspace.is_builtin === 1) {
-      const realWorkspaceExists = ctx.db.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1);
-      if (body.enabled === false || (body.isDefault === true && realWorkspaceExists)) {
-        res.status(409).json({ error: 'built-in workspace cannot be disabled or default', code: 'workspace_is_builtin' });
-        return;
-      }
     }
     const update: {
       name?: string;
@@ -317,8 +308,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
   // 删（聊天记录、run、事件、会话级授权）；不带时只要还有会话就 409。
   //
   // 默认工作区可以删，只要还有另一处可落地：daemon 先把默认切给另一个真实工作区，
-  // 没有就切给内置 fallback。内置 fallback 自己不可删（它是最后的兜底）。这样「工作区数
-  // 为零」仍然不可达，但用户不会因为删不掉最后一个真实工作区而卡住。
+  // 没有就切给内置「个人空间」。个人空间自己不可删（它是最后的兜底）。
   //
   // 注意级联也**不会**删 `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的
   // 会话记录，删了会破坏电脑上的续接，所以同一个目录重新加成工作区后，续接列表里还能看到它们。

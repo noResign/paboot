@@ -46,8 +46,7 @@ export function WorkspaceSection() {
   const [agents, setAgents] = useState<AgentDto[]>([]);
 
   const workspacePaths = useMemo(() => scope.workspaces.map((item) => item.path), [scope.workspaces]);
-  // The built-in fallback is usable (it holds the session/file id) but is not a
-  // workspace the user manages, so it never gets a card here.
+  // The life workspace is reset-only, so it never gets an editable card here.
   const managedWorkspaces = useMemo(() => manageableWorkspaces(scope.workspaces), [scope.workspaces]);
 
   useEffect(() => {

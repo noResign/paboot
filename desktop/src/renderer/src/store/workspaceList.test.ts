@@ -10,7 +10,6 @@ import {
   replaceWorkspace,
   sessionMatchesDir,
   setWorkspaceDirs,
-  visibleWorkspaces,
   workspaceDirectories,
   workspaceLabel,
 } from './workspaceList';
@@ -85,46 +84,25 @@ describe('initialWorkspaceId', () => {
     expect(initialWorkspaceId([], 'a')).toBeNull();
   });
 
-  it('can pick the built-in fallback internally', () => {
-    const list = [ws('builtin', { isBuiltin: true, isDefault: true })];
-    expect(initialWorkspaceId(list, null)).toBe('builtin');
-  });
-});
-
-describe('visibleWorkspaces', () => {
-  it('never renders the dev built-in fallback', () => {
-    const list = [ws('builtin', { isBuiltin: true }), ws('real')];
-    expect(visibleWorkspaces(list).map((w) => w.id)).toEqual(['real']);
-  });
-
-  it('keeps the built-in life workspace, which must render as 生活', () => {
-    const list = [
-      ws('builtin', { isBuiltin: true }),
-      ws('real'),
-      ws('life', { isBuiltin: true, family: 'life', name: '生活' }),
-    ];
-    expect(visibleWorkspaces(list).map((w) => w.id)).toEqual(['real', 'life']);
+  it('can pick the life workspace as the default', () => {
+    const list = [ws('life', { family: 'life', isBuiltin: true, isDefault: true })];
+    expect(initialWorkspaceId(list, null)).toBe('life');
   });
 });
 
 describe('manageableWorkspaces', () => {
-  it('excludes the dev fallback and the reset-only life workspace', () => {
-    const list = [
-      ws('builtin', { isBuiltin: true }),
-      ws('real'),
-      ws('life', { isBuiltin: true, family: 'life' }),
-    ];
+  it('excludes the reset-only life workspace', () => {
+    const list = [ws('real'), ws('life', { isBuiltin: true, family: 'life' })];
     expect(manageableWorkspaces(list).map((w) => w.id)).toEqual(['real']);
   });
 });
 
 describe('workspaceLabel', () => {
-  it('hides the built-in fallback path behind a generic label', () => {
-    expect(workspaceLabel(ws('builtin', { isBuiltin: true }))).toBe('内置工作区');
+  it('labels life separately and falls back to the path for dev workspaces', () => {
     expect(workspaceLabel(ws('real', { name: '项目' }))).toBe('项目');
     expect(workspaceLabel(ws('real', { name: '' }))).toBe('/home/real');
-    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '生活' }))).toBe('生活');
-    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '' }))).toBe('生活');
+    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '个人空间' }))).toBe('个人空间');
+    expect(workspaceLabel(ws('life', { isBuiltin: true, family: 'life', name: '' }))).toBe('个人空间');
     expect(workspaceLabel(null)).toBeNull();
   });
 });

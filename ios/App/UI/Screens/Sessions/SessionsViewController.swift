@@ -319,7 +319,7 @@ final class SessionsViewController: UIViewController {
         let chipLabel = selectedWorkspace?.displayName ?? "工作区"
         workspaceChip.configure(label: chipLabel)
         let subtitle: String?
-        if selectedWorkspace?.family == "life" || selectedWorkspace?.isBuiltin == true {
+        if selectedWorkspace?.family == "life" {
             subtitle = nil
         } else {
             subtitle = state.selectedWorkspacePath
@@ -472,9 +472,7 @@ final class SessionsViewController: UIViewController {
     }
 
     private func updateWorkspaceSwitcher(_ state: SessionListViewModel.State) {
-        // The built-in fallback still scopes sessions/files, but is not a row the
-        // user can switch to. family=life is a builtin the client must still render.
-        let shown = state.workspaces.filter { $0.family == "life" || !$0.isBuiltin }
+        let shown = state.workspaces
         guard !shown.isEmpty else {
             navigationItem.rightBarButtonItem = nil
             return
@@ -484,7 +482,7 @@ final class SessionsViewController: UIViewController {
 
     @objc private func openWorkspaceSwitcher() {
         let state = viewModel.state
-        let shown = state.workspaces.filter { $0.family == "life" || !$0.isBuiltin }
+        let shown = state.workspaces
         guard !shown.isEmpty else { return }
 
         let switcher = WorkspaceSwitcherViewController(
@@ -943,15 +941,6 @@ private final class WorkspaceOverviewViewController: UIViewController {
             contentStack.addArrangedSubview(endsCard())
         }
         contentStack.addArrangedSubview(memoryCard())
-
-        if workspace.isBuiltin && workspace.family != "life" {
-            let builtin = UILabel()
-            builtin.text = "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
-            builtin.font = Typography.caption
-            builtin.textColor = Theme.Colors.textSecondary
-            builtin.numberOfLines = 0
-            contentStack.addArrangedSubview(builtin)
-        }
     }
 
     private func heroCard(dirs: [String], totalSessions: Int?) -> UIView {
@@ -1027,9 +1016,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
     private func kindBadge() -> UIView? {
         let label: String?
         if workspace.family == "life" {
-            label = "生活"
-        } else if workspace.isBuiltin {
-            label = "内置"
+            label = "个人空间"
         } else {
             label = nil
         }
@@ -1315,7 +1302,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         title.textColor = Theme.Colors.textPrimary
         let hint = UILabel()
         hint.text = life
-            ? "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+            ? "个人空间里的会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
             : "默认关闭；打开后可启用记忆、查看时间线、搜索与改正。"
         hint.font = Typography.caption
         hint.textColor = Theme.Colors.textSecondary

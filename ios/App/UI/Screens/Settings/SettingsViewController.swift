@@ -384,11 +384,9 @@ final class SettingsViewController: UIViewController {
         renderConnection()
         let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceId })
         if selectedWorkspace?.family == "life" {
-            currentWorkspaceRow.setValue(selectedWorkspace?.displayName ?? "生活")
+            currentWorkspaceRow.setValue(selectedWorkspace?.displayName ?? "个人空间")
         } else {
-            currentWorkspaceRow.setValue(
-                selectedWorkspace?.isBuiltin == true ? "内置工作区" : (state.selectedWorkspacePath ?? "未选择")
-            )
+            currentWorkspaceRow.setValue(state.selectedWorkspacePath ?? "未选择")
         }
 
         for row in permissionRows {

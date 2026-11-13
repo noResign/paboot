@@ -63,14 +63,22 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
   const confirmDisabled = busy || listing === null || (mode === 'create' && isWorkspace);
   const title =
     mode === 'create'
-      ? '选择工作区目录'
+      ? '选择项目文件夹'
       : mode === 'add-dir'
         ? '选择附加目录'
         : mode === 'end-root'
           ? '选择端目录'
           : '选择要浏览的目录';
+  const description =
+    mode === 'create'
+      ? '选一个项目目录作为工作区；之后可以从这里新建会话、查看文件和审批改动。'
+      : mode === 'add-dir'
+        ? '附加目录会扩大当前工作区所有会话的可写范围。'
+        : mode === 'end-root'
+          ? '给这个端绑定一个目录，用来限定它的上下文范围。'
+          : '这个目录只会成为文件栏的浏览入口，不会扩大 agent 的读写权限。';
   const confirmLabel =
-    mode === 'create' ? (isWorkspace ? '已是工作区' : '选择当前文件夹') : '添加此文件夹';
+    mode === 'create' ? (isWorkspace ? '已是工作区' : '选择此文件夹') : '添加此文件夹';
 
   function jump(): void {
     const next = input.trim();
@@ -81,32 +89,45 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
   return (
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal dir-picker" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-head">
-          <span>{title}</span>
-          <button className="btn ghost" title="关闭" onClick={onClose}>
-                <Icon name="x" size={15} />
-              </button>
+        <div className="dir-picker-head">
+          <div className="dir-picker-heading">
+            <h2>{title}</h2>
+            <p>{description}</p>
+          </div>
+          <button className="icon-btn dir-picker-close" title="关闭" onClick={onClose}>
+            <Icon name="x" size={16} />
+          </button>
         </div>
 
         <div className="dir-path-row">
-          <input
-            className="mono dir-path-input"
-            value={input}
-            spellCheck={false}
-            placeholder="输入绝对路径后回车"
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                jump();
-              }
-            }}
-          />
-          <button className="btn ghost" disabled={!listing?.parent} onClick={() => listing?.parent && setCwd(listing.parent)}>
+          <label className="dir-path-field">
+            <Icon name="folder" size={15} />
+            <input
+              className="mono dir-path-input"
+              value={input}
+              spellCheck={false}
+              placeholder="输入绝对路径后回车"
+              aria-label="当前目录"
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  jump();
+                }
+              }}
+            />
+          </label>
+          <button
+            className="btn ghost dir-tool-btn"
+            disabled={!listing?.parent}
+            onClick={() => listing?.parent && setCwd(listing.parent)}
+          >
+            <Icon name="chevron-left" size={14} />
             上一级
           </button>
-          <button className="btn ghost" onClick={() => setShowHidden((value) => !value)}>
-            {showHidden ? '隐藏隐藏目录' : '显示隐藏目录'}
+          <button className="btn ghost dir-tool-btn" onClick={() => setShowHidden((value) => !value)}>
+            <Icon name={showHidden ? 'eye-off' : 'eye'} size={14} />
+            {showHidden ? '隐藏目录' : '显示隐藏'}
           </button>
         </div>
 
@@ -129,33 +150,43 @@ export function DirectoryPickerDialog({ mode, workspacePaths, busy, error, onClo
           </div>
         )}
 
-        <div className="dir-list">
-          {loading && <div className="hint">加载中…</div>}
-          {!loading && listing && listing.entries.length === 0 && <div className="hint">这个目录下没有子文件夹。</div>}
+        <div className="dir-list" aria-busy={loading}>
+          {loading && <div className="dir-list-state">加载中…</div>}
+          {!loading && listing && listing.entries.length === 0 && (
+            <div className="dir-list-state">这个目录下没有子文件夹。</div>
+          )}
           {listing?.entries.map((entry) => (
             <button key={entry.path} className="dir-entry" onClick={() => setCwd(entry.path)}>
-              <span className="dir-entry-name">📁 {entry.name}</span>
-              {entry.isWorkspace && <span className="hint">已是工作区</span>}
+              <span className="dir-entry-icon">
+                <Icon name="folder" size={16} />
+              </span>
+              <span className="dir-entry-name">{entry.name}</span>
+              {entry.isWorkspace && <span className="dir-entry-badge">已是工作区</span>}
+              <Icon name="chevron-right" size={14} className="dir-entry-chevron" />
             </button>
           ))}
         </div>
 
-        <div className="hint">
-          {mode === 'shortcut'
-            ? '只是文件栏的一个浏览入口，不改变 agent 的读写范围。'
-            : mode === 'end-root'
-              ? '端目录需位于主工作区或已添加的附加目录内；一个端可以添加多个目录，但这不改变 agent 的读写范围。'
-              : '工作区不是沙箱：agent 仍能读工作区外的东西，写则只在这个目录（及其附加目录）内。'}
-        </div>
-        {(loadError ?? error) && <div className="error-text">{loadError ?? error}</div>}
-
-        <div className="perm-actions">
-          <button className="btn primary" disabled={confirmDisabled} onClick={() => listing && onPick(listing.path)}>
-            {busy ? '处理中…' : confirmLabel}
-          </button>
-          <button className="btn" onClick={onClose}>
-            取消
-          </button>
+        <div className="dir-picker-footer">
+          <div className="dir-picker-note">
+            <Icon name="alert" size={14} />
+            <span>
+              {mode === 'shortcut'
+                ? '只是文件栏的一个浏览入口，不改变 agent 的读写范围。'
+                : mode === 'end-root'
+                  ? '端目录需位于主工作区或已添加的附加目录内；这不改变 agent 的读写范围。'
+                  : '工作区不是沙箱：agent 仍能读工作区外的东西，写则只在这个目录（及其附加目录）内。'}
+            </span>
+          </div>
+          {(loadError ?? error) && <div className="error-text">{loadError ?? error}</div>}
+          <div className="perm-actions">
+            <button className="btn primary" disabled={confirmDisabled} onClick={() => listing && onPick(listing.path)}>
+              {busy ? '处理中…' : confirmLabel}
+            </button>
+            <button className="btn" onClick={onClose}>
+              取消
+            </button>
+          </div>
         </div>
       </div>
     </div>

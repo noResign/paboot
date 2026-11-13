@@ -116,7 +116,7 @@ const PREDICATES = new Set<string>(MEMORY_PREDICATES);
 export function extractionSystemPrompt(): string {
   return [
     '你是 paboot 的长期记忆抽取器。只输出一个 JSON 对象，不要 markdown、不要解释。',
-    '从用户的生活会话里抽取值得长期记住的事实、偏好、关系、计划和习惯。',
+    '从用户的个人空间会话中抽取值得长期记住的事实、偏好、关系、计划和习惯。',
     '规则：',
     '1. 每条 claim 必须有 evidence；quote 必须逐字来自对应 source 的 content。',
     '2. 不抽取闲聊、一次性信息、通用知识或 agent 自己的推测。',

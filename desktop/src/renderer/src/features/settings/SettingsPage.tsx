@@ -8,7 +8,6 @@ import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { Icon } from '../../ui/Icon';
-import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
@@ -138,7 +137,7 @@ export function SettingsPage({
   async function startManaged(): Promise<void> {
     setDaemonBusy(true);
     setDaemonError(null);
-    const res = await window.paboot.daemonStart({ workspace: DEFAULT_WORKSPACE_PATH, port: 0 });
+    const res = await window.paboot.daemonStart({ port: 0 });
     setDaemonBusy(false);
     if (!res.ok) setDaemonError(res.message);
     await refreshManaged();
@@ -401,8 +400,8 @@ export function SettingsPage({
                       </button>
                     </div>
                     <div className="hint">
-                      使用内置目录 <span className="mono">~/.paboot/defaultworkspace</span>，启动后可在「工作区」里
-                      添加自己的项目目录。端口在 4780–4789 里自动挑空闲的，绑
+                      默认落在内置「个人空间」工作区，启动后可在「工作区」里添加自己的项目目录。端口在
+                      4780–4789 里自动挑空闲的，绑
                       <span className="mono"> 0.0.0.0</span>，同一局域网可连（仍需 token；明文 HTTP，请勿暴露到公网）。
                       {daemon?.systemd &&
                         ' 这台机器装了 systemd 单元 paboot.service——从这里启动的归本应用管（可重启/改 token），不会去动那个单元。'}

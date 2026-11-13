@@ -155,8 +155,8 @@ export const useSessions = create<SessionsState>((set, get) => ({
     if (!res.ok) return mutationFailure(res);
     const workspace = res.data.workspace;
     set((state) => ({ byConnection: mapWorkspaces(state, connectionId, (list) => replaceWorkspace(list, workspace)) }));
-    // The first real workspace hides the built-in fallback and takes the default;
-    // only a server list tells us that, so re-read it.
+    // The first real workspace takes the default; only a server list tells us
+    // which workspace now holds that flag, so re-read it.
     await get().loadWorkspaces(connectionId, { silent: true });
     return { ok: true, workspace };
   },

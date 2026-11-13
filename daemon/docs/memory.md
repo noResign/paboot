@@ -89,7 +89,7 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
 - Provider 删除 / 禁用模型 / 清空 key 会清理失效的 `memory_model` 设置，避免 status 谎报自动整理。
 - 只接受**已启用且有 API key** 的模型；`PATCH /api/config { memoryModel }` 会校验，
   无效返回 400 `invalid_memory_model`；`null` 清除设置并回落到 env。
-- 不自动挑选第一个可用 provider，避免生活数据被发到用户没选的模型。
+- 不自动挑选第一个可用 provider，避免个人空间数据被发到用户没选的模型。
 - 严格 JSON + 受控 predicate；未知 predicate / 无 evidence / quote 回源失败 / `secret`
   一律丢弃。
 - **实体（M2）**：抽取可返回 `entities{tempId,kind,name,aliases}`；worker 在 scope 内按
@@ -268,7 +268,7 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
   brief 选材，`wrong` 还会被按轮召回排除。桌面端 claim 详情有三个按钮（有用 / 过时了 / 不准确），
   Android 在底部弹层的「这条记忆」一行，iOS 在详情页同位置；`wrong` 会二次确认。
   `corrected` 仍由 PATCH 自动写入。反馈没有回显（用户看不到自己标过什么），也没有撤销入口。
-- **dev 与 life 共用同一套抽取口径**：`extractionSystemPrompt()` 面向「生活会话」，predicate 全是
+- **dev 与 life 共用同一套抽取口径**：`extractionSystemPrompt()` 面向「个人空间里的会话」，predicate 全是
   人生属性，没有 `decision` / `constraint` / `convention` 之类表达项目约定；brief 的
   `## 关于你` / `## 当前计划` / `## 偏好` 三块也没有一个适合装「这个模块的边界」。
   dev 的决策与约定只能挤进这三类里。

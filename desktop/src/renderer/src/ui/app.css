@@ -1727,43 +1727,117 @@ button.end-chip {
 /* ---------- directory picker ---------- */
 
 .dir-picker {
-  width: min(560px, 94vw);
-  padding: 14px 16px;
+  width: min(660px, 94vw);
+  max-height: min(780px, calc(100vh - 48px));
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.dir-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px 14px;
+}
+.dir-picker-heading {
+  min-width: 0;
+}
+.dir-picker-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.dir-picker-heading p {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dir-picker-close {
+  flex: none;
+  margin: -3px -5px 0 0;
 }
 .dir-path-row {
   display: flex;
-  gap: 6px;
+  gap: 7px;
   align-items: center;
+  flex-wrap: wrap;
+  padding: 0 24px 14px;
+}
+.dir-path-field {
+  flex: 1 1 300px;
+  min-width: 220px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.dir-path-field:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: var(--surface);
 }
 .dir-path-input {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
   font-size: 12px;
+}
+.dir-tool-btn {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  gap: 5px;
 }
 .dir-drives {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 0 24px 12px;
 }
 .dir-list {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  min-height: 120px;
+  margin: 0 24px;
+  min-height: 270px;
   max-height: 46vh;
   overflow: auto;
-  padding: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface) 72%, var(--surface-2));
+}
+.dir-list-state {
+  min-height: 258px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 .dir-entry {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: 6px;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -1773,12 +1847,67 @@ button.end-chip {
 .dir-entry:hover {
   background: var(--primary-subtle);
 }
+.dir-entry-icon {
+  width: 27px;
+  height: 27px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  color: var(--primary-deep);
+}
 .dir-entry-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12.5px;
+}
+.dir-entry-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.dir-entry-chevron {
+  flex: none;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.dir-entry:hover .dir-entry-chevron {
+  opacity: 1;
+}
+.dir-picker-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 24px 20px;
+}
+.dir-picker-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.dir-picker-note svg {
+  flex: none;
+  margin-top: 1px;
+}
+.dir-picker-footer .perm-actions {
+  margin-top: 0;
 }
 
 
@@ -3997,13 +4126,125 @@ a.btn {
   color: var(--text-primary);
   font-weight: 500;
 }
-.wo-empty {
+/* Standalone first-run welcome. It occupies the whole window before the
+ * rail/shell exists; entering personal space brings up the normal rail + space
+ * overview. */
+.personal-welcome-shell {
+  background: var(--page-bg);
+}
+.personal-welcome {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background:
+    radial-gradient(
+      760px 520px at 50% 42%,
+      color-mix(in srgb, var(--primary) 9%, transparent),
+      transparent 74%
+    ),
+    transparent;
+}
+.personal-welcome-inner {
+  width: min(100%, 740px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  text-align: center;
 }
-.wo-empty h3 {
+.personal-welcome-brand {
+  width: 104px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 27px;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 30px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  box-shadow: 0 18px 52px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+.personal-welcome-kicker {
+  margin-bottom: 11px;
+  color: var(--primary-deep);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+}
+.personal-welcome h1 {
   margin: 0;
+  color: var(--text-primary);
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.personal-welcome-lede {
+  max-width: 600px;
+  margin: 17px 0 0;
+  color: var(--text-secondary);
+  font-size: 14.5px;
+  line-height: 1.85;
+}
+.personal-welcome-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+.personal-welcome-enter {
+  min-width: 164px;
+  height: 39px;
+  padding: 0 19px;
+  font-size: 13.5px;
+}
+.personal-welcome-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.personal-welcome-project:hover {
+  color: var(--primary-deep);
+}
+.personal-welcome-traits {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 34px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.personal-welcome-traits span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.personal-welcome-traits svg {
+  color: var(--primary-deep);
+  opacity: 0.8;
+}
+@media (max-width: 720px) {
+  .personal-welcome {
+    padding: 30px 22px;
+  }
+  .personal-welcome h1 {
+    font-size: 26px;
+  }
+  .personal-welcome-actions {
+    flex-direction: column;
+    gap: 7px;
+  }
 }
 
 /*

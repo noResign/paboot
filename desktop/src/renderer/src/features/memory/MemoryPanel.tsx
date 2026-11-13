@@ -657,7 +657,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
             </div>
             <p className="hint">
               {family === 'life'
-                ? '自动整理的生活记忆；选中一条查看来源、改正或忘记。'
+                ? '自动整理的个人记忆；选中一条查看来源、改正或忘记。'
                 : '这个工作区的长期记忆默认关闭；在上方启用后开始捕获与注入。'}
             </p>
           </div>
@@ -761,7 +761,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                   void updateSettings({ lifeReadable: event.target.checked })
                 }
               />
-              允许生活读取
+              允许个人空间读取
             </label>
           )}
         </div>
@@ -827,7 +827,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                     {memoryDisabled
                       ? '先在顶部勾选「启用记忆」，再正常聊天。'
                       : family === 'life'
-                        ? '在「生活」里正常聊天即可，消息会在后台自动整理。'
+                        ? '在「个人空间」里正常聊天即可，消息会在后台自动整理。'
                         : '正常聊天即可，消息会在后台自动整理。'}
                   </span>
                 </div>

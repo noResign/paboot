@@ -117,14 +117,6 @@ fun WorkspaceOverviewScreen(
                         EndsCard(endState)
                     }
                     MemoryCard(workspace, onOpenMemory)
-                    if (workspace.isBuiltin && workspace.family != "life") {
-                        Text(
-                            "内置工作区只是临时目录，建议先在设置里添加真实工作区。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                        )
-                    }
                 }
             }
             workspaces.isEmpty() -> Box(
@@ -219,8 +211,7 @@ private fun WorkspaceHero(
 @Composable
 private fun WorkspaceKindBadge(workspace: WorkspaceDto) {
     val label = when {
-        workspace.family == "life" -> "生活"
-        workspace.isBuiltin -> "内置"
+        workspace.family == "life" -> "个人空间"
         else -> null
     }
     if (label != null) {
@@ -521,7 +512,7 @@ private fun MemoryCard(workspace: WorkspaceDto, onOpenMemory: (String) -> Unit) 
                 )
                 Text(
                     if (life) {
-                        "生活会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
+                        "个人空间里的会话自动整理长期事实；新会话按记忆注入，可改正或忘记。"
                     } else {
                         "默认关闭；打开后可启用记忆、查看时间线、搜索与改正。"
                     },

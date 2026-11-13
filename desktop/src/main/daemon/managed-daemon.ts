@@ -12,8 +12,8 @@ import { resolveDaemonCommand, type DaemonSupervisor, type StartResult } from '.
  */
 export interface StartManagedInput {
   dataDir: string;
-  /** The agent's writable root. Comes from a directory picker — never guessed (§2). */
-  workspace: string;
+  /** Explicit startup workspace; omitted to use the daemon's built-in life space. */
+  workspace?: string;
   port: number;
   host?: string;
   /** `userSetting.daemonCommand`, the documented escape hatch. */

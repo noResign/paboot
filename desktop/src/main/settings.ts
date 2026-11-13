@@ -55,8 +55,8 @@ export interface ManagedDaemonRecord {
     command: string;
     args: string[];
     env: Record<string, string>;
-    /** The daemon's own argv: `--workspace` / `--port` / `--host`. */
-    workspace: string;
+    /** The daemon's own argv: optional `--workspace`, then `--port` / `--host`. */
+    workspace?: string;
     port: number;
     host?: string;
   } | null;
@@ -126,12 +126,12 @@ function normalizeManagedDaemon(raw: unknown): ManagedDaemonRecord | null {
       : null;
   const l = value.launch;
   const launch =
-    l && typeof l.command === 'string' && Array.isArray(l.args) && typeof l.workspace === 'string' && typeof l.port === 'number'
+    l && typeof l.command === 'string' && Array.isArray(l.args) && typeof l.port === 'number'
       ? {
           command: l.command,
           args: l.args.filter((a): a is string => typeof a === 'string'),
           env: l.env && typeof l.env === 'object' ? (l.env as Record<string, string>) : {},
-          workspace: l.workspace,
+          workspace: typeof l.workspace === 'string' ? l.workspace : undefined,
           port: l.port,
           host: typeof l.host === 'string' ? l.host : undefined,
         }

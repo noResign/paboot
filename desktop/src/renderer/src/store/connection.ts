@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { connectionApi, setActiveConnectionId } from '../ipc/client';
 import { isLoopback } from '../../../shared/net';
-import { DEFAULT_WORKSPACE_PATH } from '../../../shared/workspace';
 import { parseAddress } from '../features/connect/address';
 import { useChat } from './chat';
 import type { ConnectInput, ConnectionView, ProbeResult } from '../../../shared/ipc';
@@ -119,7 +118,7 @@ export const useConnection = create<ConnectionState>((set, get) => ({
         set({ booting: false });
         return;
       }
-      const started = await connectionApi.daemonStart({ workspace: DEFAULT_WORKSPACE_PATH, port: 0 });
+      const started = await connectionApi.daemonStart({ port: 0 });
       if (!started.ok) {
         // It may have come up between the probe and the start (systemd, another
         // window). Re-probe before surfacing the start error.

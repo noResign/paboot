@@ -298,7 +298,7 @@ private fun WorkspaceRow(
                     )
                     if (life) {
                         WorkspaceBadge(
-                            "生活",
+                            "个人空间",
                             MaterialTheme.colorScheme.onPrimaryContainer,
                             MaterialTheme.colorScheme.primaryContainer,
                         )

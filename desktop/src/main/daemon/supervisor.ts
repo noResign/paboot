@@ -31,8 +31,12 @@ type SpawnLike = (command: string, args: readonly string[], options: SpawnOption
  */
 
 export interface DaemonArgsInput {
-  /** The agent's writable root — must come from the user, never guessed (§2). */
-  workspace: string;
+  /**
+   * Optional explicit startup workspace. Omit it for app-started daemons so the
+   * daemon selects its built-in life workspace; only pass it when the user
+   * explicitly picked / configured a project path.
+   */
+  workspace?: string;
   port: number;
   /** Every interface by default — the phone is meant to connect without extra steps. */
   host?: string;
@@ -46,14 +50,10 @@ export interface DaemonArgsInput {
  * `serverId` in it) lives.
  */
 export function buildDaemonArgs(input: DaemonArgsInput): string[] {
-  return [
-    '--workspace',
-    input.workspace,
-    '--port',
-    String(input.port),
-    '--host',
-    input.host ?? '0.0.0.0',
-  ];
+  const args: string[] = [];
+  if (input.workspace) args.push('--workspace', input.workspace);
+  args.push('--port', String(input.port), '--host', input.host ?? '0.0.0.0');
+  return args;
 }
 
 export interface CommandInput {

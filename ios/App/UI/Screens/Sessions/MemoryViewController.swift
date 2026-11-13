@@ -302,7 +302,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             parts.append(settings.injectionEnabled ? "注入开" : "只记录")
             if let profile = settings.profileMode { parts.append("画像 \(profile)") }
             if let readable = settings.lifeReadable {
-                parts.append(readable ? "生活可读" : "生活不可读")
+                parts.append(readable ? "个人空间可读" : "个人空间不可读")
             }
         }
         return "\n" + parts.joined(separator: " · ")
@@ -315,7 +315,7 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             showsEntities || showsLoops
         emptyLabel.text = query.isEmpty
             ? (family == "life"
-                ? "还没有记忆。在「生活」里正常聊天即可，消息会在后台整理。"
+                ? "还没有记忆。在「个人空间」里正常聊天即可，消息会在后台整理。"
                 : "还没有记忆。先在桌面端启用这个工作区的记忆，再正常聊天。")
             : "没有匹配的记忆。"
         UIView.performWithoutAnimation { tableView.reloadData() }

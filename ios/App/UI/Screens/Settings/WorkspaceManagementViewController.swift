@@ -15,12 +15,8 @@ final class WorkspaceManagementViewController: UIViewController {
     private var emptyStateView: EmptyStateView?
 
     private var workspaces: [WorkspaceDto] = []
-    /// The dev fallback keeps its id for session/file scoping but is never listed.
-    /// The built-in life workspace is listed (dirs / rename are allowed; delete and
-    /// disable are not).
-    private var visibleWorkspaces: [WorkspaceDto] {
-        workspaces.filter { $0.family == "life" || !$0.isBuiltin }
-    }
+    /// All workspaces are listed; life allows dirs / rename but not delete or disable.
+    private var visibleWorkspaces: [WorkspaceDto] { workspaces }
     private var selectedWorkspaceId: String?
     private var hasLoaded = false
     private var hasPresentedActionError = false

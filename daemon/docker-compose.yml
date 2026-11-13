@@ -39,7 +39,7 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
     volumes:
       # 默认隔离宿主机：只挂数据卷，不 mount 任何工作区目录。
-      # 数据：SQLite / token / serverId / 内置 fallback 工作区（固定落在容器 HOME 下）。
+      # 数据：SQLite / token / serverId / 内置「个人空间」工作区（固定落在容器 HOME 下）。
       - paboot-data:/home/paboot/.paboot
       # 容器里手动 `npm i -g` 装的 agent CLI 落在这里，重建容器后不丢。
       - paboot-npm:/home/paboot/.npm-global

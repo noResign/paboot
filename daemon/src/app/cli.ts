@@ -26,7 +26,7 @@ Usage:
 Options:
   --host <host>             Bind address. Default 0.0.0.0 (all interfaces; 127.0.0.1 = localhost only)
   --port <port>             Port. Default 4780
-  --workspace <path>        Working dir root (default: ~/.paboot/defaultworkspace)
+  --workspace <path>        Working dir root (default: ~/.paboot/life, the life workspace)
   --token <token>           Operator bearer token (default: env PABOOT_TOKEN or generated)
   --print-operator-token    Print the operator token (the one clients enter) and exit
   --permission-mode <mode>  Initial Claude Code permission mode (default: default/ask)

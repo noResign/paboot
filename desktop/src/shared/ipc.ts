@@ -239,8 +239,12 @@ export interface ManagedDaemonStatus {
 }
 
 export interface ManagedDaemonStartInput {
-  /** The agent's writable root — the built-in fallback for app-started daemons. */
-  workspace: string;
+  /**
+   * Optional explicit startup workspace. App-started daemons omit it so the
+   * daemon lands on the built-in life workspace by default instead of pinning
+   * a technical scratch directory.
+   */
+  workspace?: string;
   port: number;
   /** Defaults to `0.0.0.0` (the LAN can reach it); pass loopback explicitly to close it. */
   host?: string;
