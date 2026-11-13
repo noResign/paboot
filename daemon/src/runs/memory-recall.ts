@@ -16,7 +16,8 @@ export type RecallDropReason =
   | 'not_relevant'
   | 'max_items'
   | 'render_rejected'
-  | 'feedback_wrong';
+  | 'feedback_wrong'
+  | 'session_echo';
 
 export interface RecallDrop {
   kind: 'loop' | 'claim' | 'observation' | 'summary' | 'document' | 'source';
@@ -96,6 +97,12 @@ export function memoryRecall(
       claimHits.length === 0
         ? new Map<string, Record<string, number>>()
         : ctx.memory.listFeedbackCounts(claimHits, Date.now() - FEEDBACK_WINDOW_MS);
+    // D39: same echo rule as the brief — a claim distilled out of this session
+    // is already in the transcript, so "recalling" it adds nothing.
+    const fromThisSession =
+      claimHits.length === 0
+        ? new Set<string>()
+        : ctx.memory.claimsOnlyFromSession(claimHits, session.id);
     // Open loops are the best continuation hint when another session left work
     // unfinished; include up to two before regular hits.
     for (const readScope of policy.scopes) {
@@ -121,6 +128,10 @@ export function memoryRecall(
       }
       if (hit.kind === 'claim' && (feedback.get(hit.refId)?.['wrong'] ?? 0) > 0) {
         drop({ kind: 'claim', refId: hit.refId, reason: 'feedback_wrong' });
+        continue;
+      }
+      if (hit.kind === 'claim' && fromThisSession.has(hit.refId)) {
+        drop({ kind: 'claim', refId: hit.refId, reason: 'session_echo' });
         continue;
       }
       // Explicit cues may recall broadly; without one, require a real term hit

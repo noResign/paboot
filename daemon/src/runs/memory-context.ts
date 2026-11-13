@@ -46,6 +46,8 @@ export function memoryContext(
     const brief = buildMemoryBrief(ctx.memory, policy, {
       scope: `workspace:${workspace.id}`,
       includePrivate: workspace.family === 'life',
+      // D39: this session's own claims are already in its transcript.
+      excludeSessionId: session.id,
     });
     if (!brief) return null;
     const prelude = renderContextPrelude(

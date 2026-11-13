@@ -173,6 +173,12 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
   runtime 历史里已经有，再注入只会重复并破坏 prompt caching；因此自动注入只保留 claim brief
   与按轮召回。时间线保留给 UI（workspace 级总览，每条带 `sessionId`）和相关性召回。
   未来如果检测到 runtime 已压缩历史，再考虑注入一次摘要。
+- **本会话回声过滤（D39）**：同一个理由也适用于 claim——证据**只**来自当前会话的 claim 不进
+  brief、也不进按轮召回（`excludeSessionId` / `claimsOnlyFromSession`）。被更早会话强化过的
+  claim 保留（那属于跨会话知识）；没有 evidence 的 claim 也保留（无从归属，不猜）。
+  手动 `GET /api/memory/brief` 不带这个过滤，UI 要看到全部。
+  实测：138 条 claim 的库里，一次会话贡献 9 条且全部只来自自身，注入预算 1/3 花在重复内容上；
+  过滤后换回 5 条原本被预算挤掉的跨会话记忆。
 - 注入块：`<paboot-memory-context>…</paboot-memory-context>`。
 - 外部 runtime：与 K0 知识合并后走 native system prompt / 首条消息前导；resume 默认不重注入。
 - builtin：`MemoryBriefContextSource` 进入 ContextAssembler 的 runtime-context，使用同一份

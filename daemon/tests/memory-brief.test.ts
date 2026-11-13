@@ -293,6 +293,112 @@ describe('brief feedback ranking (D38)', () => {
   });
 });
 
+describe('brief session echo filter (D39)', () => {
+  const SCOPE = 'workspace:life-1' as const;
+
+  function sourceWithSession(
+    store: MemoryStore,
+    sessionId: string,
+    messageId: number,
+    content: string,
+  ): string {
+    return store.insertSource({
+      scope: SCOPE,
+      workspaceId: 'life-1',
+      endId: 'life-end',
+      kind: 'message',
+      sourceTable: 'messages',
+      sessionId,
+      runId: `r-${sessionId}-${messageId}`,
+      messageId,
+      occurredAt: 1_700_000_000_000 + messageId,
+      content,
+    }).source.id;
+  }
+
+  it('drops claims whose evidence comes only from the current session', () => {
+    const { store } = setup();
+    const mine = sourceWithSession(store, 's-now', 1, '我决定先做 focus 谓词');
+    store.insertClaim(
+      claim({ predicate: 'focus', kind: 'profile', objectText: '先做 focus', summary: '本轮计划' }),
+      [{ sourceId: mine, quote: '先做 focus 谓词' }],
+    );
+    const older = sourceWithSession(store, 's-old', 2, '我住在上海');
+    store.insertClaim(claim({ summary: '住在上海' }), [{ sourceId: older, quote: '我住在上海' }]);
+
+    const brief = buildLifeBrief(store, SCOPE, { excludeSessionId: 's-now' })!;
+    expect(brief.markdown).toContain('住在上海');
+    expect(brief.markdown).not.toContain('本轮计划');
+  });
+
+  it('keeps a claim that an earlier session also reinforced', () => {
+    const { store } = setup();
+    const now = sourceWithSession(store, 's-now', 1, '非破坏性迁移');
+    const before = sourceWithSession(store, 's-old', 2, '迁移要保留旧表');
+    store.insertClaim(claim({ summary: '偏好非破坏性迁移' }), [
+      { sourceId: before, quote: '迁移要保留旧表' },
+      { sourceId: now, quote: '非破坏性迁移' },
+    ]);
+
+    const brief = buildLifeBrief(store, SCOPE, { excludeSessionId: 's-now' })!;
+    expect(brief.markdown).toContain('偏好非破坏性迁移');
+  });
+
+  it('keeps claims with no attributable evidence instead of guessing', () => {
+    const { store } = setup();
+    store.insertClaim(claim({ summary: '没有来源的记忆' }));
+
+    const brief = buildLifeBrief(store, SCOPE, { excludeSessionId: 's-now' })!;
+    expect(brief.markdown).toContain('没有来源的记忆');
+  });
+
+  it('does not filter when no session is given (manual brief for the UI)', () => {
+    const { store } = setup();
+    const mine = sourceWithSession(store, 's-now', 1, '我决定先做 focus 谓词');
+    store.insertClaim(
+      claim({ predicate: 'focus', kind: 'profile', objectText: '先做 focus', summary: '本轮计划' }),
+      [{ sourceId: mine, quote: '先做 focus 谓词' }],
+    );
+
+    expect(buildLifeBrief(store, SCOPE)!.markdown).toContain('本轮计划');
+  });
+
+  it('hands the freed budget to cross-session claims', () => {
+    const { store } = setup();
+    for (let index = 0; index < 8; index += 1) {
+      const src = sourceWithSession(store, 's-now', index + 1, `本轮决定 ${index}`);
+      store.insertClaim(
+        claim({
+          predicate: 'plan',
+          kind: 'fact',
+          objectText: `本轮决定 ${index}`,
+          summary: `本轮决定 ${index} 的完整描述用来占用预算`,
+          validFrom: Date.now() - index * 1000,
+        }),
+        [{ sourceId: src, quote: `本轮决定 ${index}` }],
+      );
+    }
+    const older = sourceWithSession(store, 's-old', 99, '旧知识');
+    store.insertClaim(claim({ summary: '旧知识应该被看见' }), [
+      { sourceId: older, quote: '旧知识' },
+    ]);
+
+    const withFilter = buildLifeBrief(store, SCOPE, { excludeSessionId: 's-now', maxChars: 300 })!;
+    expect(withFilter.markdown).toContain('旧知识应该被看见');
+    expect(withFilter.markdown).not.toContain('本轮决定');
+    expect(withFilter.truncated).toBe(false);
+  });
+
+  it('returns null when everything left is from this session', () => {
+    const { store } = setup();
+    const mine = sourceWithSession(store, 's-now', 1, '本轮决定');
+    store.insertClaim(claim({ summary: '本轮才决定的' }), [
+      { sourceId: mine, quote: '本轮决定' },
+    ]);
+    expect(buildLifeBrief(store, SCOPE, { excludeSessionId: 's-now' })).toBeNull();
+  });
+});
+
 describe('memory injection context', () => {
   function ctx(store: MemoryStore, db: Db): AppContext {
     return { memory: store, db } as unknown as AppContext;

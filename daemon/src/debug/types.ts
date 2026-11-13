@@ -39,7 +39,8 @@ export type RecallDropReason =
   | 'not_relevant'
   | 'max_items'
   | 'render_rejected'
-  | 'feedback_wrong';
+  | 'feedback_wrong'
+  | 'session_echo';
 
 export interface RecallDrop {
   kind: 'loop' | 'claim' | 'observation' | 'summary' | 'document' | 'source';

@@ -1535,6 +1535,40 @@ export class MemoryStore {
       .all(claimId) as unknown as { sourceId: string; relation: string; quote: string | null }[];
   }
 
+  /**
+   * Claims whose evidence comes *only* from one session (D39). Used to keep a
+   * run from re-injecting what was just distilled out of the very conversation
+   * the runtime already holds. Claims reinforced by an earlier session are not
+   * returned: that knowledge predates the current transcript.
+   *
+   * Claims with no evidence rows are not returned either — nothing attributes
+   * them to the session, so excluding them would be a guess.
+   */
+  claimsOnlyFromSession(claimIds: readonly string[], sessionId: string): Set<string> {
+    const only = new Set<string>();
+    if (claimIds.length === 0 || sessionId === '') return only;
+    const placeholders = claimIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT e.claim_id AS claimId,
+                COUNT(DISTINCT COALESCE(s.session_id, '')) AS sessionCount,
+                MAX(COALESCE(s.session_id, '')) AS lastSession
+           FROM mem_claim_evidence e
+           JOIN mem_sources s ON s.id = e.source_id
+          WHERE e.claim_id IN (${placeholders})
+          GROUP BY e.claim_id`,
+      )
+      .all(...claimIds) as unknown as {
+      claimId: string;
+      sessionCount: number;
+      lastSession: string;
+    }[];
+    for (const row of rows) {
+      if (Number(row.sessionCount) === 1 && row.lastSession === sessionId) only.add(row.claimId);
+    }
+    return only;
+  }
+
   // ---- documents (K2) ----
 
   /**
