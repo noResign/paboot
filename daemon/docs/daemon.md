@@ -73,7 +73,7 @@ agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
-| `memory/` | Memory M0 + M1.1：`memory.db` schema / store、`settings`（workspace 开关）、`read-policy`（dev / life 跨读）、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、brief / 字符预算；见 [memory.md](memory.md) |
+| `memory/` | Memory M0 – M2：`memory.db` schema / store、`settings`（workspace 开关）、`read-policy`（dev / life 跨读）、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、observation / summary、去重与冲突 / 实体、brief / 按轮召回 / 检索阶梯；见 [memory.md](memory.md) |
 | `ends/` | 端领域：`scope`（`session_ends` 收窄、主端选择、cwd 归属） |
 | `domains/` | 领域模板：端激活时种入的约定（`kind → conventions`） |
 | `llm/` | 共享 LLM 层：`types`（request / chunk / completion / usage）、`catalog`（provider / 模型 id）、`credentials`（env / providers.json，密钥只写不读）、`registry`（含 `none`）；adapter 在 P3.1 |
