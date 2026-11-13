@@ -137,7 +137,7 @@ async function systemdOwnsLive(): Promise<boolean> {
  * only consulted to *stop* a daemon it owns, and to bounce one it owns.
  */
 function spawnLocalDaemon(input: {
-  workspace: string;
+  workspace?: string;
   port: number;
   host?: string;
 }): Promise<ManagedDaemonStartResult> {
@@ -233,7 +233,7 @@ const daemonApi = {
       logPath: managedDaemon.logPath,
     };
   },
-  start: async (input: { workspace: string; port: number; host?: string }) => {
+  start: async (input: { workspace?: string; port: number; host?: string }) => {
     const res = await spawnLocalDaemon(input);
     // Bring the app's own connection to it back with the process.
     if (res.ok) await manager.reDialLocal();

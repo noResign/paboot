@@ -275,7 +275,7 @@ export function ProviderSection() {
         内置 Provider 点击「编辑」即可覆盖 Base URL、Key 和模型；「新增」用于自定义网关或额外 Provider。
       </div>
       <div className="hint">
-        在模型目录里勾选「用于记忆」，该模型会负责后台整理生活会话；只能勾选一个。
+        在模型目录里勾选「用于记忆」，该模型会负责后台整理个人空间里的会话；只能勾选一个。
         未勾选时只记录消息，不调用模型。勾选后保存 Provider 生效。
       </div>
 
@@ -442,7 +442,7 @@ export function ProviderSection() {
                     <label><input type="checkbox" checked={model.supportsImages === true} onChange={(event) => patchModel(index, { supportsImages: event.target.checked })} /> 图片</label>
                     <label><input type="checkbox" checked={model.enabled !== false} onChange={(event) => patchModel(index, { enabled: event.target.checked })} /> 启用</label>
                     {editing && (
-                      <label title="负责后台整理生活会话；只能勾选一个">
+                      <label title="负责后台整理个人空间里的会话；只能勾选一个">
                         <input
                           type="checkbox"
                           checked={draftMemoryModel === `${draft.id}:${model.id.trim()}`}

@@ -48,8 +48,7 @@
 从 [releases](https://github.com/noResign/paboot/releases) 下载安装包并打开。桌面端内置 daemon：
 本机没有正在运行的 daemon 时会自动启动一个（设置里可关闭自动启动），**不需要先装 Node / npm**。
 
-- 连上后在「设置 → 工作区」添加或切换工作目录；本机 daemon 默认使用内置 fallback 工作区
-  `~/.paboot/defaultworkspace`；
+- 连上后默认进入内置「个人空间」工作区；在「设置 → 工作区」添加或切换项目目录；
 - 同一个局域网里的 Android / iOS 也能连这个 daemon：地址用桌面端显示的局域网地址，token 在
   `~/.paboot/token`。
 
@@ -64,7 +63,7 @@ daemon 是无界面的后端，通过 HTTP/SSE 对外，因此可以装在任意
 npm install -g @noresign/paboot      # 全局命令名是 paboot
 
 paboot --workspace /path/to/your/project
-# 不传 --workspace 时，默认工作区是 ~/.paboot/defaultworkspace
+# 不传 --workspace 时，默认进入内置「个人空间」工作区（~/.paboot/life）
 ```
 
 - token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 自己指定

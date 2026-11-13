@@ -28,24 +28,16 @@ export function fallbackWorkspaceId(list: WorkspaceDto[]): string | null {
   return (list.find((item) => item.isDefault) ?? list[0])?.id ?? null;
 }
 
-/** Workspaces the switcher shows: real dev workspaces + the built-in life workspace. */
-export function visibleWorkspaces(list: WorkspaceDto[]): WorkspaceDto[] {
-  return list.filter((workspace) => workspace.family === 'life' || !workspace.isBuiltin);
-}
-
-/**
- * Workspaces the management page edits: dev only. The built-in fallback and the
- * life workspace are not user-managed rows (life is reset-only).
- */
+/** Workspaces the management page edits: dev only. Life is reset-only. */
 export function manageableWorkspaces(list: WorkspaceDto[]): WorkspaceDto[] {
-  return list.filter((workspace) => workspace.family !== 'life' && !workspace.isBuiltin);
+  return list.filter((workspace) => workspace.family !== 'life');
 }
 
-/** User-facing name. The built-in fallback has no path the user should read. */
+/** User-facing workspace name. */
 export function workspaceLabel(workspace: WorkspaceDto | null | undefined): string | null {
   if (!workspace) return null;
-  if (workspace.family === 'life') return workspace.name || '生活';
-  return workspace.isBuiltin ? '内置工作区' : workspace.name || workspace.path;
+  if (workspace.family === 'life') return workspace.name || '个人空间';
+  return workspace.name || workspace.path;
 }
 
 /**

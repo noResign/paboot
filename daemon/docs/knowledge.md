@@ -61,7 +61,7 @@ WORKSPACE.md                    # 工作区说明
   - 桌面端「新建」弹窗提供 **规范文档 / 知识 / 需求 / 自定义** 四个入口；移动端只读 + 核验；
 - 已有工作区不会被回填；后续的「工作区知识智能初始化」会复用
   `knowledge/scaffold.ts` 的 `scaffoldWorkspaceKnowledge`，缺失时补建并调用 AI 生成内容；
-- 只对真实 `dev` 工作区生效；`life` 与内置 fallback 跳过。
+- 只对真实 `dev` 工作区生效；`life` 跳过。
 
 ## 3. 扫描 / 标题 / 摘要
 

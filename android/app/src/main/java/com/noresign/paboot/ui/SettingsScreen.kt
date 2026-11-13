@@ -198,14 +198,13 @@ fun SettingsScreen(
                     val currentWorkspace = state.workspaces.find { it.id == selectedWorkspaceId }
                     val currentWorkspaceLabel = when {
                         currentWorkspace == null -> "未选择"
-                        currentWorkspace.family == "life" -> workspaceDisplayName(currentWorkspace) ?: "生活"
-                        currentWorkspace.isBuiltin -> "内置工作区"
+                        currentWorkspace.family == "life" -> workspaceDisplayName(currentWorkspace) ?: "个人空间"
                         else -> currentWorkspace.path
                     }
                     InfoRow(
                         "当前工作区",
                         currentWorkspaceLabel,
-                        monospace = currentWorkspace?.let { !it.isBuiltin && it.family != "life" } ?: true,
+                        monospace = currentWorkspace?.family != "life",
                     )
                     OutlinedButton(
                         onClick = onManageWorkspaces,

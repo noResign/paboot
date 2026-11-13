@@ -21,7 +21,11 @@ afterEach(() => {
 });
 
 describe('buildDaemonArgs', () => {
-  it('spells out --host and defaults to every interface', () => {
+  it('omits --workspace so the daemon uses its built-in life workspace', () => {
+    expect(buildDaemonArgs({ port: 4780 })).toEqual(['--port', '4780', '--host', '0.0.0.0']);
+  });
+
+  it('passes an explicitly selected workspace through', () => {
     expect(buildDaemonArgs({ workspace: '/w', port: 4780 })).toEqual([
       '--workspace',
       '/w',

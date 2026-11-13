@@ -134,7 +134,7 @@ describe('boot auto-provisioning', () => {
 
     await useConnection.getState().boot();
 
-    expect(daemonStart).toHaveBeenCalledWith({ workspace: '~/.paboot/defaultworkspace', port: 0 });
+    expect(daemonStart).toHaveBeenCalledWith({ port: 0 });
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ host: '127.0.0.1', port: 4781, token: 'tok' }));
     expect(useConnection.getState().activeId).toBe(local);
   });

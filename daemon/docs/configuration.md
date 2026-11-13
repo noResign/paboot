@@ -25,7 +25,7 @@
 |---|---|---|
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
-| `--workspace <path>` | `~/.paboot/defaultworkspace` | 初始 Workspace 根目录。**显式传入时是权威值**：每次启动都确保该目录存在并设为默认 Workspace |
+| `--workspace <path>` | `~/.paboot/life` | 初始项目 Workspace 根目录。**显式传入时是权威值**：每次启动都确保该目录存在并设为默认 Workspace；不传时进入内置「个人空间」工作区 |
 | `--token <token>` | 自动生成并持久化 | **operator** Bearer token；客户端连接时输入的就是它 |
 | `--print-operator-token` | — | 打印 operator token 后退出；可在 daemon 已运行时使用，不抢数据目录锁 |
 | `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
@@ -39,7 +39,7 @@
 |---|---|---|
 | `PABOOT_HOST` | `0.0.0.0` | 监听地址 |
 | `PABOOT_PORT` | `4780` | 端口 |
-| `PABOOT_WORKSPACE` | `~/.paboot/defaultworkspace` | 初始 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
+| `PABOOT_WORKSPACE` | `~/.paboot/life` | 初始项目 Workspace 根目录（**首次启动注册一次**为默认 Workspace；显式 `--workspace` 才是每次生效的权威值） |
 | `PABOOT_TOKEN` | 自动生成 | operator Bearer token（客户端连接用） |
 | `PABOOT_AUTH_MAX_FAILURES` | `5` | 同一来源连续认证失败多少次后进入冷却；`0` = 关闭冷却 |
 | `PABOOT_AUTH_LOCKOUT_SECONDS` | `60` | 首次冷却时长（秒）；同一来源再次触发翻倍，上限 15 分钟 |
@@ -54,20 +54,12 @@
 | `PABOOT_ALLOW_DEPLOY` | 关闭 | 允许 `POST /api/deploy` 触发部署（`1` / `true` 开启） |
 | `PABOOT_DEPLOY_SCRIPT` | `<cwd>/../.claude/skills/deploy/scripts/deploy.sh` | 部署脚本路径 |
 
-### 内置 fallback 工作区
+### 内置「个人空间」工作区
 
-不带 `--workspace` / `PABOOT_WORKSPACE` 时，daemon 默认就用 `<dataDir>/defaultworkspace`
-（即 `~/.paboot/defaultworkspace`，和 SQLite/token 同一个数据根），并把这个路径标记为
-**内置 fallback**；桌面端第一次启动也预填同一路径：
-
-- 没有启用的真实工作区时，它是默认工作区；`/api/workspaces` 仍会返回它（客户端需要它的 id
-  来拉会话/文件），但客户端渲染列表/切换器时会过滤掉它，用户看到的是「还没有工作区」；
-- 一旦用户添加了真实工作区，它自动让位（默认切到真实工作区），接口也不再返回它；
-  行和它下面的会话仍在库里，删掉最后一个真实工作区后会重新作为默认出现；
-- 它不可删除、不可停用（409 `workspace_is_builtin`），是「永远至少有一个工作区」的兜底。
-
-要在某个项目里工作，显式传 `--workspace /path/to/project`（或 `PABOOT_WORKSPACE`）；
-不带参数时不再取启动目录。
+不带 `--workspace` / `PABOOT_WORKSPACE` 时，daemon 默认进入 `<dataDir>/life`
+（即 `~/.paboot/life`）的内置「个人空间」工作区。它是唯一内置工作区，客户端始终渲染为「个人空间」；
+不可删除或停用，但可以设为默认、改名和管理附加目录。旧的 `<dataDir>/defaultworkspace`
+fallback 已移除：启动时若发现空的历史行会清理，若该行仍有会话则降级为普通 dev 工作区以保留历史。
 
 ### 权限模式
 

@@ -90,6 +90,7 @@ describe('P0.2 data model', () => {
 
     const first = db.ensureLifeWorkspace(lifePath);
     expect(first.workspace.family).toBe('life');
+    expect(first.workspace.name).toBe('个人空间');
     expect(first.workspace.is_builtin).toBe(1);
     expect(first.workspace.profile_mode).toBe('portable');
     expect(first.workspace.path).toBe(fs.realpathSync(lifePath));
@@ -103,13 +104,25 @@ describe('P0.2 data model', () => {
     expect(db.listEnds(first.workspace.id)).toHaveLength(1);
   });
 
+  it('migrates the old default life display name without overriding custom names', () => {
+    const db = openDb();
+    const lifePath = path.join(tmpRoot(), 'life');
+    const first = db.ensureLifeWorkspace(lifePath);
+    db.updateWorkspace(first.workspace.id, { name: '生活' });
+
+    expect(db.ensureLifeWorkspace(lifePath).workspace.name).toBe('个人空间');
+
+    db.updateWorkspace(first.workspace.id, { name: '我的空间' });
+    expect(db.ensureLifeWorkspace(lifePath).workspace.name).toBe('我的空间');
+  });
+
   it('rejects ends whose family does not match the workspace', () => {
     const db = openDb();
     const dev = seedDev(db);
     const life = db.ensureLifeWorkspace(path.join(tmpRoot(), 'life'));
 
     expect(() =>
-      db.createEnd({ workspaceId: dev.id, family: 'life', kind: 'life', name: '生活' }),
+      db.createEnd({ workspaceId: dev.id, family: 'life', kind: 'life', name: '个人空间' }),
     ).toThrow(/end family mismatch/);
     expect(() =>
       db.createEnd({ workspaceId: life.workspace.id, family: 'dev', kind: 'android', name: 'app' }),
@@ -143,22 +156,12 @@ describe('P0.2 data model', () => {
     expect(db.listEnds(dev.id)).toEqual([]);
   });
 
-  it('keeps life visible while hiding only the dev fallback', () => {
+  it('keeps the life workspace and every dev workspace visible', () => {
     const db = openDb();
-    const fallbackDir = tmpDir('fallback');
-    const fallback = db.seedDefaultWorkspace(fallbackDir, 'ask', 'flag', fallbackDir);
-    if (!fallback) throw new Error('expected the built-in fallback');
-
+    const dev = seedDev(db);
     const life = db.ensureLifeWorkspace(path.join(tmpRoot(), 'life'));
-    expect(db.listVisibleWorkspaces().map((w) => w.id)).toEqual(
-      expect.arrayContaining([fallback.id, life.workspace.id]),
-    );
-
-    const real = db.createWorkspace({ name: 'real', path: tmpDir('real') });
     const visible = db.listVisibleWorkspaces().map((w) => w.id);
-    expect(visible).toContain(real.id);
-    expect(visible).toContain(life.workspace.id);
-    expect(visible).not.toContain(fallback.id);
+    expect(visible).toEqual(expect.arrayContaining([dev.id, life.workspace.id]));
   });
 
   it('creates the memory settings and outbox tables', () => {
@@ -183,7 +186,7 @@ describe('P0.2 data model', () => {
     );
   });
 
-  it('protects the life workspace from default, disable and delete, but allows extra dirs', async () => {
+  it('allows the life workspace to be default but protects it from disable and delete', async () => {
     const db = openDb();
     const life = db.ensureLifeWorkspace(path.join(tmpRoot(), 'life'));
     const base = await startApi(db);
@@ -209,8 +212,8 @@ describe('P0.2 data model', () => {
       });
 
     expect((await patch({ enabled: false })).status).toBe(409);
-    expect((await patch({ isDefault: true })).status).toBe(409);
-    expect((await patch({ name: '生活' })).status).toBe(200);
+    expect((await patch({ isDefault: true })).status).toBe(200);
+    expect((await patch({ name: '个人空间' })).status).toBe(200);
 
     expect((await fetch(`${base}/api/workspaces/${life.workspace.id}`, { method: 'DELETE' })).status).toBe(409);
 
@@ -237,6 +240,6 @@ describe('P0.2 data model', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ defaultWorkspaceId: life.workspace.id }),
     });
-    expect(cfg.status).toBe(409);
+    expect(cfg.status).toBe(200);
   });
 });

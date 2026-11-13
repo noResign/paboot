@@ -31,11 +31,10 @@ struct SessionListModel: Equatable {
 }
 
 extension WorkspaceDto {
-    /// User-facing name: life is always「生活」; the dev fallback hides its
-    /// technical path. Real dev workspaces use their name, then the directory.
+    /// User-facing name: life is always「个人空间」; dev workspaces use their name,
+    /// then the directory.
     var displayName: String {
-        if family == "life" { return name.isEmpty ? "生活" : name }
-        if isBuiltin { return "内置工作区" }
+        if family == "life" { return name.isEmpty ? "个人空间" : name }
         return name.isEmpty ? path : name
     }
 }

@@ -234,7 +234,7 @@ function claimScopeLabel(ctx: AppContext, scope: MemoryScope): string {
   const workspaceId = scope.startsWith('workspace:') ? scope.slice('workspace:'.length) : null;
   const workspace = workspaceId ? ctx.db.getWorkspace(workspaceId) : undefined;
   if (!workspace) return scope;
-  return workspace.family === 'life' ? '生活' : workspace.name;
+  return workspace.family === 'life' ? '个人空间' : workspace.name;
 }
 
 function toClaimDto(claim: MemoryClaim, ctx: AppContext): MemoryClaimDto {

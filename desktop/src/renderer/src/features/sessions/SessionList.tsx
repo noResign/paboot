@@ -74,7 +74,7 @@ export function SessionList({
       <div className="empty">
         还没有会话
         <br />
-        点上方「新建会话」，或从别的电脑连接一个 daemon
+        点上方「新建会话」，在个人空间开始
       </div>
     );
   }

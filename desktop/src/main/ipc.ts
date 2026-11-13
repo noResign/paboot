@@ -175,10 +175,11 @@ export function registerIpc(
 
   ipcMain.handle(IPC.daemonStatus, () => shell.daemon.status());
   ipcMain.handle(IPC.daemonStart, async (_event, input: ManagedDaemonStartInput) => {
-    // Validation lives here, not in preload: the renderer is not trusted, and a
-    // workspace path is exactly the value we must not take on faith.
-    if (!input || typeof input.workspace !== 'string' || !input.workspace.trim()) {
-      return { ok: false, code: 'bad_workspace', message: '需要选择工作目录' };
+    // Validation lives here, not in preload: the renderer is not trusted. A
+    // workspace is optional — omitting it lets the daemon start on its built-in
+    // life workspace; if supplied, it must still be a non-empty path.
+    if (!input || (input.workspace !== undefined && (typeof input.workspace !== 'string' || !input.workspace.trim()))) {
+      return { ok: false, code: 'bad_workspace', message: '工作目录不合法' };
     }
     // `port <= 0` means「挑一个」: the default range is where the user's own
     // daemon usually lives, so a fixed 4780 would fail on exactly this machine.
@@ -192,7 +193,8 @@ export function registerIpc(
     } else if (port > 65535) {
       return { ok: false, code: 'bad_port', message: '端口不合法' };
     }
-    return shell.daemon.start({ ...input, port, workspace: input.workspace.trim() });
+    const workspace = typeof input.workspace === 'string' && input.workspace.trim() ? input.workspace.trim() : undefined;
+    return shell.daemon.start({ ...input, port, ...(workspace ? { workspace } : {}) });
   });
   ipcMain.handle(IPC.daemonStop, () => shell.daemon.stop());
   ipcMain.handle(IPC.daemonSetToken, (_event, token: unknown) => {

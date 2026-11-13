@@ -215,7 +215,7 @@ export interface WorkspaceDto {
    */
   shortcutDirs: string[];
   isDefault: boolean;
-  /** The built-in fallback root. It is visible only while it is the only workspace. */
+  /** Built-in workspace. Only the `family=life` workspace uses this now. */
   isBuiltin: boolean;
   /** `dev` | `life`; absent on older daemons (treated as `dev`). */
   family?: 'dev' | 'life';
@@ -660,7 +660,7 @@ export interface MemoryClaimEvidenceDto {
 export interface MemoryClaimDto {
   id: string;
   scope: MemoryScopeDto;
-  /** Human-readable scope: 全局 / 生活 / workspace name. */
+  /** Human-readable scope: 全局 / 个人空间 / workspace name. */
   scopeLabel: string;
   endId: string | null;
   predicate: string;

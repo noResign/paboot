@@ -129,38 +129,17 @@ export function WorkspaceOverview({
     />
   );
 
-  // The dev fallback is a technical scratch (no overview); family=life is a
-  // real, built-in workspace and must still render (as「生活」).
-  if (!workspace || (workspace.isBuiltin && workspace.family !== 'life')) {
-    return (
-      <div className="workspace-overview">
-        <div className="wo-empty settings-section">
-          <h3>还没有添加工作区</h3>
-          <p className="hint">
-            工作区决定会话在哪个目录运行、能写到哪里。内置工作区只是临时的技术目录，不参与管理。
-          </p>
-          <div className="wo-actions">
-            <button className="btn primary" onClick={() => openPicker('create')}>
-              <Icon name="plus" size={15} />
-              添加工作区
-            </button>
-            <button className="btn" onClick={onNewSession}>
-              仍在内置工作区新建会话
-            </button>
-          </div>
-        </div>
-        {pickerDialog}
-        {notice && <div className="ws-notice">{notice}</div>}
-      </div>
-    );
+  if (!workspace) {
+    return <div className="main-body">正在加载工作区…</div>;
   }
 
   const isLife = workspace.family === 'life';
+  const sessionsLoaded = scope.sessionsWorkspaceId === workspace.id;
+
   const dirs = workspaceDirectories(workspace);
   const recent = recentSessions(sessions, 8);
   // `sessions` is empty until the workspace's batch lands, so "no sessions in
   // this dir" is not yet evidence: removal stays off until it is loaded.
-  const sessionsLoaded = scope.sessionsWorkspaceId === workspace.id;
 
   function dirMenu(dir: string, stats: ReturnType<typeof directoryStats>, main: boolean): MenuItem[] {
     const items: MenuItem[] = [{ id: 'copy', label: '复制路径', run: () => onCopy(dir) }];
@@ -291,13 +270,13 @@ export function WorkspaceOverview({
             <b>记忆</b>
             <span className="hint">
               {isLife
-                ? '生活会话里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。'
+                ? '个人空间里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。'
                 : '这个工作区的长期记忆默认关闭；打开后可启用捕获、整理与注入。'}
             </span>
             <span className="wo-knowledge-meta">
               <span className="wo-knowledge-chip">{isLife ? '自动整理' : '默认关闭'}</span>
               <span className="wo-knowledge-chip">
-                {isLife ? '来源可追溯' : '可允许生活读取'}
+                {isLife ? '来源可追溯' : '可允许个人空间读取'}
               </span>
               <span className="wo-knowledge-chip">secret 不注入</span>
             </span>

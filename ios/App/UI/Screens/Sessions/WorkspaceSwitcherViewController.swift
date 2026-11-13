@@ -332,7 +332,7 @@ private final class WorkspaceSwitcherRow: UIControl {
         titleRow.spacing = 6
         if workspace.family == "life" {
             titleRow.addArrangedSubview(
-                makePill("生活", background: Theme.Colors.primarySubtle, foreground: Theme.Colors.primaryDeep)
+                makePill("个人空间", background: Theme.Colors.primarySubtle, foreground: Theme.Colors.primaryDeep)
             )
         } else if workspace.isDefault {
             titleRow.addArrangedSubview(

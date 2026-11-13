@@ -18,7 +18,7 @@ data class WorkspaceDto(
      */
     val shortcutDirs: List<String> = emptyList(),
     val isDefault: Boolean = false,
-    /** daemon 的内置 fallback（只有它是唯一工作区时才会出现在列表里）；不可删/不可停用。 */
+    /** 唯一内置的「个人空间」工作区；不可删/不可停用，但可作为默认。 */
     val isBuiltin: Boolean = false,
     /** `dev` | `life`；旧 daemon 不发时按 dev 处理。 */
     val family: String = "dev",

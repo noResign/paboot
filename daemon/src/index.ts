@@ -120,18 +120,22 @@ async function main(): Promise<void> {
   const { Db } = await import('./db/db.js');
   const db = new Db(path.join(config.dataDir, 'paboot.sqlite'));
   const workspacePathsBeforeSeed = new Set(db.listWorkspaces().map((workspace) => workspace.path));
-  const seededWorkspace = db.seedDefaultWorkspace(
-    config.workspace,
-    fromLegacyPermissionMode(config.permissionMode),
-    config.workspaceSource,
-    // The desktop offers this as the first-run fallback; the same path is what
-    // marks the workspace as built-in instead of a real user choice.
-    path.join(config.dataDir, 'defaultworkspace'),
-  );
-  // The life workspace is built-in and reset-only. Creating it at boot keeps it
-  // out of the schema migration and means `GET /api/workspaces` always has the
-  // 「生活」entry a client must render (family=life is the one builtin exception).
+  // The life workspace is the built-in first-run space and the fallback after
+  // the last dev workspace is deleted. Ensure it before selecting a default so
+  // a bare `paboot` has a real, visible workspace to land on.
   db.ensureLifeWorkspace(path.join(config.dataDir, 'life'));
+  // Remove the retired `defaultworkspace` fallback. Empty rows disappear; the
+  // rare old row that still owns sessions is demoted to a normal workspace so
+  // history is never silently destroyed.
+  db.migrateLegacyBuiltinFallback();
+  const seededWorkspace =
+    config.workspaceSource === 'default'
+      ? db.finalizeWorkspaceDefaults(fromLegacyPermissionMode(config.permissionMode))
+      : db.seedDefaultWorkspace(
+          config.workspace,
+          fromLegacyPermissionMode(config.permissionMode),
+          config.workspaceSource,
+        );
   // Runs are only ever `running` while a process is live. After a restart the
   // active-run registry is empty, so anything still `running` is a run the
   // previous process left behind — reconcile it before serving requests.

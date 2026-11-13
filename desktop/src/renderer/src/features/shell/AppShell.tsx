@@ -4,11 +4,11 @@ import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import {
   fallbackWorkspaceId,
   initialWorkspaceId,
-  visibleWorkspaces,
   workspaceLabel,
 } from '../../store/workspaceList';
 import { lastWorkspaceIdentity, readLastWorkspace, writeLastWorkspace } from '../../store/lastWorkspace';
 import { lastSessionKey, readLastSession, writeLastSession } from '../../store/lastSession';
+import { readPersonalWelcomeDone, writePersonalWelcomeDone } from '../../store/personalWelcome';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useConfig } from '../../store/config';
 import { ASIDE_MIN, useAppearance, type ThemePreference } from '../../store/appearance';
@@ -29,6 +29,7 @@ import { useToolGroups } from '../chat/toolGroups';
 import { comboLabel, isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import { createWindowFocus } from './windowFocus';
+import { PersonalWelcome } from './PersonalWelcome';
 import type { PaletteItem } from '../../commands/palette';
 import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import type { SessionDto } from '../../../../shared/contract';
@@ -113,6 +114,9 @@ export function AppShell() {
     [connectionId],
   );
   const workspaceIdentity = lastWorkspaceIdentity(connectionId, serverId);
+  const [personalWelcomeDone, setPersonalWelcomeDone] = useState(() =>
+    readPersonalWelcomeDone(workspaceIdentity),
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** Page/session to return to when the workspace overview was opened from somewhere. */
   const [overviewReturn, setOverviewReturn] = useState<{ page: Page; sessionId: string | null } | null>(null);
@@ -147,6 +151,19 @@ export function AppShell() {
   const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
   const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
+  const hasDevWorkspace = useMemo(
+    () => scope.workspaces.some((workspace) => workspace.family !== 'life' && workspace.enabled),
+    [scope.workspaces],
+  );
+  const sessionsLoaded = scope.sessionsWorkspaceId === workspaceId;
+  const showPersonalWelcome =
+    Boolean(connectionId) &&
+    !personalWelcomeDone &&
+    !hasDevWorkspace &&
+    selectedWorkspace?.family === 'life' &&
+    sessionsLoaded &&
+    sessions.length === 0 &&
+    !scope.loading;
   /**
    * The overview takes the main area while it is open — and whenever no chat is
    * open at all (fresh launch, just switched workspace, deleted session). The
@@ -158,6 +175,10 @@ export function AppShell() {
   useEffect(() => {
     void loadConfig(true);
   }, [connectionId, loadConfig]);
+
+  useEffect(() => {
+    setPersonalWelcomeDone(readPersonalWelcomeDone(workspaceIdentity));
+  }, [workspaceIdentity]);
 
   useEffect(() => {
     setTaskFilter(null);
@@ -340,20 +361,12 @@ export function AppShell() {
     [connectionId, openSession],
   );
 
-  // The built-in fallback keeps its id for fetching, but never shows up as a
-  // row/menu entry. It is the only entry only until the first real workspace.
-  // family=life is the exception: the built-in life workspace must be renderable
-  // as「生活」, so it stays in this list.
-  const shownWorkspaces = useMemo(() => visibleWorkspaces(scope.workspaces), [scope.workspaces]);
-  /** No real dev workspace yet: only the scratch fallback (and maybe life). */
-  const hasRealDevWorkspace = useMemo(
-    () => scope.workspaces.some((workspace) => workspace.family !== 'life' && !workspace.isBuiltin),
-    [scope.workspaces],
-  );
-  // A single visible workspace is a label — unless it is not the current one
-  // (only-fallback + life), where the switcher must still offer moving to life.
+  // Every daemon workspace is user-visible now: the life workspace is the
+  // built-in first-run space and all dev workspaces are explicit choices.
+  const shownWorkspaces = scope.workspaces;
   const currentIsVisible = shownWorkspaces.some((workspace) => workspace.id === workspaceId);
-  const showWorkspaceSelect = shownWorkspaces.length > 1 || (shownWorkspaces.length === 1 && !currentIsVisible);
+  const showWorkspaceSelect =
+    shownWorkspaces.length > 1 || (shownWorkspaces.length === 1 && !currentIsVisible);
   const runningCount = sessions.filter((session) => session.running).length;
   /*
    * Four columns are more than a 1280–1440 window can hold. The panel's width
@@ -665,6 +678,24 @@ export function AppShell() {
     window.addEventListener('mouseup', onUp);
   }
 
+  function enterPersonalSpace(): void {
+    writePersonalWelcomeDone(workspaceIdentity);
+    setPersonalWelcomeDone(true);
+  }
+
+  function addProjectFromWelcome(): void {
+    enterPersonalSpace();
+    openSettings('workspaces');
+  }
+
+  if (showPersonalWelcome) {
+    return (
+      <div className={`shell personal-welcome-shell${IS_MAC ? ' darwin' : ''}`}>
+        <PersonalWelcome onEnter={enterPersonalSpace} onAddProject={addProjectFromWelcome} />
+      </div>
+    );
+  }
+
   return (
     <div className={`shell${IS_MAC ? ' darwin' : ''}`}>
       {(!railVisible || railStarved) && (
@@ -886,11 +917,6 @@ export function AppShell() {
           workspacePath={selectedWorkspace?.path ?? null}
           defaultRuntime={selectedWorkspace?.defaultRuntime ?? null}
           defaultPermissionMode={selectedWorkspace?.defaultPermissionMode ?? null}
-          onlyFallback={!hasRealDevWorkspace && selectedWorkspace?.family !== 'life'}
-          onAddWorkspace={() => {
-            setNewSessionOpen(false);
-            openSettings('workspaces');
-          }}
           onCancel={() => setNewSessionOpen(false)}
           onCreate={createSession}
         />

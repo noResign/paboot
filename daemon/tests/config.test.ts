@@ -42,16 +42,16 @@ describe('loadConfig', () => {
     expect(fs.statSync(config.workspace).isDirectory()).toBe(true);
   });
 
-  it('defaults the workspace to the built-in fallback under the data dir', () => {
+  it('defaults the workspace path to the built-in life workspace', () => {
     const dir = tempHome();
     const config = loadConfig({}, { port: 4780 });
 
-    expect(config.workspace).toBe(path.join(dir, '.paboot', 'defaultworkspace'));
+    expect(config.workspace).toBe(path.join(dir, '.paboot', 'life'));
     expect(config.workspaceSource).toBe('default');
     expect(fs.statSync(config.workspace).isDirectory()).toBe(true);
   });
 
-  it('still prefers PABOOT_WORKSPACE over the built-in fallback', () => {
+  it('still prefers PABOOT_WORKSPACE over the life workspace', () => {
     const dir = tempHome();
     const config = loadConfig({ PABOOT_WORKSPACE: path.join(dir, 'proj') }, { port: 4780 });
 

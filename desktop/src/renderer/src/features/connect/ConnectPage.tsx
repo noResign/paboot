@@ -3,7 +3,6 @@ import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { displayHost, isInsecure } from '../../../../shared/net';
 import { Icon } from '../../ui/Icon';
-import { DEFAULT_WORKSPACE_PATH } from '../../../../shared/workspace';
 import { parseAddress } from './address';
 import { BrandMark } from '../../ui/BrandMark';
 import type {
@@ -103,12 +102,10 @@ export function ConnectPage() {
     setSpawnBusy(true);
     setSpawnError(null);
     // `port: 0` = pick the first free one in the daemon's usual range: the user
-    // very often already has something on 4780. The workspace is the built-in
-    // fallback; real projects are added after connecting.
-    const res = await window.paboot.daemonStart({
-      workspace: DEFAULT_WORKSPACE_PATH,
-      port: 0,
-    });
+    // very often already has something on 4780. No workspace is passed: the
+    // daemon starts on its built-in life workspace; real projects are added
+    // after connecting.
+    const res = await window.paboot.daemonStart({ port: 0 });
     setSpawnBusy(false);
     if (!res.ok) {
       setSpawnError(res.message);
@@ -266,7 +263,7 @@ export function ConnectPage() {
           <div className="local-block" style={{ marginTop: 10 }}>
             <div className="local-title">启动一个本机 daemon</div>
             <div className="hint" style={{ marginTop: 0 }}>
-              会用内置目录 <span className="mono">~/.paboot/defaultworkspace</span>（不存在会自动创建）；
+              会默认进入内置「个人空间」工作区；
               启动后可在「工作区」里添加自己的项目目录。
               数据与 token 存在 <span className="mono">~/.paboot</span>，和你手动启动的 daemon 是同一份。
               端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。

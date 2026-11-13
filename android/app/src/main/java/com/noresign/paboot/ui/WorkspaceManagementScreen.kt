@@ -112,9 +112,8 @@ fun WorkspaceManagementScreen(
                 OutlinedButton(onClick = viewModel::load) { Text("重试") }
             }
             is SettingsUiState.Ready -> {
-                // 内置 fallback 仍参与会话/文件的 id 解析，但不是用户可管理的工作区；
-                // life 是内置的，但允许改名 / 管目录（不可删 / 停用）。
-                val shownWorkspaces = state.workspaces.filter { it.family == "life" || !it.isBuiltin }
+                // 所有工作区都可查看；life 允许改名 / 管目录（不可删 / 停用）。
+                val shownWorkspaces = state.workspaces
                 if (shownWorkspaces.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize().padding(innerPadding).padding(20.dp),

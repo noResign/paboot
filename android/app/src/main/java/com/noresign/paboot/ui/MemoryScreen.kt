@@ -273,7 +273,7 @@ fun MemoryScreen(
                             EmptyState(
                                 icon = Icons.Rounded.Person,
                                 title = "还没有记忆",
-                                hint = "在「生活」里正常聊天即可，消息会在后台自动整理。",
+                                hint = "在「个人空间」里正常聊天即可，消息会在后台自动整理。",
                             )
                         }
                     } else if (groups.isEmpty()) {
@@ -559,7 +559,7 @@ private fun MemorySettingsCard(settings: WorkspaceMemoryDto?) {
                 }
                 settings.lifeReadable?.let {
                     Text(
-                        if (it) "允许生活读取" else "生活不可读",
+                        if (it) "允许个人空间读取" else "个人空间不可读",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

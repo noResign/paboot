@@ -29,18 +29,18 @@ function openDb(): Db {
 }
 
 function tmpDir(name: string): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-builtin-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-life-'));
   tmpDirs.push(root);
   const dir = path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-/** Seed `dir` as the built-in fallback (the daemon matches on the path). */
-function seedBuiltin(db: Db, dir: string) {
-  const ws = db.seedDefaultWorkspace(dir, 'ask', 'flag', dir);
-  if (!ws) throw new Error('expected the built-in workspace to be seeded');
-  return ws;
+/** Seed the built-in life workspace and make it the first-run default. */
+function seedLife(db: Db) {
+  const life = db.ensureLifeWorkspace(tmpDir('life')).workspace;
+  db.finalizeWorkspaceDefaults('ask');
+  return life;
 }
 
 async function startApi(db: Db): Promise<string> {
@@ -75,81 +75,104 @@ async function listVisible(base: string): Promise<string[]> {
   return body.workspaces.map((w) => w.id);
 }
 
-describe('built-in workspace', () => {
-  it('is the default and the only visible workspace on a fresh install', () => {
+describe('built-in life workspace', () => {
+  it('is the default and only workspace on a fresh install', () => {
     const db = openDb();
-    const ws = seedBuiltin(db, tmpDir('defaultworkspace'));
+    const life = seedLife(db);
 
-    expect(ws.is_builtin).toBe(1);
-    expect(db.getDefaultWorkspace()?.id).toBe(ws.id);
-    expect(db.listVisibleWorkspaces().map((w) => w.id)).toEqual([ws.id]);
+    expect(life.is_builtin).toBe(1);
+    expect(life.family).toBe('life');
+    expect(db.getDefaultWorkspace()?.id).toBe(life.id);
+    expect(db.listVisibleWorkspaces().map((w) => w.id)).toEqual([life.id]);
   });
 
-  it('hides and yields the default once a real workspace is added', async () => {
+  it('yields the default to the first dev workspace but stays visible and switchable', async () => {
     const db = openDb();
-    const builtin = seedBuiltin(db, tmpDir('defaultworkspace'));
+    const life = seedLife(db);
     const base = await startApi(db);
-    const initial = (await (await fetch(`${base}/api/workspaces`)).json()) as {
-      workspaces: { id: string; isBuiltin: boolean }[];
-    };
-    expect(initial.workspaces.map((w) => ({ id: w.id, isBuiltin: w.isBuiltin }))).toEqual([
-      { id: builtin.id, isBuiltin: true },
-    ]);
     const created = await addWorkspace(base, tmpDir('project'));
 
     expect(created.isDefault).toBe(true);
     expect(db.getDefaultWorkspace()?.id).toBe(created.id);
-    expect(db.getWorkspace(builtin.id)?.is_default).toBe(0);
-    expect(await listVisible(base)).toEqual([created.id]);
+    expect(db.getWorkspace(life.id)?.is_default).toBe(0);
+    expect(await listVisible(base)).toEqual(expect.arrayContaining([created.id, life.id]));
+
+    const patchLife = await fetch(`${base}/api/workspaces/${life.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    expect(patchLife.status).toBe(200);
+    expect(db.getDefaultWorkspace()?.id).toBe(life.id);
 
     const config = (await (await fetch(`${base}/api/config`)).json()) as {
       defaultWorkspaceId: string;
-      workspaces: { id: string }[];
     };
-    expect(config.defaultWorkspaceId).toBe(created.id);
-    expect(config.workspaces.map((w) => w.id)).toEqual([created.id]);
+    expect(config.defaultWorkspaceId).toBe(life.id);
   });
 
-  it('does not steal the default back when the daemon restarts with the built-in path', () => {
+  it('returns as the visible default after the last dev workspace is deleted', async () => {
     const db = openDb();
-    const dir = tmpDir('defaultworkspace');
-    seedBuiltin(db, dir);
-    const real = db.createWorkspace({ name: 'project', path: tmpDir('project'), isDefault: true });
-
-    seedBuiltin(db, dir);
-
-    expect(db.getDefaultWorkspace()?.id).toBe(real.id);
-    expect(db.listVisibleWorkspaces().map((w) => w.id)).toEqual([real.id]);
-  });
-
-  it('returns as the visible default after the last real workspace is deleted', async () => {
-    const db = openDb();
-    const builtin = seedBuiltin(db, tmpDir('defaultworkspace'));
+    const life = seedLife(db);
     const base = await startApi(db);
     const created = await addWorkspace(base, tmpDir('project'));
 
     const res = await fetch(`${base}/api/workspaces/${created.id}?cascade=0`, { method: 'DELETE' });
     expect(res.status).toBe(200);
 
-    expect(db.getDefaultWorkspace()?.id).toBe(builtin.id);
-    expect(await listVisible(base)).toEqual([builtin.id]);
+    expect(db.getDefaultWorkspace()?.id).toBe(life.id);
+    expect(await listVisible(base)).toEqual([life.id]);
   });
 
-  it('cannot be deleted or disabled', async () => {
+  it('cannot be deleted or disabled, but can be renamed', async () => {
     const db = openDb();
-    const builtin = seedBuiltin(db, tmpDir('defaultworkspace'));
+    const life = seedLife(db);
     const base = await startApi(db);
 
-    const deleted = await fetch(`${base}/api/workspaces/${builtin.id}?cascade=1`, { method: 'DELETE' });
+    const deleted = await fetch(`${base}/api/workspaces/${life.id}?cascade=1`, { method: 'DELETE' });
     expect(deleted.status).toBe(409);
-    expect(((await deleted.json()) as { code: string }).code).toBe('workspace_is_builtin');
+    expect(((await deleted.json()) as { code: string }).code).toBe('workspace_is_life');
 
-    const disabled = await fetch(`${base}/api/workspaces/${builtin.id}`, {
+    const disabled = await fetch(`${base}/api/workspaces/${life.id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ enabled: false }),
     });
     expect(disabled.status).toBe(409);
-    expect(((await disabled.json()) as { code: string }).code).toBe('workspace_is_builtin');
+    expect(((await disabled.json()) as { code: string }).code).toBe('workspace_is_life');
+
+    const renamed = await fetch(`${base}/api/workspaces/${life.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '个人空间' }),
+    });
+    expect(renamed.status).toBe(200);
+  });
+
+  it('removes a legacy empty dev fallback and demotes one that still has sessions', () => {
+    const db = openDb();
+    const legacyEmpty = db.createWorkspace({
+      name: 'defaultworkspace',
+      path: tmpDir('defaultworkspace-empty'),
+      isBuiltin: true,
+    });
+    const legacyWithSession = db.createWorkspace({
+      name: 'defaultworkspace',
+      path: tmpDir('defaultworkspace-session'),
+      isBuiltin: true,
+    });
+    db.createSession({
+      id: 's-legacy',
+      runtime: 'claude',
+      workspaceId: legacyWithSession.id,
+      permissionMode: 'ask',
+      cwd: legacyWithSession.path,
+    });
+
+    db.migrateLegacyBuiltinFallback();
+
+    expect(db.getWorkspace(legacyEmpty.id)).toBeUndefined();
+    expect(db.getWorkspace(legacyWithSession.id)?.is_builtin).toBe(0);
+    expect(db.listSessions(legacyWithSession.id)).toHaveLength(1);
   });
 });

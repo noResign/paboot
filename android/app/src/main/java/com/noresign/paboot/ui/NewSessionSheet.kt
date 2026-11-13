@@ -88,11 +88,7 @@ fun NewSessionSheet(
                             )
                             if (workspace != null) {
                                 Text(
-                                    text = when {
-                                        workspace.isBuiltin && workspace.family != "life" ->
-                                            "内置工作区只是临时目录，建议先在设置里添加真实工作区。"
-                                        else -> "主目录：${workspace.path}。其他目录会自动作为附加目录。"
-                                    },
+                                    text = "主目录：${workspace.path}。其他目录会自动作为附加目录。",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,

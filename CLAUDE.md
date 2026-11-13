@@ -181,7 +181,7 @@ paboot/
   单文件，再走 `extraResources`；三份 tsconfig、皮肤系统）见 [desktop/README.md](desktop/README.md)。
 - **启动流程**：恢复已保存的连接 → **上次选中的主机优先**（远程不可达时停在连接页，不自动顶替为
   本机）→ 本机没有 daemon 时探测/自动启动（`autoStartDaemon` 偏好默认开）→ 都失败才显示连接页。
-  启动/重启本机 daemon 不询问工作目录，固定用内置 fallback；远程主机从连接切换器的「添加电脑」进入。
+  启动/重启本机 daemon 不询问工作目录，默认落在内置「个人空间」工作区；远程主机从连接切换器的「添加电脑」进入。
 - **不要求「app 版本 == daemon 版本」**：随包只保证「装完就能启动一个本机 daemon」；daemon 有独立
   发布链（OSS 的 npm 包），而且**附着外部 daemon 时版本相等根本不成立**——那恰恰是主要用法。
   版本差异靠协议向后兼容兜（health/`serverId` 这些字段都是可选的）。
@@ -206,22 +206,18 @@ paboot/
   `ask`/`acceptEdits` 下的 WebSearch/WebFetch 与 MCP 工具需要审批，Bash 内只读白名单自动放行；
   「允许全部」为 Session + toolName 级持久化 grant，默认拒绝、超时自动拒绝。
   **读（`Read`/`Grep`）不门控**——读工作区外不审批、不加目录；工作区边界只约束写入。
-- **工作空间**：显式 `--workspace` 是**权威值**——每次启动都确保该目录存在并设为默认 Workspace
-  （桌面端从连接页启动 daemon 走的就是这条）；`PABOOT_WORKSPACE` / 无参默认
-  `<dataDir>/defaultworkspace`（与 SQLite/token 同根），只在工作区表为空时注册一次（首次安装），
-  删掉的工作区不会在重启后回来。客户端可新增/切换 Workspace。
+- **工作空间**：显式 `--workspace` 是**权威值**——每次启动都确保该目录存在并设为默认 Workspace；
+  `PABOOT_WORKSPACE` 只在首次安装注册一次，删掉的工作区不会在重启后回来。无显式目录时
+  默认进入内置「个人空间」工作区（`<dataDir>/life`）；桌面端启动本机 daemon 不传 `--workspace`。
+  客户端可新增/切换 Workspace。
   删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；**默认工作区可删**——先把默认切给
-  另一个启用的真实工作区，没有就切给内置 fallback，内置 fallback 本身不可删/不可停用，
+  另一个启用的工作区，没有就切给内置「个人空间」；个人空间本身不可删/停用，
   顺带保证最后一个工作区删不掉。Session 绑定 `workspace_id + cwd`，cwd 必须位于所属 Workspace 内。
-  **内置 fallback 工作区**：无显式 `--workspace` 时 daemon 默认用它
-  （`<dataDir>/defaultworkspace`，桌面端首次启动也预填同一路径），daemon 按该路径标记为内置——没有真实工作区时它是默认，API 仍返回它（客户端需要 id 拉会话/文件），
-  但客户端列表/切换器**永不渲染**它；添加真实工作区后自动让位且接口也不再返回（行与会话仍在库里），
-  删掉最后一个真实工作区后重新作为默认出现。
   客户端**不展示「设为默认」**：打开时按本机上次选择的工作区（Android/iOS/桌面都本地持久化，
   桌面按 `serverId` 存 localStorage），daemon 的 `is_default` 只作为「客户端没指定工作区」时的兜底。
-  **`workspaces.family = dev | life`**：life 是内置工作区（cwd `<dataDir>/life/`，不可删 / 停用 /
-  设默认），客户端渲染为「生活」入口；family 互斥由 `ends` trigger 保证，end 只做上下文 /
-  记忆标签，不做记忆隔离。
+  **`workspaces.family = dev | life`**：life 是唯一的 built-in 工作区（cwd `<dataDir>/life/`，
+  不可删/停用，可作为默认），客户端渲染为「个人空间」入口；family 互斥由 `ends` trigger 保证，
+  end 只做上下文 / 记忆标签，不做记忆隔离。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
   `POST /api/runs/:id/cancel`。

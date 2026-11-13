@@ -18,9 +18,6 @@ interface Props {
   /** Workspace-level new-session defaults; null = follow global / claude. */
   defaultRuntime: string | null;
   defaultPermissionMode: ProductPermissionMode | null;
-  /** No real dev workspace exists: the built-in fallback is all there is. */
-  onlyFallback: boolean;
-  onAddWorkspace(): void;
   onCancel(): void;
   onCreate(options: NewSessionOptions): void;
 }
@@ -35,8 +32,6 @@ export function NewSessionDialog({
   workspacePath,
   defaultRuntime,
   defaultPermissionMode,
-  onlyFallback,
-  onAddWorkspace,
   onCancel,
   onCreate,
 }: Props) {
@@ -133,14 +128,6 @@ export function NewSessionDialog({
               '会话在这个工作区内运行，不能在这里切换。'
             )}
           </div>
-          {onlyFallback && (
-            <div className="hint">
-              当前没有自己的开发工作区。内置工作区只是临时的技术目录，建议先添加一个。
-              <button className="btn tiny" style={{ marginLeft: 8 }} onClick={onAddWorkspace}>
-                去添加工作区
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="field">

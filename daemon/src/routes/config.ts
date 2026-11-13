@@ -14,8 +14,6 @@ import { configuredMemoryModel, normalizeMemoryModelSelection, SETTING_MEMORY_MO
 import { log } from '../platform/log.js';
 
 function configDto(ctx: AppContext) {
-  // Mirror the visible list: a hidden built-in fallback must not be handed to
-  // clients as the default workspace id.
   const workspaces = ctx.db.listVisibleWorkspaces();
   const defaultWorkspace = workspaces.find((w) => w.is_default === 1) ?? workspaces[0] ?? null;
   return {
@@ -93,14 +91,6 @@ export function registerConfigRoutes(app: Express, ctx: AppContext): void {
         const ws = ctx.db.getWorkspace(body.defaultWorkspaceId);
         if (!ws || ws.enabled !== 1) {
           res.status(404).json({ error: 'workspace not found or disabled', code: 'workspace_not_found' });
-          return;
-        }
-        if (ws.family === 'life') {
-          res.status(409).json({ error: 'life workspace cannot be the default', code: 'workspace_is_life' });
-          return;
-        }
-        if (ws.is_builtin === 1 && ctx.db.listWorkspaces().some((w) => w.is_builtin !== 1 && w.enabled === 1)) {
-          res.status(409).json({ error: 'built-in workspace cannot be default while a real workspace exists', code: 'workspace_is_builtin' });
           return;
         }
         workspaceIdToSet = ws.id;

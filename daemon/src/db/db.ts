@@ -63,11 +63,7 @@ export interface WorkspaceRow {
   name: string;
   path: string;
   is_default: number;
-  /**
-   * The built-in fallback (`<dataDir>/defaultworkspace`), not a user choice.
-   * It is shown only while it is the only enabled workspace; once a real one
-   * exists it is hidden and must not hold the default flag.
-   */
+  /** Built-in workspace row. Only the single `family=life` workspace uses this. */
   is_builtin: number;
   enabled: number;
   /** `dev` | `life`; ends must match it (DB trigger in `ends`). */
@@ -1048,44 +1044,56 @@ export class Db {
   // ---- workspaces ----
 
   /**
-   * Register the startup Workspace and backfill legacy sessions.
+   * Register an explicit startup Workspace and backfill legacy sessions.
    *
-   * An explicit `--workspace` (`source: 'flag'`) is **authoritative**: the dir the
-   * user named must be the default workspace, so it is re-asserted on every
-   * start — an earlier run (or a hand-started daemon) must never lock the default
-   * to wherever it happened to launch from. `env` / `default` (cwd) keep the old
-   * one-time-seed semantics: a workspace the user deleted is not resurrected on
-   * the next start (nor can a directory that no longer exists make startup throw).
-   *
-   * `builtinPath` marks the fallback root the desktop offers a first-time user.
-   * It never takes the default flag away from a real workspace, and it is hidden
-   * from clients once one exists (see {@link listVisibleWorkspaces}).
+   * An explicit `--workspace` (`source: 'flag'`) is **authoritative**: the dir
+   * the user named must be the default workspace, so it is re-asserted on every
+   * start. `env` keeps the one-time-seed semantics: a workspace the user deleted
+   * is not resurrected on the next start. The daemon's no-path startup uses
+   * {@link finalizeWorkspaceDefaults} directly after ensuring the life
+   * workspace; direct callers may still use `default` to seed a dev row.
    */
   seedDefaultWorkspace(
     rawPath: string,
     defaultPermissionMode: string,
     source: WorkspaceSource = 'default',
-    builtinPath?: string,
   ): WorkspaceRow | null {
     if (source === 'flag') {
-      this.ensureWorkspaceDefault(rawPath, builtinPath);
+      this.ensureWorkspaceDefault(rawPath);
     } else if (!this.getSetting(SEEDED_WORKSPACE_KEY)) {
-      if (this.listWorkspaces().length === 0) {
+      // The built-in life workspace may already exist on a fresh install; it
+      // must not stop an explicit env path from being seeded once.
+      const hasDevWorkspace = this.listWorkspaces().some(
+        (w) => w.family === 'dev' && w.is_builtin !== 1,
+      );
+      if (!hasDevWorkspace) {
         const realPath = fs.realpathSync(path.resolve(rawPath));
         this.createWorkspace({
           name: path.basename(realPath) || realPath,
           path: realPath,
           isDefault: true,
-          isBuiltin: this.isBuiltinPath(realPath, builtinPath),
         });
       }
       this.setSetting(SEEDED_WORKSPACE_KEY, '1');
     }
 
-    // Never make the builtin life workspace the dev default.
+    return this.finalizeWorkspaceDefaults(defaultPermissionMode);
+  }
+
+  /**
+   * Pick a default workspace if none is set and apply startup defaults to
+   * legacy rows. The life workspace is a valid default now that it is the only
+   * built-in workspace: it is the first-run landing surface and the fallback
+   * after the last dev workspace is deleted.
+   */
+  finalizeWorkspaceDefaults(defaultPermissionMode: string): WorkspaceRow | null {
+    const currentDefault = this.getDefaultWorkspace();
     const workspace =
-      this.getDefaultWorkspace() ?? this.listWorkspaces().find((w) => w.family === 'dev') ?? null;
-    if (workspace && !this.getDefaultWorkspace()) {
+      currentDefault ??
+      this.listWorkspaces().find((w) => w.family === 'dev' && w.enabled === 1) ??
+      this.listWorkspaces().find((w) => w.enabled === 1) ??
+      null;
+    if (workspace && !currentDefault) {
       this.setDefaultWorkspace(workspace.id);
     }
 
@@ -1098,7 +1106,9 @@ export class Db {
     if (workspace) {
       this.db.prepare(`UPDATE sessions SET workspace_id = ? WHERE workspace_id IS NULL`).run(workspace.id);
     }
-    this.db.prepare(`UPDATE sessions SET permission_mode = ? WHERE permission_mode IS NULL OR permission_mode = ''`).run(defaultPermissionMode);
+    this.db
+      .prepare(`UPDATE sessions SET permission_mode = ? WHERE permission_mode IS NULL OR permission_mode = ''`)
+      .run(defaultPermissionMode);
 
     return workspace;
   }
@@ -1108,58 +1118,47 @@ export class Db {
    * it if it had been disabled. The directory itself is created by `loadConfig`
    * before this runs, so `realpathSync` sees it.
    */
-  private ensureWorkspaceDefault(rawPath: string, builtinPath?: string): void {
+  private ensureWorkspaceDefault(rawPath: string): void {
     const realPath = fs.realpathSync(path.resolve(rawPath));
-    const isBuiltin = this.isBuiltinPath(realPath, builtinPath);
     const existing = this.getWorkspaceByPath(realPath);
     if (!existing) {
       this.createWorkspace({
         name: path.basename(realPath) || realPath,
         path: realPath,
-        isDefault: isBuiltin ? !this.hasUserWorkspaces() : true,
-        isBuiltin,
+        isDefault: true,
       });
       return;
     }
+    if (existing.family === 'life') {
+      if (existing.enabled !== 1) this.updateWorkspace(existing.id, { enabled: true });
+      if (existing.is_default !== 1) this.setDefaultWorkspace(existing.id);
+      return;
+    }
     if (existing.enabled !== 1) this.updateWorkspace(existing.id, { enabled: true });
-    if (isBuiltin && existing.is_builtin !== 1) {
-      this.db.prepare(`UPDATE workspaces SET is_builtin = 1 WHERE id = ?`).run(existing.id);
-      existing.is_builtin = 1;
-    }
+    if (existing.is_default !== 1) this.setDefaultWorkspace(existing.id);
+  }
 
-    if (isBuiltin) {
-      // The fallback may hold the default only while nothing real exists; if a
-      // real workspace does, the desktop restarting with the fallback path must
-      // not yank the default back to it.
-      if (this.hasUserWorkspaces()) {
-        if (existing.is_default === 1) {
-          const user = this.listWorkspaces().find((w) => w.is_builtin !== 1 && w.enabled === 1);
-          if (user) this.setDefaultWorkspace(user.id);
-        }
-      } else if (existing.is_default !== 1) {
-        this.setDefaultWorkspace(existing.id);
+  /**
+   * Delete the old `~/.paboot/defaultworkspace` rows introduced before the life
+   * workspace became the fallback. Empty fallback rows are safe to drop. A row
+   * that still owns sessions is preserved as a normal dev workspace instead of
+   * silently deleting user-visible history; it simply stops being "the
+   * built-in workspace".
+   */
+  migrateLegacyBuiltinFallback(): void {
+    const legacy = this.listWorkspaces().filter((w) => w.family === 'dev' && w.is_builtin === 1);
+    for (const workspace of legacy) {
+      const row = this.db
+        .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE workspace_id = ?`)
+        .get(workspace.id) as { count: number };
+      if (Number(row.count) === 0) {
+        this.deleteWorkspace(workspace.id);
+      } else {
+        this.db
+          .prepare(`UPDATE workspaces SET is_builtin = 0, name = ? WHERE id = ?`)
+          .run(workspace.name || '旧内置工作区', workspace.id);
       }
-    } else if (existing.is_default !== 1) {
-      this.setDefaultWorkspace(existing.id);
     }
-  }
-
-  /** Whether `realPath` is the fallback root for this data dir. */
-  private isBuiltinPath(realPath: string, builtinPath?: string): boolean {
-    if (!builtinPath) return false;
-    const abs = path.resolve(builtinPath);
-    let canonical = abs;
-    try {
-      canonical = fs.realpathSync(abs);
-    } catch {
-      // The fallback dir need not exist yet; compare what we were given.
-    }
-    return realPath === canonical;
-  }
-
-  /** A real (non-built-in) workspace the user can actually work in. */
-  private hasUserWorkspaces(): boolean {
-    return this.listWorkspaces().some((w) => w.family === 'dev' && w.is_builtin !== 1 && w.enabled === 1);
   }
 
   createWorkspace(input: {
@@ -1179,7 +1178,6 @@ export class Db {
     const isDefault = input.isDefault ? 1 : 0;
     const isBuiltin = input.isBuiltin ? 1 : 0;
     const family = input.family ?? 'dev';
-    if (family === 'life' && isDefault === 1) throw new Error('life workspace cannot be default');
     // D35: profile_mode defaults to portable and life writes it explicitly; dev ignores it.
     const profileMode = input.profileMode ?? 'portable';
     const lifeReadable = input.lifeReadable ? 1 : 0;
@@ -1222,20 +1220,9 @@ export class Db {
       .all() as unknown as WorkspaceRow[];
   }
 
-  /**
-   * What clients may see. The built-in fallback is a first-run scratch root,
-   * not a workspace the user manages: once a real one is enabled it disappears
-   * from the list (its sessions stay in the DB). While it is the only enabled
-   * workspace it *is* the list — clients need an id to scope sessions and the
-   * file browser.
-   */
+  /** Every workspace is user-visible now; the life workspace is no longer hidden. */
   listVisibleWorkspaces(): WorkspaceRow[] {
-    const all = this.listWorkspaces();
-    // family=life is a builtin the client must still render (as「生活」); only the
-    // dev fallback disappears once a real dev workspace exists.
-    const devUsers = all.filter((w) => w.family === 'dev' && w.is_builtin !== 1);
-    if (!devUsers.some((w) => w.enabled === 1)) return all;
-    return all.filter((w) => !(w.family === 'dev' && w.is_builtin === 1));
+    return this.listWorkspaces();
   }
 
   getDefaultWorkspace(): WorkspaceRow | undefined {
@@ -1481,8 +1468,8 @@ export class Db {
    *
    * Called once at daemon start. It only creates what is missing, so old
    * databases need no migration and a second boot is a no-op. `is_builtin=1`
-   * keeps it under the fallback rules, with the client-side exception that
-   * family=life must be rendered as「生活」rather than hidden.
+   * marks the one built-in workspace; unlike the retired dev fallback it is
+   * always visible and can be the default.
    */
   ensureLifeWorkspace(lifePath: string): { workspace: WorkspaceRow; end: EndRow } {
     fs.mkdirSync(lifePath, { recursive: true });
@@ -1493,17 +1480,22 @@ export class Db {
 
     if (!workspace) {
       workspace = this.createWorkspace({
-        name: '生活',
+        name: '个人空间',
         path: realPath,
         isBuiltin: true,
         family: 'life',
         profileMode: 'portable',
       });
-    } else if (workspace.is_builtin !== 1 || workspace.path !== realPath) {
-      this.db
-        .prepare(`UPDATE workspaces SET is_builtin = 1, path = ? WHERE id = ?`)
-        .run(realPath, workspace.id);
-      workspace = this.getWorkspace(workspace.id) as WorkspaceRow;
+    } else {
+      // Migrate the old default display name, but never overwrite a name the
+      // user chose themselves.
+      const oldDefaultName = workspace.name === '' || workspace.name === '生活';
+      if (workspace.is_builtin !== 1 || workspace.path !== realPath || oldDefaultName) {
+        this.db
+          .prepare(`UPDATE workspaces SET is_builtin = 1, path = ?, name = ? WHERE id = ?`)
+          .run(realPath, oldDefaultName ? '个人空间' : workspace.name, workspace.id);
+        workspace = this.getWorkspace(workspace.id) as WorkspaceRow;
+      }
     }
 
     let end = this.db
@@ -1514,12 +1506,16 @@ export class Db {
         workspaceId: workspace.id,
         family: 'life',
         kind: 'life',
-        name: '生活',
+        name: '个人空间',
         status: 'active',
       });
-    } else if (end.status !== 'active') {
-      this.db.prepare(`UPDATE ends SET status = 'active', archived_at = NULL WHERE id = ?`).run(end.id);
-      end = this.getEnd(end.id) as EndRow;
+    } else {
+      if (end.status !== 'active' || end.name === '' || end.name === '生活') {
+        this.db
+          .prepare(`UPDATE ends SET status = 'active', archived_at = NULL, name = ? WHERE id = ?`)
+          .run(end.name === '' || end.name === '生活' ? '个人空间' : end.name, end.id);
+        end = this.getEnd(end.id) as EndRow;
+      }
     }
     return { workspace, end };
   }

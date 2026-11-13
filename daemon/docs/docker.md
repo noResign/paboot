@@ -2,7 +2,7 @@
 
 > 镜像**只含 daemon**，不含任何 agent CLI；CLI 由使用者在容器里自行安装（见
 > 「装 agent CLI」）。默认**不挂宿主机任何目录**（数据、CLI、登录态都用命名卷），容器用 daemon
-> 内置 fallback 工作区。
+> 内置「个人空间」工作区。
 >
 > 两种用法：**直接用发布镜像（推荐）**，或从源码构建。源码方式需要的文件都在 `daemon/`：
 > `Dockerfile`、`docker-compose.yml`、`.dockerignore`。
@@ -11,8 +11,8 @@
 
 daemon 的职责是 **spawn 本机已安装的 agent CLI 并给它 shell 权限**。放进容器后：
 
-- agent 只能看到容器里的世界。默认工作区是 daemon 内置 fallback
-  `/home/paboot/.paboot/defaultworkspace`（落在 `paboot-data` 卷里），**不碰宿主机项目**；
+- agent 只能看到容器里的世界。默认进入内置「个人空间」工作区
+  `/home/paboot/.paboot/life`（落在 `paboot-data` 卷里），**不碰宿主机项目**；
   要改宿主机项目，才显式挂载；
 - 三个 CLI 的**登录态**在容器里默认不存在：在容器内登录一次（凭据存命名卷），
   或直接用 API key；也可以手动挂载宿主机已有登录态；
@@ -24,7 +24,7 @@ daemon 的职责是 **spawn 本机已安装的 agent CLI 并给它 shell 权限*
 ## 用发布镜像部署（推荐）
 
 只拉镜像、不 clone 仓库时，把下面这份 compose 存成 `docker-compose.yml`（没有 `build:`，
-直接用镜像；镜像里已固化 `HOME`、端口、npm 前缀和内置 fallback 工作区）：
+直接用镜像；镜像里已固化 `HOME`、端口、npm 前缀和内置「个人空间」工作区）：
 
 ```yaml
 name: paboot
@@ -158,7 +158,7 @@ curl http://127.0.0.1:4780/api/health
 
 ### 情况一：不挂宿主机目录（默认）
 
-- 默认工作区是容器里的 `/home/paboot/.paboot/defaultworkspace`，位于 `paboot-data` 卷，
+- 默认进入容器里的 `/home/paboot/.paboot/life` 个人空间，位于 `paboot-data` 卷，
   重建容器不丢，但**宿主机看不到里面的文件**；
 - 适合试用、让 agent 从零建项目、或只做代码审查；
 - 客户端里「添加工作区」浏览到的也是容器内目录。你可以填别的容器路径，但**不在卷上的目录
@@ -197,7 +197,7 @@ curl http://127.0.0.1:4780/api/health
       - paboot-dsh:/home/paboot/.dsh
       - ${HOME}/code/a:/projects/a
       - ${HOME}/code/b:/projects/b
-    # 可选：启动时默认进入 a；不写则默认仍是内置 fallback
+    # 可选：启动时默认进入 a；不写则默认进入内置「个人空间」工作区
     command: ["--workspace", "/projects/a"]
 ```
 
@@ -214,14 +214,14 @@ curl http://127.0.0.1:4780/api/health
   `PABOOT_WORKSPACE`。
 - 只影响工作区；数据 / CLI / 登录态仍是命名卷。
 - 切回情况一：删掉 `command` 和那行挂载（源码方式不带 override）后重启。库里 `/workspace`
-  这条工作区还在，客户端里切回内置 fallback 或添加其他目录即可；宿主机文件不受影响。
+  这条工作区还在，客户端里切回「个人空间」或添加其他目录即可；宿主机文件不受影响。
 - 写回宿主机的文件归属由 `PABOOT_UID/PABOOT_GID` 决定，不设置时默认 1000。
 
 ## 挂载表
 
 | 宿主机 / 卷 | 容器 | 作用 | 必需 |
 |---|---|---|---|
-| `paboot-data`（命名卷） | `/home/paboot/.paboot` | SQLite / token / serverId / 内置 fallback 工作区 | 是 |
+| `paboot-data`（命名卷） | `/home/paboot/.paboot` | SQLite / token / serverId / 内置「个人空间」工作区 | 是 |
 | `paboot-npm`（命名卷） | `/home/paboot/.npm-global` | 容器内装的 agent CLI | 默认 |
 | `paboot-claude`（命名卷） | `/home/paboot/.claude` | Claude Code 登录态与配置 | 默认 |
 | `paboot-codex`（命名卷） | `/home/paboot/.codex` | Codex 登录态、`config.toml`（MCP） | 默认 |
@@ -313,7 +313,7 @@ docker build -t my-paboot .
 5. **宿主 `settings.json` / `config.toml` 里的绝对路径**：如果改成挂载宿主机配置目录，而
    `~/.claude/settings.json` 配了 statusline、hooks 或 `~/.codex/config.toml` 配了指向宿主路径的
    MCP server，这些条目在容器里会找不到命令。paboot 自己的 hook/MCP 由 daemon 注入，不受影响。
-6. **数据 / 登录态都在命名卷里**：内置工作区、SQLite、token 在 `paboot-data`，CLI 登录态在
+6. **数据 / 登录态都在命名卷里**：个人空间、SQLite、token 在 `paboot-data`，CLI 登录态在
    `paboot-claude` / `paboot-codex` / `paboot-dsh`，装的 CLI 在 `paboot-npm`；
    `docker compose down -v` 会**一并删除**这些卷。客户端里新加的“容器内目录”若不在任何卷上，
    重建容器后就会消失；要长期可用，就挂宿主目录（override）或给它单独建一个命名卷。

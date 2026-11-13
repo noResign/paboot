@@ -175,7 +175,7 @@ describe('memory routes (M0)', () => {
     const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
     db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: true, providerOverride: null });
     db.updateWorkspaceMemory(dev.id, { lifeReadable: true });
-    const lifeClaim = claimIn(store, workspace.id, endId, '生活里的上海');
+    const lifeClaim = claimIn(store, workspace.id, endId, '个人空间里的上海');
     const devClaim = store.insertClaim({
       scope: `workspace:${dev.id}`,
       endId: null,
