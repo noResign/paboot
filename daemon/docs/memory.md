@@ -1,6 +1,6 @@
-# paboot Memory（M0 + M1.1）
+# paboot Memory（M0 – M2）
 
-> 长期记忆的 life 垂直切片 + M1.1 的 workspace scope / 开关 / read-policy。设计源在
+> 长期记忆的实现说明（截稿：M0 – M2 已完成，M3 / M4 未开始）。设计源在
 > `docs/local/paboot_memory/`（私有笔记，不入库）；本文件只描述 daemon 已实现的行为、配置与边界。
 
 ## 1. 范围
@@ -15,9 +15,13 @@
   life 的 `profileMode`、dev 的 `lifeReadable`；读写都走统一的 read-policy。
 - **M1.2**：D31 检索阶梯；K2 知识文档索引；life → user 晋升；run 结束生成 observation +
   session summary，文件列表从结构化工具事件机械提取；搜索支持 `files` 过滤，提供 timeline。
+- **M2**：Tier-0 精确去重 + Tier-1 近似候选（只记候选，不自动合并）；冲突 / 取代 / `disputed`
+  裁决；强化（`reinforcement_dates`）与 ACT-R 选材；实体归一 + 显式 merge / unmerge + 跨 scope
+  link；memory MCP 只读 + 写工具（写工具走审批 gate）。
 
-**不做**（后续 M1/M2/M3）：工具事件、observation / session summary、检索阶梯、实体归一、
-去重候选、强化、memory MCP、主动提醒；`provider_override` 目前只持久化，尚未参与抽取模型解析。
+**未做**（M3 / M4 及已知缺口）：loop 完成匹配、主动提醒与 outbox 契约、周叙事、episode（M3）；
+connector、user scope 导出 / 重置（M4）；实体参与检索与自动 link；`provider_override` 目前只持久化，
+尚未参与抽取模型解析（详见 §8）。
 
 ## 2. 存储
 
@@ -28,8 +32,11 @@
   写入前先合并默认值，避免只改注入开关把 life 静默关掉。
 - `workspaces.profile_mode`（life）与 `life_readable`（dev）由
   `GET/PATCH /api/workspaces/:id/memory` 维护。
-- M0 使用的表：`mem_sources` / `mem_claims` / `mem_claim_evidence` / `mem_tombstones` /
-  `mem_ops` / `mem_state`；完整 schema 已建好，供 M1/M2 使用。
+- 已在用的表：`mem_sources`（L0 原文）/ `mem_observations` / `mem_session_summaries` /
+  `mem_claims` / `mem_claim_evidence` / `mem_claim_duplicates` / `mem_entities` /
+  `mem_entity_links` / `mem_loops` / `mem_feedback` / `mem_tombstones` / `mem_ops` / `mem_state`。
+  `mem_episodes` / `mem_episode_entities` / `mem_narratives` / `mem_mutes` / `mem_document_links`
+  已随 schema 建好但还没有读写路径，供 M3 使用。
 - **K2**：`mem_documents` / `mem_document_chunks` / `mem_search`。文件与 `.meta.json` 仍是真源，
   这三张表是可重建索引；正文不进 memory.db，只存 chunk 文本用于检索。
 
@@ -49,7 +56,8 @@
   异步投递，不阻塞 SSE。
 - 写 scope：`workspace:<id>`。life 默认开启；dev 仅在 `memory_settings.enabled=1` 时捕获。
   `end_id` 仅作为标签（life 端 / dev 端），不做隔离。
-- 来源：主库 `messages`（builtin 也走这里；M1 后续再接 `native_messages` / 工具事件）。
+- 来源：主库 `messages`（builtin 也走这里）作为 L0 原文；observation 的 `files_read` /
+  `files_modified` 另从主库 `tool_events` 机械提取；`native_messages` 尚未接入。
 - 幂等键：`scope + end + session + source_table + message_id`（无 message id 时用 content hash）。
 - 过滤（D30）：`<private>` / `<no-memory>` 整段剥离；`<paboot-memory-context>` 注入块剥离；
   command / task_config 会话不捕获；`memory_mode=off` 不捕获，`no_injection` 仍捕获。
@@ -205,8 +213,10 @@
 - `provider_override` 已持久化，但 worker 仍使用全局 `memory_model`；按 workspace 选 provider
   留到后续。
 - claim 主语仍是 user；relation 可带 object entity，但还没有按 entity 检索 / 加权。
-- entity 跨 scope 只有 link + 显式 merge，没有 UI / 自动 link。
-- Tier-1 候选已有审核 API；三端还没有候选列表 / 合并 UI。
+- entity 跨 scope 只有 link + 显式 merge，自动 link 未实现；桌面端有实体列表 / merge / unmerge /
+  跨 scope link 操作，Android / iOS 只读列表。
+- Tier-1 候选：桌面端可审核（merge / distinct / dismiss），Android / iOS 只读展示；`disputed`
+  裁决同理（桌面端 `disputes` 面板，移动端只读）。
 - memory MCP 读 / 写工具已接；`remember` 只写当前 workspace note，跨 workspace `target=life`
   仍未提供；loop 完成匹配仍靠模型显式调用 `complete_loop`。
 - 按轮召回用 n-gram 词面相关性；实体命中 / 需求相似度待接入；builtin 暂未接按轮召回。
@@ -215,3 +225,13 @@
 - 客户端「记住这个」按钮尚未接线（API 已就绪）；会话级记忆三档已接桌面 / Android / iOS；
   移动端只读设置 + 时间线，没有搜索 / 晋升（按只读范围）。
 - 真实 provider 的抽取质量尚未评估；自动化 fixture 只验证管线与护栏。
+- **计划类 claim 没有生命周期**：`FUNCTIONAL_PREDICATES` 只有 `lives_in` / `works_at` / `name` /
+  `birthday`，`plan` / `goal` / `habit` 按多值保留、永不 supersede，也没有 `done` / `abandoned`
+  状态。同一路线图被反复记录时会同时 active，brief 里出现互相矛盾的「计划」。
+- **`mem_feedback` 只落库，不参与排序**：`brief.ts` 的 rank 只看 `authority` / `importance` /
+  ACT-R / `confidence`，没有任何 feedback 项；`wrong` / `stale` 不会降低权重，只能靠 operator
+  手工 PATCH。被标 `user_confirmed` 的条目拿固定 +1000 且永不被自动 supersede，确认错的记忆
+  没有自然淘汰路径。
+- **dev 与 life 共用同一套抽取口径**：`extractionSystemPrompt()` 面向「生活会话」，predicate 全是
+  人生属性，没有 `decision` / `constraint` / `convention` 之类表达项目约定；`render()` 只有
+  `## 关于你` / `## 偏好` 两块（`## 注意` 是固定免责声明）。dev 的决策与约定只能挤进这两个分类。
