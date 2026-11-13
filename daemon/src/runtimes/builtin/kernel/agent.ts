@@ -86,6 +86,9 @@ export class AgentKernel {
     // `usage` is the cumulative per-run total on the wire; the transcript keeps
     // each model step's own usage separately for history/debugging.
     const totalUsage: Usage = { inputTokens: 0, outputTokens: 0 };
+    let hasUsage = false;
+    let lastContextTokens: number | null = null;
+    let lastContextWindow: number | null = null;
 
     try {
       for (;;) {
@@ -185,6 +188,7 @@ export class AgentKernel {
         usage.steps += 1;
         let stepCostUsd: number | null = null;
         if (step.usage) {
+          hasUsage = true;
           usage.inputTokens += step.usage.inputTokens;
           usage.outputTokens += step.usage.outputTokens;
           totalUsage.inputTokens += step.usage.inputTokens;
@@ -209,14 +213,18 @@ export class AgentKernel {
                 (step.usage.cacheWriteTokens ?? 0),
             requestEstimate,
           );
+          // Mid-run we refresh only the context indicator. The usage line is the
+          // run's final total, emitted once when the turn ends — the same timing
+          // as Claude (result frame) and Codex (turn/completed), so the token
+          // counter does not tick up while the agent is still calling tools.
+          lastContextTokens = step.contextTokens ?? null;
+          lastContextWindow = this.deps.modelSnapshot.contextWindow ?? null;
           agent.eventSink.emit({
             type: 'usage',
-            usage: wireUsage(totalUsage),
-            // The wire contract is a per-run cumulative cost, not this step's.
-            costUsd: sawCost ? usage.costUsd : null,
-            contextTokens: step.contextTokens,
-            contextWindow: this.deps.modelSnapshot.contextWindow ?? null,
-            stopReason: step.finishReason,
+            usage: null,
+            ...(step.contextTokens !== null
+              ? { contextTokens: step.contextTokens, contextWindow: lastContextWindow }
+              : {}),
           });
         }
 
@@ -249,6 +257,15 @@ export class AgentKernel {
         }
 
         if (step.toolCalls.length === 0) {
+          agent.eventSink.emit({
+            type: 'usage',
+            usage: hasUsage ? wireUsage(totalUsage) : null,
+            // The wire contract is a per-run cumulative cost, not this step's.
+            costUsd: sawCost ? usage.costUsd : null,
+            stopReason: step.finishReason,
+            ...(lastContextTokens !== null ? { contextTokens: lastContextTokens } : {}),
+            contextWindow: lastContextWindow,
+          });
           emitTurnEnd(agent.eventSink, step.finishReason);
           return { status: 'succeeded', error: null };
         }
