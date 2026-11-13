@@ -173,13 +173,28 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
     "maxFileBytes": 32768                    // 单文件 I/O 安全上限
   },
   "tools": {
-    "maxResultTokens": 8000,                 // 所有工具结果（Read / MCP / load_skill）的统一上限
+    "maxResultTokens": 8000,                 // 所有工具结果的统一上限（头尾保留）
     "read": {
       "maxFileBytes": 8388608,
       "defaultLimit": 2000,
       "maxLimit": 2000,
       "maxLineChars": 4000
-    }
+    },
+    "write": { "maxFileBytes": 8388608 },
+    "edit": { "maxFileBytes": 8388608 },
+    "bash": {
+      "defaultTimeoutMs": 120000,
+      "maxTimeoutMs": 600000,
+      "maxOutputBytes": 32768,               // 单流超过后写 spill
+      "envAllow": []                          // 额外透传的环境变量名
+    },
+    "grep": {
+      "maxResults": 1000,
+      "maxFileBytes": 8388608,
+      "maxLineChars": 500
+    },
+    "glob": { "maxResults": 2000 },
+    "spill": { "retentionDays": 7 }
   },
   "skills": {
     "maxFileBytes": 262144,

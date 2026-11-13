@@ -66,6 +66,11 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 - `PABOOT_RUNTIME=builtin` 时 server **跳过内部 gate**：builtin 的 `ToolExecutor` 已经通过
   `PermissionBroker` 审过一次，再 gate 会双弹。builtin 的 MCP 工具统一按 `sideEffect='mcp'`
   处理（`ask` / `acceptEdits` 询问，`bypass` 放行）。
+- builtin 原生工具在 `ToolExecutor` 内按 `sideEffect` 审批：`Read` / `Grep` / `Glob` / `TodoWrite`
+  不询问；`Write` / `Edit` 在 `ask` 询问、`acceptEdits` / `bypass` 放行；`Bash` 的只读命令
+  （`command-safety.ts` 判定，且不含管道 / 重定向等元字符）自动放行，其余按权限模式询问。
+  Write / Edit 覆盖已有文件前必须在本会话 Read 过；路径边界另由 `security/path-policy.ts`
+  判定，审批不能越过路径策略。
 - gate 的内部轮询有独立 deadline；daemon 不可达、deny、timeout 全部 fail closed。
 
 审批策略（`routes/permissions.ts` + `permissions/command-safety.ts`）：
