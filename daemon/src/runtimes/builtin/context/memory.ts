@@ -54,16 +54,20 @@ export class MemoryBriefContextSource implements RuntimeContextSource {
 
     const policy = this.resolvePolicy?.(workspace);
     if (policy && policy.scopes.length === 0) return [];
+    // D39: same rule as runs/memory-context — never echo this session's own
+    // claims back into the transcript they were extracted from.
     const brief = policy
       ? buildMemoryBrief(this.store, policy, {
           maxChars: this.maxChars,
           now: context.now,
           scope: `workspace:${workspace.id}`,
           includePrivate: workspace.family === 'life',
+          excludeSessionId: context.session.id,
         })
       : buildLifeBrief(this.store, `workspace:${workspace.id}`, {
           maxChars: this.maxChars,
           now: context.now,
+          excludeSessionId: context.session.id,
         });
     if (!brief) return [];
     const contributions: RuntimeContextContribution[] = [

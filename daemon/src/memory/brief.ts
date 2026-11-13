@@ -51,6 +51,13 @@ export interface BuildBriefOptions {
   includePrivate?: boolean;
   /** Scope reported to callers; defaults to the policy's workspace scope. */
   scope?: MemoryScope;
+  /**
+   * D39: drop claims whose evidence comes only from this session. Run-time
+   * injection passes the current session so the brief does not echo what was
+   * just extracted out of the transcript the runtime already holds. The manual
+   * `/api/memory/brief` call omits it — the user wants to see everything there.
+   */
+  excludeSessionId?: string;
 }
 
 /**
@@ -88,8 +95,19 @@ export function buildMemoryBrief(
   );
   const usable = current.filter((claim) => (feedback.get(claim.id)?.['wrong'] ?? 0) === 0);
 
+  // D39: claims distilled out of this very session are already in the runtime's
+  // transcript, so injecting them again only spends budget that cross-session
+  // knowledge needs. A claim reinforced by any earlier session survives.
+  const fromThisSession = options.excludeSessionId
+    ? store.claimsOnlyFromSession(
+        usable.map((claim) => claim.id),
+        options.excludeSessionId,
+      )
+    : new Set<string>();
+
   const unique = new Map<string, MemoryClaim>();
   for (const claim of usable) {
+    if (fromThisSession.has(claim.id)) continue;
     const key = `${claim.predicate}|${normalize(claim.objectText ?? claim.summary)}`;
     const existing = unique.get(key);
     if (

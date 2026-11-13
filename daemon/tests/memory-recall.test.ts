@@ -145,6 +145,37 @@ describe('memory recall', () => {
     expect(memoryRecall(ctx, session, workspace, '登录页是怎么鉴权的？')).not.toBeNull();
   });
 
+  it('does not recall a claim distilled out of the current session', () => {
+    const { store, workspace, session, ctx } = setup();
+    // Evidence comes from the same session that is asking.
+    const src = store.insertSource({
+      scope: `workspace:${workspace.id}`,
+      workspaceId: workspace.id,
+      endId: null,
+      kind: 'message',
+      sourceTable: 'messages',
+      sessionId: session.id,
+      runId: 'r-now',
+      messageId: 1,
+      occurredAt: Date.now(),
+      content: '登录页使用 JWT 鉴权',
+    });
+    store.insertClaim(
+      {
+        scope: `workspace:${workspace.id}`,
+        endId: null,
+        predicate: 'auth',
+        objectText: 'JWT',
+        kind: 'fact',
+        summary: '登录页使用 JWT 鉴权',
+        confidence: 0.8,
+        importance: 0.8,
+      },
+      [{ sourceId: src.source.id, quote: '登录页使用 JWT 鉴权' }],
+    );
+    expect(memoryRecall(ctx, session, workspace, '登录页是怎么鉴权的？')).toBeNull();
+  });
+
   it('does not recall without a cue or when injection is disabled', () => {
     const { db, store, workspace, session, ctx } = setup();
     store.insertClaim({
