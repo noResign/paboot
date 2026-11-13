@@ -119,6 +119,180 @@ describe('life brief', () => {
   });
 });
 
+describe('brief plan convergence (D37)', () => {
+  const DAY = 86_400_000;
+  const now = Date.parse('2026-11-13T00:00:00Z');
+
+  function planClaim(overrides: Partial<CreateClaimInput> = {}): CreateClaimInput {
+    const summary = overrides.summary ?? '计划';
+    return claim({
+      predicate: 'plan',
+      kind: 'fact',
+      summary,
+      // Distinct object text per claim: identical objects are Tier-0 duplicates.
+      objectText: summary,
+      ...overrides,
+    });
+  }
+
+  it('renders plan claims in their own block, not under 关于你 / 偏好', () => {
+    const { store } = setup();
+    store.insertClaim(claim({ summary: '住在上海' }));
+    store.insertClaim(planClaim({ summary: '先做 P2', validFrom: now - DAY }));
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    const [about, plans] = brief.markdown.split('## 当前计划');
+    expect(about).toContain('## 关于你');
+    expect(about).not.toContain('先做 P2');
+    expect(plans).toContain('先做 P2');
+    expect(plans!.indexOf('先做 P2')).toBeLessThan(plans!.indexOf('## 注意'));
+    // Plan lines never leak into the identity / preference blocks.
+    expect(about).not.toContain('## 当前计划');
+  });
+
+  it('shows only the newest focus and marks it as the current main line', () => {
+    const { store } = setup();
+    store.insertClaim(planClaim({ predicate: 'focus', summary: '旧主线', validFrom: now - 20 * DAY }));
+    store.insertClaim(planClaim({ predicate: 'focus', summary: '新主线', validFrom: now - DAY }));
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.markdown).toContain('[当前主线] 新主线');
+    expect(brief.markdown).not.toContain('旧主线');
+  });
+
+  it('caps other plans at the newest two and drops stale unreinforced ones', () => {
+    const { store } = setup();
+    store.insertClaim(planClaim({ summary: '计划 A', validFrom: now - 40 * DAY }));
+    store.insertClaim(planClaim({ summary: '计划 B', validFrom: now - 3 * DAY }));
+    store.insertClaim(planClaim({ summary: '计划 C', validFrom: now - 2 * DAY }));
+    store.insertClaim(planClaim({ summary: '计划 D', validFrom: now - DAY }));
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.markdown).toContain('计划 C');
+    expect(brief.markdown).toContain('计划 D');
+    expect(brief.markdown).not.toContain('计划 B');
+    // Stale and unreinforced: decayed, not "current".
+    expect(brief.markdown).not.toContain('计划 A');
+  });
+
+  it('keeps a stale plan that was reinforced', () => {
+    const { store } = setup();
+    const reinforced = store.insertClaim(
+      planClaim({ summary: '长期计划', validFrom: now - 40 * DAY }),
+    );
+    store.reinforceClaim(reinforced.id);
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.markdown).toContain('长期计划');
+  });
+
+  it('reports only injected plan ids in usedClaimIds', () => {
+    const { store } = setup();
+    const kept = store.insertClaim(planClaim({ summary: '保留', validFrom: now - DAY }));
+    const convergedOut = store.insertClaim(
+      planClaim({ summary: '被收敛掉', validFrom: now - 60 * DAY }),
+    );
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.usedClaimIds).toContain(kept.id);
+    expect(brief.usedClaimIds).not.toContain(convergedOut.id);
+  });
+
+  it('tells the reader that older plans are still searchable', () => {
+    const { store } = setup();
+    store.insertClaim(planClaim({ summary: '计划 X', validFrom: now - DAY }));
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.markdown).toContain('search_memory');
+  });
+});
+
+describe('brief feedback ranking (D38)', () => {
+  const DAY = 86_400_000;
+  const now = Date.parse('2026-11-13T00:00:00Z');
+
+  it('drops a claim the operator marked wrong', () => {
+    const { store } = setup();
+    const wrong = store.insertClaim(claim({ summary: '记错的地址', objectText: '北京' }));
+    store.insertClaim(claim({ summary: '住在上海' }));
+    store.addFeedback({ targetType: 'claim', targetId: wrong.id, action: 'wrong' });
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.markdown).not.toContain('记错的地址');
+    expect(brief.usedClaimIds).not.toContain(wrong.id);
+  });
+
+  it('keeps a claim marked stale but ranks it below an unmarked one', () => {
+    const { store } = setup();
+    const stale = store.insertClaim(
+      claim({
+        predicate: 'likes',
+        kind: 'preference',
+        objectText: '旧爱好',
+        summary: '旧爱好',
+        importance: 0.9,
+      }),
+    );
+    const fresh = store.insertClaim(
+      claim({
+        predicate: 'likes',
+        kind: 'preference',
+        objectText: '新爱好',
+        summary: '新爱好',
+        importance: 0.5,
+      }),
+    );
+    store.addFeedback({ targetType: 'claim', targetId: stale.id, action: 'stale' });
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.usedClaimIds).toContain(stale.id);
+    // Higher `importance` no longer wins: the stale penalty (300) dominates it.
+    expect(brief.usedClaimIds.indexOf(fresh.id)).toBeLessThan(brief.usedClaimIds.indexOf(stale.id));
+  });
+
+  it('lets helpful feedback lift a claim', () => {
+    const { store } = setup();
+    const low = store.insertClaim(
+      claim({ predicate: 'likes', kind: 'preference', objectText: 'A', summary: 'A', importance: 0.5 }),
+    );
+    const lifted = store.insertClaim(
+      claim({ predicate: 'likes', kind: 'preference', objectText: 'B', summary: 'B', importance: 0.5 }),
+    );
+    for (let index = 0; index < 3; index += 1) {
+      store.addFeedback({ targetType: 'claim', targetId: lifted.id, action: 'helpful' });
+    }
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.usedClaimIds.indexOf(lifted.id)).toBeLessThan(brief.usedClaimIds.indexOf(low.id));
+  });
+
+  it('ignores feedback older than the window', () => {
+    const { store } = setup();
+    const old = store.insertClaim(claim({ summary: '很久以前被标错', objectText: '北京' }));
+    store.addFeedback({ targetType: 'claim', targetId: old.id, action: 'wrong' });
+
+    // 31 days later the mark has expired, so the claim is eligible again.
+    const later = now + 31 * DAY;
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now: later })!;
+    expect(brief.markdown).toContain('很久以前被标错');
+  });
+
+  it('never lets feedback outrank user_confirmed', () => {
+    const { store } = setup();
+    const confirmed = store.insertClaim(
+      claim({ summary: '用户确认的地址', objectText: '上海', authority: 'user_confirmed', importance: 0.1 }),
+    );
+    const boosted = store.insertClaim(
+      claim({ predicate: 'likes', kind: 'preference', objectText: 'B', summary: '被点赞的偏好', importance: 1 }),
+    );
+    for (let index = 0; index < 20; index += 1) {
+      store.addFeedback({ targetType: 'claim', targetId: boosted.id, action: 'helpful' });
+    }
+
+    const brief = buildLifeBrief(store, 'workspace:life-1', { now })!;
+    expect(brief.usedClaimIds[0]).toBe(confirmed.id);
+  });
+});
+
 describe('memory injection context', () => {
   function ctx(store: MemoryStore, db: Db): AppContext {
     return { memory: store, db } as unknown as AppContext;

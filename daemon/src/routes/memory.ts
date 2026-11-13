@@ -50,6 +50,9 @@ import type {
   MemoryEntityLinksResponse,
   MemoryEntityResponse,
   MemoryEvidenceRelationDto,
+  MemoryLoopDto,
+  MemoryLoopStatusDto,
+  MemoryLoopsResponse,
   MemorySearchResponse,
   MemorySessionModeDto,
   MemorySourceDto,
@@ -1030,13 +1033,47 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/loops', (req, res) => {
     const target = resolveScope(ctx, req, res);
     if (!target) return;
-    const loops = target.policy.scopes.flatMap((readScope) =>
-      ctx.memory!.listOpenLoops(readScope.scope).map((loop) => ({
-        ...loop,
-        scope: readScope.scope,
-      })),
+    // D38: `candidate_done` loops are proposed completions awaiting review.
+    // They leave `open` so `[未完成]` recall stops showing finished work, but
+    // they must stay listable somewhere or they would be unreviewable.
+    const requested = req.query['status'] ?? 'open';
+    if (requested !== 'open' && requested !== 'candidate_done' && requested !== 'all') {
+      res.status(400).json({ error: 'invalid loop status', code: 'bad_request' });
+      return;
+    }
+    const statuses: MemoryLoopStatusDto[] =
+      requested === 'all' ? ['open', 'candidate_done'] : [requested];
+    const loops: MemoryLoopDto[] = target.policy.scopes.flatMap((readScope) =>
+      statuses.flatMap((status) =>
+        ctx.memory!.listLoops(readScope.scope, status).map((loop) => ({
+          ...loop,
+          scope: readScope.scope,
+          status,
+        })),
+      ),
     );
-    res.json({ loops });
+    res.json({ loops } satisfies MemoryLoopsResponse);
+  });
+
+  app.patch('/api/memory/loops/:id', (req, res) => {
+    const target = resolveScope(ctx, req, res);
+    if (!target) return;
+    const action = req.body?.['action'];
+    if (action !== 'confirm' && action !== 'reopen') {
+      res.status(400).json({ error: 'action must be confirm or reopen', code: 'bad_request' });
+      return;
+    }
+    const loopId = req.params['id']!;
+    const changed = target.policy.scopes.some((readScope) =>
+      action === 'confirm'
+        ? ctx.memory!.completeLoop(readScope.scope, loopId)
+        : ctx.memory!.reopenLoop(readScope.scope, loopId),
+    );
+    if (!changed) {
+      res.status(404).json({ error: 'loop not found', code: 'loop_not_found' });
+      return;
+    }
+    res.json({ ok: true, id: loopId, action });
   });
 
   app.get('/api/memory/sources/:id', (req, res) => {
