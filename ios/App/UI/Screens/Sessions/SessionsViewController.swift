@@ -500,24 +500,16 @@ final class SessionsViewController: UIViewController {
         switcher.onDismiss = { [weak self] in
             self?.dismiss(animated: true)
         }
-        switcher.modalPresentationStyle = .pageSheet
+        // The switcher presents itself as an edge-to-edge custom bottom sheet;
+        // only the content height has to be handed over here.
         switcher.loadViewIfNeeded()
-        let fittedHeight = switcher.fittedHeight(
-            forWidth: view.bounds.width,
-            bottomInset: view.safeAreaInsets.bottom
-        )
-        if let sheet = switcher.sheetPresentationController {
-            let identifier = UISheetPresentationController.Detent.Identifier(
-                rawValue: "workspaceSwitcherContent"
+        switcher.preferredContentSize = CGSize(
+            width: 0,
+            height: switcher.fittedHeight(
+                forWidth: view.bounds.width,
+                bottomInset: view.safeAreaInsets.bottom
             )
-            let fitted = UISheetPresentationController.Detent.custom(identifier: identifier) { context in
-                min(fittedHeight, context.maximumDetentValue)
-            }
-            sheet.detents = [fitted, .large()]
-            sheet.selectedDetentIdentifier = identifier
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = Radius.sheet
-        }
+        )
         present(switcher, animated: true)
     }
 
