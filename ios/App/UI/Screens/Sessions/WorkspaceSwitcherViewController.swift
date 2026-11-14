@@ -15,12 +15,19 @@ final class WorkspaceSwitcherViewController: UIViewController {
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
     private let footerAction = UIView()
+    private let handleArea = UIView()
+    private let grabber = UIView()
 
     init(workspaces: [WorkspaceDto], selectedWorkspaceId: String?) {
         self.workspaces = workspaces
         self.selectedWorkspaceId = selectedWorkspaceId
         self.currentWorkspace = workspaces.first { $0.id == selectedWorkspaceId }
         super.init(nibName: nil, bundle: nil)
+        // A custom bottom sheet instead of `.pageSheet`: iOS 26 renders partial
+        // detents as inset floating cards, and this one must stay flush with the
+        // screen edges at a content-fitted height.
+        modalPresentationStyle = .custom
+        transitioningDelegate = self
     }
 
     @available(*, unavailable)
@@ -31,7 +38,65 @@ final class WorkspaceSwitcherViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Theme.Colors.background
+        view.layer.cornerRadius = Radius.sheet
+        view.layer.cornerCurve = .continuous
+        view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        view.clipsToBounds = true
         configureLayout()
+        // Added last so the grabber strip sits above the header and keeps its
+        // full touch height.
+        addGrabber()
+    }
+
+    private func addGrabber() {
+        // Pull-to-dismiss only from the grabber strip: the list keeps the rest
+        // of the sheet's vertical gestures for scrolling.
+        handleArea.backgroundColor = .clear
+        handleArea.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(handleArea)
+        handleArea.addGestureRecognizer(
+            UIPanGestureRecognizer(target: self, action: #selector(handleDismissPan))
+        )
+
+        grabber.backgroundColor = Theme.Colors.textMuted
+        grabber.layer.cornerRadius = 2.5
+        grabber.translatesAutoresizingMaskIntoConstraints = false
+        handleArea.addSubview(grabber)
+
+        NSLayoutConstraint.activate([
+            handleArea.topAnchor.constraint(equalTo: view.topAnchor),
+            handleArea.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            handleArea.widthAnchor.constraint(equalToConstant: 88),
+            handleArea.heightAnchor.constraint(equalToConstant: 24),
+            grabber.centerXAnchor.constraint(equalTo: handleArea.centerXAnchor),
+            grabber.centerYAnchor.constraint(equalTo: handleArea.centerYAnchor),
+            grabber.widthAnchor.constraint(equalToConstant: 36),
+            grabber.heightAnchor.constraint(equalToConstant: 5),
+        ])
+    }
+
+    @objc private func handleDismissPan(_ gesture: UIPanGestureRecognizer) {
+        // Measure in the superview: the sheet itself moves under the finger.
+        let translation = max(0, gesture.translation(in: view.superview).y)
+        switch gesture.state {
+        case .changed:
+            view.transform = CGAffineTransform(translationX: 0, y: translation)
+        case .ended, .cancelled:
+            let velocity = gesture.velocity(in: view.superview).y
+            if translation > 80 || velocity > 800 {
+                dismiss(animated: true)
+            } else {
+                UIView.animate(
+                    withDuration: 0.2,
+                    delay: 0,
+                    options: [.curveEaseOut]
+                ) {
+                    self.view.transform = .identity
+                }
+            }
+        default:
+            break
+        }
     }
 
     /// Height this sheet needs so every row and the footer sit together with no
@@ -232,6 +297,149 @@ final class WorkspaceSwitcherViewController: UIViewController {
     @objc private func overviewTapped() {
         guard let currentWorkspace else { return }
         onOpenOverview?(currentWorkspace)
+    }
+}
+
+extension WorkspaceSwitcherViewController: UIViewControllerTransitioningDelegate {
+    func presentationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController?,
+        source: UIViewController
+    ) -> UIPresentationController? {
+        WorkspaceSheetPresentationController(presentedViewController: presented, presenting: presenting)
+    }
+
+    func animationController(
+        forPresented presented: UIViewController,
+        presenting: UIViewController?,
+        source: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        WorkspaceSheetSlideAnimator(isPresenting: true)
+    }
+
+    func animationController(
+        forDismissed dismissed: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        WorkspaceSheetSlideAnimator(isPresenting: false)
+    }
+}
+
+/// Bottom sheet that hugs the left, right and bottom screen edges while taking
+/// only the content's height; the system page sheet insets partial detents.
+private final class WorkspaceSheetPresentationController: UIPresentationController {
+    private let dimmingView = UIView()
+
+    /// Keep the session list visible behind the dimming view, like a sheet.
+    override var shouldRemovePresentersView: Bool { false }
+
+    override var frameOfPresentedViewInContainerView: CGRect {
+        guard let containerView else { return .zero }
+        let preferred = presentedViewController.preferredContentSize.height
+        let height = preferred > 0
+            ? min(preferred, containerView.bounds.height - 64)
+            : containerView.bounds.height * 0.6
+        return CGRect(
+            x: 0,
+            y: containerView.bounds.height - height,
+            width: containerView.bounds.width,
+            height: height
+        )
+    }
+
+    override func presentationTransitionWillBegin() {
+        guard let containerView else { return }
+        dimmingView.backgroundColor = UIColor.black.withAlphaComponent(0.28)
+        dimmingView.frame = containerView.bounds
+        dimmingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        dimmingView.alpha = 0
+        dimmingView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(dimmingTapped))
+        )
+        containerView.addSubview(dimmingView)
+
+        if let coordinator = presentedViewController.transitionCoordinator {
+            coordinator.animate(alongsideTransition: { _ in self.dimmingView.alpha = 1 })
+        } else {
+            dimmingView.alpha = 1
+        }
+    }
+
+    override func dismissalTransitionWillBegin() {
+        if let coordinator = presentedViewController.transitionCoordinator {
+            coordinator.animate(
+                alongsideTransition: { _ in self.dimmingView.alpha = 0 },
+                completion: { _ in self.dimmingView.removeFromSuperview() }
+            )
+        } else {
+            dimmingView.removeFromSuperview()
+        }
+    }
+
+    override func containerViewWillLayoutSubviews() {
+        super.containerViewWillLayoutSubviews()
+        // Don't stamp the final frame while the slide transition is running, or
+        // while a grabber pan has the sheet translated.
+        let isTranslated = presentedView.map { $0.transform != .identity } ?? false
+        guard presentedViewController.transitionCoordinator == nil, !isTranslated else { return }
+        presentedView?.frame = frameOfPresentedViewInContainerView
+    }
+
+    @objc private func dimmingTapped() {
+        presentedViewController.dismiss(animated: true)
+    }
+}
+
+private final class WorkspaceSheetSlideAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+    private let isPresenting: Bool
+
+    init(isPresenting: Bool) {
+        self.isPresenting = isPresenting
+    }
+
+    func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+        0.28
+    }
+
+    func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+        let container = transitionContext.containerView
+        let duration = transitionDuration(using: transitionContext)
+
+        if isPresenting {
+            guard let toView = transitionContext.view(forKey: .to),
+                  let toController = transitionContext.viewController(forKey: .to) else {
+                transitionContext.completeTransition(false)
+                return
+            }
+            container.addSubview(toView)
+            let final = transitionContext.finalFrame(for: toController)
+            toView.frame = final.offsetBy(dx: 0, dy: final.height)
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                options: [.curveEaseOut]
+            ) {
+                toView.frame = final
+            } completion: { _ in
+                transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+            }
+        } else {
+            guard let fromView = transitionContext.view(forKey: .from) else {
+                transitionContext.completeTransition(false)
+                return
+            }
+            // Animate the transform so a partially dragged sheet continues
+            // smoothly from wherever the pan left it.
+            let height = transitionContext.containerView.bounds.height
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                options: [.curveEaseIn]
+            ) {
+                fromView.transform = CGAffineTransform(translationX: 0, y: height)
+            } completion: { _ in
+                transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+            }
+        }
     }
 }
 
