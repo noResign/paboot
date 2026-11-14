@@ -64,6 +64,9 @@ final class ChatInputBar: UIView {
         attachmentsStack.translatesAutoresizingMaskIntoConstraints = false
         attachmentsScroll.showsHorizontalScrollIndicator = false
         attachmentsScroll.translatesAutoresizingMaskIntoConstraints = false
+        // Hide the empty row entirely: a zero-height arranged subview still
+        // contributes the stack's 8pt spacing and pushes the input row down.
+        attachmentsScroll.isHidden = true
         attachmentsScroll.addSubview(attachmentsStack)
 
         let row = UIStackView(arrangedSubviews: [attachButton, fieldContainer, actionButton])
@@ -126,6 +129,9 @@ final class ChatInputBar: UIView {
             attachmentsStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        // A hidden arranged subview collapses its spacing too, which keeps the
+        // input row centered in the bar when there are no attachments.
+        attachmentsScroll.isHidden = drafts.isEmpty
         attachmentsHeight.constant = drafts.isEmpty ? 0 : 64
         hasUploadedAttachment = drafts.contains { $0.remoteId != nil }
         isUploadingAttachment = drafts.contains { $0.uploading }

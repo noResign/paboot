@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 sealed class DirectoryPickerUiState {
-    data class Loading(val path: String?) : DirectoryPickerUiState()
     data class Ready(
         val path: String,
         val parent: String?,
@@ -24,6 +23,8 @@ sealed class DirectoryPickerUiState {
         val showHidden: Boolean,
         /** 当前目录是否已注册为工作区（用于禁用「选择当前文件夹」）。 */
         val isWorkspace: Boolean,
+        /** 正在加载下一级目录；保留当前列表，避免弹窗闪回加载态。 */
+        val navigating: Boolean = false,
     ) : DirectoryPickerUiState()
     data class Error(val message: String) : DirectoryPickerUiState()
 }
@@ -105,7 +106,8 @@ class SettingsViewModel(
                 ?: workspaceList.firstOrNull { it.isDefault }?.id
                 ?: workspaceList.firstOrNull()?.id
             _selectedWorkspaceId.value = selected
-            WorkspaceSelection.select(selected, workspaceList.find { it.id == selected }?.path)
+            val selectedWorkspace = workspaceList.find { it.id == selected }
+            WorkspaceSelection.select(selected, selectedWorkspace?.path, selectedWorkspace?.family)
             _uiState.value = SettingsUiState.Ready(
                 version = (health as NetworkResult.Success).data.version ?: "unknown",
                 workspaces = workspaceList,
@@ -122,7 +124,7 @@ class SettingsViewModel(
     fun selectWorkspace(workspaceId: String) {
         val workspace = (_uiState.value as? SettingsUiState.Ready)?.workspaces?.find { it.id == workspaceId }
         _selectedWorkspaceId.value = workspaceId
-        WorkspaceSelection.select(workspaceId, workspace?.path)
+        WorkspaceSelection.select(workspaceId, workspace?.path, workspace?.family)
     }
 
     fun setDefaultPermissionMode(mode: String) {
@@ -179,6 +181,8 @@ class SettingsViewModel(
     /** [workspaceId] 为 null 时是「新增工作区」，否则是给该工作区添加附加目录。 */
     fun openDirectoryPicker(workspaceId: String? = null) {
         _dirTargetWorkspaceId.value = workspaceId
+        // 先把状态清空，等第一层列表回来再显示弹窗：先弹骨架再换列表会闪一下。
+        _directoryPicker.value = null
         loadDirectories(null, false)
     }
 
@@ -221,8 +225,13 @@ class SettingsViewModel(
     }
 
     fun loadDirectories(path: String?, showHidden: Boolean = false) {
+        // 弹窗内切目录时保留上一级列表（标题旁转圈），不切成加载态；
+        // 首次打开时状态保持 null，等第一层数据回来再显示弹窗。
+        val current = _directoryPicker.value as? DirectoryPickerUiState.Ready
+        if (current != null) {
+            _directoryPicker.value = current.copy(navigating = true)
+        }
         viewModelScope.launch {
-            _directoryPicker.value = DirectoryPickerUiState.Loading(path)
             when (val r = workspaceRepository.directories(path, showHidden)) {
                 is NetworkResult.Success -> {
                     // 当前目录是否已是工作区：目录接口只标注子项，本级要自己比对已加载的工作区列表。
@@ -251,7 +260,7 @@ class SettingsViewModel(
             when (val r = workspaceRepository.createWorkspace(current.path)) {
                 is NetworkResult.Success -> {
                     _selectedWorkspaceId.value = r.data.id
-                    WorkspaceSelection.select(r.data.id, r.data.path)
+                    WorkspaceSelection.select(r.data.id, r.data.path, r.data.family)
                     _directoryPicker.value = null
                     load()
                 }

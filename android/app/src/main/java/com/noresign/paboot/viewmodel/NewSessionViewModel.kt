@@ -76,7 +76,14 @@ class NewSessionViewModel(
                     ?.id
                 ?: workspaceList.firstOrNull()?.id
             _selectedWorkspaceId.value = current
-            if (current != null) WorkspaceSelection.select(current, workspaceList.find { it.id == current }?.path)
+            val currentWorkspaceSelection = workspaceList.find { it.id == current }
+            if (current != null) {
+                WorkspaceSelection.select(
+                    current,
+                    currentWorkspaceSelection?.path,
+                    currentWorkspaceSelection?.family,
+                )
+            }
 
             val config = workspaceRepository.config()
             val configData = if (config is NetworkResult.Success) config.data else null

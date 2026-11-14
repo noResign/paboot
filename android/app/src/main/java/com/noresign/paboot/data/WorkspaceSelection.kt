@@ -18,16 +18,28 @@ object WorkspaceSelection {
     private val _selectedPath = MutableStateFlow(SettingsStore.selectedWorkspacePath)
     val selectedPath: StateFlow<String?> = _selectedPath.asStateFlow()
 
-    fun select(workspaceId: String?, path: String? = null) {
+    /** `dev` / `life`：个人空间的目录路径不展示，界面靠它判断。 */
+    private val _selectedFamily = MutableStateFlow(SettingsStore.selectedWorkspaceFamily)
+    val selectedFamily: StateFlow<String?> = _selectedFamily.asStateFlow()
+
+    fun select(workspaceId: String?, path: String? = null, family: String? = null) {
         val normalized = workspaceId?.takeIf { it.isNotBlank() }
         SettingsStore.selectedWorkspaceId = normalized
         _selectedId.value = normalized
         if (normalized == null) {
             SettingsStore.selectedWorkspacePath = null
             _selectedPath.value = null
-        } else if (path != null) {
-            SettingsStore.selectedWorkspacePath = path
-            _selectedPath.value = path
+            SettingsStore.selectedWorkspaceFamily = null
+            _selectedFamily.value = null
+        } else {
+            if (path != null) {
+                SettingsStore.selectedWorkspacePath = path
+                _selectedPath.value = path
+            }
+            if (family != null) {
+                SettingsStore.selectedWorkspaceFamily = family
+                _selectedFamily.value = family
+            }
         }
     }
 

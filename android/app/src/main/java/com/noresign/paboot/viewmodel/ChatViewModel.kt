@@ -88,9 +88,6 @@ class ChatViewModel(
     private val _sessionTitle = MutableStateFlow<String?>(null)
     val sessionTitle = _sessionTitle.asStateFlow()
 
-    private val _sessionCwd = MutableStateFlow<String?>(null)
-    val sessionCwd = _sessionCwd.asStateFlow()
-
     private val _sessionRuntime = MutableStateFlow<String?>(null)
     val sessionRuntime = _sessionRuntime.asStateFlow()
 
@@ -242,7 +239,6 @@ class ChatViewModel(
                     is NetworkResult.Success -> {
                         val session = r.data.session
                         _sessionTitle.value = session.title
-                        _sessionCwd.value = session.cwd
                         _sessionRuntime.value = session.runtime
                         _sessionPermissionMode.value = clampPermissionMode(
                             session.permissionMode,

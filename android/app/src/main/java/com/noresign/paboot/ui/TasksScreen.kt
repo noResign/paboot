@@ -97,6 +97,7 @@ fun TasksScreen(
     val targetSessions by viewModel.targetSessions.collectAsState()
     val startingTaskIds by viewModel.startingTaskIds.collectAsState()
     val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
+    val workspaceFamily by WorkspaceSelection.selectedFamily.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingTask by remember { mutableStateOf<ScheduledTaskDto?>(null) }
     var confirmConfig by remember { mutableStateOf(false) }
@@ -125,15 +126,18 @@ fun TasksScreen(
                 title = {
                     Column {
                         Text("任务")
-                        workspacePath?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        // 个人空间的主目录是内部实现细节，不作为路径展示。
+                        workspacePath
+                            ?.takeIf { workspaceFamily != "life" }
+                            ?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                     }
                 },
             )

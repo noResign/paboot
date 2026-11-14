@@ -117,6 +117,7 @@ fun FilesScreen(
     val fileContent by viewModel.fileContent.collectAsState()
     val media by viewModel.media.collectAsState()
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
+    val selectedWorkspaceFamily by WorkspaceSelection.selectedFamily.collectAsState()
     val root by viewModel.root.collectAsState()
     val knownRoots by viewModel.knownRoots.collectAsState()
     val shortcuts by viewModel.shortcuts.collectAsState()
@@ -174,15 +175,18 @@ fun FilesScreen(
                     title = {
                         Column {
                             Text("文件")
-                            selectedWorkspacePath?.let {
-                                Text(
-                                    it,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
+                            // 个人空间的主目录是内部实现细节，不作为路径展示。
+                            selectedWorkspacePath
+                                ?.takeIf { selectedWorkspaceFamily != "life" }
+                                ?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                         }
                     },
                     // 没有「刷新」按钮：每次进入本 tab 会自动拉一次（见上面的 LaunchedEffect）。

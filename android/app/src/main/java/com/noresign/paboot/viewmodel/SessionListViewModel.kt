@@ -58,7 +58,7 @@ class SessionListViewModel(
     /** 切换工作区：只改全局选择，选中项变化会触发 session 重新拉取。 */
     fun selectWorkspace(workspace: WorkspaceDto) {
         if (WorkspaceSelection.current() == workspace.id) return
-        WorkspaceSelection.select(workspace.id, workspace.path)
+        WorkspaceSelection.select(workspace.id, workspace.path, workspace.family)
     }
 
     /** 从设置页新增/删除了工作区后回到本页时，刷新切换器里的列表。 */
@@ -76,8 +76,13 @@ class SessionListViewModel(
                     ?: r.data.firstOrNull { it.isDefault }
                     ?: r.data.firstOrNull()
                 if (resolved != null) {
-                    if (selected != resolved.id || WorkspaceSelection.selectedPath.value != resolved.path) {
-                        WorkspaceSelection.select(resolved.id, resolved.path)
+                    // family 也要比：老版本只存了 id/path，升级后必须补一次，
+                    // 否则个人空间的目录路径还会被当成普通工作区展示。
+                    val stale = selected != resolved.id ||
+                        WorkspaceSelection.selectedPath.value != resolved.path ||
+                        WorkspaceSelection.selectedFamily.value != resolved.family
+                    if (stale) {
+                        WorkspaceSelection.select(resolved.id, resolved.path, resolved.family)
                     }
                 } else if (selected != null) {
                     WorkspaceSelection.select(null)

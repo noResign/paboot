@@ -86,9 +86,9 @@ fun NewSessionSheet(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (workspace != null) {
+                            workspaceVisiblePath(workspace)?.let { path ->
                                 Text(
-                                    text = "主目录：${workspace.path}。其他目录会自动作为附加目录。",
+                                    text = "主目录：$path。其他目录会自动作为附加目录。",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,

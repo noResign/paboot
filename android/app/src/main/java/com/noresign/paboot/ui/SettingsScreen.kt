@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -349,15 +350,6 @@ internal fun DirectoryPickerDialog(
     selectEnabled: Boolean? = null,
 ) {
     when (state) {
-        is DirectoryPickerUiState.Loading -> {
-            AlertDialog(
-                onDismissRequest = onDismiss,
-                title = { Text(title) },
-                text = { CircularProgressIndicator() },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-            )
-        }
         is DirectoryPickerUiState.Error -> {
             AlertDialog(
                 onDismissRequest = onDismiss,
@@ -369,46 +361,67 @@ internal fun DirectoryPickerDialog(
         is DirectoryPickerUiState.Ready -> {
             // 默认文案面向「新增工作区」；浏览根等其它用途可覆盖（见 FilesScreen）。
             val label = selectLabel ?: if (state.isWorkspace) "已是工作区" else "选择当前文件夹"
-            val enabled = selectEnabled ?: !state.isWorkspace
+            val enabled = (selectEnabled ?: !state.isWorkspace) && !state.navigating
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text(title) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(title)
+                        if (state.navigating) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    }
+                },
                 text = {
-                    Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-                        Text(
-                            state.path,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        state.parent?.let { parent ->
-                            TextButton(onClick = { onBrowse(parent) }) { Text("返回上一级") }
-                        }
-                        TextButton(onClick = onToggleHidden) {
-                            Text(if (state.showHidden) "隐藏隐藏目录" else "显示隐藏目录")
-                        }
-                        state.entries.forEach { entry ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onBrowse(entry.path) }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    "📁 ${entry.name}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false),
-                                )
-                                if (entry.isWorkspace) {
-                                    Spacer(modifier = Modifier.width(6.dp))
+                    // 切目录时保留上一级列表（标题旁转圈），不把整块内容换成加载态。
+                    key(state.path) {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                state.path,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            state.parent?.let { parent ->
+                                TextButton(
+                                    onClick = { onBrowse(parent) },
+                                    enabled = !state.navigating,
+                                ) { Text("返回上一级") }
+                            }
+                            TextButton(onClick = onToggleHidden, enabled = !state.navigating) {
+                                Text(if (state.showHidden) "隐藏隐藏目录" else "显示隐藏目录")
+                            }
+                            state.entries.forEach { entry ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = !state.navigating) { onBrowse(entry.path) }
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
                                     Text(
-                                        "已是工作区",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        "📁 ${entry.name}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
                                     )
+                                    if (entry.isWorkspace) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            "已是工作区",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }

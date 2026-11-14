@@ -84,6 +84,7 @@ import com.noresign.paboot.model.session.SessionListModel
 import com.noresign.paboot.ui.component.AgentBadge
 import com.noresign.paboot.ui.component.PullToRefreshContainer
 import com.noresign.paboot.ui.component.RunningIndicator
+import com.noresign.paboot.ui.component.TopBarActionButton
 import com.noresign.paboot.ui.theme.CodeBody
 import com.noresign.paboot.util.relativeTime
 import com.noresign.paboot.viewmodel.SessionListUiState
@@ -104,18 +105,15 @@ fun SessionListScreen(
     val renameSubmitting by viewModel.renameSubmitting.collectAsState()
     val renameError by viewModel.renameError.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
-    val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val selectedWorkspaceId by WorkspaceSelection.selectedId.collectAsState()
     val workspaces by viewModel.workspaces.collectAsState()
     val shownWorkspaces = workspaces
     val selectedWorkspace = workspaces.find { it.id == selectedWorkspaceId }
-    val shownWorkspacePath = when {
-        selectedWorkspace?.family == "life" -> workspaceDisplayName(selectedWorkspace)
-        else -> workspacePath
-    }
-    val workspaceChipLabel = workspaceDisplayName(selectedWorkspace) ?: "工作区"
-    // Avoid repeating the workspace name in both the chip and the subtitle.
-    val topBarSubtitle = shownWorkspacePath?.takeIf { it != workspaceChipLabel }
+    // The title carries the workspace name only; the switcher is icon-only, so
+    // the directory path no longer appears in the top bar.
+    val workspaceTitle = selectedWorkspace?.let { workspace ->
+        workspace.name.ifBlank { if (workspace.family == "life") "个人空间" else "工作区" }
+    } ?: "会话"
     var workspaceMenuOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingRename by remember { mutableStateOf<SessionDto?>(null) }
@@ -146,25 +144,21 @@ fun SessionListScreen(
             TopAppBar(
                 actions = {
                     if (shownWorkspaces.isNotEmpty()) {
-                        WorkspaceSwitcherChip(
-                            label = workspaceChipLabel,
+                        TopBarActionButton(
+                            icon = Icons.Rounded.Folder,
+                            contentDescription = "切换工作区",
                             onClick = { workspaceMenuOpen = true },
+                            // 切换工作区是导航入口，用中性色，避免顶栏出现一块绿色。
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 title = {
-                    Column {
-                        Text("会话")
-                        topBarSubtitle?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                    Text(
+                        workspaceTitle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
             )
         },

@@ -425,7 +425,6 @@ final class ChatViewController: UIViewController {
     private func updateSubtitle(_ state: ChatViewModel.State) {
         var parts: [String] = []
         if !state.runtime.isEmpty { parts.append(state.runtime) }
-        if !state.cwd.isEmpty { parts.append(state.cwd) }
         if let usage = state.contextUsage { parts.append(usage.display) }
 
         subtitleLabel.text = parts.joined(separator: " · ")
