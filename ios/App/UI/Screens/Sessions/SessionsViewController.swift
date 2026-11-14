@@ -21,7 +21,6 @@ final class SessionsViewController: UIViewController {
     private var emptyStateView: EmptyStateView?
 
     private let titleLabel = UILabel()
-    private let pathLabel = UILabel()
     private let titleContainer = UIView()
     private var titleWidthConstraint: NSLayoutConstraint!
     private let newSessionButton = UIButton(type: .system)
@@ -33,8 +32,16 @@ final class SessionsViewController: UIViewController {
     /// The task section starts expanded; directory/older sections start collapsed.
     private var expandedSections: Set<String> = ["tasks"]
     private var lastWorkspaceID: String?
-    private let workspaceChip = WorkspaceChipControl()
-    private lazy var workspaceChipItem = UIBarButtonItem(customView: workspaceChip)
+    private lazy var workspaceButtonItem: UIBarButtonItem = {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "folder"),
+            style: .plain,
+            target: self,
+            action: #selector(openWorkspaceSwitcher)
+        )
+        item.accessibilityLabel = "切换工作区"
+        return item
+    }()
     private var hasLoaded = false
     private var hasRenderedOnce = false
 
@@ -43,11 +50,6 @@ final class SessionsViewController: UIViewController {
         view.backgroundColor = Theme.Colors.background
 
         configureNavigationTitle()
-        workspaceChip.addTarget(
-            self,
-            action: #selector(openWorkspaceSwitcher),
-            for: .touchUpInside
-        )
         configureTable()
         configureRefreshIndicator()
         configureStateContainer()
@@ -83,9 +85,9 @@ final class SessionsViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // A long workspace path must not widen the title into the workspace
-        // chip's space. Recalculate for rotation and split-screen resizing.
-        let width = min(280, max(100, view.bounds.width - 230))
+        // A long workspace name must not widen the title into the trailing bar
+        // button's space. Recalculate for rotation and split-screen resizing.
+        let width = min(360, max(100, view.bounds.width - 140))
         if titleWidthConstraint.constant != width {
             titleWidthConstraint.constant = width
         }
@@ -96,45 +98,35 @@ final class SessionsViewController: UIViewController {
         titleLabel.font = UIFont.systemFont(ofSize: 17, weight: .semibold)
         titleLabel.textColor = Theme.Colors.textPrimary
         titleLabel.textAlignment = .center
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.numberOfLines = 1
 
-        pathLabel.font = Typography.caption
-        pathLabel.textColor = Theme.Colors.textSecondary
-        pathLabel.textAlignment = .center
-        pathLabel.lineBreakMode = .byTruncatingMiddle
-        pathLabel.numberOfLines = 1
-        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        pathLabel.isHidden = true
-
-        let stack = UIStackView(arrangedSubviews: [titleLabel, pathLabel])
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleContainer.translatesAutoresizingMaskIntoConstraints = false
-        // Purely decorative: taps must reach the navigation bar and its menu.
+        // Purely decorative: taps must reach the navigation bar.
         titleContainer.isUserInteractionEnabled = false
-        titleContainer.addSubview(stack)
+        titleContainer.addSubview(titleLabel)
         titleWidthConstraint = titleContainer.widthAnchor.constraint(equalToConstant: 240)
         NSLayoutConstraint.activate([
             titleWidthConstraint,
-            stack.topAnchor.constraint(equalTo: titleContainer.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor),
+            titleLabel.topAnchor.constraint(equalTo: titleContainer.topAnchor),
+            titleLabel.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor),
         ])
     }
 
     /// `UINavigationBar` centers a `titleView` inside the space left by its bar
     /// button items, so asymmetric items pull the title off-center. Pin the
     /// title to the bar itself instead; the bounded width keeps it clear of the
-    /// trailing menu.
+    /// trailing bar button.
     private func installNavigationTitle() {
         guard let bar = navigationController?.navigationBar,
               titleContainer.superview !== bar else { return }
         bar.addSubview(titleContainer)
         let widthCap = titleContainer.widthAnchor.constraint(
             lessThanOrEqualTo: bar.widthAnchor,
-            constant: -220
+            constant: -140
         )
         // The exact width comes from `titleWidthConstraint`; this is a guard.
         widthCap.priority = .defaultHigh
@@ -316,16 +308,18 @@ final class SessionsViewController: UIViewController {
         }
 
         let selectedWorkspace = state.workspaces.first(where: { $0.id == state.selectedWorkspaceID })
-        let chipLabel = selectedWorkspace?.displayName ?? "工作区"
-        workspaceChip.configure(label: chipLabel)
-        let subtitle: String?
-        if selectedWorkspace?.family == "life" {
-            subtitle = nil
+        let workspaceTitle: String
+        if let workspace = selectedWorkspace {
+            if workspace.family == "life" {
+                workspaceTitle = workspace.name.isEmpty ? "个人空间" : workspace.name
+            } else {
+                workspaceTitle = workspace.name.isEmpty ? "工作区" : workspace.name
+            }
         } else {
-            subtitle = state.selectedWorkspacePath
+            workspaceTitle = "会话"
         }
-        pathLabel.text = subtitle
-        pathLabel.isHidden = subtitle == nil
+        titleLabel.text = workspaceTitle
+        workspaceButtonItem.accessibilityValue = workspaceTitle
         updateWorkspaceSwitcher(state)
 
         if state.model.isEmpty {
@@ -477,7 +471,7 @@ final class SessionsViewController: UIViewController {
             navigationItem.rightBarButtonItem = nil
             return
         }
-        navigationItem.rightBarButtonItem = workspaceChipItem
+        navigationItem.rightBarButtonItem = workspaceButtonItem
     }
 
     @objc private func openWorkspaceSwitcher() {
@@ -507,9 +501,20 @@ final class SessionsViewController: UIViewController {
             self?.dismiss(animated: true)
         }
         switcher.modalPresentationStyle = .pageSheet
+        switcher.loadViewIfNeeded()
+        let fittedHeight = switcher.fittedHeight(
+            forWidth: view.bounds.width,
+            bottomInset: view.safeAreaInsets.bottom
+        )
         if let sheet = switcher.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.selectedDetentIdentifier = shown.count > 5 ? .large : .medium
+            let identifier = UISheetPresentationController.Detent.Identifier(
+                rawValue: "workspaceSwitcherContent"
+            )
+            let fitted = UISheetPresentationController.Detent.custom(identifier: identifier) { context in
+                min(fittedHeight, context.maximumDetentValue)
+            }
+            sheet.detents = [fitted, .large()]
+            sheet.selectedDetentIdentifier = identifier
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = Radius.sheet
         }
@@ -934,7 +939,9 @@ private final class WorkspaceOverviewViewController: UIViewController {
         }
 
         contentStack.addArrangedSubview(heroCard(dirs: dirs, totalSessions: totalSessions))
-        contentStack.addArrangedSubview(directorySection(dirs: dirs))
+        contentStack.addArrangedSubview(
+            directorySection(dirs: dirs, hidePrimaryPath: workspace.family == "life")
+        )
 
         if workspace.family != "life" {
             contentStack.addArrangedSubview(knowledgeCard())
@@ -963,14 +970,18 @@ private final class WorkspaceOverviewViewController: UIViewController {
             nameRow.addArrangedSubview(badge)
         }
 
-        let path = UILabel()
-        path.text = workspace.path
-        path.font = Typography.code
-        path.textColor = Theme.Colors.textSecondary
-        path.numberOfLines = 2
-        path.lineBreakMode = .byCharWrapping
+        var textViews: [UIView] = [nameRow]
+        if let visiblePath = workspace.displayPath {
+            let path = UILabel()
+            path.text = visiblePath
+            path.font = Typography.code
+            path.textColor = Theme.Colors.textSecondary
+            path.numberOfLines = 2
+            path.lineBreakMode = .byCharWrapping
+            textViews.append(path)
+        }
 
-        let textStack = UIStackView(arrangedSubviews: [nameRow, path])
+        let textStack = UIStackView(arrangedSubviews: textViews)
         textStack.axis = .vertical
         textStack.spacing = 3
 
@@ -1028,7 +1039,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         )
     }
 
-    private func directorySection(dirs: [String]) -> UIView {
+    private func directorySection(dirs: [String], hidePrimaryPath: Bool) -> UIView {
         let card = makeCard()
         let stack = UIStackView()
         stack.axis = .vertical
@@ -1064,7 +1075,13 @@ private final class WorkspaceOverviewViewController: UIViewController {
             if index > 0 {
                 stack.addArrangedSubview(makeDivider())
             }
-            stack.addArrangedSubview(directoryRow(path: path, isPrimary: index == 0))
+            stack.addArrangedSubview(
+                directoryRow(
+                    path: path,
+                    isPrimary: index == 0,
+                    hidePath: hidePrimaryPath && index == 0
+                )
+            )
         }
 
         let hint = makeInsetHint(
@@ -1084,7 +1101,7 @@ private final class WorkspaceOverviewViewController: UIViewController {
         return card
     }
 
-    private func directoryRow(path: String, isPrimary: Bool) -> UIView {
+    private func directoryRow(path: String, isPrimary: Bool, hidePath: Bool) -> UIView {
         let row = UIStackView()
         row.axis = .horizontal
         row.alignment = .center
@@ -1111,15 +1128,19 @@ private final class WorkspaceOverviewViewController: UIViewController {
         label.font = Typography.caption
         label.textColor = isPrimary ? Theme.Colors.primary : Theme.Colors.textSecondary
 
-        let pathLabel = UILabel()
-        pathLabel.text = path
-        pathLabel.font = Typography.code
-        pathLabel.textColor = Theme.Colors.textSecondary
-        pathLabel.numberOfLines = 1
-        pathLabel.lineBreakMode = .byTruncatingTail
-        pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        var textViews: [UIView] = [label]
+        if !hidePath {
+            let pathLabel = UILabel()
+            pathLabel.text = path
+            pathLabel.font = Typography.code
+            pathLabel.textColor = Theme.Colors.textSecondary
+            pathLabel.numberOfLines = 1
+            pathLabel.lineBreakMode = .byTruncatingTail
+            pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            textViews.append(pathLabel)
+        }
 
-        let textStack = UIStackView(arrangedSubviews: [label, pathLabel])
+        let textStack = UIStackView(arrangedSubviews: textViews)
         textStack.axis = .vertical
         textStack.spacing = 2
 

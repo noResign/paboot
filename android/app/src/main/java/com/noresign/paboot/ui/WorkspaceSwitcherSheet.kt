@@ -10,11 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -23,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
@@ -41,47 +38,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noresign.paboot.network.daemon.dto.WorkspaceDto
-
-/** Compact top-bar entry point for the workspace switcher. */
-@Composable
-fun WorkspaceSwitcherChip(label: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .height(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
-            .clickable(onClick = onClick)
-            .padding(start = 10.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Icon(
-            Icons.Rounded.Folder,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(15.dp),
-        )
-        Text(
-            label,
-            modifier = Modifier.widthIn(max = 116.dp),
-            style = MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Icon(
-            Icons.Rounded.ExpandMore,
-            contentDescription = "切换工作区",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
-    }
-}
 
 /**
  * Mobile workspace switcher: a compact bottom sheet with the selected workspace
@@ -285,38 +245,21 @@ private fun WorkspaceRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        workspaceDisplayName(workspace) ?: workspace.path,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (life) {
-                        WorkspaceBadge(
-                            "个人空间",
-                            MaterialTheme.colorScheme.onPrimaryContainer,
-                            MaterialTheme.colorScheme.primaryContainer,
-                        )
-                    } else if (workspace.isDefault) {
-                        WorkspaceBadge(
-                            "默认",
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                            MaterialTheme.colorScheme.surfaceVariant,
-                        )
-                    }
-                }
                 Text(
-                    workspace.path,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    workspaceDisplayName(workspace) ?: workspace.path,
+                    style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                workspaceVisiblePath(workspace)?.let { path ->
+                    Text(
+                        path,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Column(
                 horizontalAlignment = Alignment.End,
@@ -352,17 +295,4 @@ private fun WorkspaceRow(
             }
         }
     }
-}
-
-@Composable
-private fun WorkspaceBadge(text: String, contentColor: Color, containerColor: Color) {
-    Text(
-        text,
-        modifier = Modifier
-            .background(containerColor, CircleShape)
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.labelSmall,
-        color = contentColor,
-        maxLines = 1,
-    )
 }

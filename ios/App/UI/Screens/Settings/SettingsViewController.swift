@@ -297,13 +297,14 @@ final class SettingsViewController: UIViewController {
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
     }
 
-    /// White fill with a colored outline (used by the connection/workspace actions).
+    /// Neutral outline + primary text, matching Android's `OutlinedButton`
+    /// (`outline` = Border token). A primary-colored stroke reads much heavier.
     private func configureOutlinedActionButton(_ button: UIButton, title: String) {
         var configuration = UIButton.Configuration.plain()
         configuration.title = title
         configuration.baseForegroundColor = Theme.Colors.primary
-        configuration.background.backgroundColor = Theme.Colors.surface
-        configuration.background.strokeColor = Theme.Colors.primary
+        configuration.background.backgroundColor = .clear
+        configuration.background.strokeColor = Theme.Colors.border
         configuration.background.strokeWidth = 1
         configuration.cornerStyle = .medium
         button.configuration = configuration

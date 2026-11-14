@@ -1,64 +1,6 @@
 import PabootProtocol
 import UIKit
 
-/// Compact top-bar entry point for the workspace switcher.
-final class WorkspaceChipControl: UIControl {
-    private let label = UILabel()
-    private let maxLabelWidth: CGFloat = 116
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = Theme.Colors.textPrimary.withAlphaComponent(0.06)
-        layer.cornerRadius = 17
-        layer.cornerCurve = .continuous
-        isAccessibilityElement = true
-        accessibilityTraits = .button
-
-        let folder = makeImage("folder", size: 15, tint: Theme.Colors.primary)
-        label.font = Typography.body
-        label.textColor = Theme.Colors.textPrimary
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.widthAnchor.constraint(lessThanOrEqualToConstant: maxLabelWidth).isActive = true
-
-        let chevron = makeImage("chevron.down", size: 15, tint: Theme.Colors.textSecondary)
-        let stack = UIStackView(arrangedSubviews: [folder, label, chevron])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 5
-        stack.isUserInteractionEnabled = false
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 34),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func configure(label text: String) {
-        label.text = text
-        accessibilityLabel = "切换工作区，当前 \(text)"
-        invalidateIntrinsicContentSize()
-    }
-
-    override var intrinsicContentSize: CGSize {
-        let labelWidth = min(label.intrinsicContentSize.width, maxLabelWidth)
-        return CGSize(width: ceil(10 + 15 + 5 + labelWidth + 5 + 15 + 8), height: 34)
-    }
-
-    override var isHighlighted: Bool {
-        didSet { alpha = isHighlighted ? 0.72 : 1 }
-    }
-}
-
 /// Mobile workspace switcher, aligned with the Android bottom sheet:
 /// selected workspace highlighted, paths/session counts visible, overview action pinned.
 final class WorkspaceSwitcherViewController: UIViewController {
@@ -90,6 +32,20 @@ final class WorkspaceSwitcherViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = Theme.Colors.background
         configureLayout()
+    }
+
+    /// Height this sheet needs so every row and the footer sit together with no
+    /// dead space. Measured from a throwaway layout at the presentation width;
+    /// the sheet otherwise defaults to `.large` and leaves a gap in the middle.
+    func fittedHeight(forWidth width: CGFloat, bottomInset: CGFloat) -> CGFloat {
+        view.frame = CGRect(x: 0, y: 0, width: width, height: 1000)
+        view.layoutIfNeeded()
+        return scrollView.frame.minY
+            + scrollView.contentSize.height
+            + Spacing.xs + 1 + Spacing.xs
+            + footerAction.frame.height
+            + Spacing.md
+            + bottomInset
     }
 
     private func configureLayout() {
@@ -326,30 +282,20 @@ private final class WorkspaceSwitcherRow: UIControl {
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let titleRow = UIStackView(arrangedSubviews: [name])
-        titleRow.axis = .horizontal
-        titleRow.alignment = .center
-        titleRow.spacing = 6
-        if workspace.family == "life" {
-            titleRow.addArrangedSubview(
-                makePill("个人空间", background: Theme.Colors.primarySubtle, foreground: Theme.Colors.primaryDeep)
+        var textViews: [UIView] = [name]
+        if let visiblePath = workspace.displayPath {
+            let path = UILabel()
+            path.text = visiblePath
+            path.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
+                for: .monospacedSystemFont(ofSize: 12, weight: .regular)
             )
-        } else if workspace.isDefault {
-            titleRow.addArrangedSubview(
-                makePill("默认", background: Theme.Colors.surface2, foreground: Theme.Colors.textSecondary)
-            )
+            path.textColor = Theme.Colors.textSecondary
+            path.lineBreakMode = .byTruncatingMiddle
+            path.numberOfLines = 1
+            textViews.append(path)
         }
 
-        let path = UILabel()
-        path.text = workspace.path
-        path.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(
-            for: .monospacedSystemFont(ofSize: 12, weight: .regular)
-        )
-        path.textColor = Theme.Colors.textSecondary
-        path.lineBreakMode = .byTruncatingMiddle
-        path.numberOfLines = 1
-
-        let textStack = UIStackView(arrangedSubviews: [titleRow, path])
+        let textStack = UIStackView(arrangedSubviews: textViews)
         textStack.axis = .vertical
         textStack.spacing = 2
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)

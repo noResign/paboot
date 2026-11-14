@@ -111,7 +111,7 @@ fun WorkspaceOverviewScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     WorkspaceHero(workspace, dirs, totalSessions)
-                    DirectorySection(dirs)
+                    DirectorySection(dirs, hidePrimaryPath = workspace.family == "life")
                     if (workspace.family != "life") {
                         KnowledgeCard(workspace, onOpenKnowledge)
                         EndsCard(endState)
@@ -191,13 +191,15 @@ private fun WorkspaceHero(
                         )
                         WorkspaceKindBadge(workspace)
                     }
-                    Text(
-                        workspace.path,
-                        style = CodeBody,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    workspaceVisiblePath(workspace)?.let { path ->
+                        Text(
+                            path,
+                            style = CodeBody,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -248,7 +250,7 @@ private fun StatChip(text: String) {
 }
 
 @Composable
-private fun DirectorySection(dirs: List<WorkspaceDirectory>) {
+private fun DirectorySection(dirs: List<WorkspaceDirectory>, hidePrimaryPath: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -274,7 +276,7 @@ private fun DirectorySection(dirs: List<WorkspaceDirectory>) {
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
-                DirectoryRow(dir)
+                DirectoryRow(dir, showPath = !(dir.isPrimary && hidePrimaryPath))
             }
             Text(
                 if (dirs.size > 1) {
@@ -291,7 +293,7 @@ private fun DirectorySection(dirs: List<WorkspaceDirectory>) {
 }
 
 @Composable
-private fun DirectoryRow(dir: WorkspaceDirectory) {
+private fun DirectoryRow(dir: WorkspaceDirectory, showPath: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -322,13 +324,15 @@ private fun DirectoryRow(dir: WorkspaceDirectory) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
-            Text(
-                dir.path,
-                style = CodeBody,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (showPath) {
+                Text(
+                    dir.path,
+                    style = CodeBody,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         dir.sessionCount?.let { count ->
             Spacer(modifier = Modifier.width(10.dp))

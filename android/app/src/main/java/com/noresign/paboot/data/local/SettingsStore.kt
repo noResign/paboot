@@ -17,6 +17,7 @@ object SettingsStore {
     private const val KEY_WORKSPACE = "daemon_workspace"
     private const val KEY_SELECTED_WORKSPACE_ID = "selected_workspace_id"
     private const val KEY_SELECTED_WORKSPACE_PATH = "selected_workspace_path"
+    private const val KEY_SELECTED_WORKSPACE_FAMILY = "selected_workspace_family"
     private const val KEY_SAVED_CONNECTIONS = "saved_connections"
     private const val KEY_BACKGROUND_NOTIFICATIONS = "background_notifications"
     private const val KEY_NOTIFICATION_PROMPT_SHOWN = "notification_prompt_shown"
@@ -63,6 +64,13 @@ object SettingsStore {
         get() = kv.decodeString(KEY_SELECTED_WORKSPACE_PATH)
         set(value) {
             if (value.isNullOrBlank()) kv.removeValueForKey(KEY_SELECTED_WORKSPACE_PATH) else kv.encode(KEY_SELECTED_WORKSPACE_PATH, value)
+        }
+
+    /** 当前客户端选中的 Workspace family（`dev` / `life`），用于隐藏个人空间目录。 */
+    var selectedWorkspaceFamily: String?
+        get() = kv.decodeString(KEY_SELECTED_WORKSPACE_FAMILY)
+        set(value) {
+            if (value.isNullOrBlank()) kv.removeValueForKey(KEY_SELECTED_WORKSPACE_FAMILY) else kv.encode(KEY_SELECTED_WORKSPACE_FAMILY, value)
         }
 
     /**

@@ -8,7 +8,6 @@ import PabootProtocol
 final class ChatViewModel {
     struct State {
         var title = "新会话"
-        var cwd = ""
         var runtime = ""
         var messages: [ChatUiMessage] = []
         var streaming = false
@@ -118,7 +117,6 @@ final class ChatViewModel {
             self.runtime = session.runtime
             state.sessionId = session.id
             state.title = session.title.flatMap { $0.isEmpty ? nil : $0 } ?? "会话"
-            state.cwd = session.cwd
             state.runtime = session.runtime
             state.permissionMode = PermissionModeOptions.clamp(
                 session.permissionMode,

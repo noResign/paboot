@@ -199,8 +199,12 @@ final class NewSessionViewController: UIViewController {
         if let workspace = selectedWorkspace {
             workspaceButton.setTitle(workspace.displayName, for: .normal)
             workspaceButton.setTitleColor(Theme.Colors.textPrimary, for: .normal)
-            workspaceHintLabel.text = "主目录：\(workspace.path)。其他目录会自动作为附加目录。"
-            workspaceHintLabel.isHidden = false
+            if let visiblePath = workspace.displayPath {
+                workspaceHintLabel.text = "主目录：\(visiblePath)。其他目录会自动作为附加目录。"
+                workspaceHintLabel.isHidden = false
+            } else {
+                workspaceHintLabel.isHidden = true
+            }
         }
 
         if let agent = selectedAgent {

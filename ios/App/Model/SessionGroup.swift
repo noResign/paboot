@@ -37,6 +37,12 @@ extension WorkspaceDto {
         if family == "life" { return name.isEmpty ? "个人空间" : name }
         return name.isEmpty ? path : name
     }
+
+    /// Path for screens that show one. The personal-space directory is an
+    /// implementation detail (`<dataDir>/life`), so it is never surfaced.
+    var displayPath: String? {
+        family == "life" ? nil : path
+    }
 }
 
 enum SessionGrouping {

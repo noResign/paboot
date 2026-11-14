@@ -425,14 +425,17 @@ private fun WorkspaceCard(
                     // 主目录和附加目录的路径都可能被省略号截断：点一下在它**上方**弹出完整路径的
                     // 浮条（可换行），再点收起。两者共用一个展开态，所以同一时刻只有一条是展开的。
                     var expandedPath by remember(workspace.id) { mutableStateOf<String?>(null) }
-                    ExpandablePath(
-                        path = workspace.path,
-                        prefix = "主目录 · ",
-                        expanded = expandedPath == workspace.path,
-                        onToggle = {
-                            expandedPath = if (expandedPath == workspace.path) null else workspace.path
-                        },
-                    )
+                    // 个人空间的主目录是内部实现细节，不展示它的路径。
+                    workspaceVisiblePath(workspace)?.let { path ->
+                        ExpandablePath(
+                            path = path,
+                            prefix = "主目录 · ",
+                            expanded = expandedPath == path,
+                            onToggle = {
+                                expandedPath = if (expandedPath == path) null else path
+                            },
+                        )
+                    }
                     Text(
                         "${workspace.sessionCount} 个会话",
                         style = MaterialTheme.typography.labelSmall,

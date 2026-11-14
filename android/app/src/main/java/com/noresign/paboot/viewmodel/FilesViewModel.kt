@@ -189,6 +189,8 @@ class FilesViewModel(
      */
     fun openAddShortcutPicker() {
         rootPickerHidden = false
+        // 等第一层列表回来再显示弹窗，避免先弹骨架再换成列表时闪一下。
+        _rootPicker.value = null
         loadRootDirs(_root.value, false)
     }
 
@@ -247,7 +249,12 @@ class FilesViewModel(
     }
 
     private fun loadRootDirs(path: String?, showHidden: Boolean) {
-        _rootPicker.value = DirectoryPickerUiState.Loading(path)
+        // 同工作区目录选择器：弹窗内切目录时保留上一级列表，不闪回加载态；
+        // 首次打开时状态保持 null，等第一层数据回来再显示弹窗。
+        val current = _rootPicker.value as? DirectoryPickerUiState.Ready
+        if (current != null) {
+            _rootPicker.value = current.copy(navigating = true)
+        }
         viewModelScope.launch {
             when (val r = workspaceRepository.directories(path, showHidden)) {
                 is NetworkResult.Success -> _rootPicker.value = DirectoryPickerUiState.Ready(

@@ -15,19 +15,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /**
- * 顶栏动作按钮：32dp 中性半透明圆底 + 18dp 主色图标，44dp 触控区。
+ * 顶栏动作按钮：32dp 中性半透明圆底 + 18dp 图标，44dp 触控区。
  * 对齐 iOS 的 bar button 尺寸；不用大号描边圆钮，避免右上角出现过重的按钮块。
+ * [tint] 默认主色，导航类入口（如切换工作区）可传中性色，避免顶栏出现一块绿色。
  */
 @Composable
 fun TopBarActionButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -55,7 +58,7 @@ fun TopBarActionButton(
             Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = tint,
                 modifier = Modifier.size(18.dp),
             )
         }

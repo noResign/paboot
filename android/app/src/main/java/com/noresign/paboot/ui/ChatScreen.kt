@@ -104,7 +104,6 @@ fun ChatScreen(
     val permission by viewModel.permission.collectAsState()
     val error by viewModel.error.collectAsState()
     val title by viewModel.sessionTitle.collectAsState()
-    val cwd by viewModel.sessionCwd.collectAsState()
     val runtime by viewModel.sessionRuntime.collectAsState()
     val contextUsage by viewModel.contextUsage.collectAsState()
     val permissionSubmitting by viewModel.permissionSubmitting.collectAsState()
@@ -208,9 +207,10 @@ fun ChatScreen(
                 title = {
                     Column {
                         Text(title ?: "新会话", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (runtime != null || cwd != null) {
+                        // 顶栏只留 runtime；目录不再展示，token 消耗在右侧指示器里。
+                        runtime?.let { runtimeName ->
                             Text(
-                                text = listOfNotNull(runtime, cwd).joinToString(" · "),
+                                text = runtimeName,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -644,7 +644,7 @@ private fun ReconnectBanner() {
 }
 
 /**
- * 顶栏的上下文占用指示（docs/ui/mobile/pages/chat.md §6.3）：平时只占一个圆环，把宽度留给 cwd，
+ * 顶栏的上下文占用指示（docs/ui/mobile/pages/chat.md §6.3）：平时只占一个圆环，把宽度留给标题，
  * 点开才显示具体数值与百分比。
  *
  * 运行时不给窗口大小（Claude）时画不出比例，改用等宽小字显示占用量——一个空圆环会被读成

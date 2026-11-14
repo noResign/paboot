@@ -134,7 +134,12 @@ class ConnectViewModel(
                             ?.takeIf { id -> list.any { it.id == id } }
                             ?: list.firstOrNull { it.isDefault }?.id
                             ?: list.firstOrNull()?.id
-                        WorkspaceSelection.select(selected, list.find { it.id == selected }?.path)
+                        val selectedWorkspace = list.find { it.id == selected }
+                        WorkspaceSelection.select(
+                            selected,
+                            selectedWorkspace?.path,
+                            selectedWorkspace?.family,
+                        )
                     } else {
                         // 旧 daemon 可能没有 /api/workspaces：清掉本地选择，回退到“不过滤会话”。
                         WorkspaceSelection.select(null)

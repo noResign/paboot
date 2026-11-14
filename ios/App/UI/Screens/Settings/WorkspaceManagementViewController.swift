@@ -575,7 +575,11 @@ private final class WorkspaceCell: UITableViewCell {
         sessionCountLabel.text = "\(workspace.sessionCount) 个会话"
         defaultsLabel.text = "新建会话默认：\(workspace.defaultRuntime ?? "跟随全局") · " +
             (workspace.defaultPermissionMode ?? "跟随全局权限")
-        primaryPathButton.setTitle("主目录 · \(workspace.path)", for: .normal)
+        // 个人空间的主目录是内部实现细节，不展示它的路径。
+        primaryPathButton.isHidden = workspace.displayPath == nil
+        if let visiblePath = workspace.displayPath {
+            primaryPathButton.setTitle("主目录 · \(visiblePath)", for: .normal)
+        }
 
         toggleEnabledButton.setTitle(workspace.enabled ? "禁用" : "启用", for: .normal)
         toggleEnabledButton.isHidden = workspace.family == "life"
