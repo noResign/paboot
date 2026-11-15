@@ -13,10 +13,13 @@
 
 </div>
 
-**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code、Codex 与 DeepSeek Harness）**
+**多端一体化设计，随时随地切换多客户端形态，操纵你电脑上所有的 agent（已接入 Claude Code、Codex、DeepSeek Harness，以及自研的内置 agent）**
 **数据始终在你自己的机器上**，手机和桌面端可操纵同一份会话，断连不影响任务，重连自动续上。
 
-- **一个客户端，操纵所有 agent** —— 已接入 Claude Code、Codex 与 DeepSeek Harness。
+- **一个客户端，操纵所有 agent** —— 已接入 Claude Code、Codex、DeepSeek Harness，以及内置 agent。
+- **内置 agent，开箱即用** —— 不用装任何外部 CLI：填一个模型 API Key 就能跑。它跑在 daemon
+  进程内，自带工具（读写文件 / Bash / Grep / Glob / 网页抓取 / 阻塞式提问）、MCP、Skill 与
+  多模态输入，模型供应商可在 Claude / OpenAI / DeepSeek 之间自由切换。
 - **三端同源，原生实现** —— Android / iOS / 桌面共用一份协议和一套设计规范，操作的是同一份会话，且各自原生实现。
 - **数据在你自己的机器上** —— agent 用本机的环境、工具、配置和技能；数据始终在你自己的机器上
   （本机或你部署的服务器），paboot 自己不要账号，也不收集任何数据。
@@ -33,8 +36,9 @@
 
 ### 0. 前置
 
-目前 paboot 支持 Claude Code / Codex / DeepSeek Harness，请先在**运行 daemon 的那台机器**上
-安装并配置至少一种 agent：
+paboot 支持 Claude Code / Codex / DeepSeek Harness，以及**内置 agent**。外部的 agent 需要在
+**运行 daemon 的那台机器**上先安装并配置；内置 agent 不需要装任何 CLI，只要给它一个模型
+provider 的 API Key 即可（见下文「内置 agent」）。
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
@@ -42,6 +46,25 @@
 >
 > [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：`npm install -g @deepseek-ai/dsh`；模型凭据用
 > `DEEPSEEK_API_KEY` 环境变量，或在 `dsh web` 的「设置 → 模型」里填写。
+
+### 内置 agent
+
+paboot 自带一个 **daemon 进程内的 agent runtime**，与上面三个外部 CLI 并列出现在同一份会话列表里，
+用同一个客户端、同一套审批和续接机制。
+
+- **不用装外部 CLI**：只依赖 LLM provider 的 HTTP 接口。把 `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` 任意一个配进环境，或用 `~/.paboot/providers.json`
+  配多个 provider 后在设置里选模型即可。
+- **自带工具**：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite` / `WebFetch` /
+  `AskUserQuestion`，同时支持挂载 MCP server 与 Skill。
+- **阻塞式提问**：agent 需要澄清时会发起提问卡片并**在一个 run 内等你的回答**，而不是把问题
+  说完就结束本轮——你答完它接着往下做。
+- **网页抓取双后端**：默认走模型服务商的抓取 API（在服务商侧执行，碰不到内网）；没有可用 key
+  时自动回退到本机直连后端，也可显式切过去抓内网 / 本机地址（配了 HTML→Markdown 转换）。
+- **上下文压缩**：按 token 预算自动压缩更早的历史，长会话不会撞窗口就中断。
+
+配置细节见 [daemon/docs/runtimes.md](daemon/docs/runtimes.md) 与
+[daemon/docs/configuration.md](daemon/docs/configuration.md)。
 
 ### 1. 桌面端（推荐：桌面端可以直接运行 daemon）
 
