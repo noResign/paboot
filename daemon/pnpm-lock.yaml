@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@joplin/turndown-plugin-gfm':
+        specifier: ^1.0.71
+        version: 1.0.71
       cron-parser:
         specifier: ^5.10.2
         version: 5.10.2
@@ -17,6 +20,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.2
+      turndown:
+        specifier: ^7.2.5
+        version: 7.2.5
     devDependencies:
       '@types/cross-spawn':
         specifier: ^6.0.6
@@ -27,6 +33,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/turndown':
+        specifier: ^5.0.6
+        version: 5.0.6
       tsx:
         specifier: ^4.20.0
         version: 4.23.12
@@ -195,8 +204,14 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@joplin/turndown-plugin-gfm@1.0.71':
+    resolution: {integrity: sha512-lzquxBhjG9ad6ykVsUYjs+lQc4Xmh3ob0n+oOUL5cvdQ2xUO0tsAAvIJ8Wm/+Pf59/4NNpmRa/zlbKeYP4XBrw==}
+
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@mixmark-io/domino@2.2.0':
+    resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -390,6 +405,9 @@ packages:
 
   '@types/serve-static@1.15.10':
     resolution: {integrity: sha512-tRs1dB+g8Itk72rlSI2ZrW6vZg0YrLI81iQSTkMmOqnqCaNr/8Ek4VwWcN5vZgCYWbg/JJSGBlUaYGAOP73qBw==}
+
+  '@types/turndown@5.0.6':
+    resolution: {integrity: sha512-ru00MoyeeouE5BX4gRL+6m/BsDfbRayOskWqUvh7CLGW+UXxHQItqALa38kKnOiZPqJrtzJUgAC2+F0rL1S4Pg==}
 
   '@vitest/expect@3.2.7':
     resolution: {integrity: sha512-E8eBXaKibuvH2pSZErOjdVb5vF4PbKYcrnluBTYxEk1l/VhhwZg1kZQsdtjq+CsF5CFydf2Rdkz7jDHKSisi3w==}
@@ -833,6 +851,10 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  turndown@7.2.5:
+    resolution: {integrity: sha512-EKZvCCFHh8sWttpAMs10U6niZFJ2cpz8LkCPlylxoG4JcHF50J7EHnnBW3AY1qXtUMu7kDjCp7dnggB1sIbqEQ==}
+    engines: {node: '>=18', npm: '>=9'}
+
   type-is@1.6.18:
     resolution: {integrity: sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==}
     engines: {node: '>= 0.6'}
@@ -1020,7 +1042,11 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
+  '@joplin/turndown-plugin-gfm@1.0.71': {}
+
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@mixmark-io/domino@2.2.0': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
@@ -1162,6 +1188,8 @@ snapshots:
       '@types/http-errors': 2.0.5
       '@types/node': 24.13.3
       '@types/send': 0.17.6
+
+  '@types/turndown@5.0.6': {}
 
   '@vitest/expect@3.2.7':
     dependencies:
@@ -1667,6 +1695,10 @@ snapshots:
       esbuild: 0.28.2
     optionalDependencies:
       fsevents: 2.3.3
+
+  turndown@7.2.5:
+    dependencies:
+      '@mixmark-io/domino': 2.2.0
 
   type-is@1.6.18:
     dependencies:

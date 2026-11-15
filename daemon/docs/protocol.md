@@ -166,6 +166,15 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
 `context_compacted` 只有 builtin 会发：自动压缩更早历史后报告 `beforeTokens` / `afterTokens`
 （估算值）。它不产生聊天消息，客户端渲染成一行系统提示；历史重建时不会回放（压缩是内部动作）。
 
+**`question` 有两种回答通道**：
+
+- Claude 等 headless runtime：事件不带 `permissionId`；工具已被自动拒绝，客户端把用户的选择
+  作为**下一条消息**发出去。
+- builtin：事件带 `permissionId`，run 阻塞在这个工具调用上。客户端用
+  `POST /api/permissions/:id/decision`（`decision: "allow"`，`response: { "answer": string }`）
+  回答；daemon 把答案作为该工具调用的 `tool_result`，模型在同一个 run 里继续。超时 / 拒绝时
+  工具返回错误结果，让模型自己决定下一步。
+
 **思考内容不下发**：运行时产生的 `thinking_delta` 在 run service 里直接丢弃——既不落库也不进
 SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（标题行转圈），收到下一条内容事件
 （文本 / 工具 / 提问 / 终局）时停止转圈。历史回放同样在 SQL 层排除旧的 `thinking_delta` 行

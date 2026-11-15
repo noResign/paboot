@@ -53,14 +53,17 @@
     "node": ">=24.9"
   },
   "dependencies": {
+    "@joplin/turndown-plugin-gfm": "^1.0.71",
     "cron-parser": "^5.10.2",
     "cross-spawn": "^7.0.6",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "turndown": "^7.2.5"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
     "@types/express": "^4.17.21",
     "@types/node": "^24.0.0",
+    "@types/turndown": "^5.0.6",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^3.1.0"

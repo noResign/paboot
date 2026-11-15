@@ -5,7 +5,7 @@ import type { AppContext } from '../../app/context.js';
 import { resolveSessionEnd } from '../../ends/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
-import type { NormalizedEvent } from '../../types/api.js';
+import type { NormalizedEvent, PermissionStatus } from '../../types/api.js';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../RuntimeDriver.js';
 import { registerActiveRun, type ManagedRun } from '../active-runs.js';
 import type { RunOutcome } from '../engine.js';
@@ -39,6 +39,12 @@ import { createBashTool } from './tools/bash.js';
 import { createGrepTool } from './tools/grep.js';
 import { createGlobTool } from './tools/glob.js';
 import { createTodoTool } from './tools/todo.js';
+import {
+  createAskUserQuestionTool,
+  type QuestionExchange,
+} from './tools/ask-user-question.js';
+import { createWebFetchTool } from './tools/webfetch.js';
+import { resolveFetchBackend } from './web/fetch.js';
 import { createLoadSkillTool } from './skills/load-tool.js';
 import { SkillRegistry, type SkillRoot } from './skills/registry.js';
 import { createPermissionBroker } from './tools/permission-broker.js';
@@ -205,7 +211,45 @@ async function runBuiltin(
 
     // Read-before-write survives resume: seed from the persisted transcript.
     const readFiles = ReadFilesTracker.fromTranscript(transcript.list(thread.id), session.cwd);
-    const nativeProvider = new NativeToolProvider([
+    const webSelection = resolveFetchBackend({
+      settings: builtinConfig.web.fetch,
+      provider: resolved.providerConfig,
+    });
+    if (webSelection.fallbackFrom === 'provider') {
+      // Widened reach behind the user's back is exactly the change that has to
+      // stay traceable: the local backend can hit intranet and loopback.
+      log.warn(
+        `run ${req.runId}: WebFetch fell back to the local backend (no usable provider ` +
+          'fetch API); it can reach intranet and loopback addresses',
+      );
+    }
+    const questionExchange: QuestionExchange = {
+      create(questions) {
+        const pending = ctx.permissions.create(req.runId, req.sessionId, 'UserInput', {
+          kind: 'questions',
+          questions,
+          message: '需要你的回答',
+        });
+        pending.validateResponse = (response) =>
+          readQuestionAnswer(response) ? null : 'answer is required';
+        return pending.id;
+      },
+      async wait(permissionId, questionSignal) {
+        const decided = await waitForAnswer(
+          ctx.permissions.wait(permissionId),
+          questionSignal,
+          () => ctx.permissions.decide(permissionId, 'deny', 'run cancelled'),
+        );
+        return {
+          status:
+            decided.status === 'allowed' || decided.status === 'timed_out'
+              ? decided.status
+              : 'denied',
+          answer: readQuestionAnswer(decided.response),
+        };
+      },
+    };
+    const nativeTools = [
       createReadTool({
         maxFileBytes: builtinConfig.tools.read.maxFileBytes,
         defaultLimit: builtinConfig.tools.read.defaultLimit,
@@ -242,7 +286,26 @@ async function runBuiltin(
       createLoadSkillTool(skills, {
         allowedSkills: profile.allowedSkills,
       }),
-    ]);
+      createAskUserQuestionTool(questionExchange),
+    ];
+    // Register WebFetch when a backend is usable. An explicitly configured but
+    // unusable backend is still registered so its call returns the reason
+    // instead of the tool silently disappearing.
+    if (
+      builtinConfig.web.fetch.enabled &&
+      (webSelection.backend !== null || builtinConfig.web.fetch.provider !== 'auto')
+    ) {
+      nativeTools.push(
+        createWebFetchTool({
+          selection: webSelection,
+          provider: resolved.provider,
+          model: resolved.model,
+          maxInputTokens: budget.maxResultTokens,
+          measure,
+        }),
+      );
+    }
+    const nativeProvider = new NativeToolProvider(nativeTools);
     const toolProviders: ToolProvider[] = [nativeProvider];
     // The daemon assembled this run's MCP servers; mount the entries that
     // actually exist (the dev tsx runner may not have compiled dist/).
@@ -484,4 +547,40 @@ function skillRoots(ctx: AppContext, workspace: WorkspaceRow): SkillRoot[] {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+/** Client answer payload: `{ answer: string }` (a bare string is also accepted). */
+function readQuestionAnswer(response: unknown): string | null {
+  if (typeof response === 'string' && response.trim().length > 0) return response.trim();
+  if (response && typeof response === 'object' && !Array.isArray(response)) {
+    const answer = (response as Record<string, unknown>)['answer'];
+    if (typeof answer === 'string' && answer.trim().length > 0) return answer.trim();
+  }
+  return null;
+}
+
+/**
+ * Wait for a pending permission while honoring run cancellation. On abort the
+ * pending slot is denied so it never outlives the run.
+ */
+function waitForAnswer(
+  pending: Promise<{ status: PermissionStatus; response?: unknown }>,
+  signal: AbortSignal,
+  onAbort: () => void,
+): Promise<{ status: PermissionStatus; response?: unknown }> {
+  if (signal.aborted) {
+    onAbort();
+    return Promise.resolve({ status: 'denied' });
+  }
+  return new Promise((resolve) => {
+    const abort = (): void => {
+      onAbort();
+      resolve({ status: 'denied' });
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    pending.then((value) => {
+      signal.removeEventListener('abort', abort);
+      resolve(value);
+    });
+  });
 }

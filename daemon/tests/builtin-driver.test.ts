@@ -67,11 +67,12 @@ function pngBytes(): Buffer {
 interface FakeProvider {
   url: string;
   requests: Array<Record<string, unknown>>;
+  paths: string[];
   requestCount: number;
 }
 
 async function fakeProvider(responder: (request: Record<string, unknown>, index: number, res: http.ServerResponse) => void): Promise<FakeProvider> {
-  const state: FakeProvider = { url: '', requests: [], requestCount: 0 };
+  const state: FakeProvider = { url: '', requests: [], paths: [], requestCount: 0 };
   const server = http.createServer((req, res) => {
     let body = '';
     req.setEncoding('utf8');
@@ -80,6 +81,7 @@ async function fakeProvider(responder: (request: Record<string, unknown>, index:
       state.requestCount += 1;
       const parsed = JSON.parse(body) as Record<string, unknown>;
       state.requests.push(parsed);
+      state.paths.push(req.url ?? '');
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       responder(parsed, state.requestCount, res);
     });
@@ -621,6 +623,117 @@ describe('builtin driver E2E with fake provider', () => {
     const agentRequest = JSON.stringify(provider.requests.at(-1));
     expect(agentRequest).toContain('SUMMARY_MARKER');
     expect(agentRequest).not.toContain('OLD_MARKER');
+  });
+
+  it('blocks on AskUserQuestion and feeds the answer back to the model', async () => {
+    const questions = [
+      {
+        question: 'Which database?',
+        header: 'DB',
+        multiSelect: false,
+        options: [{ label: 'SQLite' }, { label: 'Postgres' }],
+      },
+    ];
+    const provider = await fakeProvider((_body, index, res) => {
+      if (index === 1) {
+        fakeToolCalls(res, [
+          {
+            id: 'call_question',
+            name: 'AskUserQuestion',
+            arguments: JSON.stringify({ questions }),
+          },
+        ]);
+      } else {
+        finishText(res, 'done');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', contextWindow: 128_000, supportsTools: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness();
+    const frames: SseFrame[] = [];
+    const handle = await start(h, { prompt: 'pick one', frames });
+    const answering = (async () => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const question = frames.find((frame) => frame.event.type === 'question')?.event;
+        if (question && question.type === 'question' && question.permissionId) {
+          h.ctx.permissions.decide(question.permissionId, 'allow', undefined, {
+            answer: 'SQLite',
+          });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('question event never arrived');
+    })();
+
+    expect((await handle.done).status).toBe('succeeded');
+    await answering;
+    expect(frames.map((frame) => frame.event)).toContainEqual(
+      expect.objectContaining({ type: 'question', toolUseId: 'call_question' }),
+    );
+    expect(JSON.stringify(provider.requests[1])).toContain('用户回答：SQLite');
+  });
+
+  it('fetches WebFetch pages through the provider web API and feeds the text back', async () => {
+    let chatCalls = 0;
+    const provider = await fakeProvider((body, _index, res) => {
+      if (!Array.isArray(body['messages'])) {
+        // WebFetch backend call: POST <webApiBase>/fetch { url }.
+        res.end(JSON.stringify({ content: 'PAGE_BODY_MARKER' }));
+        return;
+      }
+      chatCalls += 1;
+      if (chatCalls === 1) {
+        fakeToolCalls(res, [{
+          id: 'call_web',
+          name: 'WebFetch',
+          arguments: JSON.stringify({ url: 'https://example.com/page' }),
+        }]);
+      } else {
+        finishText(res, 'done');
+      }
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', contextWindow: 128_000, supportsTools: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness({
+      ...DEFAULT_BUILTIN_CONFIG,
+      web: {
+        fetch: {
+          ...DEFAULT_BUILTIN_CONFIG.web.fetch,
+          provider: 'provider',
+          baseUrl: `${provider.url}/v1/tools`,
+        },
+      },
+    });
+    const handle = await start(h, {
+      prompt: 'fetch the page',
+      permissionMode: 'bypass',
+      frames: [],
+    });
+    expect((await handle.done).status).toBe('succeeded');
+
+    expect(provider.paths).toContain('/v1/tools/fetch');
+    expect(provider.requests.some((request) => Array.isArray(request['messages'])
+      ? JSON.stringify(request).includes('PAGE_BODY_MARKER')
+      : false)).toBe(true);
   });
 
   it('silently downgrades bypass under server-strict and blocks outside reads', async () => {

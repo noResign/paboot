@@ -92,6 +92,16 @@ export interface BuiltinRuntimeConfig {
     maxFileBytes: number;
     catalogDescriptionChars: number;
   };
+  web: {
+    fetch: {
+      enabled: boolean;
+      /** `auto` uses the provider-hosted fetch whenever the model provider has a key. */
+      provider: 'auto' | 'provider' | 'http';
+      timeoutMs: number;
+      /** Override the web API base; defaults to `<provider origin>/v1/tools`. */
+      baseUrl: string | null;
+    };
+  };
   agent: {
     maxSteps: number;
     maxToolCalls: number;
@@ -160,6 +170,14 @@ export const DEFAULT_BUILTIN_CONFIG: BuiltinRuntimeConfig = {
   skills: {
     maxFileBytes: 256 * 1024,
     catalogDescriptionChars: 500,
+  },
+  web: {
+    fetch: {
+      enabled: true,
+      provider: 'auto',
+      timeoutMs: 15_000,
+      baseUrl: null,
+    },
   },
   agent: {
     maxSteps: 200,
@@ -613,6 +631,44 @@ export function parseBuiltinConfig(raw: unknown): {
     );
   }
 
+  const web = section(raw['web'], 'web', warnings);
+  if (web) {
+    warnUnknown(web, ['fetch'], 'web', warnings);
+    const fetchSection = section(web['fetch'], 'web.fetch', warnings);
+    if (fetchSection) {
+      warnUnknown(
+        fetchSection,
+        ['enabled', 'provider', 'timeoutMs', 'baseUrl'],
+        'web.fetch',
+        warnings,
+      );
+      const defaults = config.web.fetch;
+      config.web.fetch = {
+        enabled: boolField(fetchSection['enabled'], 'web.fetch.enabled', defaults.enabled, warnings),
+        provider: enumField(
+          fetchSection['provider'],
+          'web.fetch.provider',
+          ['auto', 'provider', 'http'] as const,
+          defaults.provider,
+          warnings,
+        ),
+        timeoutMs: intField(
+          fetchSection['timeoutMs'],
+          'web.fetch.timeoutMs',
+          1_000,
+          defaults.timeoutMs,
+          warnings,
+        ),
+        baseUrl: readOptionalString(
+          fetchSection['baseUrl'],
+          'web.fetch.baseUrl',
+          defaults.baseUrl,
+          warnings,
+        ),
+      };
+    }
+  }
+
   const agent = section(raw['agent'], 'agent', warnings);
   if (agent) {
     warnUnknown(agent, ['maxSteps', 'maxToolCalls'], 'agent', warnings);
@@ -659,6 +715,7 @@ function cloneDefault(): BuiltinRuntimeConfig {
       glob: { ...DEFAULT_BUILTIN_CONFIG.tools.glob },
     },
     skills: { ...DEFAULT_BUILTIN_CONFIG.skills },
+    web: { fetch: { ...DEFAULT_BUILTIN_CONFIG.web.fetch } },
     agent: { ...DEFAULT_BUILTIN_CONFIG.agent },
   };
 }
@@ -746,6 +803,20 @@ function enumField<T extends string>(
     return fallback;
   }
   return value as T;
+}
+
+function readOptionalString(
+  value: unknown,
+  label: string,
+  fallback: string | null,
+  warnings: string[],
+): string | null {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    warnings.push(`${label} must be a non-empty string; using ${fallback ?? 'null'}`);
+    return fallback;
+  }
+  return value.trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
