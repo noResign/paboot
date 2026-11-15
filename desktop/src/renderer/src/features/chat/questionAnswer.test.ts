@@ -44,6 +44,11 @@ describe('isFullyAnswered', () => {
   it('is false for an empty question list', () => {
     expect(isFullyAnswered([], {})).toBe(false);
   });
+
+  it('accepts a non-empty "其他" answer when no option fits', () => {
+    expect(isFullyAnswered([single], {}, { 0: { active: true, text: '  ' } })).toBe(false);
+    expect(isFullyAnswered([single], {}, { 0: { active: true, text: '其他 runtime' } })).toBe(true);
+  });
 });
 
 describe('buildAnswerText', () => {
@@ -57,5 +62,14 @@ describe('buildAnswerText', () => {
     expect(buildAnswerText([single, multi], { 0: ['Codex'], 1: ['会话'] })).toBe(
       '关于「用哪个 runtime？」，我的选择是：Codex\n关于「开哪些页？」，我的选择是：会话',
     );
+  });
+
+  it('includes the custom "其他" text', () => {
+    expect(
+      buildAnswerText([multi], { 0: ['会话'] }, { 0: { active: true, text: '任务' } }),
+    ).toBe('关于「开哪些页？」，我的选择是：会话、其他：任务');
+    expect(
+      buildAnswerText([single], {}, { 0: { active: true, text: '别的' } }),
+    ).toBe('关于「用哪个 runtime？」，我的选择是：其他：别的');
   });
 });

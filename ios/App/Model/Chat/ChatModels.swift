@@ -61,6 +61,9 @@ struct QuestionBlock: Equatable {
     var toolUseId: String
     var questions: [QuestionDto]
     var answered: Bool = false
+    /// Non-nil for builtin's blocking questions: the answer is submitted through
+    /// the permission-decision endpoint and the run continues.
+    var permissionId: String?
 }
 
 struct UsageInfo: Equatable {

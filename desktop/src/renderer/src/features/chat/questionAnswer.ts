@@ -23,8 +23,22 @@ export function toggleSelection(
   return { ...selections, [index]: next };
 }
 
-export function isFullyAnswered(questions: QuestionDto[], selections: QuestionSelections): boolean {
-  return questions.length > 0 && questions.every((_, index) => (selections[index] ?? []).length > 0);
+/** question index → the free-text "其他" answer. */
+export type QuestionOthers = Record<number, { active: boolean; text: string }>;
+
+export function isFullyAnswered(
+  questions: QuestionDto[],
+  selections: QuestionSelections,
+  others: QuestionOthers = {},
+): boolean {
+  return (
+    questions.length > 0 &&
+    questions.every((_, index) => {
+      if ((selections[index] ?? []).length > 0) return true;
+      const other = others[index];
+      return Boolean(other?.active) && (other?.text.trim().length ?? 0) > 0;
+    })
+  );
 }
 
 /**
@@ -33,11 +47,17 @@ export function isFullyAnswered(questions: QuestionDto[], selections: QuestionSe
  * backfill. Wording matches the Android client so both read identically in the
  * transcript.
  */
-export function buildAnswerText(questions: QuestionDto[], selections: QuestionSelections): string {
+export function buildAnswerText(
+  questions: QuestionDto[],
+  selections: QuestionSelections,
+  others: QuestionOthers = {},
+): string {
   return questions
-    .map(
-      (question, index) =>
-        `关于「${question.question}」，我的选择是：${(selections[index] ?? []).join('、')}`,
-    )
+    .map((question, index) => {
+      const parts = [...(selections[index] ?? [])];
+      const other = others[index];
+      if (other?.active && other.text.trim()) parts.push(`其他：${other.text.trim()}`);
+      return `关于「${question.question}」，我的选择是：${parts.join('、')}`;
+    })
     .join('\n');
 }

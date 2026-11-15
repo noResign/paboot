@@ -28,6 +28,8 @@ sealed interface ContentBlock {
         val toolUseId: String,
         val questions: List<QuestionDto>,
         val answered: Boolean = false,
+        /** 非空 = builtin 阻塞式提问，答案走权限决策端点。 */
+        val permissionId: String? = null,
     ) : ContentBlock
 
     /** 系统提示（例如历史被自动压缩），不属于模型输出。 */

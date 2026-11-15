@@ -211,6 +211,7 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
                 toolUseId={segment.toolUseId}
                 questions={segment.questions}
                 answered={segment.answered}
+                permissionId={segment.permissionId}
               />
             );
           case 'notice':

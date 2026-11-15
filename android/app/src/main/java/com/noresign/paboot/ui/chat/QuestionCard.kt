@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,15 +32,29 @@ internal fun QuestionCard(
 ) {
     // 每个问题的选中状态：问题下标 → 已选 label 集合（流式中也能预选，本地状态）
     val selections = remember(block.toolUseId) { mutableStateMapOf<Int, Set<String>>() }
+    // 「其他」：选项都不合适时自己输入，按问题进行。
+    val otherActive = remember(block.toolUseId) { mutableStateMapOf<Int, Boolean>() }
+    val otherTexts = remember(block.toolUseId) { mutableStateMapOf<Int, String>() }
 
     fun selected(i: Int): Set<String> = selections[i] ?: emptySet()
+    fun isOtherActive(i: Int): Boolean = otherActive[i] == true
+    fun otherText(i: Int): String = otherTexts[i]?.trim().orEmpty()
 
-    val allAnswered = block.questions.indices.all { i -> selected(i).isNotEmpty() }
+    val allAnswered = block.questions.indices.all { i ->
+        selected(i).isNotEmpty() || (isOtherActive(i) && otherText(i).isNotEmpty())
+    }
+    val anyOtherActive = block.questions.indices.any { isOtherActive(it) }
 
-    // 全部选完 + 流结束 + 未发送 → 自动把答案一次性发出去
-    LaunchedEffect(streaming, allAnswered, block.answered) {
-        if (!streaming && allAnswered && !block.answered) {
-            onAnswer(block.toolUseId, buildAnswerText(block.questions, selections))
+    // 只有「纯选项」才自动提交；出现「其他」时必须点按钮，避免边输入边发送。
+    // builtin 的阻塞式提问在 run 运行中就要回答（permissionId 非空）；
+    // Claude 等 headless runtime 必须等本轮结束，答案才能作为下一条消息发出。
+    val blocking = block.permissionId != null
+    LaunchedEffect(streaming, allAnswered, anyOtherActive, block.answered, blocking) {
+        if (allAnswered && !anyOtherActive && !block.answered && (blocking || !streaming)) {
+            onAnswer(
+                block.toolUseId,
+                buildAnswerText(block.questions, selections, otherActive, otherTexts),
+            )
         }
     }
 
@@ -57,14 +73,26 @@ internal fun QuestionCard(
                     question = q,
                     selected = selected(i),
                     enabled = !block.answered,
+                    otherActive = isOtherActive(i),
+                    otherText = otherTexts[i].orEmpty(),
                     onToggle = { label ->
                         val cur = selected(i)
                         selections[i] = if (q.multiSelect) {
                             if (label in cur) cur - label else cur + label
                         } else {
+                            otherActive[i] = false
                             setOf(label)
                         }
                     },
+                    onToggleOther = {
+                        if (q.multiSelect) {
+                            otherActive[i] = !isOtherActive(i)
+                        } else {
+                            selections[i] = emptySet()
+                            otherActive[i] = true
+                        }
+                    },
+                    onOtherTextChange = { otherTexts[i] = it },
                 )
             }
             if (block.answered) {
@@ -73,6 +101,23 @@ internal fun QuestionCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else if (anyOtherActive) {
+                OutlinedButton(
+                    onClick = {
+                        onAnswer(
+                            block.toolUseId,
+                            buildAnswerText(block.questions, selections, otherActive, otherTexts),
+                        )
+                    },
+                    enabled = allAnswered,
+                ) { Text("发送答案") }
+                if (!allAnswered) {
+                    Text(
+                        text = "请先填写或选择每个问题的答案",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else if (block.questions.size > 1 && !allAnswered) {
                 Text(
                     text = "还有问题未选择",
@@ -89,7 +134,11 @@ internal fun QuestionItem(
     question: QuestionDto,
     selected: Set<String>,
     enabled: Boolean,
+    otherActive: Boolean,
+    otherText: String,
     onToggle: (String) -> Unit,
+    onToggleOther: () -> Unit,
+    onOtherTextChange: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val header = question.header
@@ -112,6 +161,26 @@ internal fun QuestionItem(
                 multiSelect = question.multiSelect,
                 enabled = enabled,
                 onClick = { onToggle(opt.label) },
+            )
+        }
+        OptionRow(
+            label = "其他",
+            description = "自己输入答案",
+            checked = otherActive,
+            multiSelect = question.multiSelect,
+            enabled = enabled,
+            onClick = onToggleOther,
+        )
+        if (otherActive) {
+            OutlinedTextField(
+                value = otherText,
+                onValueChange = onOtherTextChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 48.dp),
+                enabled = enabled,
+                placeholder = { Text("输入你的答案") },
+                maxLines = 4,
             )
         }
     }
@@ -155,7 +224,17 @@ internal fun OptionLabel(label: String, description: String?) {
     }
 }
 
-internal fun buildAnswerText(questions: List<QuestionDto>, selections: Map<Int, Set<String>>): String =
+internal fun buildAnswerText(
+    questions: List<QuestionDto>,
+    selections: Map<Int, Set<String>>,
+    otherActive: Map<Int, Boolean> = emptyMap(),
+    otherTexts: Map<Int, String> = emptyMap(),
+): String =
     questions.mapIndexed { i, q ->
-        "关于「${q.question}」，我的选择是：${(selections[i] ?: emptySet()).joinToString("、")}"
+        val parts = (selections[i] ?: emptySet()).toMutableList()
+        if (otherActive[i] == true) {
+            val custom = otherTexts[i]?.trim().orEmpty()
+            if (custom.isNotEmpty()) parts += "其他：$custom"
+        }
+        "关于「${q.question}」，我的选择是：${parts.joinToString("、")}"
     }.joinToString("\n")
