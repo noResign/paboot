@@ -1,4 +1,4 @@
-import type { ContextUsage } from '../../../../shared/format';
+import { formatTokens, type ContextUsage } from '../../../../shared/format';
 import type { NormalizedEvent, SseFrame } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, TodoItem, UsageInfo } from './types';
 
@@ -136,6 +136,19 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
       return { ...a, blocks: endThinking(a.blocks), usage: parseUsage(event) ?? a.usage };
     case 'turn_end':
       return { ...a, blocks: endThinking(a.blocks) };
+    case 'context_compacted':
+      return {
+        ...a,
+        blocks: [
+          ...endThinking(a.blocks),
+          {
+            kind: 'notice',
+            text:
+              `更早的对话已压缩 · ${formatTokens(event.beforeTokens)} → ` +
+              `${formatTokens(event.afterTokens)} tokens`,
+          },
+        ],
+      };
     case 'error':
       return { ...a, error: event.message, blocks: endThinking(a.blocks) };
     case 'permission_request':

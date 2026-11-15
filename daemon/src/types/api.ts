@@ -98,6 +98,12 @@ export type NormalizedEvent =
       contextWindow?: number | null;
     }
   | { type: 'turn_end'; stopReason: string }
+  /**
+   * Builtin auto-compaction summarized older turns before the next model call.
+   * Informational only: clients render a lightweight system line so the user
+   * knows why the context meter dropped and why early details may be fuzzy.
+   */
+  | { type: 'context_compacted'; beforeTokens: number; afterTokens: number }
   | { type: 'error'; code?: string; message: string; terminal?: boolean }
   | {
       type: 'permission_request';

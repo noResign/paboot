@@ -29,4 +29,7 @@ sealed interface ContentBlock {
         val questions: List<QuestionDto>,
         val answered: Boolean = false,
     ) : ContentBlock
+
+    /** 系统提示（例如历史被自动压缩），不属于模型输出。 */
+    data class Notice(val text: String) : ContentBlock
 }

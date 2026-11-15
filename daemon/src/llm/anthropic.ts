@@ -189,14 +189,22 @@ export class AnthropicProvider implements LlmProvider {
   }
 }
 
+const CACHE_CONTROL = { type: 'ephemeral' } as const;
+
 export function buildAnthropicBody(request: LlmRequest): Record<string, unknown> {
+  const messages = request.messages.map(renderAnthropicMessage);
+  // One breakpoint at the tail caches the whole prefix for the next step.
+  if (request.promptCache && messages.length > 0) {
+    applyCacheControl(messages[messages.length - 1]!);
+  }
   const body: Record<string, unknown> = {
     model: request.model,
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-    messages: request.messages.map(renderAnthropicMessage),
+    messages,
     stream: true,
   };
-  if (request.system.trim()) body['system'] = request.system;
+  const system = renderAnthropicSystem(request);
+  if (system !== null) body['system'] = system;
   if (request.temperature !== undefined) body['temperature'] = request.temperature;
   if (request.tools.length > 0) {
     body['tools'] = request.tools.map((tool) => ({
@@ -206,6 +214,42 @@ export function buildAnthropicBody(request: LlmRequest): Record<string, unknown>
     }));
   }
   return body;
+}
+
+/**
+ * Prefer the stable/dynamic split so the stable block (and the tool schemas
+ * before it) stays cached even when dynamic sections change.
+ */
+function renderAnthropicSystem(request: LlmRequest): unknown[] | string | null {
+  const parts = request.systemParts?.filter((part) => part.text.trim().length > 0) ?? [];
+  if (parts.length > 0) {
+    return parts.map((part) => ({
+      type: 'text',
+      text: part.text,
+      ...(part.cache ? { cache_control: CACHE_CONTROL } : {}),
+    }));
+  }
+  return request.system.trim() ? request.system : null;
+}
+
+function applyCacheControl(message: Record<string, unknown>): void {
+  const content = message['content'];
+  if (typeof content === 'string') {
+    if (content.length > 0) {
+      message['content'] = [{ type: 'text', text: content, cache_control: CACHE_CONTROL }];
+    }
+    return;
+  }
+  if (!Array.isArray(content)) return;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const block = content[index];
+    if (!block || typeof block !== 'object') continue;
+    const type = (block as Record<string, unknown>)['type'];
+    if (type === 'text' || type === 'tool_result') {
+      (block as Record<string, unknown>)['cache_control'] = CACHE_CONTROL;
+      return;
+    }
+  }
 }
 
 function renderAnthropicMessage(message: LlmMessage): Record<string, unknown> {

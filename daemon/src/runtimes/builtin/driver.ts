@@ -12,6 +12,7 @@ import type { RunOutcome } from '../engine.js';
 import type { TranscriptContentBlock } from '../../types/transcript.js';
 import { DEFAULT_BUILTIN_CONFIG } from './config.js';
 import { resolveContextBudget } from './budget.js';
+import { summarizeCompaction } from './compact.js';
 import { buildAnthropicBody } from '../../llm/anthropic.js';
 import { buildOpenAIBody } from '../../llm/openai.js';
 import { AgentKernel } from './kernel/agent.js';
@@ -339,6 +340,22 @@ async function runBuiltin(
       toolExecutor: executor,
       assembleContext,
       tokenCalibrator: calibrator,
+      compaction: {
+        settings: builtinConfig.context.compaction,
+        contextWindow: budget.contextWindowTokens,
+        summarize: (plan, previous, signal) =>
+          summarizeCompaction({
+            transcript,
+            threadId: thread.id,
+            provider: resolved.provider,
+            model: resolved.model,
+            plan,
+            previous,
+            settings: builtinConfig.context.compaction,
+            measure,
+            signal,
+          }),
+      },
       ...(imageResolver ? { resolveImage: imageResolver } : {}),
       ...(debugRecorder
         ? {

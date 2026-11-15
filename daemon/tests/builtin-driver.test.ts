@@ -536,6 +536,93 @@ describe('builtin driver E2E with fake provider', () => {
     expect(second).toBeLessThan(first);
   });
 
+  it('compacts older turns before the request when the context is near the window', async () => {
+    const provider = await fakeProvider((body, _index, res) => {
+      const tools = body['tools'];
+      if (!Array.isArray(tools) || tools.length === 0) {
+        // Summary request from the compactor: no tool schemas.
+        finishText(res, 'SUMMARY_MARKER');
+        return;
+      }
+      finishText(res, 'done');
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', contextWindow: 2_000, supportsTools: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const config: BuiltinRuntimeConfig = {
+      ...DEFAULT_BUILTIN_CONFIG,
+      context: {
+        ...DEFAULT_BUILTIN_CONFIG.context,
+        compaction: {
+          ...DEFAULT_BUILTIN_CONFIG.context.compaction,
+          triggerAt: 0.2,
+          keepRecentRatio: 0.001,
+          minCompactTokens: 1,
+          maxSummaryTokens: 128,
+        },
+      },
+    };
+    const h = harness(config);
+    const thread = h.db.createNativeThread({ sessionId: h.sessionId, agentId: 'builtin' });
+    h.db.appendNativeMessage({
+      threadId: thread.id,
+      role: 'user',
+      blocks: [{ type: 'text', text: `OLD_MARKER ${'old context '.repeat(200)}` }],
+      source: { kind: 'user' },
+      runId: null,
+      step: null,
+    });
+    h.db.appendNativeMessage({
+      threadId: thread.id,
+      role: 'assistant',
+      blocks: [{ type: 'text', text: 'old answer' }],
+      source: { kind: 'model', provider: 'fake', model: 'fake-model' },
+      runId: null,
+      step: null,
+    });
+    h.db.appendNativeMessage({
+      threadId: thread.id,
+      role: 'user',
+      blocks: [{ type: 'text', text: 'earlier turn' }],
+      source: { kind: 'user' },
+      runId: null,
+      step: null,
+    });
+    h.db.appendNativeMessage({
+      threadId: thread.id,
+      role: 'assistant',
+      blocks: [{ type: 'text', text: 'earlier answer' }],
+      source: { kind: 'model', provider: 'fake', model: 'fake-model' },
+      runId: null,
+      step: null,
+    });
+
+    const frames: SseFrame[] = [];
+    const handle = await start(h, { prompt: 'continue now', frames });
+    expect((await handle.done).status).toBe('succeeded');
+
+    const compactions = h.db.listNativeCompactions(thread.id);
+    expect(compactions).toHaveLength(1);
+    expect(compactions[0]!.summary).toBe('SUMMARY_MARKER');
+    expect(frames.map((frame) => frame.event)).toContainEqual(
+      expect.objectContaining({ type: 'context_compacted' }),
+    );
+
+    const summaryRequest = JSON.stringify(provider.requests[0]);
+    expect(summaryRequest).toContain('OLD_MARKER');
+    const agentRequest = JSON.stringify(provider.requests.at(-1));
+    expect(agentRequest).toContain('SUMMARY_MARKER');
+    expect(agentRequest).not.toContain('OLD_MARKER');
+  });
+
   it('silently downgrades bypass under server-strict and blocks outside reads', async () => {
     const outside = tempDir('paboot-outside-');
     const outsideFile = path.join(outside, 'secret.txt');
