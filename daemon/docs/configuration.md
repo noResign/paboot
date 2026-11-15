@@ -202,9 +202,41 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
     "maxFileBytes": 262144,
     "catalogDescriptionChars": 500
   },
+  "web": {
+    "fetch": {
+      "enabled": true,
+      "provider": "auto",                      // auto（无 key 回退本机）| provider | http（本机直连，可访问内网）
+      "timeoutMs": 15000,
+      "baseUrl": null                          // 只影响 provider 后端；默认 <provider origin>/v1/tools
+    }
+  },
   "agent": { "maxSteps": 200, "maxToolCalls": 200 }
 }
 ```
+
+`web.fetch` 只影响 builtin 的 `WebFetch` 工具：
+
+- 假设所有模型 provider 都提供抓取 API：`auto` 时只要当前 provider 有 API key，就用它的
+  地址推导出 `POST <provider origin>/v1/tools/fetch`（返回 Markdown，在服务商侧抓取，
+  公网限定、碰不到内网 / 回环）。**web 工具在 `/v1/tools` 下，不是 completions base 本身**——
+  打到 `<base>/fetch` 会得到 404；自有路径布局用 `baseUrl` 覆盖。
+- 三个取值：`auto` / `provider` / `http`。
+  - `auto`：provider 后端可用就用它；**没有可用 key 时回退到本机后端**，并在日志里 warn
+    （回退会扩大 agent 能触达的网络范围，必须留痕）。
+  - `provider`：只用服务商后端。不可用时注册工具但调用报错，**不回退**——显式选择不该被
+    悄悄改掉。
+  - `http`：只用本机后端。
+- `provider: "http"` 是**本机直连**后端：由 daemon 进程发出请求，**能访问内网与回环**，
+  免 API Key、不计费。
+  - 解码范围：`text/*`、`application/json`、`application/xml`（含 `+json` / `+xml`）原样返回；
+    **HTML 转成 Markdown**（turndown + GFM 表格 / 删除线 / 任务列表）。PDF、图片等二进制拒绝。
+  - HTML 转换有硬护栏：源字符上限 20 万；**嵌套超过 512 层拒绝转换**。转换是同步的
+    （阻塞事件循环、定时器无法触发），深层嵌套呈超线性，所以这道护栏是必需项而非调优项。
+  - 同源重定向最多 3 跳；跨源重定向直接拒绝（要抓就再发一次调用）。
+  - URL 上限 2048 字符、拒绝带凭证的 URL；响应上限 2 MiB / 20 万字符（超长按字节截断，
+    声明 `Content-Length` 超限则直接拒绝）。
+  - 不带 cookie、不带 `Authorization`，只有固定 `user-agent` 与 `accept`。
+- 显式 `provider` 不可用时**不回退**，由调用返回 tool error；`auto` 才会回退（并记 warn）。
 
 每次 run 按当前模型的 `contextWindow` 推导（缺省回退 `fallbackWindowTokens`）：
 
