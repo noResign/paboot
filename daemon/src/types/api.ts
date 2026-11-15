@@ -112,7 +112,17 @@ export type NormalizedEvent =
       toolInput: unknown;
       status: PermissionStatus;
     }
-  | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
+  | {
+      type: 'question';
+      toolUseId: string;
+      questions: QuestionDto[];
+      /**
+       * Builtin only: the run is blocked on this pending permission. Clients
+       * submit the answer through the permission-decision endpoint (response
+       * `{ answer: string }`) instead of sending a new chat message.
+       */
+      permissionId?: string;
+    };
 
 /** Optional list price for a provider model, in USD per million tokens. */
 export interface ProviderModelPriceDto {

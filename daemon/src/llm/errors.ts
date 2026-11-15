@@ -101,7 +101,7 @@ export function sanitizeErrorMessage(value: string): string {
     .slice(0, 500);
 }
 
-function extractProviderMessage(body: string): string {
+export function extractProviderMessage(body: string): string {
   if (!body) return '';
   try {
     const parsed = JSON.parse(body) as unknown;

@@ -36,10 +36,27 @@ Registry 缓存。两种驱动共用 `runtimes/stdio-rpc.ts` 的通用 peer 传�
 `ToolServerSpec[]`（MCP 由进程内 `McpToolProvider` 挂载；server 侧看到
 `PABOOT_RUNTIME=builtin` 会跳过自己的审批 gate）。
 
-builtin 的原生工具：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite`。
+builtin 的原生工具：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite` /
+`WebFetch` / `AskUserQuestion`。
 Write / Edit 覆盖已有文件前必须在本会话 Read 过（readFiles 从 transcript 重建，重启不丢）；
 Bash 复用平台 shell 与进程树取消，环境变量只透传白名单，超限输出写 `~/.paboot/spill/`；
 Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，其余按 Session 权限模式审批。
+
+`WebFetch` 后端可插拔，两个实现共用同一接口：
+
+- **provider 后端**（`auto` 优先 / `provider`）：用当前模型 provider 的地址推导
+  `<origin>/v1/tools/fetch`，在服务商侧抓取并返回 Markdown，天然无法访问内网 / 回环。
+- **本地后端**（`http`，或 `auto` 在 provider 无可用 key 时回退）：由 daemon 进程直连，
+  **可访问内网与回环**，免 Key 不计费。回退时记 warn 日志，因为可达范围变了。
+  文本 / JSON / XML 原样返回，HTML 用 turndown + GFM 转成 Markdown（PDF 等二进制拒绝）；
+  HTML 转换是同步的，所以有 20 万字符与 512 层嵌套两道硬护栏。同源重定向 ≤ 3 跳、跨源拒绝、
+  URL 2048 字符上限、拒绝带凭证的 URL、响应 2 MiB / 20 万字符上限、不带 cookie 与
+  `Authorization`。工具的 description 会随后端切换，模型据此知道能碰什么。
+- 显式 `provider` 不可用时**不回退**，返回明确错误。
+
+`AskUserQuestion` 是**阻塞式**：工具创建一条 pending `UserInput` 权限记录，发 `question` 事件
+（带 `permissionId`），等待客户端通过权限决策端点回填答案，答案作为该调用的 `tool_result`
+让模型在同一个 run 里继续。Claude 等 headless runtime 不支持阻塞，仍走「答案作为下一条消息」。
 工具预算与 spill 保留期在 [configuration.md](configuration.md) 的 `builtin.json` 中配置。
 
 **长会话**：接近模型窗口时先在渲染层把旧的超大工具结果换成占位（保留 spill 指针），仍超阈值
