@@ -55,6 +55,16 @@ enum ChatEventReducer {
         case .turnEnd:
             endThinking(&message)
 
+        case .contextCompacted(let event):
+            endThinking(&message)
+            message.blocks.append(
+                .notice(
+                    "更早的对话已压缩 · "
+                        + "\(Formatters.tokens(event.beforeTokens)) → "
+                        + "\(Formatters.tokens(event.afterTokens)) tokens"
+                )
+            )
+
         case .error(let event):
             endThinking(&message)
             message.error = event.message

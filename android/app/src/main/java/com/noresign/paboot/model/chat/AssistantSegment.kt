@@ -12,6 +12,8 @@ sealed interface AssistantSegment {
     data class ToolGroup(val tools: List<ContentBlock.ToolUse>) : AssistantSegment
 
     data class Question(val block: ContentBlock.Question) : AssistantSegment
+
+    data class Notice(val text: String) : AssistantSegment
 }
 
 /** 把扁平的 blocks 折成段：相邻 ToolUse 归为一组，Text/Thinking/Question 断组。 */
@@ -39,6 +41,10 @@ fun segmentBlocks(blocks: List<ContentBlock>): List<AssistantSegment> {
             is ContentBlock.Question -> {
                 flush()
                 segments += AssistantSegment.Question(block)
+            }
+            is ContentBlock.Notice -> {
+                flush()
+                segments += AssistantSegment.Notice(block.text)
             }
         }
     }

@@ -61,11 +61,25 @@ export interface LlmMessage {
   content: string | LlmContentBlock[];
 }
 
+/** Optional cache-aware split of the system prompt; `system` stays the full text. */
+export interface LlmSystemPart {
+  text: string;
+  /** Adapters that support explicit breakpoints cache everything up to this part. */
+  cache?: boolean;
+}
+
 export interface LlmRequest {
   provider: string;
   /** Bare model name (no `<provider>:` prefix); use catalog.parseModelId to split. */
   model: string;
   system: string;
+  /**
+   * Stable/dynamic split for providers with explicit prompt caching. Adapters
+   * fall back to `system` when absent.
+   */
+  systemParts?: LlmSystemPart[];
+  /** Ask adapters that support it to add cache breakpoints (agent loops only). */
+  promptCache?: boolean;
   messages: LlmMessage[];
   tools: ToolSchema[];
   maxTokens?: number;

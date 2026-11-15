@@ -185,4 +185,12 @@ describe('buildAssistantFromEvents (history replay)', () => {
     );
     expect(replayed.contextUsage).toEqual({ tokens: 12_000, window: 200_000 });
   });
+
+  it('renders a compaction notice without touching the context ring', () => {
+    const state = run([{ type: 'context_compacted', beforeTokens: 102_000, afterTokens: 48_000 }]);
+    expect(lastAssistant(state.messages)?.blocks).toEqual([
+      { kind: 'notice', text: '更早的对话已压缩 · 102k → 48k tokens' },
+    ]);
+    expect(state.contextUsage).toBeNull();
+  });
 });

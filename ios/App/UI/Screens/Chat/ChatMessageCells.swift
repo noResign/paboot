@@ -263,6 +263,8 @@ final class AssistantMessageCell: UITableViewCell {
                     self?.onAnswer?(toolUseId, text)
                 }
                 view = questionView
+            case .block(.notice):
+                view = ChatNoticeView(frame: .zero)
             case .block(.tool):
                 view = ChatBlockView(frame: .zero)
             }
@@ -304,6 +306,8 @@ final class AssistantMessageCell: UITableViewCell {
             return "thinking"
         case .block(.question(let question)):
             return "question:\(question.toolUseId)"
+        case .block(.notice):
+            return "notice"
         case .block(.tool):
             return "tool"
         }
@@ -840,6 +844,40 @@ final class ChatToolCardView: ChatBlockView {
             return nil
         }
         return "json"
+    }
+}
+
+/// System notice (auto-compaction): centered caption, not model output.
+final class ChatNoticeView: ChatBlockView {
+    private let label = UILabel()
+    private var displayedText: String?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        label.font = Typography.caption
+        label.textColor = Theme.Colors.textMuted
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: topAnchor, constant: Spacing.xxs),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Spacing.xxs),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func update(block: ContentBlock, streaming: Bool) {
+        guard case .notice(let text) = block, text != displayedText else { return }
+        displayedText = text
+        label.text = text
+        notifyEnclosingTableHeightChanged(animated: false)
     }
 }
 

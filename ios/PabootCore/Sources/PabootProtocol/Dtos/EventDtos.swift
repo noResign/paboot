@@ -90,6 +90,22 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
         public let status: String?
     }
 
+    /// Builtin auto-compaction summarized older turns; informational only.
+    public struct ContextCompacted: Decodable, Equatable, Sendable {
+        public let beforeTokens: Int64
+        public let afterTokens: Int64
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            beforeTokens = try container.decodeIfPresent(Int64.self, forKey: .beforeTokens) ?? 0
+            afterTokens = try container.decodeIfPresent(Int64.self, forKey: .afterTokens) ?? 0
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case beforeTokens, afterTokens
+        }
+    }
+
     public struct Question: Decodable, Equatable, Sendable {
         public let toolUseId: String
         public let questions: [QuestionDto]
@@ -113,6 +129,7 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
     case toolResult(ToolResult)
     case usage(Usage)
     case turnEnd(TurnEnd)
+    case contextCompacted(ContextCompacted)
     case error(ErrorEvent)
     case permissionRequest(PermissionRequest)
     case question(Question)
@@ -143,6 +160,8 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
             self = .usage(try Usage(from: decoder))
         case "turn_end":
             self = .turnEnd(try TurnEnd(from: decoder))
+        case "context_compacted":
+            self = .contextCompacted(try ContextCompacted(from: decoder))
         case "error":
             self = .error(try ErrorEvent(from: decoder))
         case "permission_request":

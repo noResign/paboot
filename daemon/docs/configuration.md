@@ -157,7 +157,17 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
     "systemPromptRatio": 0.04,               // 占模型窗口
     "maxSystemPromptTokens": 8000,
     "runtimeContextRatio": 0.10,
-    "maxRuntimeContextTokens": 24000
+    "maxRuntimeContextTokens": 24000,
+    "compaction": {
+      "enabled": true,
+      "triggerAt": 0.8,                      // 真实 contextTokens 达窗口 80% 时开始压缩
+      "keepRecentRatio": 0.4,                // 保留最近约 40% 窗口的原文
+      "minCompactTokens": 4000,              // 待摘要前缀不足这个数就跳过
+      "maxSummaryTokens": 1024,              // 摘要本身的 token 上限
+      "pruneOldToolResults": true,           // 先替换超大旧工具结果
+      "toolResultPruneTarget": 0.6,          // 裁到 60% 以下就不再生成摘要
+      "toolResultKeepBytes": 8192            // 只裁剪大于 8KB 的结果
+    }
   },
   "projectDocs": {
     "shareOfRuntimeContext": 0.5,            // 项目文档最多占 runtime-context 的一半
@@ -192,7 +202,7 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
     "maxFileBytes": 262144,
     "catalogDescriptionChars": 500
   },
-  "agent": { "maxSteps": 100, "maxToolCalls": 200 }
+  "agent": { "maxSteps": 200, "maxToolCalls": 200 }
 }
 ```
 
@@ -208,6 +218,14 @@ projectDocsTokens = min(ceil(runtimeTokens × shareOfRuntimeContext), projectDoc
 - 预算单位是 **tokens**，不是字符；中英文混排按 CJK 感知的保守估算，并用每次模型调用
   返回的真实 `contextTokens` 自动校准比例（按 `provider:model` 学习，进程内有效）。
 - 工具结果在写事件 / transcript 前按 `maxResultTokens` 截断（保留头尾）。
+- **自动压缩**：上一次模型调用的真实 `contextTokens` 达到 `triggerAt × window` 时，先从最新消息
+  往回按 turn 累加，保留约 `keepRecentRatio × window` 的原文；然后把更早、超过
+  `toolResultKeepBytes` 的工具结果换成占位（保留 spill 路径）。如果这样已降到
+  `toolResultPruneTarget × window` 以下就不做摘要；否则把更早的前缀交给同一个 provider 生成
+  ≤`maxSummaryTokens` 的摘要，写入 `native_compactions`（原始 transcript 不删）。待摘要前缀
+  小于 `minCompactTokens` 时直接跳过；摘要失败只记 warning，不中断 run。
+- **prompt cache**：Anthropic 会把 stable system 段（含工具 schema）与最后一条消息作为缓存断点；
+  dynamic 段与摘要不参与缓存断点。OpenAI / DeepSeek 依赖稳定前缀，不再额外传缓存字段。
 
 #### 安全档位（daemon 全局）
 

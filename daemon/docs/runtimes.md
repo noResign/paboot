@@ -42,6 +42,12 @@ Bash 复用平台 shell 与进程树取消，环境变量只透传白名单，�
 Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，其余按 Session 权限模式审批。
 工具预算与 spill 保留期在 [configuration.md](configuration.md) 的 `builtin.json` 中配置。
 
+**长会话**：接近模型窗口时先在渲染层把旧的超大工具结果换成占位（保留 spill 指针），仍超阈值
+再按 turn 边界把更早的前缀摘成一段写进 `native_compactions`；原文不删，重启后按
+`through_seq` 恢复为「摘要 + 最近消息」。Anthropic 请求会对 stable system 段与最后一条消息
+加 `cache_control` 断点，OpenAI / DeepSeek 依赖稳定前缀。细节与阈值见
+[configuration.md](configuration.md) 的 `context.compaction`。
+
 所有运行时都通过 `RuntimeDriver` 注册执行驱动，`routes/chat.ts` 只按 id 取
 `registry.driver(id)` 并调用 `start`，**接入新运行时不需要改 chat 路由**。
 

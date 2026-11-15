@@ -10,6 +10,7 @@ export type Segment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; active: boolean }
   | { kind: 'question'; toolUseId: string; questions: Extract<ContentBlock, { kind: 'question' }>['questions']; answered: boolean }
+  | { kind: 'notice'; text: string }
   | { kind: 'tools'; tools: Array<Extract<ContentBlock, { kind: 'tool' }>>; key: string };
 
 export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
@@ -45,6 +46,10 @@ export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
           questions: block.questions,
           answered: block.answered,
         });
+        break;
+      case 'notice':
+        flush();
+        segments.push({ kind: 'notice', text: block.text });
         break;
     }
   }

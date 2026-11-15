@@ -21,6 +21,14 @@ export interface TranscriptRenderOptions {
   resolveImage?: TranscriptImageResolver;
   /** When false, historical images become text placeholders. Default true. */
   supportsImages?: boolean;
+  /**
+   * Compaction stage 1: tool results at or before this seq (and larger than
+   * `toolResultKeepBytes`) render as short placeholders. The transcript itself
+   * is never modified.
+   */
+  pruneToolResultsThroughSeq?: number;
+  /** Minimum byte size worth pruning (default 8 KiB). */
+  toolResultKeepBytes?: number;
 }
 
 /** Bridge the attachment store into the transcript renderer. */
@@ -131,7 +139,7 @@ async function renderUserBlocks(
         break;
       }
       case 'tool_result':
-        out.push(toolResultBlock(block));
+        out.push(toolResultBlock(block, message, options));
         break;
       case 'reasoning':
       case 'tool_call':
@@ -180,7 +188,7 @@ async function renderToolResultBlocks(
 ): Promise<LlmContentBlock[]> {
   const out: LlmContentBlock[] = [];
   for (const block of message.blocks) {
-    if (block.type === 'tool_result') out.push(toolResultBlock(block));
+    if (block.type === 'tool_result') out.push(toolResultBlock(block, message, options));
     else if (block.type === 'image') out.push(await resolveImage(block, options));
     else if (block.type === 'text' && block.text) out.push({ type: 'text', text: block.text });
   }
@@ -189,13 +197,30 @@ async function renderToolResultBlocks(
 
 function toolResultBlock(
   block: Extract<TranscriptContentBlock, { type: 'tool_result' }>,
+  message: NativeMessage,
+  options: TranscriptRenderOptions,
 ): LlmContentBlock {
+  const pruneThrough = options.pruneToolResultsThroughSeq;
+  const keepBytes = options.toolResultKeepBytes ?? 8 * 1024;
+  const pruned =
+    pruneThrough !== undefined &&
+    message.seq <= pruneThrough &&
+    block.content.length > keepBytes;
   return {
     type: 'tool_result',
     toolUseId: block.toolUseId,
-    content: block.content,
+    content: pruned ? prunedToolResult(block.content) : block.content,
     ...(block.isError ? { isError: true } : {}),
   };
+}
+
+/** Keep a spill pointer when the old result references one. */
+function prunedToolResult(content: string): string {
+  const spill = /full output:\s*(\S[^\n]*)/.exec(content)?.[1]?.trim();
+  return (
+    `[earlier tool result omitted to save context: ${content.length} chars` +
+    `${spill ? `; full output: ${spill}` : ''}]`
+  );
 }
 
 async function resolveImage(

@@ -232,6 +232,29 @@ describe('Anthropic provider', () => {
     ]);
   });
 
+  it('adds prompt-cache breakpoints when asked', () => {
+    const body = buildAnthropicBody({
+      ...request(),
+      system: 'stable\n\ndynamic',
+      systemParts: [{ text: 'stable', cache: true }, { text: 'dynamic' }],
+      promptCache: true,
+    });
+    expect(body['system']).toEqual([
+      { type: 'text', text: 'stable', cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: 'dynamic' },
+    ]);
+    const messages = body['messages'] as Array<{ content: unknown }>;
+    expect(messages.at(-1)!.content).toEqual([
+      { type: 'text', text: 'read the file', cache_control: { type: 'ephemeral' } },
+    ]);
+  });
+
+  it('leaves plain requests free of cache_control', () => {
+    const body = buildAnthropicBody(request());
+    expect(body['system']).toBe('You are paboot.');
+    expect(JSON.stringify(body)).not.toContain('cache_control');
+  });
+
   it('aggregates a hand-built chunk stream', async () => {
     async function* chunks(): AsyncIterable<LlmChunk> {
       yield { type: 'reasoning_delta', text: 'think' };

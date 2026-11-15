@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noresign.paboot.model.chat.AssistantSegment
@@ -96,6 +97,7 @@ internal fun MessageList(
             is ContentBlock.Thinking -> 1
             is ContentBlock.ToolUse -> (block.result?.length ?: 0) + 1
             is ContentBlock.Question -> 1
+            is ContentBlock.Notice -> block.text.length
         }
     } ?: 0
     LaunchedEffect(lastContentLen) {
@@ -217,6 +219,7 @@ internal fun AssistantBlock(
                 is AssistantSegment.Thinking -> ThinkingBlock(active = segment.active)
                 is AssistantSegment.ToolGroup -> ToolGroupView(segment.tools)
                 is AssistantSegment.Question -> QuestionCard(segment.block, streaming, onAnswer)
+                is AssistantSegment.Notice -> NoticeLine(segment.text)
             }
         }
         // DeepSeek Harness only reports its reasoning after the server-side turn
@@ -242,4 +245,18 @@ internal fun AssistantBlock(
         }
         message.usage?.let { UsageLine(it) }
     }
+}
+
+/** 系统提示（自动压缩等），不是模型输出：居中、次要色、不占气泡。 */
+@Composable
+private fun NoticeLine(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    )
 }
