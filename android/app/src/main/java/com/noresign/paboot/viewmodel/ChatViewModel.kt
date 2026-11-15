@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlin.random.Random
 
 sealed class SessionPermissionsUiState {
@@ -833,7 +834,11 @@ class ChatViewModel(
         is NormalizedEvent.PermissionRequest -> a.copy(blocks = endThinking(a.blocks))
         is NormalizedEvent.Question -> a.copy(
             blocks = endThinking(a.blocks) +
-                ContentBlock.Question(toolUseId = e.toolUseId, questions = e.questions),
+                ContentBlock.Question(
+                    toolUseId = e.toolUseId,
+                    questions = e.questions,
+                    permissionId = e.permissionId,
+                ),
         )
     }
 
@@ -903,18 +908,58 @@ class ChatViewModel(
     }
 
     fun answerQuestion(toolUseId: String, answerText: String) {
-        if (_streaming.value || answerText.isBlank()) return
-        _messages.update { list ->
-            list.map { m ->
-                if (m is ChatUiMessage.Assistant) {
-                    m.copy(blocks = m.blocks.map { b ->
-                        if (b is ContentBlock.Question && b.toolUseId == toolUseId) b.copy(answered = true)
-                        else b
-                    })
-                } else m
+        val answer = answerText.trim()
+        if (answer.isEmpty()) return
+        val question = findQuestion(toolUseId) ?: return
+        val permissionId = question.permissionId
+        if (permissionId != null) {
+            // builtin 阻塞式提问：回答通过权限端点回填 tool_result，run 继续。
+            if (question.answered) return
+            setQuestionAnswered(toolUseId, true)
+            viewModelScope.launch {
+                val response = buildJsonObject { put("answer", answer) }
+                when (val r = repository.decidePermission(permissionId, "allow", null, response)) {
+                    is NetworkResult.Success -> Unit
+                    is NetworkResult.Error -> {
+                        setQuestionAnswered(toolUseId, false)
+                        _error.value = friendlyError(r)
+                    }
+                }
+            }
+            return
+        }
+        // Claude 等 headless runtime：答案只能作为下一条消息发出去。
+        if (_streaming.value) return
+        setQuestionAnswered(toolUseId, true)
+        send(answer)
+    }
+
+    private fun findQuestion(toolUseId: String): ContentBlock.Question? {
+        for (message in _messages.value) {
+            if (message !is ChatUiMessage.Assistant) continue
+            for (block in message.blocks) {
+                if (block is ContentBlock.Question && block.toolUseId == toolUseId) return block
             }
         }
-        send(answerText)
+        return null
+    }
+
+    private fun setQuestionAnswered(toolUseId: String, answered: Boolean) {
+        _messages.update { list ->
+            list.map { message ->
+                if (message is ChatUiMessage.Assistant) {
+                    message.copy(blocks = message.blocks.map { block ->
+                        if (block is ContentBlock.Question && block.toolUseId == toolUseId) {
+                            block.copy(answered = answered)
+                        } else {
+                            block
+                        }
+                    })
+                } else {
+                    message
+                }
+            }
+        }
     }
 
     fun decidePermission(decision: String, reason: String? = null, response: JsonElement? = null) {

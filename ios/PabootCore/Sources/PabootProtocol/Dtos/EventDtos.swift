@@ -109,15 +109,19 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
     public struct Question: Decodable, Equatable, Sendable {
         public let toolUseId: String
         public let questions: [QuestionDto]
+        /// Builtin only: the run blocks on this pending permission; the answer
+        /// goes back through the permission-decision endpoint.
+        public let permissionId: String?
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             toolUseId = try container.decode(String.self, forKey: .toolUseId)
             questions = try container.decodeIfPresent([QuestionDto].self, forKey: .questions) ?? []
+            permissionId = try container.decodeIfPresent(String.self, forKey: .permissionId)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case toolUseId, questions
+            case toolUseId, questions, permissionId
         }
     }
 

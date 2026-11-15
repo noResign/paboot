@@ -156,7 +156,16 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
     case 'question':
       return {
         ...a,
-        blocks: [...endThinking(a.blocks), { kind: 'question', toolUseId: event.toolUseId, questions: event.questions, answered: false }],
+        blocks: [
+          ...endThinking(a.blocks),
+          {
+            kind: 'question',
+            toolUseId: event.toolUseId,
+            questions: event.questions,
+            answered: false,
+            permissionId: event.permissionId,
+          },
+        ],
       };
   }
 }
