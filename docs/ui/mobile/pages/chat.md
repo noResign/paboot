@@ -55,6 +55,11 @@
      注意与顶栏的**上下文占用**区分：用量条是「本 run 花了多少」（只增），顶栏是「现在窗口装了多少」（压缩后回落）。
    - `context_compacted` → 居中一行系统提示 `更早的对话已压缩 · 102k → 48k tokens`（builtin 自动压缩，
      只在本轮实时出现，不进会话历史）。
+   - `question` → 问答卡片。每道题末尾有「其他」：选项都不合适时点开后输入自己的答案，
+     统一随选择一起提交。**builtin 的事件带 `permissionId`**：run 正阻塞等待，选项选完立即
+     通过权限决策端点提交，答案作为 tool_result 让同一 run 继续；不带 `permissionId` 的
+     （Claude 等）仍等本轮结束后把选择作为下一条消息发出。出现「其他」时改为点「发送答案」，
+     避免边输入边提交。
    - 🔴 `permission_request` → **弹出权限审批浮层**（见 6.7，阻塞当前运行直至作答）。
    - `error` → error 卡片（error 色，显示 message）。
 4. 出错时：error 卡片（error 色，显示 message）。

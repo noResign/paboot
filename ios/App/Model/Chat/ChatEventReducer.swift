@@ -80,7 +80,11 @@ enum ChatEventReducer {
             endThinking(&message)
             message.blocks.append(
                 .question(
-                    QuestionBlock(toolUseId: event.toolUseId, questions: event.questions)
+                    QuestionBlock(
+                        toolUseId: event.toolUseId,
+                        questions: event.questions,
+                        permissionId: event.permissionId
+                    )
                 )
             )
 

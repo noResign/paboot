@@ -888,8 +888,13 @@ final class ChatQuestionCardView: ChatBlockView {
     private var toolUseId = ""
     private var questions: [QuestionDto] = []
     private var selections: [Int: Set<String>] = [:]
+    /// Per-question "其他" free-text answer (used when no option fits).
+    private var otherActive: [Int: Bool] = [:]
+    private var otherTexts: [Int: String] = [:]
+    private var submitButton: UIButton?
     private var answered = false
     private var streaming = false
+    private var permissionId: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -923,16 +928,20 @@ final class ChatQuestionCardView: ChatBlockView {
         guard block.toolUseId != toolUseId
             || block.questions != questions
             || block.answered != answered
+            || block.permissionId != permissionId
             || streaming != self.streaming else {
             return
         }
 
         self.streaming = streaming
+        permissionId = block.permissionId
 
         if block.toolUseId != toolUseId {
             toolUseId = block.toolUseId
             questions = block.questions
             selections.removeAll()
+            otherActive.removeAll()
+            otherTexts.removeAll()
         } else if block.questions != questions {
             questions = block.questions
         }
@@ -943,11 +952,17 @@ final class ChatQuestionCardView: ChatBlockView {
     }
 
     private var allAnswered: Bool {
-        !questions.isEmpty && questions.indices.allSatisfy { !(selections[$0] ?? []).isEmpty }
+        !questions.isEmpty && questions.indices.allSatisfy { index in
+            if !(selections[index] ?? []).isEmpty { return true }
+            guard otherActive[index] == true else { return false }
+            let text = otherTexts[index]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !text.isEmpty
+        }
     }
 
     private func render() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        submitButton = nil
 
         for (index, question) in questions.enumerated() {
             if let header = question.header, !header.isEmpty {
@@ -981,11 +996,34 @@ final class ChatQuestionCardView: ChatBlockView {
                 }
                 stack.addArrangedSubview(row)
             }
+
+            let other = QuestionOptionRow(
+                label: "其他",
+                detail: "自己输入答案",
+                selected: otherActive[index] == true
+            )
+            other.isEnabled = !answered
+            other.onTap = { [weak self] in self?.toggleOther(index) }
+            stack.addArrangedSubview(other)
+
+            if otherActive[index] == true {
+                let field = UITextField()
+                field.text = otherTexts[index] ?? ""
+                field.placeholder = "输入你的答案"
+                field.font = Typography.body
+                field.textColor = Theme.Colors.textPrimary
+                field.borderStyle = .roundedRect
+                field.isEnabled = !answered
+                field.tag = index
+                field.addTarget(self, action: #selector(otherTextChanged(_:)), for: .editingChanged)
+                stack.addArrangedSubview(field)
+                field.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+            }
         }
 
         if answered {
             stack.addArrangedSubview(statusLabel("已发送答案"))
-        } else if streaming {
+        } else if streaming && permissionId == nil {
             stack.addArrangedSubview(statusLabel("等待本轮结束…"))
         } else {
             var configuration = UIButton.Configuration.tinted()
@@ -1001,6 +1039,7 @@ final class ChatQuestionCardView: ChatBlockView {
                 for: .touchUpInside
             )
             stack.addArrangedSubview(button)
+            submitButton = button
 
             if !allAnswered {
                 stack.addArrangedSubview(statusLabel("还有问题未选择"))
@@ -1028,19 +1067,45 @@ final class ChatQuestionCardView: ChatBlockView {
             }
         } else {
             current = [label]
+            otherActive.removeValue(forKey: index)
+            otherTexts.removeValue(forKey: index)
         }
         selections[index] = current
         render()
+    }
+
+    private func toggleOther(_ index: Int) {
+        guard !answered, index < questions.count else { return }
+        if questions[index].multiSelect == true {
+            otherActive[index] = !(otherActive[index] == true)
+        } else {
+            selections[index] = []
+            otherActive[index] = true
+        }
+        render()
+        notifyEnclosingTableHeightChanged(animated: false)
+    }
+
+    @objc private func otherTextChanged(_ sender: UITextField) {
+        otherTexts[sender.tag] = sender.text ?? ""
+        submitButton?.isEnabled = allAnswered
     }
 
     private func submit() {
         guard allAnswered else { return }
 
         let answer = questions.enumerated().map { index, question in
-            let selected = question.options
+            var parts = question.options
                 .map(\.label)
                 .filter { selections[index]?.contains($0) == true }
-            return "关于「\(question.question)」，我的选择是：\(selected.joined(separator: "、"))"
+            if otherActive[index] == true {
+                let custom = otherTexts[index]?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ?? ""
+                if !custom.isEmpty {
+                    parts.append("其他：\(custom)")
+                }
+            }
+            return "关于「\(question.question)」，我的选择是：\(parts.joined(separator: "、"))"
         }
         .joined(separator: "\n")
 

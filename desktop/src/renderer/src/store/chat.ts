@@ -224,28 +224,38 @@ export const useChat = create<ChatStore>((set, get) => ({
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
     const text = answerText.trim();
+    if (!key || !chat || !text) return;
+    const question = findQuestion(chat.messages, toolUseId);
+    if (!question) return;
+
+    // Builtin blocking questions: answer through the permission endpoint; the
+    // same run continues with the answer as the tool result.
+    if (question.permissionId) {
+      if (question.answered) return;
+      set(questionAnswered(key, toolUseId, true));
+      void (async () => {
+        const res = await api.decidePermission(question.permissionId!, 'allow', undefined, {
+          answer: text,
+        });
+        if (res.ok || res.status === 404 || res.status === 409) return;
+        const { apiCode, message } = apiErrorOf(res.data);
+        set((state) => ({
+          byKey: patch(state, key, (current) => ({
+            ...current,
+            messages: markAnswered(current.messages, toolUseId, false),
+            error: friendlyMessage(apiCode, res.status, message),
+          })),
+        }));
+      })();
+      return;
+    }
+
     // The same gate as `send`, checked *before* marking the card answered: if the
     // run were still busy, `send` would drop the text and the card would read
     // "已发送答案" with nothing sent.
-    if (!key || !chat || !text || isBusy(chat.phase)) return;
+    if (isBusy(chat.phase)) return;
 
-    set((state) => ({
-      byKey: patch(state, key, (current) => ({
-        ...current,
-        messages: current.messages.map((message) =>
-          message.kind === 'assistant'
-            ? {
-                ...message,
-                blocks: message.blocks.map((block) =>
-                  block.kind === 'question' && block.toolUseId === toolUseId
-                    ? { ...block, answered: true }
-                    : block,
-                ),
-              }
-            : message,
-        ),
-      })),
-    }));
+    set(questionAnswered(key, toolUseId, true));
     void get().send(text);
   },
 
@@ -721,6 +731,40 @@ function withoutKey(map: Record<string, string>, key: string): Record<string, st
   const next = { ...map };
   delete next[key];
   return next;
+}
+
+function findQuestion(messages: ChatMessage[], toolUseId: string) {
+  for (const message of messages) {
+    if (message.kind !== 'assistant') continue;
+    for (const block of message.blocks) {
+      if (block.kind === 'question' && block.toolUseId === toolUseId) return block;
+    }
+  }
+  return null;
+}
+
+function markAnswered(messages: ChatMessage[], toolUseId: string, answered: boolean): ChatMessage[] {
+  return messages.map((message) =>
+    message.kind === 'assistant'
+      ? {
+          ...message,
+          blocks: message.blocks.map((block) =>
+            block.kind === 'question' && block.toolUseId === toolUseId
+              ? { ...block, answered }
+              : block,
+          ),
+        }
+      : message,
+  );
+}
+
+function questionAnswered(key: string, toolUseId: string, answered: boolean) {
+  return (state: ChatStore): Partial<ChatStore> => ({
+    byKey: patch(state, key, (chat) => ({
+      ...chat,
+      messages: markAnswered(chat.messages, toolUseId, answered),
+    })),
+  });
 }
 
 export function isBusy(phase: ChatSessionState['phase']): boolean {

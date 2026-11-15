@@ -747,12 +747,48 @@ final class ChatViewModel {
 
     func answerQuestion(toolUseId: String, answerText: String) {
         let answer = answerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !state.streaming, !answer.isEmpty else { return }
-        markQuestionAnswered(toolUseId)
+        guard !answer.isEmpty else { return }
+        guard let question = findQuestion(toolUseId) else { return }
+
+        // Builtin blocking questions: answer through the permission endpoint and
+        // let the same run continue with the answer as the tool result.
+        if let permissionId = question.permissionId {
+            guard !question.answered else { return }
+            markQuestionAnswered(toolUseId, answered: true)
+            Task {
+                do {
+                    try await repository.decidePermission(
+                        id: permissionId,
+                        decision: "allow",
+                        response: .object(["answer": .string(answer)])
+                    )
+                } catch {
+                    markQuestionAnswered(toolUseId, answered: false)
+                    state.error = friendlyMessage(error, hasRun: false)
+                }
+            }
+            return
+        }
+
+        // Claude and other headless runtimes cannot block: the answer only
+        // reaches the model as the next message, after the turn ends.
+        guard !state.streaming else { return }
+        markQuestionAnswered(toolUseId, answered: true)
         send(answer)
     }
 
-    private func markQuestionAnswered(_ toolUseId: String) {
+    private func findQuestion(_ toolUseId: String) -> QuestionBlock? {
+        for message in state.messages where message.role == .assistant {
+            for block in message.blocks {
+                if case .question(let question) = block, question.toolUseId == toolUseId {
+                    return question
+                }
+            }
+        }
+        return nil
+    }
+
+    private func markQuestionAnswered(_ toolUseId: String, answered: Bool) {
         for messageIndex in state.messages.indices
         where state.messages[messageIndex].role == .assistant {
             for blockIndex in state.messages[messageIndex].blocks.indices {
@@ -760,7 +796,7 @@ final class ChatViewModel {
                       question.toolUseId == toolUseId else {
                     continue
                 }
-                question.answered = true
+                question.answered = answered
                 state.messages[messageIndex].blocks[blockIndex] = .question(question)
             }
         }

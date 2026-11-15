@@ -9,7 +9,13 @@ import type { ContentBlock } from '../../store/chat/types';
 export type Segment =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; active: boolean }
-  | { kind: 'question'; toolUseId: string; questions: Extract<ContentBlock, { kind: 'question' }>['questions']; answered: boolean }
+  | {
+      kind: 'question';
+      toolUseId: string;
+      questions: Extract<ContentBlock, { kind: 'question' }>['questions'];
+      answered: boolean;
+      permissionId?: string | null;
+    }
   | { kind: 'notice'; text: string }
   | { kind: 'tools'; tools: Array<Extract<ContentBlock, { kind: 'tool' }>>; key: string };
 
@@ -45,6 +51,7 @@ export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
           toolUseId: block.toolUseId,
           questions: block.questions,
           answered: block.answered,
+          permissionId: block.permissionId,
         });
         break;
       case 'notice':
