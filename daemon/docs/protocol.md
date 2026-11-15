@@ -160,8 +160,11 @@ SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`eve
 
 ```
 status | text_delta | thinking_start | tool_use
-tool_result | usage | turn_end | error | permission_request | question
+tool_result | usage | turn_end | context_compacted | error | permission_request | question
 ```
+
+`context_compacted` 只有 builtin 会发：自动压缩更早历史后报告 `beforeTokens` / `afterTokens`
+（估算值）。它不产生聊天消息，客户端渲染成一行系统提示；历史重建时不会回放（压缩是内部动作）。
 
 **思考内容不下发**：运行时产生的 `thinking_delta` 在 run service 里直接丢弃——既不落库也不进
 SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（标题行转圈），收到下一条内容事件

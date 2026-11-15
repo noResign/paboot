@@ -28,6 +28,24 @@ export interface BuiltinRuntimeConfig {
     /** Fraction of the model window reserved for the runtime-context channel. */
     runtimeContextRatio: number;
     maxRuntimeContextTokens: number;
+    /** Automatic history compaction once the context nears the window. */
+    compaction: {
+      enabled: boolean;
+      /** Trigger when the last model call's context usage reaches this window share. */
+      triggerAt: number;
+      /** Keep roughly this share of the window as verbatim recent history. */
+      keepRecentRatio: number;
+      /** Skip summarizing when the compactable prefix is smaller than this. */
+      minCompactTokens: number;
+      /** Cap for the generated summary itself. */
+      maxSummaryTokens: number;
+      /** Replace oversized old tool results before resorting to a summary. */
+      pruneOldToolResults: boolean;
+      /** Skip the summary when pruning alone gets usage under this window share. */
+      toolResultPruneTarget: number;
+      /** Only tool results larger than this are pruned. */
+      toolResultKeepBytes: number;
+    };
   };
   projectDocs: {
     /** Share of the runtime-context budget project docs may occupy. */
@@ -91,6 +109,16 @@ export const DEFAULT_BUILTIN_CONFIG: BuiltinRuntimeConfig = {
     maxSystemPromptTokens: 8_000,
     runtimeContextRatio: 0.1,
     maxRuntimeContextTokens: 24_000,
+    compaction: {
+      enabled: true,
+      triggerAt: 0.8,
+      keepRecentRatio: 0.4,
+      minCompactTokens: 4_000,
+      maxSummaryTokens: 1_024,
+      pruneOldToolResults: true,
+      toolResultPruneTarget: 0.6,
+      toolResultKeepBytes: 8_192,
+    },
   },
   projectDocs: {
     shareOfRuntimeContext: 0.5,
@@ -134,7 +162,7 @@ export const DEFAULT_BUILTIN_CONFIG: BuiltinRuntimeConfig = {
     catalogDescriptionChars: 500,
   },
   agent: {
-    maxSteps: 100,
+    maxSteps: 200,
     maxToolCalls: 200,
   },
 };
@@ -263,6 +291,7 @@ export function parseBuiltinConfig(raw: unknown): {
         'maxSystemPromptTokens',
         'runtimeContextRatio',
         'maxRuntimeContextTokens',
+        'compaction',
       ],
       'context',
       warnings,
@@ -300,6 +329,68 @@ export function parseBuiltinConfig(raw: unknown): {
       config.context.maxRuntimeContextTokens,
       warnings,
     );
+    const compaction = section(context['compaction'], 'context.compaction', warnings);
+    if (compaction) {
+      warnUnknown(
+        compaction,
+        [
+          'enabled',
+          'triggerAt',
+          'keepRecentRatio',
+          'minCompactTokens',
+          'maxSummaryTokens',
+          'pruneOldToolResults',
+          'toolResultPruneTarget',
+          'toolResultKeepBytes',
+        ],
+        'context.compaction',
+        warnings,
+      );
+      const defaults = config.context.compaction;
+      config.context.compaction = {
+        enabled: boolField(compaction['enabled'], 'context.compaction.enabled', defaults.enabled, warnings),
+        triggerAt: ratioField(compaction['triggerAt'], 'context.compaction.triggerAt', defaults.triggerAt, warnings),
+        keepRecentRatio: ratioField(
+          compaction['keepRecentRatio'],
+          'context.compaction.keepRecentRatio',
+          defaults.keepRecentRatio,
+          warnings,
+        ),
+        minCompactTokens: intField(
+          compaction['minCompactTokens'],
+          'context.compaction.minCompactTokens',
+          1,
+          defaults.minCompactTokens,
+          warnings,
+        ),
+        maxSummaryTokens: intField(
+          compaction['maxSummaryTokens'],
+          'context.compaction.maxSummaryTokens',
+          64,
+          defaults.maxSummaryTokens,
+          warnings,
+        ),
+        pruneOldToolResults: boolField(
+          compaction['pruneOldToolResults'],
+          'context.compaction.pruneOldToolResults',
+          defaults.pruneOldToolResults,
+          warnings,
+        ),
+        toolResultPruneTarget: ratioField(
+          compaction['toolResultPruneTarget'],
+          'context.compaction.toolResultPruneTarget',
+          defaults.toolResultPruneTarget,
+          warnings,
+        ),
+        toolResultKeepBytes: intField(
+          compaction['toolResultKeepBytes'],
+          'context.compaction.toolResultKeepBytes',
+          0,
+          defaults.toolResultKeepBytes,
+          warnings,
+        ),
+      };
+    }
   }
 
   const projectDocs = section(raw['projectDocs'], 'projectDocs', warnings);

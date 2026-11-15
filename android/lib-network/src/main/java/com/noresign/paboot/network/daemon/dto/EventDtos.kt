@@ -84,6 +84,14 @@ sealed class NormalizedEvent {
     @SerialName("turn_end")
     data class TurnEnd(val stopReason: String) : NormalizedEvent()
 
+    /** Builtin 自动压缩了更早的历史；只用于展示一条系统提示，不产生聊天消息。 */
+    @Serializable
+    @SerialName("context_compacted")
+    data class ContextCompacted(
+        val beforeTokens: Long = 0,
+        val afterTokens: Long = 0,
+    ) : NormalizedEvent()
+
     @Serializable
     @SerialName("error")
     data class Error(val code: String? = null, val message: String, val terminal: Boolean? = null) : NormalizedEvent()

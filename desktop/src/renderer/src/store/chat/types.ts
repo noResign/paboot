@@ -17,7 +17,9 @@ export type ContentBlock =
       interrupted: boolean;
       running: boolean;
     }
-  | { kind: 'question'; toolUseId: string; questions: QuestionDto[]; answered: boolean };
+  | { kind: 'question'; toolUseId: string; questions: QuestionDto[]; answered: boolean }
+  /** System notice (auto-compaction); not model output. */
+  | { kind: 'notice'; text: string };
 
 export interface UsageInfo {
   inputTokens: number | null;

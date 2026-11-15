@@ -36,6 +36,8 @@ enum ContentBlock: Equatable {
     case thinking(ThinkingBlock)
     case tool(ToolUseBlock)
     case question(QuestionBlock)
+    /// System notice (auto-compaction); not model output.
+    case notice(String)
 }
 
 /// A thinking card. The runtime's reasoning text is deliberately not sent, so the

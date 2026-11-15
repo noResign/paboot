@@ -213,6 +213,12 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
                 answered={segment.answered}
               />
             );
+          case 'notice':
+            return (
+              <div key={index} className="chat-notice">
+                {segment.text}
+              </div>
+            );
           case 'tools':
             return <ToolGroup key={segment.key} tools={segment.tools} />;
         }

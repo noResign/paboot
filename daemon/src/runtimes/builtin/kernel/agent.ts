@@ -1,7 +1,23 @@
 import { sanitizeErrorMessage } from '../../../llm/errors.js';
 import type { ModelPrice } from '../../../llm/catalog.js';
-import type { FinishReason, LlmProvider, LlmRequest, ToolSchema, Usage } from '../../../llm/types.js';
+import type {
+  FinishReason,
+  LlmMessage,
+  LlmProvider,
+  LlmRequest,
+  LlmSystemPart,
+  ToolSchema,
+  Usage,
+} from '../../../llm/types.js';
+import type { NativeCompaction } from '../../../types/transcript.js';
 import type { AgentContextAssembly } from '../context/assembly.js';
+import type { PromptCompileResult } from '../prompt.js';
+import {
+  findKeepBoundary,
+  planCompaction,
+  type CompactionPlan,
+  type CompactionSettings,
+} from '../compact.js';
 import type { TranscriptStore } from '../transcript/store.js';
 import {
   renderTranscriptMessages,
@@ -61,6 +77,18 @@ export interface AgentKernelDeps {
   assembleContext: (tools: readonly ToolDescriptor[]) => Promise<AgentContextAssembly>;
   /** Learns this model's real token density from provider usage. */
   tokenCalibrator: TokenCalibrator;
+  /** Automatic history compaction; omit to disable. */
+  compaction?: {
+    settings: CompactionSettings;
+    /** Window used when the provider catalogue has no contextWindow. */
+    contextWindow: number;
+    /** Persist a summary for one plan; null keeps the history uncompacted. */
+    summarize: (
+      plan: CompactionPlan,
+      previous: NativeCompaction | null,
+      signal: AbortSignal,
+    ) => Promise<NativeCompaction | null>;
+  };
   resolveImage?: TranscriptImageResolver;
   /** [debug] Debug observability; failures never break the run. */
   debugStep?: (record: KernelStepDebugRecord) => void;
@@ -104,13 +132,23 @@ export class AgentKernel {
 
         const context = await this.deps.assembleContext(this.deps.toolDescriptors);
         await this.persistRuntimeContext(agent, context);
-        const messages = await renderTranscriptMessages(
-          this.deps.transcript.list(this.deps.threadId),
-          {
-            supportsImages: this.deps.modelSnapshot.supportsImages,
-            resolveImage: this.deps.resolveImage,
-          },
+        const loaded = await this.loadMessages(
+          context,
+          toolSchemas,
+          lastContextTokens,
+          agent.signal,
         );
+        const messages = loaded.messages;
+        const systemText = withSummary(context.system.text, loaded.summary);
+        const systemParts = buildSystemParts(context.system, loaded.summary);
+
+        if (loaded.compacted) {
+          agent.eventSink.emit({
+            type: 'context_compacted',
+            beforeTokens: loaded.compacted.beforeTokens,
+            afterTokens: loaded.compacted.afterTokens,
+          });
+        }
 
         agent.eventSink.emit({
           type: 'status',
@@ -123,14 +161,16 @@ export class AgentKernel {
         const request: LlmRequest = {
           provider: this.deps.provider.id,
           model: this.deps.model,
-          system: context.system.text,
+          system: systemText,
+          ...(systemParts.length > 0 ? { systemParts } : {}),
+          promptCache: true,
           messages,
           tools: toolSchemas,
           ...(this.deps.modelSnapshot.maxOutput ? { maxTokens: this.deps.modelSnapshot.maxOutput } : {}),
           signal: agent.signal,
         };
         const requestEstimate = estimateRequestTokens({
-          system: context.system.text,
+          system: systemText,
           messages,
           tools: toolSchemas,
         });
@@ -392,6 +432,119 @@ export class AgentKernel {
     }
   }
 
+  private renderOptions(prune?: {
+    pruneToolResultsThroughSeq: number;
+    toolResultKeepBytes: number;
+  }): Parameters<typeof renderTranscriptMessages>[1] {
+    return {
+      supportsImages: this.deps.modelSnapshot.supportsImages,
+      ...(this.deps.resolveImage ? { resolveImage: this.deps.resolveImage } : {}),
+      ...(prune ?? {}),
+    };
+  }
+
+  /**
+   * Load the transcript for the next model call, compacting it first when the
+   * context is near the window. Compaction is best-effort and mutates only the
+   * compaction table; the raw transcript stays append-only.
+   */
+  private async loadMessages(
+    context: AgentContextAssembly,
+    tools: readonly ToolSchema[],
+    lastContextTokens: number | null,
+    signal: AbortSignal,
+  ): Promise<{
+    messages: LlmMessage[];
+    summary: string | null;
+    compacted?: { beforeTokens: number; afterTokens: number };
+  }> {
+    const compaction = this.deps.compaction;
+    if (!compaction) {
+      return {
+        messages: await renderTranscriptMessages(
+          this.deps.transcript.list(this.deps.threadId),
+          this.renderOptions(),
+        ),
+        summary: null,
+      };
+    }
+
+    const read = async (boundary: number, pruneThrough: number | null): Promise<LlmMessage[]> => {
+      const list = this.deps.transcript.list(this.deps.threadId, boundary);
+      const latestContext = this.deps.transcript.latestContext(this.deps.threadId);
+      // The environment snapshot may predate the compaction boundary; keep it.
+      if (latestContext && latestContext.seq <= boundary) list.unshift(latestContext);
+      return renderTranscriptMessages(
+        list,
+        this.renderOptions(
+          pruneThrough === null
+            ? undefined
+            : {
+                pruneToolResultsThroughSeq: pruneThrough,
+                toolResultKeepBytes: compaction.settings.toolResultKeepBytes,
+              },
+        ),
+      );
+    };
+
+    let latest = this.deps.transcript.listCompactions(this.deps.threadId).at(-1) ?? null;
+    let messages = await read(latest?.throughSeq ?? 0, null);
+    const settings = compaction.settings;
+    if (!settings.enabled) return { messages, summary: latest?.summary ?? null };
+
+    const window = this.deps.modelSnapshot.contextWindow ?? compaction.contextWindow;
+    const triggerTokens = Math.floor(window * settings.triggerAt);
+    const keepTokens = Math.floor(window * settings.keepRecentRatio);
+    const measure = this.deps.tokenCalibrator.measure;
+    const estimate = (list: LlmMessage[], summary: string | null): number =>
+      estimateRequestTokens({
+        system: withSummary(context.system.text, summary),
+        messages: list,
+        tools,
+        measure,
+      }).tokens;
+
+    const triggered =
+      lastContextTokens !== null
+        ? lastContextTokens >= triggerTokens
+        : estimate(messages, latest?.summary ?? null) >= triggerTokens;
+    if (!triggered) return { messages, summary: latest?.summary ?? null };
+
+    const baseSeq = latest?.throughSeq ?? 0;
+    const active = this.deps.transcript.list(this.deps.threadId, baseSeq);
+    const keep = findKeepBoundary(active, keepTokens, measure);
+
+    // Stage 1: replace oversized old tool results; skip the summary when that
+    // alone brings the request under the prune target.
+    let usable = messages;
+    if (settings.pruneOldToolResults && keep && keep.throughSeq > baseSeq) {
+      usable = await read(baseSeq, keep.throughSeq);
+      const pruneTarget = Math.floor(window * settings.toolResultPruneTarget);
+      if (estimate(usable, latest?.summary ?? null) <= pruneTarget) {
+        return { messages: usable, summary: latest?.summary ?? null };
+      }
+    }
+
+    // Stage 2: summarize the older prefix.
+    const plan = planCompaction(active, keepTokens, settings.minCompactTokens, measure);
+    if (!plan) return { messages: usable, summary: latest?.summary ?? null };
+    const written = await compaction.summarize(plan, latest, signal);
+    if (!written) return { messages: usable, summary: latest?.summary ?? null };
+
+    const beforeTokens =
+      lastContextTokens ?? estimate(messages, latest?.summary ?? null);
+    latest = written;
+    messages = await read(written.throughSeq, null);
+    return {
+      messages,
+      summary: written.summary,
+      compacted: {
+        beforeTokens: Math.max(0, Math.round(beforeTokens)),
+        afterTokens: Math.max(0, Math.round(estimate(messages, written.summary))),
+      },
+    };
+  }
+
   private async persistRuntimeContext(
     agent: AgentRunContext,
     context: AgentContextAssembly,
@@ -471,6 +624,29 @@ export class AgentKernel {
     });
     this.appendToolResult(agent, call.id, result, step);
   }
+}
+
+function withSummary(system: string, summary: string | null): string {
+  if (!summary) return system;
+  const block = `## Earlier conversation summary\n${summary}`;
+  return system.trim() ? `${system}\n\n${block}` : block;
+}
+
+/** Stable text gets its own cache breakpoint; dynamic text and the summary do not. */
+function buildSystemParts(
+  system: PromptCompileResult,
+  summary: string | null,
+): LlmSystemPart[] {
+  const parts: LlmSystemPart[] = [];
+  if (system.stableText.trim()) parts.push({ text: system.stableText, cache: true });
+  const dynamic = [
+    system.dynamicText,
+    summary ? `## Earlier conversation summary\n${summary}` : '',
+  ]
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n');
+  if (dynamic) parts.push({ text: dynamic });
+  return parts;
 }
 
 function readErrorCode(error: unknown): string | undefined {

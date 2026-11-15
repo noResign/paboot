@@ -2498,6 +2498,14 @@ a.btn {
   color: var(--text-primary);
 }
 
+/* System notice (auto-compaction), not model output. */
+.chat-notice {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
 .msg-actions {
   position: absolute;
   top: -6px;

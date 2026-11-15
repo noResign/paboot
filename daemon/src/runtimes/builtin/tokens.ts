@@ -63,32 +63,50 @@ export function estimateRequestTokens(input: {
 
   if (input.system.length > 0) tokens += measure(input.system);
   for (const message of input.messages) {
-    tokens += ROLE_OVERHEAD;
-    if (typeof message.content === 'string') {
-      tokens += measure(message.content);
-      continue;
-    }
-    for (const block of message.content) {
-      tokens += BLOCK_OVERHEAD;
-      switch (block.type) {
-        case 'text':
-          tokens += measure(block.text);
-          break;
-        case 'image':
-          hasImages = true;
-          break;
-        case 'tool_use':
-          tokens += measure(block.id) + measure(block.name) + measure(JSON.stringify(block.input ?? {}));
-          break;
-        case 'tool_result':
-          tokens += measure(block.content);
-          break;
-      }
-    }
+    const measured = measureMessage(message, measure);
+    tokens += measured.tokens;
+    if (measured.hasImages) hasImages = true;
   }
   if (input.tools.length > 0) tokens += measure(JSON.stringify(input.tools));
 
   return { tokens: Math.ceil(tokens), hasImages };
+}
+
+/** Token estimate for one neutral message, shared by request sizing and compaction. */
+export function estimateMessageTokens(
+  message: LlmMessage,
+  measure: (text: string) => number = estimateTokens,
+): number {
+  return measureMessage(message, measure).tokens;
+}
+
+function measureMessage(
+  message: LlmMessage,
+  measure: (text: string) => number,
+): { tokens: number; hasImages: boolean } {
+  let tokens = ROLE_OVERHEAD;
+  let hasImages = false;
+  if (typeof message.content === 'string') {
+    return { tokens: tokens + measure(message.content), hasImages };
+  }
+  for (const block of message.content) {
+    tokens += BLOCK_OVERHEAD;
+    switch (block.type) {
+      case 'text':
+        tokens += measure(block.text);
+        break;
+      case 'image':
+        hasImages = true;
+        break;
+      case 'tool_use':
+        tokens += measure(block.id) + measure(block.name) + measure(JSON.stringify(block.input ?? {}));
+        break;
+      case 'tool_result':
+        tokens += measure(block.content);
+        break;
+    }
+  }
+  return { tokens, hasImages };
 }
 
 const CALIBRATION_EWMA = 0.25;

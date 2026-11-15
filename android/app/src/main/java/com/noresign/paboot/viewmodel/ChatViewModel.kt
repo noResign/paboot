@@ -15,6 +15,7 @@ import com.noresign.paboot.network.daemon.dto.ModelOptionDto
 import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.notify.RunWatchCenter
 import com.noresign.paboot.util.ReconnectPolicy
+import com.noresign.paboot.util.formatTokens
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.util.friendlyMessage
 import com.noresign.paboot.network.daemon.ChatStreamEvent
@@ -817,6 +818,12 @@ class ChatViewModel(
         // 用量帧出现在一次模型回合的边界，即思考块已经结束。
         is NormalizedEvent.Usage -> a.copy(blocks = endThinking(a.blocks), usage = parseUsage(e) ?: a.usage)
         is NormalizedEvent.TurnEnd -> a.copy(blocks = endThinking(a.blocks))
+        is NormalizedEvent.ContextCompacted -> a.copy(
+            blocks = endThinking(a.blocks) +
+                ContentBlock.Notice(
+                    "更早的对话已压缩 · ${formatTokens(e.beforeTokens)} → ${formatTokens(e.afterTokens)} tokens",
+                ),
+        )
         is NormalizedEvent.Error ->
             if (e.terminal == true) {
                 finalizeAssistant(a.copy(error = e.message))
