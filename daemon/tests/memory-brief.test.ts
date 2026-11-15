@@ -268,10 +268,12 @@ describe('brief feedback ranking (D38)', () => {
   it('ignores feedback older than the window', () => {
     const { store } = setup();
     const old = store.insertClaim(claim({ summary: '很久以前被标错', objectText: '北京' }));
+    // The feedback row is stamped with wall-clock `now`, so the query has to be
+    // pushed past the 30-day window *relative to that*, not to the fixture's
+    // synthetic `now` — otherwise this test expires as real time advances.
     store.addFeedback({ targetType: 'claim', targetId: old.id, action: 'wrong' });
 
-    // 31 days later the mark has expired, so the claim is eligible again.
-    const later = now + 31 * DAY;
+    const later = Date.now() + 90 * DAY;
     const brief = buildLifeBrief(store, 'workspace:life-1', { now: later })!;
     expect(brief.markdown).toContain('很久以前被标错');
   });
