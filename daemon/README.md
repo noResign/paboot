@@ -1,7 +1,9 @@
 # daemon
 
-paboot 的守护进程：`spawn` 本机已安装的编码 agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），
-以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给客户端。
+paboot 的守护进程：驱动编码 agent 并把输出解析成统一的流式事件，通过 HTTP/SSE 推给客户端。
+两条路径——`spawn` 本机已安装的 agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），
+以及跑在 daemon 进程内的 **builtin runtime**（不需要任何外部 CLI，只需一个模型 provider 的
+API Key，自带工具 / MCP / Skill）。
 
 完整技术方案见 **[docs/daemon.md](docs/daemon.md)**（索引：总览 / [协议](docs/protocol.md) /
 [权限](docs/permissions.md) / [运行时](docs/runtimes.md) / [配置](docs/configuration.md)）；

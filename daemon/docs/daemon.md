@@ -19,10 +19,13 @@
 
 ## 概述
 
-`daemon` 是一个跑在 macOS/Linux/Windows 本机的守护进程：它 `spawn` 本机已安装的编码
-agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），以无头方式执行，把输出解析成统一的
+`daemon` 是一个跑在 macOS/Linux/Windows 本机的守护进程：它驱动编码 agent，把输出解析成统一的
 流式事件，通过 HTTP/SSE 推给客户端（Android / iOS / 桌面），并支持会话续接、断线重连、
 取消、工具审批、多 agent 并发。
+
+驱动方式有两条：`spawn` 本机已安装的 agent CLI（已接入 Claude Code、Codex 与 DeepSeek Harness），
+或使用跑在进程内的 **builtin runtime**（`runtimes/builtin/`，无需任何外部 CLI，只依赖模型
+provider 的 HTTP 接口，自带工具 / MCP / Skill）。
 
 核心定位：**「一个客户端，操纵你所有的 agent」**。
 
@@ -153,7 +156,7 @@ daemon/
   打包 entries。需要审批的 server 用 `mcp/gate.ts` 自 gate；builtin runtime 会跳过它。
 - **新共享原语**：`src/platform/`（必须保持无领域依赖）。
 
-## 安装使用（本机已装并配置 Claude Code / Codex / DeepSeek Harness 至少一种）：
+## 安装使用（装并配置 Claude Code / Codex / DeepSeek Harness 之一，或只给 builtin 配一个模型 API Key）：
 
 ```bash
 npx @noresign/paboot --help             # 免安装试用

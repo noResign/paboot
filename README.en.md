@@ -13,10 +13,14 @@
 
 </div>
 
-**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code, Codex and DeepSeek Harness today).**
+**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code, Codex, DeepSeek Harness and the built-in agent today).**
 **Your data always stays on your own machine**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
 
-- **One client for all your agents** — Claude Code, Codex and DeepSeek Harness today.
+- **One client for all your agents** — Claude Code, Codex, DeepSeek Harness, and a built-in agent.
+- **A built-in agent that needs no CLI** — supply one model API key and it runs. It lives inside the
+  daemon process and brings its own tools (file read/write, Bash, Grep, Glob, web fetch, blocking
+  questions), MCP servers, skills and multimodal input, with the model provider switchable between
+  Claude / OpenAI / DeepSeek.
 - **Three clients, one system, each native** — Android, iOS and desktop share one protocol and one
   design system, operate on the same sessions, and are each implemented natively.
 - **Your data stays on your own machine** — agents use that machine's environment, tools, configs
@@ -42,8 +46,9 @@
 
 ### 0. Prerequisites
 
-paboot drives Claude Code, Codex and DeepSeek Harness today — install and configure at least one of
-them **on the machine that runs the daemon**:
+paboot drives Claude Code, Codex and DeepSeek Harness, plus a **built-in agent**. The external
+agents have to be installed and configured **on the machine that runs the daemon**; the built-in one
+needs no CLI — only a model provider API key (see "Built-in agent" below).
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
@@ -52,6 +57,27 @@ them **on the machine that runs the daemon**:
 > [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): `npm install -g @deepseek-ai/dsh`;
 > provide model credentials through the `DEEPSEEK_API_KEY` environment variable, or fill them in
 > under **Settings → Models** in `dsh web`.
+
+### Built-in agent
+
+paboot ships an **agent runtime that lives inside the daemon**, listed alongside the three external
+CLIs in the same session list and driven by the same client, approvals and resume behaviour.
+
+- **No external CLI required**: it talks to LLM providers over HTTP only. Set any of
+  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`, or configure several providers in
+  `~/.paboot/providers.json` and pick a model in Settings.
+- **Tools included**: `Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite` / `WebFetch` /
+  `AskUserQuestion`, plus mounted MCP servers and skills.
+- **Blocking questions**: when the agent needs clarification it asks and **waits inside the same
+  run** for your answer instead of ending the turn — it continues once you reply.
+- **Two web-fetch backends**: provider-hosted by default (runs on the provider's servers, cannot
+  reach intranet addresses); without a usable provider key it falls back to the local backend, which
+  can also be selected explicitly for intranet / loopback pages and converts HTML to Markdown.
+- **Context compaction**: older history is compacted against a token budget, so long sessions do not
+  die at the window limit.
+
+See [daemon/docs/runtimes.md](daemon/docs/runtimes.md) and
+[daemon/docs/configuration.md](daemon/docs/configuration.md) for the details.
 
 ### 1. Desktop (recommended: it can run the daemon itself)
 
