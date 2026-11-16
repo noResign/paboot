@@ -8,10 +8,6 @@ enum VoiceRecorderError: LocalizedError {
 /// Main-actor confined: the UI owns start/stop and the meter timer runs on the main run loop.
 @MainActor
 final class VoiceRecorder {
-    static var permission: AVAudioSession.RecordPermission {
-        AVAudioApplication.shared.recordPermission
-    }
-
     static func requestPermission() async -> Bool {
         if AVAudioApplication.shared.recordPermission == .granted { return true }
         return await withCheckedContinuation { continuation in

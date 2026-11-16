@@ -143,7 +143,7 @@ final class ChatViewController: UIViewController {
             presentAsrError(.notConfigured)
             return
         }
-        switch VoiceRecorder.permission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             startVoiceRecording()
         case .denied:
