@@ -118,6 +118,23 @@ describe('builtin config', () => {
     expect(loaded.config.tools.glob.maxResults).toBe(25);
   });
 
+  it('parses web.search separately from web.fetch', () => {
+    const { config, warnings } = parseBuiltinConfig({
+      web: {
+        fetch: { enabled: false, provider: 'http' },
+        search: { enabled: false, timeoutMs: 3_000, baseUrl: 'http://127.0.0.1:9/v1/tools' },
+      },
+    });
+    expect(warnings).toEqual([]);
+    expect(config.web.fetch.enabled).toBe(false);
+    expect(config.web.fetch.provider).toBe('http');
+    expect(config.web.search).toEqual({
+      enabled: false,
+      timeoutMs: 3_000,
+      baseUrl: 'http://127.0.0.1:9/v1/tools',
+    });
+  });
+
   it('warns and falls back per field for invalid values', () => {
     const { config, warnings } = parseBuiltinConfig({
       version: 1,

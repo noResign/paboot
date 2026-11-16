@@ -208,6 +208,11 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
       "provider": "auto",                      // auto（无 key 回退本机）| provider | http（本机直连，可访问内网）
       "timeoutMs": 15000,
       "baseUrl": null                          // 只影响 provider 后端；默认 <provider origin>/v1/tools
+    },
+    "search": {
+      "enabled": true,
+      "timeoutMs": 15000,
+      "baseUrl": null                          // 默认 <provider origin>/v1/tools
     }
   },
   "agent": { "maxSteps": 200, "maxToolCalls": 200 }
@@ -237,6 +242,12 @@ PABOOT_RUN_IDLE_TIMEOUT_SECONDS=900
     声明 `Content-Length` 超限则直接拒绝）。
   - 不带 cookie、不带 `Authorization`，只有固定 `user-agent` 与 `accept`。
 - 显式 `provider` 不可用时**不回退**，由调用返回 tool error；`auto` 才会回退（并记 warn）。
+
+`web.search` 只影响 builtin 的 `WebSearch` 工具：同样假设 provider 提供
+`POST <provider origin>/v1/tools/search`（在服务商侧搜索，碰不到内网 / 回环），返回标题、
+URL 与摘要，**不返回整页正文**——读正文仍交给 `WebFetch`。它**没有本机后端**，所以没有
+`auto` 回退：当前 provider 没有 API key 或地址无法推导时不注册该工具。自有路径布局用
+`baseUrl` 覆盖。
 
 每次 run 按当前模型的 `contextWindow` 推导（缺省回退 `fallbackWindowTokens`）：
 

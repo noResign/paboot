@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { LlmProvider } from '../src/llm/types';
 import { createWebFetchTool } from '../src/runtimes/builtin/tools/webfetch';
+import { createWebSearchTool } from '../src/runtimes/builtin/tools/websearch';
 import type { ToolCallContext } from '../src/runtimes/builtin/tools/types';
 import {
   createProviderFetchBackend,
@@ -12,6 +13,11 @@ import {
   WebFetchError,
 } from '../src/runtimes/builtin/web/fetch';
 import { createHttpFetchBackend } from '../src/runtimes/builtin/web/fetch-http';
+import {
+  createProviderSearchBackend,
+  resolveSearchBackend,
+  WebSearchError,
+} from '../src/runtimes/builtin/web/search';
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -547,5 +553,224 @@ describe('local HTTP fetch backend', () => {
     await expect(
       backend.fetch(`${server.url}/`, new AbortController().signal),
     ).rejects.toThrow(/HTTP 503/);
+  });
+});
+
+const searchSettings = {
+  enabled: true,
+  timeoutMs: 2_000,
+  baseUrl: null,
+};
+
+describe('search backend selection', () => {
+  it('selects the provider backend when the provider has a key', () => {
+    const selection = resolveSearchBackend({
+      settings: searchSettings,
+      provider: { kind: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'key' },
+    });
+    expect(selection.backend?.id).toBe('provider');
+    expect(selection.unavailableReason).toBeNull();
+  });
+
+  it('reports no backend without a key — there is no local search fallback', () => {
+    const selection = resolveSearchBackend({
+      settings: searchSettings,
+      provider: { kind: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: null },
+    });
+    expect(selection.backend).toBeNull();
+    expect(selection.unavailableReason).toContain('no API key');
+  });
+
+  it('reports no backend when the web base cannot be derived', () => {
+    const selection = resolveSearchBackend({
+      settings: searchSettings,
+      provider: { kind: 'openai', baseUrl: 'not a url', apiKey: 'key' },
+    });
+    expect(selection.backend).toBeNull();
+    expect(selection.unavailableReason).toContain('cannot serve the web API');
+  });
+
+  it('honours an explicit override base', () => {
+    const selection = resolveSearchBackend({
+      settings: { ...searchSettings, baseUrl: 'http://127.0.0.1:9' },
+      provider: { kind: 'openai', baseUrl: 'https://example.test', apiKey: 'key' },
+    });
+    expect(selection.backend?.id).toBe('provider');
+  });
+
+  it('stays silent when search is disabled', () => {
+    const selection = resolveSearchBackend({
+      settings: { ...searchSettings, enabled: false },
+      provider: { kind: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'key' },
+    });
+    expect(selection.backend).toBeNull();
+    expect(selection.unavailableReason).toBeNull();
+  });
+});
+
+describe('Provider search backend', () => {
+  it('posts the query with the provider credential and parses results', async () => {
+    const server = await fakeServer((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          results: [
+            {
+              rerank_score: 2.4,
+              title: 'Result one',
+              url: 'https://example.com/1',
+              snippet: 'short',
+              summary: 'long summary',
+              site_name: 'Example',
+              site_icon: 'https://example.com/icon.png',
+              date: '2026-01-02T03:04:05+00:00',
+              authority: 3,
+            },
+          ],
+        }),
+      );
+    });
+    const backend = createProviderSearchBackend({
+      baseUrl: server.url,
+      apiKey: 'secret',
+      timeoutMs: 2_000,
+    });
+    await expect(
+      backend.search('deepseek', 3, new AbortController().signal),
+    ).resolves.toMatchObject([
+      {
+        title: 'Result one',
+        url: 'https://example.com/1',
+        snippet: 'short',
+        summary: 'long summary',
+        siteName: 'Example',
+        publishedAt: '2026-01-02T03:04:05+00:00',
+        authority: 3,
+        score: 2.4,
+      },
+    ]);
+    expect(server.requests[0]).toMatchObject({
+      path: '/search',
+      auth: 'Bearer secret',
+      body: { query: 'deepseek', count: 3 },
+    });
+  });
+
+  it('returns an empty list when the provider finds nothing', async () => {
+    const server = await fakeServer((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ results: [] }));
+    });
+    const backend = createProviderSearchBackend({ baseUrl: server.url, apiKey: 'k', timeoutMs: 2_000 });
+    await expect(backend.search('nothing', 5, new AbortController().signal)).resolves.toEqual([]);
+  });
+
+  it('maps HTTP failures and malformed bodies to search errors', async () => {
+    const failing = await fakeServer((_request, res) => {
+      res.writeHead(429);
+      res.end('rate limited');
+    });
+    const backend = createProviderSearchBackend({ baseUrl: failing.url, apiKey: 'k', timeoutMs: 2_000 });
+    await expect(backend.search('q', 5, new AbortController().signal)).rejects.toBeInstanceOf(
+      WebSearchError,
+    );
+    await expect(backend.search('q', 5, new AbortController().signal)).rejects.toThrow(
+      'HTTP 429 — rate limited',
+    );
+
+    const malformed = await fakeServer((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ nope: true }));
+    });
+    const second = createProviderSearchBackend({ baseUrl: malformed.url, apiKey: 'k', timeoutMs: 2_000 });
+    await expect(second.search('q', 5, new AbortController().signal)).rejects.toThrow(
+      'invalid response body',
+    );
+  });
+
+  it('times out a slow backend', async () => {
+    const slow = await fakeServer(() => {
+      // never respond
+    });
+    const backend = createProviderSearchBackend({ baseUrl: slow.url, apiKey: 'k', timeoutMs: 50 });
+    await expect(backend.search('q', 5, new AbortController().signal)).rejects.toThrow('timed out');
+  });
+});
+
+describe('WebSearch tool', () => {
+  function tool(selection: ReturnType<typeof resolveSearchBackend>) {
+    return createWebSearchTool({ selection });
+  }
+
+  function selectionFor(server: FakeServer) {
+    return resolveSearchBackend({
+      settings: { ...searchSettings, baseUrl: server.url },
+      provider: { kind: 'openai', baseUrl: 'https://example.test', apiKey: 'key' },
+    });
+  }
+
+  it('returns compact results and points at WebFetch for full text', async () => {
+    const server = await fakeServer((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          results: [
+            {
+              title: 'First',
+              url: 'https://example.com/1',
+              snippet: 'teaser',
+              summary: 'the long summary',
+              site_name: 'Example',
+              date: null,
+              authority: 2,
+              rerank_score: 1.8,
+            },
+          ],
+        }),
+      );
+    });
+    const result = await tool(selectionFor(server)).call({ query: 'hello' }, context());
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain('First');
+    expect(result.content).toContain('https://example.com/1');
+    expect(result.content).toContain('the long summary');
+    expect(result.content).toContain('untrusted');
+    expect(result.content).toContain('WebFetch');
+    // Search results must not smuggle a whole page in.
+    expect(result.content).not.toContain('teaser');
+  });
+
+  it('reports an empty result set as a normal answer', async () => {
+    const server = await fakeServer((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ results: [] }));
+    });
+    const result = await tool(selectionFor(server)).call({ query: 'nothing' }, context());
+    expect(result.isError).toBe(false);
+    expect(result.content).toBe('No web results for "nothing".');
+  });
+
+  it('rejects empty, oversized or out-of-range arguments locally', async () => {
+    const selection = resolveSearchBackend({
+      settings: searchSettings,
+      provider: { kind: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: 'key' },
+    });
+    const search = tool(selection);
+    await expect(search.call({ query: '   ' }, context())).rejects.toThrow('non-empty');
+    await expect(
+      search.call({ query: 'q'.repeat(129) }, context()),
+    ).rejects.toThrow('at most 128 characters');
+    await expect(search.call({ query: 'q', count: 0 }, context())).rejects.toThrow('between 1 and 50');
+    await expect(search.call({ query: 'q', count: 51 }, context())).rejects.toThrow(
+      'between 1 and 50',
+    );
+  });
+
+  it('fails with the selection reason when no backend is usable', async () => {
+    const selection = resolveSearchBackend({
+      settings: searchSettings,
+      provider: { kind: 'openai', baseUrl: 'https://api.deepseek.com', apiKey: null },
+    });
+    await expect(tool(selection).call({ query: 'q' }, context())).rejects.toThrow('no API key');
   });
 });

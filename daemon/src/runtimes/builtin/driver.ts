@@ -44,7 +44,9 @@ import {
   type QuestionExchange,
 } from './tools/ask-user-question.js';
 import { createWebFetchTool } from './tools/webfetch.js';
+import { createWebSearchTool } from './tools/websearch.js';
 import { resolveFetchBackend } from './web/fetch.js';
+import { resolveSearchBackend } from './web/search.js';
 import { createLoadSkillTool } from './skills/load-tool.js';
 import { SkillRegistry, type SkillRoot } from './skills/registry.js';
 import { createPermissionBroker } from './tools/permission-broker.js';
@@ -54,6 +56,7 @@ import type { ToolProvider } from './tools/types.js';
 import { McpToolProvider } from './mcp/provider.js';
 import type { AgentProfile, AgentRunContext, PathGrant, ResolvedPathPolicy, ToolDescriptor } from './types.js';
 import type { AgentPromptPreset } from './prompt.js';
+import { generateSessionTitle, titleFromPrompt } from '../../runs/session-title.js';
 import { isBypassAllowed } from '../../permissions/security-profile.js';
 import { resolveReadPolicy } from '../../memory/read-policy.js';
 import { isMemoryInjectionEnabled } from '../../memory/settings.js';
@@ -116,6 +119,7 @@ async function runBuiltin(
 
     const transcript = createTranscriptStore(ctx.db);
     const thread = transcript.getOrCreateThread({ sessionId: session.id, agentId: 'builtin' });
+    const isFirstTurn = transcript.list(thread.id).length === 0;
     const userBlocks: TranscriptContentBlock[] = [];
     if (req.prompt) userBlocks.push({ type: 'text', text: req.prompt });
     for (const attachment of attachments) {
@@ -215,6 +219,10 @@ async function runBuiltin(
       settings: builtinConfig.web.fetch,
       provider: resolved.providerConfig,
     });
+    const searchSelection = resolveSearchBackend({
+      settings: builtinConfig.web.search,
+      provider: resolved.providerConfig,
+    });
     if (webSelection.fallbackFrom === 'provider') {
       // Widened reach behind the user's back is exactly the change that has to
       // stay traceable: the local backend can hit intranet and loopback.
@@ -310,6 +318,11 @@ async function runBuiltin(
           measure,
         }),
       );
+    }
+    // Search has no local fallback: without a usable provider API there is no
+    // tool at all, rather than one that always fails.
+    if (builtinConfig.web.search.enabled && searchSelection.backend !== null) {
+      nativeTools.push(createWebSearchTool({ selection: searchSelection }));
     }
     const nativeProvider = new NativeToolProvider(nativeTools);
     const toolProviders: ToolProvider[] = [nativeProvider];
@@ -455,7 +468,38 @@ async function runBuiltin(
           }
         : {}),
     });
-    const result = await kernel.run(agent);
+    // Upgrade the prompt-derived session title once, on the first turn. A title
+    // the user (or a previous upgrade) already changed is never overwritten.
+    const defaultTitle = req.prompt ? titleFromPrompt(req.prompt) : null;
+    const generateTitle =
+      isFirstTurn &&
+      defaultTitle !== null &&
+      (session.title === null || session.title === defaultTitle);
+    const titleTask = generateTitle
+      ? generateSessionTitle({
+          provider: resolved.provider,
+          model: resolved.model,
+          prompt: req.prompt,
+          signal,
+        })
+          .then((title) => {
+            if (title !== null && title !== session.title) {
+              ctx.db.setSessionTitle(session.id, title);
+            }
+          })
+          .catch((error) => {
+            if (!signal.aborted) {
+              log.warn(
+                `run ${req.runId}: title generation failed: ` +
+                  `${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+          })
+      : Promise.resolve();
+
+    // Let the title request finish even when the run fails or is cancelled; the
+    // task swallows its own errors and uses the run signal, so this is bounded.
+    const result = await kernel.run(agent).finally(() => titleTask);
     if (result.status === 'succeeded') return { status: 'succeeded', exitCode: 0, error: null };
     if (result.status === 'cancelled') {
       return { status: 'cancelled', exitCode: null, error: cancelReason() ?? result.error ?? 'cancelled' };

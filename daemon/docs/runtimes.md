@@ -37,7 +37,7 @@ Registry 缓存。两种驱动共用 `runtimes/stdio-rpc.ts` 的通用 peer 传�
 `PABOOT_RUNTIME=builtin` 会跳过自己的审批 gate）。
 
 builtin 的原生工具：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite` /
-`WebFetch` / `AskUserQuestion`。
+`WebSearch` / `WebFetch` / `AskUserQuestion`。
 Write / Edit 覆盖已有文件前必须在本会话 Read 过（readFiles 从 transcript 重建，重启不丢）；
 Bash 复用平台 shell 与进程树取消，环境变量只透传白名单，超限输出写 `~/.paboot/spill/`；
 Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，其余按 Session 权限模式审批。
@@ -53,6 +53,15 @@ Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，�
   URL 2048 字符上限、拒绝带凭证的 URL、响应 2 MiB / 20 万字符上限、不带 cookie 与
   `Authorization`。工具的 description 会随后端切换，模型据此知道能碰什么。
 - 显式 `provider` 不可用时**不回退**，返回明确错误。
+
+`WebSearch` 使用同一套 provider 后端推导：`POST <origin>/v1/tools/search`，只返回标题 /
+URL / 摘要，**不拉整页正文**；要读某条结果再调 `WebFetch`。它没有本机后端，provider 无 key
+或地址不可推导时**不注册工具**（而不是注册一个永远失败的工具）。与 `WebFetch` 一样标记为
+`network` 副作用，在 `ask` / `acceptEdits` 下走审批。
+
+会话标题：首轮用户消息后，driver 用当前模型发一次**无工具**的小请求生成标题并落库；失败时
+保留 `titleFromPrompt` 的截取结果。只有标题仍是「prompt 截取值」时才会覆盖，用户改过的标题
+不会被冲掉。
 
 `AskUserQuestion` 是**阻塞式**：工具创建一条 pending `UserInput` 权限记录，发 `question` 事件
 （带 `permissionId`），等待客户端通过权限决策端点回填结构化答案，答案作为该调用的 `tool_result`

@@ -101,6 +101,12 @@ export interface BuiltinRuntimeConfig {
       /** Override the web API base; defaults to `<provider origin>/v1/tools`. */
       baseUrl: string | null;
     };
+    search: {
+      enabled: boolean;
+      timeoutMs: number;
+      /** Override the web API base; defaults to `<provider origin>/v1/tools`. */
+      baseUrl: string | null;
+    };
   };
   agent: {
     maxSteps: number;
@@ -175,6 +181,11 @@ export const DEFAULT_BUILTIN_CONFIG: BuiltinRuntimeConfig = {
     fetch: {
       enabled: true,
       provider: 'auto',
+      timeoutMs: 15_000,
+      baseUrl: null,
+    },
+    search: {
+      enabled: true,
       timeoutMs: 15_000,
       baseUrl: null,
     },
@@ -253,6 +264,7 @@ export function parseBuiltinConfig(raw: unknown): {
       'projectDocs',
       'tools',
       'skills',
+      'web',
       'agent',
     ],
     '',
@@ -633,7 +645,7 @@ export function parseBuiltinConfig(raw: unknown): {
 
   const web = section(raw['web'], 'web', warnings);
   if (web) {
-    warnUnknown(web, ['fetch'], 'web', warnings);
+    warnUnknown(web, ['fetch', 'search'], 'web', warnings);
     const fetchSection = section(web['fetch'], 'web.fetch', warnings);
     if (fetchSection) {
       warnUnknown(
@@ -662,6 +674,27 @@ export function parseBuiltinConfig(raw: unknown): {
         baseUrl: readOptionalString(
           fetchSection['baseUrl'],
           'web.fetch.baseUrl',
+          defaults.baseUrl,
+          warnings,
+        ),
+      };
+    }
+    const searchSection = section(web['search'], 'web.search', warnings);
+    if (searchSection) {
+      warnUnknown(searchSection, ['enabled', 'timeoutMs', 'baseUrl'], 'web.search', warnings);
+      const defaults = config.web.search;
+      config.web.search = {
+        enabled: boolField(searchSection['enabled'], 'web.search.enabled', defaults.enabled, warnings),
+        timeoutMs: intField(
+          searchSection['timeoutMs'],
+          'web.search.timeoutMs',
+          1_000,
+          defaults.timeoutMs,
+          warnings,
+        ),
+        baseUrl: readOptionalString(
+          searchSection['baseUrl'],
+          'web.search.baseUrl',
           defaults.baseUrl,
           warnings,
         ),
@@ -715,7 +748,10 @@ function cloneDefault(): BuiltinRuntimeConfig {
       glob: { ...DEFAULT_BUILTIN_CONFIG.tools.glob },
     },
     skills: { ...DEFAULT_BUILTIN_CONFIG.skills },
-    web: { fetch: { ...DEFAULT_BUILTIN_CONFIG.web.fetch } },
+    web: {
+      fetch: { ...DEFAULT_BUILTIN_CONFIG.web.fetch },
+      search: { ...DEFAULT_BUILTIN_CONFIG.web.search },
+    },
     agent: { ...DEFAULT_BUILTIN_CONFIG.agent },
   };
 }
