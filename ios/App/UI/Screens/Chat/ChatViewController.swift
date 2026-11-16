@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import PabootProtocol
 import PhotosUI
@@ -22,6 +23,11 @@ final class ChatViewController: UIViewController {
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private var bottomStack: UIStackView!
+    private let voiceRecorder = VoiceRecorder()
+    private let voiceOverlay = VoiceInputOverlay()
+    private var isRecordingVoice = false
+    private var voiceTask: Task<Void, Never>?
+    private weak var voiceToastView: UIView?
 
     private var dataSource: UITableViewDiffableDataSource<String, String>!
     private var messagesByID: [String: ChatUiMessage] = [:]
@@ -62,6 +68,19 @@ final class ChatViewController: UIViewController {
         configureJumpButton()
         configureDataSource()
         bind()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
 
         viewModel.start()
     }
@@ -109,7 +128,169 @@ final class ChatViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if isMovingFromParent || isBeingDismissed {
+            if isRecordingVoice { endVoice(cancelled: true) }
+            voiceTask?.cancel()
+            voiceTask = nil
             viewModel.detach()
+        }
+    }
+
+    // MARK: - Voice input
+
+    private func beginVoice() {
+        guard !isRecordingVoice, !viewModel.state.transcribing else { return }
+        guard AsrKeyStore.isConfigured else {
+            presentAsrError(.notConfigured)
+            return
+        }
+        switch VoiceRecorder.permission {
+        case .granted:
+            startVoiceRecording()
+        case .denied:
+            presentMicPermissionAlert()
+        case .undetermined:
+            Task { [weak self] in
+                let granted = await VoiceRecorder.requestPermission()
+                guard let self else { return }
+                if granted {
+                    self.showVoiceToast("已授权，请再次按住说话")
+                } else {
+                    self.presentMicPermissionAlert()
+                }
+            }
+        @unknown default:
+            presentMicPermissionAlert()
+        }
+    }
+
+    private func startVoiceRecording() {
+        view.endEditing(true)
+        do {
+            try voiceRecorder.start()
+            isRecordingVoice = true
+            inputBar.setRecording(true)
+            voiceOverlay.showListening()
+        } catch {
+            showVoiceToast("无法启动录音")
+        }
+    }
+
+    private func endVoice(cancelled: Bool) {
+        guard isRecordingVoice else { return }
+        isRecordingVoice = false
+        inputBar.setRecording(false)
+        if cancelled {
+            voiceRecorder.cancel()
+            voiceOverlay.hide()
+            return
+        }
+        guard let data = voiceRecorder.stop() else {
+            voiceOverlay.hide()
+            showVoiceToast("没有识别到语音，请再说一次")
+            return
+        }
+        voiceOverlay.showTranscribing()
+        voiceTask?.cancel()
+        voiceTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let text = try await self.viewModel.transcribeAudio(data)
+                guard !Task.isCancelled else { return }
+                self.voiceOverlay.hide()
+                self.inputBar.appendText(text)
+            } catch is CancellationError {
+                self.voiceOverlay.hide()
+            } catch let error as AsrServiceError {
+                self.voiceOverlay.hide()
+                self.presentAsrError(error)
+            } catch {
+                self.voiceOverlay.hide()
+                self.showVoiceToast("语音识别失败，请稍后重试")
+            }
+        }
+    }
+
+    private func presentAsrError(_ error: AsrServiceError) {
+        guard case .notConfigured = error else {
+            showVoiceToast(error.errorDescription ?? "语音识别失败，请稍后重试")
+            return
+        }
+        let alert = UIAlertController(
+            title: "语音识别未配置",
+            message: "请先在设置页填写 DeepSeek API Key。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "去设置", style: .default) { [weak self] _ in
+            guard let self else { return }
+            (self.navigationController?.parent as? MainTabBarController)?
+                .navigateFromChat(to: .settings)
+        })
+        present(alert, animated: true)
+    }
+
+    private func presentMicPermissionAlert() {
+        let alert = UIAlertController(
+            title: "没有麦克风权限",
+            message: "请在系统设置中允许 Paboot 使用麦克风。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "去设置", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func handleAppBackground() {
+        if isRecordingVoice { endVoice(cancelled: true) }
+    }
+
+    @objc private func handleAudioInterruption(_ notification: Notification) {
+        guard
+            let info = notification.userInfo,
+            let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: raw),
+            type == .began
+        else { return }
+        if isRecordingVoice { endVoice(cancelled: true) }
+    }
+
+    private func showVoiceToast(_ text: String) {
+        voiceToastView?.removeFromSuperview()
+        let container = UIView()
+        container.backgroundColor = Theme.Colors.surface2
+        container.layer.cornerRadius = 14
+        container.layer.cornerCurve = .continuous
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.caption
+        label.textColor = Theme.Colors.textPrimary
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        view.addSubview(container)
+
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: Spacing.xs),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Spacing.xs),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Spacing.sm),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Spacing.sm),
+            container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            container.bottomAnchor.constraint(equalTo: bottomStack.topAnchor, constant: -Spacing.xs),
+            container.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: Spacing.lg),
+            container.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -Spacing.lg),
+        ])
+        voiceToastView = container
+        UIView.animate(withDuration: 0.2, delay: 2.2, options: [.curveEaseInOut]) {
+            container.alpha = 0
+        } completion: { _ in
+            container.removeFromSuperview()
         }
     }
 
@@ -187,6 +368,18 @@ final class ChatViewController: UIViewController {
         inputBar.onRemoveAttachment = { [weak self] id in
             self?.viewModel.removeAttachment(id: id)
         }
+        inputBar.onMicPress = { [weak self] in self?.beginVoice() }
+        inputBar.onMicRelease = { [weak self] in self?.endVoice(cancelled: false) }
+        inputBar.onMicCancel = { [weak self] in self?.endVoice(cancelled: true) }
+        inputBar.onMicCancelArmed = { [weak self] armed in
+            self?.voiceOverlay.setCancelArmed(armed)
+        }
+        voiceRecorder.onLevel = { [weak self] level in
+            self?.voiceOverlay.updateLevel(level)
+        }
+        voiceRecorder.onMaxDuration = { [weak self] in
+            self?.endVoice(cancelled: false)
+        }
 
         bottomBar.onNavigate = { [weak self] destination in
             guard let self else { return }
@@ -199,6 +392,16 @@ final class ChatViewController: UIViewController {
         bottomStack.spacing = 0
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomStack)
+
+        // Owned by the bottom bar so the keyboard-dismiss recognizer already
+        // ignores taps inside the composer.
+        bottomBar.addSubview(voiceOverlay)
+        NSLayoutConstraint.activate([
+            voiceOverlay.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor, constant: Spacing.lg),
+            voiceOverlay.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor, constant: -Spacing.lg),
+            voiceOverlay.topAnchor.constraint(equalTo: bottomBar.topAnchor),
+            voiceOverlay.bottomAnchor.constraint(equalTo: bottomBar.bottomAnchor),
+        ])
 
         // With the keyboard dismissed, rest 8 pt below the safe area. With it
         // visible, the required upper bound keeps the composer above the keyboard.
@@ -375,6 +578,7 @@ final class ChatViewController: UIViewController {
         updateSubtitle(state)
         inputBar.setStreaming(state.streaming)
         inputBar.setAttachments(state.attachments)
+        inputBar.setMicEnabled(!state.transcribing)
         inputBar.isUserInteractionEnabled = !state.loadingHistory
         inputBar.alpha = state.loadingHistory ? 0.6 : 1
         reconnectBanner.isHidden = !state.reconnecting

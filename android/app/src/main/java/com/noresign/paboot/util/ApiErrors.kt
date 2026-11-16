@@ -66,6 +66,17 @@ fun friendlyMessage(
     "recursion_blocked" -> "定时触发的运行不能再创建定时任务"
     "disabled" -> "任务已停用"
 
+    // 语音识别（客户端直连 DeepSeek）
+    "asr_not_configured" -> "语音识别未配置，请到设置页填写 DeepSeek API Key"
+    "asr_invalid_key" -> "DeepSeek API Key 无效，请到设置页检查"
+    "asr_insufficient_balance" -> "DeepSeek 账户余额不足"
+    "asr_no_speech" -> "没有识别到语音，请再说一次"
+    "asr_too_large" -> "录音过长，请缩短后重试"
+    "asr_bad_audio" -> "录音格式不受支持，请重试"
+    "asr_rate_limited" -> "语音识别请求过于频繁，请稍后再试"
+    "asr_network" -> "网络错误，无法连接语音识别服务"
+    "asr_upstream_error" -> "语音识别服务暂时不可用，请稍后重试"
+
     else -> when (httpCode) {
         401 -> "token 无效或未授权（401）"
         -1 -> "无法连接 daemon，请检查网络与地址"

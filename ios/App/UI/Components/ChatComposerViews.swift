@@ -6,10 +6,18 @@ final class ChatInputBar: UIView {
     var onStop: (() -> Void)?
     var onAddImage: (() -> Void)?
     var onRemoveAttachment: ((String) -> Void)?
+    var onMicPress: (() -> Void)?
+    var onMicRelease: (() -> Void)?
+    var onMicCancel: (() -> Void)?
+    var onMicCancelArmed: ((Bool) -> Void)?
 
     private let textField = UITextField()
     private let actionButton = UIButton(type: .system)
     private let attachButton = UIButton(type: .system)
+    private let micButton = UIButton(type: .system)
+    private var micPressed = false
+    private var micArmed = false
+    private var micStartY: CGFloat = 0
     private let attachmentsScroll = UIScrollView()
     private let attachmentsStack = UIStackView()
     private var attachmentsHeight: NSLayoutConstraint!
@@ -51,6 +59,24 @@ final class ChatInputBar: UIView {
         )
         attachButton.accessibilityLabel = "添加图片"
 
+        micButton.setImage(
+            UIImage(
+                systemName: "mic",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            ),
+            for: .normal
+        )
+        micButton.tintColor = Theme.Colors.textSecondary
+        micButton.translatesAutoresizingMaskIntoConstraints = false
+        micButton.accessibilityLabel = "按住说话"
+        let micPress = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleMicPress(_:))
+        )
+        micPress.minimumPressDuration = 0
+        micPress.cancelsTouchesInView = false
+        micButton.addGestureRecognizer(micPress)
+
         actionButton.layer.cornerRadius = 22
         actionButton.tintColor = Theme.Colors.onPrimary
         actionButton.translatesAutoresizingMaskIntoConstraints = false
@@ -69,7 +95,7 @@ final class ChatInputBar: UIView {
         attachmentsScroll.isHidden = true
         attachmentsScroll.addSubview(attachmentsStack)
 
-        let row = UIStackView(arrangedSubviews: [attachButton, fieldContainer, actionButton])
+        let row = UIStackView(arrangedSubviews: [attachButton, micButton, fieldContainer, actionButton])
         row.axis = .horizontal
         row.alignment = .center
         row.spacing = Spacing.xs
@@ -97,6 +123,8 @@ final class ChatInputBar: UIView {
 
             attachButton.widthAnchor.constraint(equalToConstant: 36),
             attachButton.heightAnchor.constraint(equalToConstant: 44),
+            micButton.widthAnchor.constraint(equalToConstant: 36),
+            micButton.heightAnchor.constraint(equalToConstant: 44),
             fieldContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
             textField.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: Spacing.sm),
             textField.trailingAnchor.constraint(equalTo: fieldContainer.trailingAnchor, constant: -Spacing.sm),
@@ -195,6 +223,75 @@ final class ChatInputBar: UIView {
     }
 
     @objc private func textChanged() {
+        updateEnabled()
+    }
+
+    @objc private func handleMicPress(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            micPressed = true
+            micArmed = false
+            micStartY = gesture.location(in: self).y
+            onMicCancelArmed?(false)
+            onMicPress?()
+        case .changed:
+            guard micPressed else { return }
+            let armed = micStartY - gesture.location(in: self).y > 50
+            if armed != micArmed {
+                micArmed = armed
+                onMicCancelArmed?(armed)
+            }
+        case .ended:
+            guard micPressed else { return }
+            micPressed = false
+            let cancelled = micArmed || micStartY - gesture.location(in: self).y > 50
+            micArmed = false
+            onMicCancelArmed?(false)
+            setRecording(false)
+            if cancelled { onMicCancel?() } else { onMicRelease?() }
+        case .cancelled, .failed:
+            guard micPressed else { return }
+            micPressed = false
+            micArmed = false
+            onMicCancelArmed?(false)
+            setRecording(false)
+            onMicCancel?()
+        default:
+            break
+        }
+    }
+
+    func setRecording(_ recording: Bool) {
+        micButton.setImage(
+            UIImage(
+                systemName: recording ? "mic.fill" : "mic",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            ),
+            for: .normal
+        )
+        micButton.tintColor = recording ? Theme.Colors.error : Theme.Colors.textSecondary
+        micButton.accessibilityLabel = recording ? "松开结束" : "按住说话"
+    }
+
+    func setMicEnabled(_ enabled: Bool) {
+        micButton.isEnabled = enabled
+        micButton.alpha = enabled ? 1 : 0.4
+    }
+
+    /// Append transcript text without sending. Cursor moves to the end.
+    func appendText(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let existing = textField.text ?? ""
+        var separator = ""
+        if let last = existing.last, let first = trimmed.first,
+           last.isASCII, first.isASCII,
+           (last.isLetter || last.isNumber), (first.isLetter || first.isNumber) {
+            separator = " "
+        }
+        textField.text = existing + separator + trimmed
+        let end = textField.endOfDocument
+        textField.selectedTextRange = textField.textRange(from: end, to: end)
         updateEnabled()
     }
 

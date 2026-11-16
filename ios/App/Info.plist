@@ -34,6 +34,8 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Paboot 需要访问网络，以连接你在电脑上运行的 daemon。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Paboot 使用麦克风录制语音指令，并直接发送到 DeepSeek 做语音识别；录音不会保存在本机。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

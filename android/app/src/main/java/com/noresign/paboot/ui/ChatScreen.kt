@@ -1,10 +1,13 @@
 package com.noresign.paboot.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -42,11 +45,16 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.noresign.paboot.audio.PcmWavRecorder
 import com.noresign.paboot.ui.chat.ChatImagePrep
 import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -65,11 +73,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.noresign.paboot.ui.theme.LocalSemanticColors
+import com.noresign.paboot.data.local.SecretStore
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.notify.NotificationPermission
 import com.noresign.paboot.notify.RunNotifications
@@ -77,6 +91,7 @@ import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.viewmodel.SessionPermissionsUiState
 import com.noresign.paboot.ui.chat.InputBar
 import com.noresign.paboot.ui.chat.MessageList
+import com.noresign.paboot.ui.chat.VoiceInputOverlay
 import com.noresign.paboot.ui.chat.PermissionDialog
 import com.noresign.paboot.ui.chat.TodoListPanel
 import com.noresign.paboot.ui.chat.toolLabel
@@ -120,13 +135,18 @@ fun ChatScreen(
     val models by viewModel.models.collectAsState()
     val modelsLoading by viewModel.modelsLoading.collectAsState()
     val modelsError by viewModel.modelsError.collectAsState()
+    val transcribing by viewModel.transcribing.collectAsState()
+    val voiceError by viewModel.voiceError.collectAsState()
     val currentSessionId = activeSessionId ?: sessionId
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    var input by rememberSaveable { mutableStateOf("") }
+    // TextFieldValue 才能把语音识别结果追加到末尾并把光标放到末尾。
+    var input by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
     var composerVisible by rememberSaveable { mutableStateOf(true) }
     var showSessionTasks by remember { mutableStateOf(false) }
@@ -168,6 +188,103 @@ fun ChatScreen(
                         ).show()
                     }
             }
+        }
+    }
+
+    var recording by remember { mutableStateOf(false) }
+    var cancelArmed by remember { mutableStateOf(false) }
+    var voiceLevel by remember { mutableStateOf(0f) }
+    val recorder = remember { PcmWavRecorder() }
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Toast.makeText(
+            context,
+            if (granted) "已授权，请再次按住说话" else "没有麦克风权限，请在系统设置中开启",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun stopRecording(cancel: Boolean) {
+        if (!recording) return
+        recording = false
+        cancelArmed = false
+        voiceLevel = 0f
+        scope.launch {
+            val audio = withContext(Dispatchers.IO) {
+                if (cancel) {
+                    recorder.cancel()
+                    null
+                } else {
+                    recorder.stop()
+                }
+            }
+            if (cancel) return@launch
+            if (audio == null) {
+                Toast.makeText(context, "没有识别到语音，请再说一次", Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.transcribe(audio.wav)
+            }
+        }
+    }
+
+    fun startRecording() {
+        if (recording || transcribing) return
+        if (!SecretStore.hasAsrApiKey()) {
+            Toast.makeText(
+                context,
+                "请先在设置页配置 DeepSeek API Key",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        if (!hasMicPermission()) {
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        cancelArmed = false
+        voiceLevel = 0f
+        val started = recorder.start(
+            onLevel = { voiceLevel = it },
+            onMaxDuration = { stopRecording(cancel = false) },
+        )
+        if (started) {
+            recording = true
+        } else {
+            Toast.makeText(context, "无法启动录音", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val voiceLifecycle = LocalLifecycleOwner.current
+    DisposableEffect(voiceLifecycle, recorder) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                recorder.cancel()
+                recording = false
+                cancelArmed = false
+                voiceLevel = 0f
+            }
+        }
+        voiceLifecycle.lifecycle.addObserver(observer)
+        onDispose {
+            voiceLifecycle.lifecycle.removeObserver(observer)
+            recorder.cancel()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.transcripts.collect { text ->
+            input = appendVoiceTranscript(input, text)
+        }
+    }
+    LaunchedEffect(voiceError) {
+        voiceError?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.consumeVoiceError()
         }
     }
 
@@ -335,27 +452,42 @@ fun ChatScreen(
                         composerVisible = !composerVisible
                     },
                     composer = {
-                        InputBar(
-                            input = input,
-                            streaming = streaming,
-                            attachments = attachments,
-                            uploading = attachments.any { it.uploading },
-                            canAttach = true,
-                            onPickImages = {
-                                imagePicker.launch(
-                                    PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    ),
-                                )
-                            },
-                            onRemoveAttachment = viewModel::removeAttachment,
-                            onInputChange = { input = it },
-                            onSend = {
-                                viewModel.send(input)
-                                input = ""
-                            },
-                            onStop = viewModel::stop,
-                        )
+                        Box {
+                            InputBar(
+                                input = input,
+                                streaming = streaming,
+                                recording = recording,
+                                transcribing = transcribing,
+                                attachments = attachments,
+                                uploading = attachments.any { it.uploading },
+                                canAttach = true,
+                                onPickImages = {
+                                    imagePicker.launch(
+                                        PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                        ),
+                                    )
+                                },
+                                onRemoveAttachment = viewModel::removeAttachment,
+                                onInputChange = { input = it },
+                                onSend = {
+                                    viewModel.send(input.text)
+                                    input = TextFieldValue("")
+                                },
+                                onStop = viewModel::stop,
+                                onMicPress = { startRecording() },
+                                onMicRelease = { stopRecording(cancel = false) },
+                                onMicCancel = { stopRecording(cancel = true) },
+                                onMicCancelArmed = { cancelArmed = it },
+                            )
+                            VoiceInputOverlay(
+                                recording = recording,
+                                transcribing = transcribing,
+                                cancelArmed = cancelArmed,
+                                level = voiceLevel,
+                                modifier = Modifier.matchParentSize(),
+                            )
+                        }
                     },
                 )
             }
@@ -579,6 +711,25 @@ fun ChatScreen(
             },
         )
     }
+}
+
+/** 把识别文本接到输入框末尾；仅两侧都是 ASCII 字母/数字时补一个空格。 */
+private fun appendVoiceTranscript(current: TextFieldValue, text: String): TextFieldValue {
+    val existing = current.text
+    val separator = if (
+        existing.isNotEmpty() &&
+        text.isNotEmpty() &&
+        existing.last().code < 128 &&
+        text.first().code < 128 &&
+        existing.last().isLetterOrDigit() &&
+        text.first().isLetterOrDigit()
+    ) {
+        " "
+    } else {
+        ""
+    }
+    val updated = existing + separator + text
+    return TextFieldValue(updated, selection = TextRange(updated.length))
 }
 
 @Composable

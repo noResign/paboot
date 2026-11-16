@@ -1,6 +1,8 @@
 package com.noresign.paboot.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -32,26 +35,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.noresign.paboot.model.chat.AttachmentDraft
 
 @Composable
 internal fun InputBar(
-    input: String,
+    input: TextFieldValue,
     streaming: Boolean,
+    recording: Boolean,
+    transcribing: Boolean,
     attachments: List<AttachmentDraft>,
     uploading: Boolean,
     canAttach: Boolean,
     onPickImages: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
-    onInputChange: (String) -> Unit,
+    onInputChange: (TextFieldValue) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onMicPress: () -> Unit,
+    onMicRelease: () -> Unit,
+    onMicCancel: () -> Unit,
+    onMicCancelArmed: (Boolean) -> Unit,
 ) {
-    val sendable = input.isNotBlank() || attachments.any { it.remoteId != null }
+    val sendable = input.text.isNotBlank() || attachments.any { it.remoteId != null }
+    val density = LocalDensity.current
     Column(modifier = Modifier.fillMaxWidth()) {
         if (attachments.isNotEmpty()) {
             LazyRow(
@@ -84,6 +98,46 @@ internal fun InputBar(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // 按住说话：录音期间浮层盖住输入区，这里只负责手势与图标状态。
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .pointerInput(transcribing, uploading) {
+                        if (transcribing || uploading) return@pointerInput
+                        val cancelThreshold = with(density) { 56.dp.toPx() }
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            onMicPress()
+                            var cancelled = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                val draggedUp = down.position.y - change.position.y
+                                if (!cancelled && draggedUp > cancelThreshold) {
+                                    cancelled = true
+                                    onMicCancelArmed(true)
+                                } else if (cancelled && draggedUp <= cancelThreshold) {
+                                    cancelled = false
+                                    onMicCancelArmed(false)
+                                }
+                                if (change.changedToUpIgnoreConsumed()) break
+                            }
+                            if (cancelled) onMicCancel() else onMicRelease()
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.Mic,
+                    contentDescription = if (recording) "松开结束" else "按住说话",
+                    tint = if (recording) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
             BasicTextField(
                 value = input,
                 onValueChange = onInputChange,
@@ -100,7 +154,7 @@ internal fun InputBar(
                 ),
                 decorationBox = { innerTextField ->
                     Box {
-                        if (input.isEmpty()) {
+                        if (input.text.isEmpty()) {
                             Text(
                                 when {
                                     streaming -> "任务运行中…"

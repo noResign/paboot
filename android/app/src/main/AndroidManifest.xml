@@ -11,7 +11,7 @@
     <!-- 有任务在跑时用前台服务保住进程，否则锁屏后收不到事件 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <!-- 语音输入占位预留（§7.6，ASR 未接，先声明权限） -->
+    <!-- 语音输入（§7.6）：录 WAV 后由客户端直连 DeepSeek ASR -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application

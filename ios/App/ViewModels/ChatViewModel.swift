@@ -30,11 +30,14 @@ final class ChatViewModel {
         var sessionId: String?
         var runId: String?
         var attachments: [ChatAttachmentDraft] = []
+        /// Voice transcription in flight: composer disables the mic meanwhile.
+        var transcribing = false
     }
 
     @Published private(set) var state = State()
 
     private let repository: any ChatRepositoryProtocol
+    private let asrRepository: any AsrRepositoryProtocol
     private var sessionId: String?
     private let workspaceId: String?
     private var runtime: String?
@@ -60,9 +63,11 @@ final class ChatViewModel {
         runtime: String? = nil,
         permissionMode: String? = nil,
         title: String? = nil,
-        repository: any ChatRepositoryProtocol = ChatRepository()
+        repository: any ChatRepositoryProtocol = ChatRepository(),
+        asrRepository: any AsrRepositoryProtocol = AsrRepository()
     ) {
         self.repository = repository
+        self.asrRepository = asrRepository
         self.sessionId = sessionId
         self.workspaceId = workspaceId
         self.runtime = runtime
@@ -267,6 +272,14 @@ final class ChatViewModel {
 
     func attachmentData(id: String) async -> Data? {
         try? await repository.attachmentData(id: id)
+    }
+
+    /// Voice → text only. The caller appends the result to the composer; this
+    /// never sends a message on the user's behalf.
+    func transcribeAudio(_ data: Data) async throws -> String {
+        state.transcribing = true
+        defer { state.transcribing = false }
+        return try await asrRepository.transcribeAudio(data)
     }
 
     func send(_ text: String) {

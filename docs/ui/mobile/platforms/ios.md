@@ -127,7 +127,7 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 - 文件：目录内搜索、图片缩放。
 - Codex `UserInput` 的 questions / form / url 专用表单（当前为通用权限 JSON）。
 - 设置页的通知开关（随后台通知一起做）。
-- 后台系统通知、启动自动连接、Markdown 链接跳转、语义级高亮、语音输入。
+- 后台系统通知、启动自动连接、Markdown 链接跳转、语义级高亮。
 - 回滚入口（与 Android 一致，移动端不提供）、iOS UI 测试与发布流程。
 
 ## 8. 已拍板的技术决策
@@ -141,7 +141,8 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
    （`snapshot.reconfigureItems`）；折叠块展开时让 table 重新计算行高。
 5. **Markdown**：`swift-markdown` 0.7.x（0.8+ 要求 Swift 6.2）+ 自绘 UIKit block view；
    代码块 / 表格是原生视图；语法高亮是轻量 token lexer，不做语义分析；链接仅样式、不可点击。
-6. **语音输入**：不进 M1，保留占位。
+6. **语音输入**：按住说话 → 本地录 16 kHz 单声道 WAV → 客户端直连 DeepSeek ASR，
+   识别结果只填入输入框；API Key 存 Keychain（设置页填写），不经过 daemon。
 
 ## 9. 实现顺序与提交规范
 
