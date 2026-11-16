@@ -123,7 +123,7 @@ final class AssistantMessageCell: UITableViewCell {
 
     private var itemViews: [ChatBlockView] = []
     private var itemKinds: [String] = []
-    private var onAnswer: ((String, String) -> Void)?
+    private var onAnswer: ((String, String, [String: [String]]) -> Void)?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -187,7 +187,7 @@ final class AssistantMessageCell: UITableViewCell {
     func configure(
         message: ChatUiMessage,
         streaming: Bool,
-        onAnswer: @escaping (String, String) -> Void
+        onAnswer: @escaping (String, String, [String: [String]]) -> Void
     ) {
         self.onAnswer = onAnswer
 
@@ -259,8 +259,8 @@ final class AssistantMessageCell: UITableViewCell {
                 view = ChatThinkingBlockView(frame: .zero)
             case .block(.question):
                 let questionView = ChatQuestionCardView(frame: .zero)
-                questionView.onSubmit = { [weak self] toolUseId, text in
-                    self?.onAnswer?(toolUseId, text)
+                questionView.onSubmit = { [weak self] toolUseId, text, answers in
+                    self?.onAnswer?(toolUseId, text, answers)
                 }
                 view = questionView
             case .block(.notice):
@@ -882,7 +882,7 @@ final class ChatNoticeView: ChatBlockView {
 }
 
 final class ChatQuestionCardView: ChatBlockView {
-    var onSubmit: ((String, String) -> Void)?
+    var onSubmit: ((String, String, [String: [String]]) -> Void)?
 
     private let stack = UIStackView()
     private var toolUseId = ""
@@ -1094,6 +1094,7 @@ final class ChatQuestionCardView: ChatBlockView {
     private func submit() {
         guard allAnswered else { return }
 
+        var structured: [String: [String]] = [:]
         let answer = questions.enumerated().map { index, question in
             var parts = question.options
                 .map(\.label)
@@ -1105,11 +1106,12 @@ final class ChatQuestionCardView: ChatBlockView {
                     parts.append("其他：\(custom)")
                 }
             }
+            structured[question.id ?? String(index)] = parts
             return "关于「\(question.question)」，我的选择是：\(parts.joined(separator: "、"))"
         }
         .joined(separator: "\n")
 
-        onSubmit?(toolUseId, answer)
+        onSubmit?(toolUseId, answer, structured)
     }
 }
 

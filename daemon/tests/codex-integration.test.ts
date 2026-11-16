@@ -440,8 +440,12 @@ describe('Codex HTTP integration', () => {
     const run = db.listRuns(db.listSessions()[0].id)[0];
     const questions = [{ id: 'q1', header: 'Deploy', question: 'Deploy to prod?', options: [{ label: 'yes', description: '' }] }];
     const answered = peer.serverRequest('item/tool/requestUserInput', { itemId: 'q-1', isBlocking: true, questions });
-    const request = db.listEvents(run.id).map(row => JSON.parse(row.payload)).find(ev => ev.type === 'permission_request');
-    expect(request.toolName).toBe('UserInput');
+    // Codex questions now render as the in-transcript card (a `question` event),
+    // not the generic UserInput modal.
+    const request = db.listEvents(run.id).map(row => JSON.parse(row.payload)).find(ev => ev.type === 'question');
+    expect(request.questions).toEqual([
+      { id: 'q1', header: 'Deploy', question: 'Deploy to prod?', options: [{ label: 'yes' }] },
+    ]);
 
     // A question has no answer to remember, so "allow all" must not silently
     // approve later ones — and the request must stay pending for a real answer.

@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -907,17 +908,29 @@ class ChatViewModel(
         return UsageInfo(inputTokens = input, outputTokens = output, costUsd = u.costUsd)
     }
 
-    fun answerQuestion(toolUseId: String, answerText: String) {
+    fun answerQuestion(
+        toolUseId: String,
+        answerText: String,
+        answers: Map<String, List<String>>,
+    ) {
         val answer = answerText.trim()
         if (answer.isEmpty()) return
         val question = findQuestion(toolUseId) ?: return
         val permissionId = question.permissionId
         if (permissionId != null) {
-            // builtin 阻塞式提问：回答通过权限端点回填 tool_result，run 继续。
+            // 阻塞式提问（builtin / Codex）：结构化答案通过权限端点回填 tool_result，run 继续。
             if (question.answered) return
             setQuestionAnswered(toolUseId, true)
             viewModelScope.launch {
-                val response = buildJsonObject { put("answer", answer) }
+                val response = buildJsonObject {
+                    put("answers", buildJsonObject {
+                        answers.forEach { (id, labels) ->
+                            put(id, buildJsonObject {
+                                put("answers", JsonArray(labels.map { JsonPrimitive(it) }))
+                            })
+                        }
+                    })
+                }
                 when (val r = repository.decidePermission(permissionId, "allow", null, response)) {
                     is NetworkResult.Success -> Unit
                     is NetworkResult.Error -> {

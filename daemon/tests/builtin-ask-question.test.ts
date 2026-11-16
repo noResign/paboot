@@ -51,13 +51,14 @@ describe('AskUserQuestion tool', () => {
 
     const result = await tool.call({ questions }, context(events));
 
+    const parsedQuestions = [{ id: 'q0', ...questions[0] }];
     expect(seen.permissionId).toBe('perm-1');
-    expect(seen.questions).toEqual(questions);
-    expect(result).toEqual({ content: '用户回答：SQLite', isError: false });
+    expect(seen.questions).toEqual(parsedQuestions);
+    expect(result).toEqual({ content: '用户回答：\nSQLite', isError: false });
     expect(events).toContainEqual({
       type: 'question',
       toolUseId: 'call-1',
-      questions,
+      questions: parsedQuestions,
       permissionId: 'perm-1',
     });
   });

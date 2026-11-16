@@ -49,7 +49,7 @@ internal fun MessageList(
     messages: List<ChatUiMessage>,
     streaming: Boolean,
     loading: Boolean,
-    onAnswer: (String, String) -> Unit,
+    onAnswer: (String, String, Map<String, List<String>>) -> Unit,
     bottomOverlayPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
     /**
@@ -209,7 +209,7 @@ internal fun UserBubble(message: ChatUiMessage.User) {
 internal fun AssistantBlock(
     message: ChatUiMessage.Assistant,
     streaming: Boolean,
-    onAnswer: (String, String) -> Unit,
+    onAnswer: (String, String, Map<String, List<String>>) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val segments = remember(message.blocks) { segmentBlocks(message.blocks) }

@@ -170,10 +170,19 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
 
 - Claude 等 headless runtime：事件不带 `permissionId`；工具已被自动拒绝，客户端把用户的选择
   作为**下一条消息**发出去。
-- builtin：事件带 `permissionId`，run 阻塞在这个工具调用上。客户端用
-  `POST /api/permissions/:id/decision`（`decision: "allow"`，`response: { "answer": string }`）
-  回答；daemon 把答案作为该工具调用的 `tool_result`，模型在同一个 run 里继续。超时 / 拒绝时
-  工具返回错误结果，让模型自己决定下一步。
+- builtin / Codex：事件带 `permissionId`，run 阻塞在这个工具调用上。客户端用
+  `POST /api/permissions/:id/decision` 回答，结构化答案按 question id 分组：
+
+  ```json
+  { "decision": "allow",
+    "response": { "answers": { "q1": { "answers": ["yes", "其他：自定义"] } } } }
+  ```
+
+  daemon 把结果回填给工具/RPC（builtin 会把它格式化成可读的 `tool_result`），模型在同一个
+  run 里继续。超时 / 拒绝时工具返回错误结果，让模型自己决定下一步。builtin 仍兼容旧的
+  `response: { "answer": string }`。
+
+`QuestionDto.id` 只有阻塞式通道需要；Codex 自带，builtin 由 daemon 生成（`q0`、`q1`…）。
 
 **思考内容不下发**：运行时产生的 `thinking_delta` 在 run service 里直接丢弃——既不落库也不进
 SSE。客户端靠 `thinking_start` 生成一张不可展开的思考卡片（标题行转圈），收到下一条内容事件

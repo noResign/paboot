@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildAnswerText, isFullyAnswered, toggleSelection } from './questionAnswer';
+import {
+  buildAnswerText,
+  buildStructuredAnswers,
+  isFullyAnswered,
+  toggleSelection,
+} from './questionAnswer';
 import type { QuestionDto } from '../../../../shared/contract';
 
 const single: QuestionDto = {
@@ -48,6 +53,22 @@ describe('isFullyAnswered', () => {
   it('accepts a non-empty "其他" answer when no option fits', () => {
     expect(isFullyAnswered([single], {}, { 0: { active: true, text: '  ' } })).toBe(false);
     expect(isFullyAnswered([single], {}, { 0: { active: true, text: '其他 runtime' } })).toBe(true);
+  });
+});
+
+describe('buildStructuredAnswers', () => {
+  it('keys answers by question id (falling back to the index)', () => {
+    const withId: QuestionDto = { ...single, id: 'q1' };
+    expect(
+      buildStructuredAnswers([withId, multi], { 0: ['Claude'], 1: ['文件'] }),
+    ).toEqual({ q1: ['Claude'], 1: ['文件'] });
+  });
+
+  it('appends the custom "其他" text to the labels', () => {
+    const withId: QuestionDto = { ...multi, id: 'q1' };
+    expect(
+      buildStructuredAnswers([withId], { 0: ['会话'] }, { 0: { active: true, text: '任务' } }),
+    ).toEqual({ q1: ['会话', '其他：任务'] });
   });
 });
 

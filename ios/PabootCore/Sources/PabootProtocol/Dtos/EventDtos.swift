@@ -186,6 +186,8 @@ public struct QuestionOptionDto: Decodable, Equatable, Sendable {
 
 /// `AskUserQuestion` 里的单个问题。
 public struct QuestionDto: Decodable, Equatable, Sendable {
+    /// Blocking answers are keyed by this id (Codex supplies it; builtin adds one).
+    public let id: String?
     public let question: String
     public let header: String?
     public let multiSelect: Bool?
@@ -193,6 +195,7 @@ public struct QuestionDto: Decodable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
         question = try container.decode(String.self, forKey: .question)
         header = try container.decodeIfPresent(String.self, forKey: .header)
         multiSelect = try container.decodeIfPresent(Bool.self, forKey: .multiSelect)
@@ -200,7 +203,7 @@ public struct QuestionDto: Decodable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case question, header, multiSelect, options
+        case id, question, header, multiSelect, options
     }
 }
 

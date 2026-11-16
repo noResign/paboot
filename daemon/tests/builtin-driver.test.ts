@@ -666,7 +666,7 @@ describe('builtin driver E2E with fake provider', () => {
         const question = frames.find((frame) => frame.event.type === 'question')?.event;
         if (question && question.type === 'question' && question.permissionId) {
           h.ctx.permissions.decide(question.permissionId, 'allow', undefined, {
-            answer: 'SQLite',
+            answers: { q0: { answers: ['SQLite'] } },
           });
           return;
         }
@@ -680,7 +680,8 @@ describe('builtin driver E2E with fake provider', () => {
     expect(frames.map((frame) => frame.event)).toContainEqual(
       expect.objectContaining({ type: 'question', toolUseId: 'call_question' }),
     );
-    expect(JSON.stringify(provider.requests[1])).toContain('用户回答：SQLite');
+    expect(JSON.stringify(provider.requests[1])).toContain('用户回答');
+    expect(JSON.stringify(provider.requests[1])).toContain('SQLite');
   });
 
   it('fetches WebFetch pages through the provider web API and feeds the text back', async () => {
