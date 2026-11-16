@@ -180,7 +180,7 @@ const ERROR_BODY_CHARS = 2_000;
  * code. Reads at most {@link ERROR_BODY_CHARS}, redacts credentials and caps the
  * final message, so a misbehaving endpoint cannot flood the tool result.
  */
-async function readErrorDetail(response: Response): Promise<string> {
+export async function readErrorDetail(response: Response): Promise<string> {
   if (!response.body) return '';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

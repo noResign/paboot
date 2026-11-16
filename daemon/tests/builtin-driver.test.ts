@@ -143,7 +143,10 @@ interface Harness {
   root: string;
 }
 
-function harness(builtinConfig?: BuiltinRuntimeConfig): Harness {
+function harness(
+  builtinConfig?: BuiltinRuntimeConfig,
+  sessionTitle: string | null = 'Session under test',
+): Harness {
   const root = tempDir('paboot-builtin-workspace-');
   const dataDir = tempDir('paboot-builtin-data-');
   const db = new Db(':memory:');
@@ -157,6 +160,8 @@ function harness(builtinConfig?: BuiltinRuntimeConfig): Harness {
     permissionMode: 'ask',
     cwd: root,
     model: 'fake:fake-model',
+    // A non-default title keeps the auto-title request out of scripted runs.
+    title: sessionTitle,
   });
   const notifier = new RunNotifier();
   const permissions = new PermissionManager(1_000);
@@ -297,6 +302,37 @@ describe('builtin driver E2E with fake provider', () => {
     expect(messages[3]?.blocks).toContainEqual(
       expect.objectContaining({ type: 'tool_result', toolUseId: 'call_read' }),
     );
+  });
+
+  it('generates a session title on the first turn with a tool-free request', async () => {
+    const provider = await fakeProvider((body, _index, res) => {
+      // The title call never declares tools; the agent turn always does.
+      if (!Array.isArray(body['tools'])) finishText(res, 'Title: "Fix login error"');
+      else finishText(res, 'Fixed.');
+    });
+    setEnv('PABOOT_LLM_PROVIDERS', JSON.stringify({
+      providers: [{
+        id: 'fake',
+        kind: 'openai',
+        baseUrl: provider.url,
+        apiKey: 'fake-key',
+        models: [{ id: 'fake-model', supportsTools: true, supportsImages: true }],
+      }],
+    }));
+    setEnv('PABOOT_LLM_PROVIDERS_FILE', path.join(tempDir('paboot-builtin-empty-'), 'missing.json'));
+
+    const h = harness(undefined, null);
+    const frames: SseFrame[] = [];
+    const handle = await start(h, { prompt: 'Fix the login 500 error', frames });
+    await handle.done;
+
+    expect(h.db.getSession(h.sessionId)?.title).toBe('Fix login error');
+    const titleRequest = provider.requests.find((request) => !Array.isArray(request['tools']));
+    expect(titleRequest).toMatchObject({
+      model: 'fake-model',
+      max_completion_tokens: 48,
+      temperature: 0,
+    });
   });
 
   it('reconstructs earlier turns from the durable transcript on the next run', async () => {
@@ -722,6 +758,7 @@ describe('builtin driver E2E with fake provider', () => {
           provider: 'provider',
           baseUrl: `${provider.url}/v1/tools`,
         },
+        search: { ...DEFAULT_BUILTIN_CONFIG.web.search },
       },
     });
     const handle = await start(h, {
