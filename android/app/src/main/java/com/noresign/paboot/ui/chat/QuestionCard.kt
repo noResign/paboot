@@ -28,7 +28,7 @@ import com.noresign.paboot.network.daemon.dto.QuestionDto
 internal fun QuestionCard(
     block: ContentBlock.Question,
     streaming: Boolean,
-    onAnswer: (String, String) -> Unit,
+    onAnswer: (String, String, Map<String, List<String>>) -> Unit,
 ) {
     // 每个问题的选中状态：问题下标 → 已选 label 集合（流式中也能预选，本地状态）
     val selections = remember(block.toolUseId) { mutableStateMapOf<Int, Set<String>>() }
@@ -45,15 +45,25 @@ internal fun QuestionCard(
     }
     val anyOtherActive = block.questions.indices.any { isOtherActive(it) }
 
-    // 只有「纯选项」才自动提交；出现「其他」时必须点按钮，避免边输入边发送。
-    // builtin 的阻塞式提问在 run 运行中就要回答（permissionId 非空）；
-    // Claude 等 headless runtime 必须等本轮结束，答案才能作为下一条消息发出。
+    // 阻塞式回答按 question.id 结构化提交（Codex / builtin 共用同一形状）。
+    fun structuredAnswers(): Map<String, List<String>> =
+        block.questions.indices.associate { i ->
+            val labels = selected(i).toMutableList()
+            if (isOtherActive(i) && otherText(i).isNotEmpty()) labels += "其他：${otherText(i)}"
+            (block.questions[i].id ?: i.toString()) to labels.toList()
+        }
+
+    // builtin 的阻塞式提问必须由用户点「发送答案」确认，不能选完就发——用户可能还想来回改。
+    // Claude 等 headless runtime 只能等本轮结束后自动发下一条消息；出现「其他」时也必须显式发送，
+    // 避免边输入边提交。
     val blocking = block.permissionId != null
-    LaunchedEffect(streaming, allAnswered, anyOtherActive, block.answered, blocking) {
-        if (allAnswered && !anyOtherActive && !block.answered && (blocking || !streaming)) {
+    val autoSubmit = allAnswered && !anyOtherActive && !blocking && !streaming
+    LaunchedEffect(autoSubmit, block.answered) {
+        if (autoSubmit && !block.answered) {
             onAnswer(
                 block.toolUseId,
                 buildAnswerText(block.questions, selections, otherActive, otherTexts),
+                structuredAnswers(),
             )
         }
     }
@@ -101,12 +111,13 @@ internal fun QuestionCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else if (anyOtherActive) {
+            } else if (blocking || anyOtherActive) {
                 OutlinedButton(
                     onClick = {
                         onAnswer(
                             block.toolUseId,
                             buildAnswerText(block.questions, selections, otherActive, otherTexts),
+                            structuredAnswers(),
                         )
                     },
                     enabled = allAnswered,

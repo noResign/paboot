@@ -745,22 +745,29 @@ final class ChatViewModel {
         }
     }
 
-    func answerQuestion(toolUseId: String, answerText: String) {
+    func answerQuestion(
+        toolUseId: String,
+        answerText: String,
+        answers: [String: [String]]
+    ) {
         let answer = answerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !answer.isEmpty else { return }
         guard let question = findQuestion(toolUseId) else { return }
 
-        // Builtin blocking questions: answer through the permission endpoint and
-        // let the same run continue with the answer as the tool result.
+        // Blocking questions (builtin / Codex): structured answers go through the
+        // permission endpoint and the same run continues with the tool result.
         if let permissionId = question.permissionId {
             guard !question.answered else { return }
             markQuestionAnswered(toolUseId, answered: true)
+            let payload = answers.mapValues { labels in
+                JSONValue.object(["answers": .array(labels.map(JSONValue.string))])
+            }
             Task {
                 do {
                     try await repository.decidePermission(
                         id: permissionId,
                         decision: "allow",
-                        response: .object(["answer": .string(answer)])
+                        response: .object(["answers": .object(payload)])
                     )
                 } catch {
                     markQuestionAnswered(toolUseId, answered: false)

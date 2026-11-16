@@ -85,7 +85,7 @@ export function createAskUserQuestionTool(exchange: QuestionExchange): ToolImple
         return { content: '用户未回答（运行已取消）。', isError: true, interrupted: true };
       }
       if (outcome.status === 'allowed' && outcome.answer) {
-        return { content: `用户回答：${outcome.answer}`, isError: false };
+        return { content: `用户回答：\n${outcome.answer}`, isError: false };
       }
       return {
         content:
@@ -134,6 +134,8 @@ function parseQuestions(input: unknown): QuestionDto[] {
     const header = entry['header'];
     const multiSelect = entry['multiSelect'];
     return {
+      // The model never supplies ids; clients key structured answers by them.
+      id: `q${index}`,
       question: question.trim(),
       ...(typeof header === 'string' && header.trim().length > 0 ? { header: header.trim() } : {}),
       ...(typeof multiSelect === 'boolean' ? { multiSelect } : {}),

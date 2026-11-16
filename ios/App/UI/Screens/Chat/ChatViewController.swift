@@ -343,11 +343,15 @@ final class ChatViewController: UIViewController {
                 cell.configure(
                     message: message,
                     streaming: self.viewModel.state.streaming
-                ) { [weak self] toolUseId, text in
+                ) { [weak self] toolUseId, text, answers in
                     guard let self else { return }
                     self.isFollowingBottom = true
                     self.jumpButton.isHidden = true
-                    self.viewModel.answerQuestion(toolUseId: toolUseId, answerText: text)
+                    self.viewModel.answerQuestion(
+                        toolUseId: toolUseId,
+                        answerText: text,
+                        answers: answers
+                    )
                 }
                 return cell
             }

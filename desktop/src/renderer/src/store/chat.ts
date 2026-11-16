@@ -66,8 +66,16 @@ interface ChatStore {
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   startNew(connectionId: string, options: NewSessionOptions): void;
   send(text: string, attachmentIds?: string[]): Promise<void>;
-  /** Send a picked answer for an `AskUserQuestion` card as a continuation turn. */
-  answerQuestion(toolUseId: string, answerText: string): void;
+  /**
+   * Answer an `AskUserQuestion` card. Blocking questions (builtin / Codex) send
+   * the structured `answers` through the permission endpoint; the Claude path
+   * sends the composed text as a continuation turn.
+   */
+  answerQuestion(
+    toolUseId: string,
+    answerText: string,
+    answers?: Record<string, string[]>,
+  ): void;
   stop(): void;
   detach(): void;
   leave(): void;
@@ -220,7 +228,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     await startStream(set, key, spec);
   },
 
-  answerQuestion(toolUseId, answerText) {
+  answerQuestion(toolUseId, answerText, answers) {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
     const text = answerText.trim();
@@ -228,15 +236,23 @@ export const useChat = create<ChatStore>((set, get) => ({
     const question = findQuestion(chat.messages, toolUseId);
     if (!question) return;
 
-    // Builtin blocking questions: answer through the permission endpoint; the
-    // same run continues with the answer as the tool result.
+    // Blocking questions (builtin / Codex): structured answers go through the
+    // permission endpoint; the same run continues with the result.
     if (question.permissionId) {
       if (question.answered) return;
       set(questionAnswered(key, toolUseId, true));
+      const response = {
+        answers: Object.fromEntries(
+          Object.entries(answers ?? {}).map(([id, labels]) => [id, { answers: labels }]),
+        ),
+      };
       void (async () => {
-        const res = await api.decidePermission(question.permissionId!, 'allow', undefined, {
-          answer: text,
-        });
+        const res = await api.decidePermission(
+          question.permissionId!,
+          'allow',
+          undefined,
+          response,
+        );
         if (res.ok || res.status === 404 || res.status === 409) return;
         const { apiCode, message } = apiErrorOf(res.data);
         set((state) => ({

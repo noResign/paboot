@@ -6,7 +6,7 @@ import type { ProductPermissionMode } from '../../permissions/permission-mode.js
 import { ALLOW_ALL_REASON, type PermissionManager } from '../../permissions/permissions.js';
 import type { RunNotifier } from '../../runs/run-notifier.js';
 import { grantKeyCandidates } from '../../permissions/tool-grants.js';
-import type { NormalizedEvent } from '../../types/api.js';
+import type { NormalizedEvent, QuestionDto } from '../../types/api.js';
 import type { RuntimeImageInput } from '../types.js';
 import { VERSION } from '../../version.js';
 import { asRecord, codexApprovalResult, createCodexStreamMapper, readCodexApproval, readString } from './map.js';
@@ -235,10 +235,23 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
       const pending = permissions.create(req.id, req.sessionId, 'UserInput', input.toolInput);
       pending.validateResponse = input.validate;
       if (requestId !== undefined) serverRequests.set(requestId, pending.id);
-      pending.announced = notifier.emit(req.id, {
-        type: 'permission_request', permissionId: pending.id, toolName: pending.toolName,
-        toolInput: pending.toolInput, status: pending.status,
-      });
+      const questions = codexQuestionDtos(input.toolInput);
+      if (questions.length > 0) {
+        // Questions render as the in-transcript card, not the generic UserInput
+        // modal. `announced` stays false so resolving it never emits a stray
+        // permission_request frame.
+        notifier.emit(req.id, {
+          type: 'question',
+          toolUseId: pending.id,
+          questions,
+          permissionId: pending.id,
+        });
+      } else {
+        pending.announced = notifier.emit(req.id, {
+          type: 'permission_request', permissionId: pending.id, toolName: pending.toolName,
+          toolInput: pending.toolInput, status: pending.status,
+        });
+      }
       const decided = await permissions.wait(pending.id);
       if (requestId !== undefined) serverRequests.delete(requestId);
       return input.result(decided.status === 'allowed', decided.response);
@@ -401,4 +414,37 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
   const run = { id: req.id, promise, cancel };
   registerActiveRun(run);
   return run;
+}
+
+/** Codex's question payload → the neutral card shape (ids are required for answers). */
+function codexQuestionDtos(toolInput: Record<string, unknown>): QuestionDto[] {
+  const raw = toolInput['questions'];
+  if (!Array.isArray(raw)) return [];
+  const questions: QuestionDto[] = [];
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const id = readString(record, 'id');
+    const question = readString(record, 'question');
+    if (!id || !question) continue;
+    const optionsRaw = record?.['options'];
+    const options = Array.isArray(optionsRaw)
+      ? optionsRaw.flatMap((option) => {
+          const item = asRecord(option);
+          const label = readString(item, 'label');
+          if (!label) return [];
+          const description = readString(item, 'description');
+          return [{ label, ...(description ? { description } : {}) }];
+        })
+      : [];
+    const header = readString(record, 'header');
+    const multiSelect = record?.['multiSelect'];
+    questions.push({
+      id,
+      question,
+      ...(header ? { header } : {}),
+      ...(typeof multiSelect === 'boolean' ? { multiSelect } : {}),
+      options,
+    });
+  }
+  return questions;
 }

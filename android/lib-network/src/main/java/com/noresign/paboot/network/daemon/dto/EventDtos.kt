@@ -16,6 +16,8 @@ data class QuestionOptionDto(
 /** `AskUserQuestion` 工具里的单个问题。 */
 @Serializable
 data class QuestionDto(
+    /** 阻塞式回答用它做 key（Codex 自带；builtin 由 daemon 生成）。 */
+    val id: String? = null,
     val question: String,
     val header: String? = null,
     val multiSelect: Boolean = false,

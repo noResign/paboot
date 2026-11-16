@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { isBusy, useChat } from '../../store/chat';
-import { buildAnswerText, isFullyAnswered, toggleSelection } from './questionAnswer';
+import {
+  buildAnswerText,
+  buildStructuredAnswers,
+  isFullyAnswered,
+  toggleSelection,
+} from './questionAnswer';
 import type { QuestionOthers, QuestionSelections } from './questionAnswer';
 import type { QuestionDto } from '../../../../shared/contract';
 
@@ -39,9 +44,16 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
   const blocking = Boolean(permissionId);
 
   useEffect(() => {
-    if (answered || !complete || anyOther) return;
-    if (busy && !blocking) return;
-    answerQuestion(toolUseId, buildAnswerText(questions, selections, others));
+    // Builtin blocks the run, so a blocking question must be confirmed with the
+    // button: the user may still be toggling options. Headless Claude can only
+    // answer after the turn ends, so that path keeps auto-sending.
+    if (answered || !complete || anyOther || blocking) return;
+    if (busy) return;
+    answerQuestion(
+      toolUseId,
+      buildAnswerText(questions, selections, others),
+      buildStructuredAnswers(questions, selections, others),
+    );
     // `selections` is read only through `complete`, which flips exactly when the
     // picks become sendable; depending on it directly would fire on every toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,13 +153,17 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
         <div className="question-status">已发送答案</div>
       ) : (
         <>
-          {anyOther && (
+          {(anyOther || blocking) && (
             <button
               type="button"
               className="btn primary"
               disabled={!complete}
               onClick={() =>
-                answerQuestion(toolUseId, buildAnswerText(questions, selections, others))
+                answerQuestion(
+                  toolUseId,
+                  buildAnswerText(questions, selections, others),
+                  buildStructuredAnswers(questions, selections, others),
+                )
               }
             >
               发送答案

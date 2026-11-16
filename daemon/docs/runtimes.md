@@ -55,8 +55,9 @@ Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，�
 - 显式 `provider` 不可用时**不回退**，返回明确错误。
 
 `AskUserQuestion` 是**阻塞式**：工具创建一条 pending `UserInput` 权限记录，发 `question` 事件
-（带 `permissionId`），等待客户端通过权限决策端点回填答案，答案作为该调用的 `tool_result`
+（带 `permissionId`），等待客户端通过权限决策端点回填结构化答案，答案作为该调用的 `tool_result`
 让模型在同一个 run 里继续。Claude 等 headless runtime 不支持阻塞，仍走「答案作为下一条消息」。
+Codex 的 `item/tool/requestUserInput` 也走同一条事件与卡片（不再是 `UserInput` 模态框）。
 工具预算与 spill 保留期在 [configuration.md](configuration.md) 的 `builtin.json` 中配置。
 
 **长会话**：接近模型窗口时先在渲染层把旧的超大工具结果换成占位（保留 spill 指针），仍超阈值

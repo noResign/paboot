@@ -47,6 +47,22 @@ export function isFullyAnswered(
  * backfill. Wording matches the Android client so both read identically in the
  * transcript.
  */
+/** Blocking answer payload: `{ questionId: [labels] }` (Codex/builtin shape). */
+export function buildStructuredAnswers(
+  questions: QuestionDto[],
+  selections: QuestionSelections,
+  others: QuestionOthers = {},
+): Record<string, string[]> {
+  const answers: Record<string, string[]> = {};
+  questions.forEach((question, index) => {
+    const labels = [...(selections[index] ?? [])];
+    const other = others[index];
+    if (other?.active && other.text.trim()) labels.push(`其他：${other.text.trim()}`);
+    answers[question.id ?? String(index)] = labels;
+  });
+  return answers;
+}
+
 export function buildAnswerText(
   questions: QuestionDto[],
   selections: QuestionSelections,

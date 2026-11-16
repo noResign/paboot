@@ -41,6 +41,8 @@ export interface QuestionOption {
 }
 
 export interface QuestionDto {
+  /** Blocking answers are keyed by this id (Codex supplies it; builtin adds one). */
+  id?: string;
   question: string;
   header?: string;
   multiSelect?: boolean;
@@ -117,9 +119,10 @@ export type NormalizedEvent =
       toolUseId: string;
       questions: QuestionDto[];
       /**
-       * Builtin only: the run is blocked on this pending permission. Clients
-       * submit the answer through the permission-decision endpoint (response
-       * `{ answer: string }`) instead of sending a new chat message.
+       * Builtin / Codex: the run is blocked on this pending permission. Clients
+       * submit structured answers through the permission-decision endpoint
+       * (`response: { answers: { <questionId>: { answers: string[] } } }`)
+       * instead of sending a new chat message.
        */
       permissionId?: string;
     };

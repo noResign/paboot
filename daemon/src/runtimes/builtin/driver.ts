@@ -5,7 +5,7 @@ import type { AppContext } from '../../app/context.js';
 import { resolveSessionEnd } from '../../ends/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
-import type { NormalizedEvent, PermissionStatus } from '../../types/api.js';
+import type { NormalizedEvent, PermissionStatus, QuestionDto } from '../../types/api.js';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../RuntimeDriver.js';
 import { registerActiveRun, type ManagedRun } from '../active-runs.js';
 import type { RunOutcome } from '../engine.js';
@@ -223,6 +223,7 @@ async function runBuiltin(
           'fetch API); it can reach intranet and loopback addresses',
       );
     }
+    const pendingQuestions = new Map<string, QuestionDto[]>();
     const questionExchange: QuestionExchange = {
       create(questions) {
         const pending = ctx.permissions.create(req.runId, req.sessionId, 'UserInput', {
@@ -230,8 +231,8 @@ async function runBuiltin(
           questions,
           message: '需要你的回答',
         });
-        pending.validateResponse = (response) =>
-          readQuestionAnswer(response) ? null : 'answer is required';
+        pendingQuestions.set(pending.id, questions);
+        pending.validateResponse = (response) => validateQuestionResponse(response, questions);
         return pending.id;
       },
       async wait(permissionId, questionSignal) {
@@ -240,12 +241,17 @@ async function runBuiltin(
           questionSignal,
           () => ctx.permissions.decide(permissionId, 'deny', 'run cancelled'),
         );
+        const questions = pendingQuestions.get(permissionId) ?? [];
+        pendingQuestions.delete(permissionId);
+        const allowed = decided.status === 'allowed';
         return {
           status:
-            decided.status === 'allowed' || decided.status === 'timed_out'
-              ? decided.status
-              : 'denied',
-          answer: readQuestionAnswer(decided.response),
+            decided.status === 'timed_out'
+              ? 'timed_out'
+              : allowed
+                ? 'allowed'
+                : 'denied',
+          answer: allowed ? formatQuestionAnswers(questions, decided.response) : null,
         };
       },
     };
@@ -549,7 +555,10 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
-/** Client answer payload: `{ answer: string }` (a bare string is also accepted). */
+/**
+ * Legacy/free-text answer: a bare string or `{ answer: string }`. Kept for older
+ * clients; blocking question cards now send structured answers.
+ */
 function readQuestionAnswer(response: unknown): string | null {
   if (typeof response === 'string' && response.trim().length > 0) return response.trim();
   if (response && typeof response === 'object' && !Array.isArray(response)) {
@@ -557,6 +566,54 @@ function readQuestionAnswer(response: unknown): string | null {
     if (typeof answer === 'string' && answer.trim().length > 0) return answer.trim();
   }
   return null;
+}
+
+/** `{ answers: { <questionId>: { answers: string[] } } }` (same shape as Codex). */
+function parseStructuredAnswers(response: unknown): Map<string, string[]> | null {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
+  const answers = (response as Record<string, unknown>)['answers'];
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return null;
+  const parsed = new Map<string, string[]>();
+  for (const [id, value] of Object.entries(answers as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const list = (value as Record<string, unknown>)['answers'];
+    if (!Array.isArray(list)) continue;
+    const labels = list
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => item.trim());
+    if (labels.length > 0) parsed.set(id, labels);
+  }
+  return parsed;
+}
+
+function validateQuestionResponse(
+  response: unknown,
+  questions: readonly QuestionDto[],
+): string | null {
+  if (readQuestionAnswer(response)) return null;
+  const answers = parseStructuredAnswers(response);
+  if (!answers) return 'answers are required';
+  for (const question of questions) {
+    if (!question.id || !(answers.get(question.id)?.length)) return 'Please answer every question';
+  }
+  const known = new Set(questions.map((question) => question.id));
+  for (const id of answers.keys()) {
+    if (!known.has(id)) return 'Unknown question';
+  }
+  return null;
+}
+
+function formatQuestionAnswers(
+  questions: readonly QuestionDto[],
+  response: unknown,
+): string | null {
+  const legacy = readQuestionAnswer(response);
+  if (legacy) return legacy;
+  const answers = parseStructuredAnswers(response);
+  if (!answers) return null;
+  return questions
+    .map((question) => `- ${question.question}：${(answers.get(question.id ?? '') ?? []).join('、')}`)
+    .join('\n');
 }
 
 /**
