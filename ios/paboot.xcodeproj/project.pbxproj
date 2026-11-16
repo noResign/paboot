@@ -82,6 +82,11 @@ F20000000000000000000003 /* ProviderManagementViewController.swift in Sources */
 		D0000000000000000000001B /* FileContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0000000000000000000000B /* FileContentViewController.swift */; };
 		E00000000000000000000011 /* SplitDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000001 /* SplitDiffView.swift */; };
 		AAAA0000000000000000001C /* PabootCore in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA0000000000000000001B /* PabootCore */; };
+		F40000000000000000000001 /* AsrDtos.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000001 /* AsrDtos.swift */; };
+		F40000000000000000000002 /* DeepSeekAsrClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002 /* DeepSeekAsrClient.swift */; };
+		F40000000000000000000003 /* AsrRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000003 /* AsrRepository.swift */; };
+		F40000000000000000000004 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000004 /* VoiceRecorder.swift */; };
+		F40000000000000000000005 /* VoiceInputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000005 /* VoiceInputOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -161,6 +166,11 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 		E00000000000000000000001 /* SplitDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffView.swift; sourceTree = "<group>"; };
 		AAAA0000000000000000002B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAA0000000000000000002C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F30000000000000000000001 /* AsrDtos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsrDtos.swift; sourceTree = "<group>"; };
+		F30000000000000000000002 /* DeepSeekAsrClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekAsrClient.swift; sourceTree = "<group>"; };
+		F30000000000000000000003 /* AsrRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsrRepository.swift; sourceTree = "<group>"; };
+		F30000000000000000000004 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
+		F30000000000000000000005 /* VoiceInputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInputOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -324,6 +334,8 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 				AAAA00000000000000000086 /* RunningDotView.swift */,
 				AAAA00000000000000000087 /* SessionCell.swift */,
 				AAAA000000000000000000A6 /* ChatComposerViews.swift */,
+				F30000000000000000000004 /* VoiceRecorder.swift */,
+				F30000000000000000000005 /* VoiceInputOverlay.swift */,
 				C0000000000000000000000A /* PermissionModeRow.swift */,
 			);
 			path = Components;
@@ -358,6 +370,9 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 				C0000000000000000000002E /* MemoryRepository.swift */,
 				D00000000000000000000001 /* FilesRepository.swift */,
 				F20000000000000000000011 /* ProviderRepository.swift */,
+				F30000000000000000000001 /* AsrDtos.swift */,
+				F30000000000000000000002 /* DeepSeekAsrClient.swift */,
+				F30000000000000000000003 /* AsrRepository.swift */,
 			);
 			path = Repositories;
 			sourceTree = "<group>";
@@ -605,6 +620,11 @@ F20000000000000000000013 /* ProviderManagementViewController.swift */ = {isa = P
 				F20000000000000000000001 /* ProviderRepository.swift in Sources */,
 				F20000000000000000000002 /* ProviderViewModel.swift in Sources */,
 				F20000000000000000000003 /* ProviderManagementViewController.swift in Sources */,
+				F40000000000000000000001 /* AsrDtos.swift in Sources */,
+				F40000000000000000000002 /* DeepSeekAsrClient.swift in Sources */,
+				F40000000000000000000003 /* AsrRepository.swift in Sources */,
+				F40000000000000000000004 /* VoiceRecorder.swift in Sources */,
+				F40000000000000000000005 /* VoiceInputOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

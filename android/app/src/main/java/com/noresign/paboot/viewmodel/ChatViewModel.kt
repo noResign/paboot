@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.noresign.paboot.data.PendingNewSession
+import com.noresign.paboot.data.repository.AsrRepository
 import com.noresign.paboot.data.repository.AttachmentRepository
 import com.noresign.paboot.data.repository.ChatRepository
 import com.noresign.paboot.data.repository.MetaRepository
@@ -36,7 +37,9 @@ import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -63,6 +66,7 @@ class ChatViewModel(
     private val metaRepository: MetaRepository = MetaRepository(),
     private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
     private val attachmentRepository: AttachmentRepository = AttachmentRepository(),
+    private val asrRepository: AsrRepository = AsrRepository(),
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
@@ -70,6 +74,17 @@ class ChatViewModel(
 
     private val _attachments = MutableStateFlow<List<AttachmentDraft>>(emptyList())
     val attachments = _attachments.asStateFlow()
+
+    /** 语音转写请求中：输入区麦克风与浮层据此切换状态。 */
+    private val _transcribing = MutableStateFlow(false)
+    val transcribing = _transcribing.asStateFlow()
+
+    /** 识别出的文本是事件而不是常驻状态：输入框文本仍归 ChatScreen 所有。 */
+    private val _transcripts = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val transcripts = _transcripts.asSharedFlow()
+
+    private val _voiceError = MutableStateFlow<String?>(null)
+    val voiceError = _voiceError.asStateFlow()
 
     private val _todos = MutableStateFlow<List<TodoItem>>(emptyList())
     val todos = _todos.asStateFlow()
@@ -354,6 +369,40 @@ class ChatViewModel(
 
     fun removeAttachment(localId: String) {
         _attachments.update { list -> list.filterNot { it.localId == localId } }
+    }
+
+    /**
+     * 语音转写：成功后只发文本事件，由界面填进输入框让用户确认；永不自动发送。
+     * 过短录音在本地直接判为「未识别」，省一次网络请求。
+     */
+    fun transcribe(wav: ByteArray) {
+        if (_transcribing.value) return
+        if (wav.size < MIN_VOICE_BYTES) {
+            _voiceError.value = friendlyMessage("asr_no_speech", null, "")
+            return
+        }
+        _transcribing.value = true
+        viewModelScope.launch {
+            try {
+                when (val result = asrRepository.transcribe(wav)) {
+                    is NetworkResult.Success -> {
+                        val text = result.data.text.trim()
+                        if (text.isEmpty()) {
+                            _voiceError.value = friendlyMessage("asr_no_speech", null, "")
+                        } else {
+                            _transcripts.emit(text)
+                        }
+                    }
+                    is NetworkResult.Error -> _voiceError.value = friendlyError(result)
+                }
+            } finally {
+                _transcribing.value = false
+            }
+        }
+    }
+
+    fun consumeVoiceError() {
+        _voiceError.value = null
     }
 
     fun send(text: String) {
@@ -1047,5 +1096,10 @@ class ChatViewModel(
         // 离开聊天页：不再算「用户正看着这个会话」
         ChatVisibility.exit(sessionId)
         super.onCleared()
+    }
+
+    private companion object {
+        /** 约 0.25s 的 16 kHz 16-bit 单声道 PCM；更短的录音直接判为「未识别」。 */
+        const val MIN_VOICE_BYTES = 8_000
     }
 }
