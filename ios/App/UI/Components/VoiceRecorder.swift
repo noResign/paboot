@@ -8,7 +8,7 @@ enum VoiceRecorderError: LocalizedError {
 /// Main-actor confined: the UI owns start/stop and the meter timer runs on the main run loop.
 @MainActor
 final class VoiceRecorder {
-    static var permission: AVAudioApplication.RecordPermission {
+    static var permission: AVAudioSession.RecordPermission {
         AVAudioApplication.shared.recordPermission
     }
 
