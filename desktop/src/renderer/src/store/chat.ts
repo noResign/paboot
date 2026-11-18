@@ -7,8 +7,8 @@ import { emptyChat, emptyPermissions } from './chat/types';
 import type { PendingPermission } from './chat/types';
 import type { ChatMessage, ChatSessionState, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
-import type { RunDto, SseFrame } from '../../../shared/contract';
-import type { AttachStreamSpec, ChatStreamSpec, StreamEvent, StreamSpec } from '../../../shared/ipc';
+import type { RunDto, SessionEvent, SessionRunBrief, SseFrame } from '../../../shared/contract';
+import type { AttachStreamSpec, ChatStreamSpec, SessionStreamSpec, StreamEvent, StreamSpec } from '../../../shared/ipc';
 import { useSessions } from './sessions';
 import { closePermissionNotification, notifyPermission, notifyRunFinished } from '../notify/notifier';
 
@@ -140,6 +140,7 @@ export const useChat = create<ChatStore>((set, get) => ({
       byKey: patch(state, key, (chat) => ({
         ...chat,
         title: session.title,
+        lastActiveAt: session.lastActiveAt,
         cwd: session.cwd,
         runtime: session.runtime,
         permissionMode: session.permissionMode,
@@ -156,6 +157,10 @@ export const useChat = create<ChatStore>((set, get) => ({
 
     if (session.running && session.runningRunId) {
       await attachRun(set, key, connectionId, session.runningRunId);
+    }
+    // Watch the session for work started elsewhere; it outlives individual runs.
+    if (seq === openSeq) {
+      await startSessionWatch(set, key, connectionId, sessionId);
     }
   },
 
@@ -298,21 +303,31 @@ export const useChat = create<ChatStore>((set, get) => ({
   detach() {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
-    if (!key || !chat?.streamId) return;
+    if (!key || !chat) return;
     const streamId = chat.streamId;
+    const sessionStreamId = chat.sessionStreamId;
+
     // Detaching must not kill the run: the daemon keeps it, and re-entering the
     // session re-attaches with `?after=`.
-    void connectionApi.streamCancel({ streamId, abortRun: false });
-    set((state) => ({
-      byKey: patch(state, key, (current) => ({
-        ...current,
-        streamId: null,
-        runId: null,
-        phase: 'idle',
-        messages: finalizeLast(current.messages),
-      })),
-      streamKeys: withoutKey(state.streamKeys, streamId),
-    }));
+    if (streamId) void connectionApi.streamCancel({ streamId, abortRun: false });
+    if (sessionStreamId) void connectionApi.streamCancel({ streamId: sessionStreamId, abortRun: false });
+
+    set((state) => {
+      const streamKeys = { ...state.streamKeys };
+      if (streamId) delete streamKeys[streamId];
+      if (sessionStreamId) delete streamKeys[sessionStreamId];
+      return {
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          streamId: null,
+          sessionStreamId: null,
+          runId: null,
+          phase: 'idle',
+          messages: streamId ? finalizeLast(current.messages) : current.messages,
+        })),
+        streamKeys,
+      };
+    });
   },
 
   leave() {
@@ -443,6 +458,28 @@ export const useChat = create<ChatStore>((set, get) => ({
   applyStreamEvent(event) {
     const key = get().streamKeys[event.streamId];
     if (!key) return;
+
+    const ownerChat = get().byKey[key];
+    const isSessionStream = ownerChat?.sessionStreamId === event.streamId;
+
+    if (event.kind === 'session') {
+      if (isSessionStream) applySessionEvent(set, get, key, event.event);
+      return;
+    }
+
+    // Phase and terminal events for a watch only mean "the socket state
+    // changed"; the run stream owns everything the user sees.
+    if (isSessionStream && event.kind === 'done') {
+      set((state) => ({
+        byKey: patch(state, key, (current) =>
+          current.sessionStreamId === event.streamId ? { ...current, sessionStreamId: null } : current,
+        ),
+        streamKeys: withoutKey(state.streamKeys, event.streamId),
+      }));
+      return;
+    }
+
+    if (isSessionStream) return;
 
     if (event.kind === 'phase') {
       set((state) => ({
@@ -732,6 +769,146 @@ async function rebuildHistory(
 }
 
 type SetState = (updater: (state: ChatStore) => Partial<ChatStore>) => void;
+type GetState = () => ChatStore;
+
+/** Keep a session watch open for as long as its chat is on screen. */
+async function startSessionWatch(
+  set: SetState,
+  key: string,
+  connectionId: string,
+  sessionId: string,
+): Promise<void> {
+  const streamId = newStreamId();
+  set((state) => ({
+    streamKeys: { ...state.streamKeys, [streamId]: key },
+    byKey: patch(state, key, (chat) => ({ ...chat, sessionStreamId: streamId })),
+  }));
+  const spec: Omit<SessionStreamSpec, 'streamId'> = { kind: 'session', connectionId, sessionId };
+  const result = await connectionApi.streamStart({ ...spec, streamId });
+  if (result.ok) return;
+  set((state) => ({
+    streamKeys: withoutKey(state.streamKeys, streamId),
+    byKey: patch(state, key, (current) =>
+      current.sessionStreamId === streamId ? { ...current, sessionStreamId: null } : current,
+    ),
+  }));
+}
+
+function applySessionEvent(
+  set: SetState,
+  get: GetState,
+  key: string,
+  event: SessionEvent,
+): void {
+  const chat = get().byKey[key];
+  if (!chat || chat.sessionId === null) return;
+  if (event.type !== 'state' && event.sessionId !== chat.sessionId) return;
+
+  if (event.type === 'state') {
+    if (event.session.id !== chat.sessionId) return;
+    patchSessionTitle(set, get, key, event.session.title);
+    // A run of our own is already streaming the truth; hints would duplicate it.
+    if (chat.streamId) return;
+    const running = event.session.runningRunId;
+    const stale = chat.lastActiveAt === null || event.session.lastActiveAt > chat.lastActiveAt;
+    if (running !== null || stale) {
+      void syncSessionFromDaemon(set, get, key);
+    }
+    return;
+  }
+
+  if (event.type === 'session_updated') {
+    patchSessionTitle(set, get, key, event.title);
+    return;
+  }
+
+  // run_started / run_finished
+  if (chat.streamId) return;
+  // The rail shows `running`, which just changed on the server.
+  void useSessions.getState().refreshCurrent(chat.connectionId, { silent: true });
+  if (chat.runs.some((run) => run.id === event.run.id)) return;
+  appendExternalRun(set, key, chat.connectionId, event.run);
+}
+
+function patchSessionTitle(
+  set: SetState,
+  get: GetState,
+  key: string,
+  title: string | null,
+): void {
+  const chat = get().byKey[key];
+  if (!chat || chat.title === title) return;
+  set((state) => ({ byKey: patch(state, key, (current) => ({ ...current, title })) }));
+  if (chat.sessionId) {
+    useSessions.getState().patchTitle(chat.connectionId, chat.sessionId, title ?? '');
+  }
+}
+
+/**
+ * A run started (or finished) on another device. Append its prompt and a live
+ * assistant bubble, then attach to the run's own stream — which replays from
+ * zero, so a run that already finished still renders in full.
+ */
+function appendExternalRun(
+  set: SetState,
+  key: string,
+  connectionId: string,
+  run: SessionRunBrief,
+): void {
+  set((state) => ({
+    byKey: patch(state, key, (chat) => ({
+      ...chat,
+      error: null,
+      messages: [
+        ...chat.messages,
+        {
+          kind: 'user',
+          id: nextId('u'),
+          text: run.prompt,
+          runId: run.id,
+          at: run.startedAt,
+          ...(run.attachmentIds.length ? { attachmentIds: run.attachmentIds } : {}),
+        },
+        newAssistant(nextId('a')),
+      ],
+    })),
+  }));
+  void attachRun(set, key, connectionId, run.id);
+}
+
+/** Re-read a session after a reconnect, or when it changed while we were away. */
+async function syncSessionFromDaemon(set: SetState, get: GetState, key: string): Promise<void> {
+  const before = get().byKey[key];
+  if (!before?.sessionId || before.streamId) return;
+  const sessionId = before.sessionId;
+  const detail = await api.session(sessionId);
+  const current = get().byKey[key];
+  if (!detail.ok || !current || current.sessionId !== sessionId || current.streamId) return;
+
+  const { session, runs, messages } = detail.data;
+  const rebuilt = await rebuildHistory(runs, session.runningRunId, messages);
+  const latest = get().byKey[key];
+  if (!latest || latest.sessionId !== sessionId || latest.streamId) return;
+
+  set((state) => ({
+    byKey: patch(state, key, (chat) => ({
+      ...chat,
+      title: session.title,
+      lastActiveAt: session.lastActiveAt,
+      cwd: session.cwd,
+      runtime: session.runtime,
+      permissionMode: session.permissionMode,
+      runId: session.runningRunId,
+      messages: rebuilt.messages,
+      runs,
+      todos: rebuilt.todos,
+      contextUsage: rebuilt.contextUsage,
+    })),
+  }));
+  if (session.running && session.runningRunId) {
+    void attachRun(set, key, before.connectionId, session.runningRunId);
+  }
+}
 
 function patch(
   state: ChatStore,

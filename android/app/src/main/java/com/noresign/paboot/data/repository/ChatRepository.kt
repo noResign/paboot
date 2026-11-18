@@ -4,6 +4,7 @@ import com.noresign.paboot.network.daemon.PabootClient
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.network.daemon.PabootStream
 import com.noresign.paboot.network.daemon.ChatStreamEvent
+import com.noresign.paboot.network.daemon.SessionWatchEvent
 import com.noresign.paboot.network.daemon.dto.ChatRequest
 import com.noresign.paboot.network.daemon.dto.EventsResponse
 import com.noresign.paboot.network.daemon.dto.MemorySessionModeRequest
@@ -58,6 +59,13 @@ class ChatRepository(
         val url = settings.baseUrl ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
         val token = settings.token ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
         return stream.streamRun(url, token, runId, after)
+    }
+
+    /** 会话级提示流：别的端开始的 run、标题变化。不持久化，重连以 state 快照为准。 */
+    fun sessionEvents(sessionId: String): Flow<SessionWatchEvent> {
+        val url = settings.baseUrl ?: return flowOf(SessionWatchEvent.Failed("未配置连接"))
+        val token = settings.token ?: return flowOf(SessionWatchEvent.Failed("未配置连接"))
+        return stream.sessionEvents(url, token, sessionId)
     }
 
     suspend fun sessionDetail(id: String): NetworkResult<SessionDetailResponse> {

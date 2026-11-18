@@ -29,6 +29,7 @@ protocol ChatRepositoryProtocol {
     func isRunActive(runId: String) async -> Bool?
     func chat(_ request: ChatRequest) -> AsyncThrowingStream<SSEFrame, Error>
     func runStream(runId: String, after: Int64?) -> AsyncThrowingStream<SSEFrame, Error>
+    func sessionEvents(sessionId: String) -> AsyncThrowingStream<SessionEventDto, Error>
     func cancelRun(id: String) async throws
     func decidePermission(id: String, decision: String, response: JSONValue?) async throws
     func updateModel(sessionId: String, model: String?, parameters: [String: String]?) async throws -> SessionDto?
@@ -96,6 +97,13 @@ final class ChatRepository: ChatRepositoryProtocol, RunWatchingRepository {
             return failedStream(ChatRepositoryError.notConnected)
         }
         return client.stream.runStream(runId: runId, after: after)
+    }
+
+    func sessionEvents(sessionId: String) -> AsyncThrowingStream<SessionEventDto, Error> {
+        guard let client = session.client else {
+            return AsyncThrowingStream { $0.finish(throwing: ChatRepositoryError.notConnected) }
+        }
+        return client.stream.sessionEvents(sessionId: sessionId)
     }
 
     func uploadAttachment(data: Data, contentType: String) async throws -> AttachmentDto {

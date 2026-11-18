@@ -46,6 +46,40 @@ public final class PabootStream {
         }
     }
 
+    /// Session-scoped hints: work started elsewhere and title changes. No cursor —
+    /// the stream always opens with a `state` snapshot.
+    public func sessionEvents(sessionId: String) -> AsyncThrowingStream<SessionEventDto, Error> {
+        do {
+            let request = try makeRequest(method: "GET", path: "api/sessions/\(sessionId)/events")
+            return events(from: request)
+        } catch {
+            return failedEvents(error)
+        }
+    }
+
+    private func events(from request: URLRequest) -> AsyncThrowingStream<SessionEventDto, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                let decoder = JSONDecoder()
+                do {
+                    for try await event in sse.stream(request) {
+                        guard let data = event.data.data(using: .utf8) else { continue }
+                        guard let decoded = try? decoder.decode(SessionEventDto.self, from: data) else { continue }
+                        continuation.yield(decoded)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func failedEvents(_ error: Error) -> AsyncThrowingStream<SessionEventDto, Error> {
+        AsyncThrowingStream { continuation in continuation.finish(throwing: error) }
+    }
+
     private func makeRequest(
         method: String,
         path: String,

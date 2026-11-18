@@ -96,3 +96,38 @@ data class SessionResponse(
 data class RunsResponse(
     val runs: List<RunDto> = emptyList(),
 )
+
+/**
+ * `GET /api/sessions/:id/events` 的会话级提示流。
+ *
+ * 与 run 事件流不同：不带 `{runId, seq}` 信封、不落库；重连以 `state` 快照为准。
+ */
+@Serializable
+sealed class SessionEventDto {
+
+    @Serializable
+    @SerialName("state")
+    data class State(val session: SessionDto) : SessionEventDto()
+
+    @Serializable
+    @SerialName("run_started")
+    data class RunStarted(val sessionId: String, val run: SessionRunBriefDto) : SessionEventDto()
+
+    @Serializable
+    @SerialName("run_finished")
+    data class RunFinished(val sessionId: String, val run: SessionRunBriefDto) : SessionEventDto()
+
+    @Serializable
+    @SerialName("session_updated")
+    data class SessionUpdated(val sessionId: String, val title: String? = null) : SessionEventDto()
+}
+
+/** 会话提示流里一条 run 的最小快照。 */
+@Serializable
+data class SessionRunBriefDto(
+    val id: String,
+    val prompt: String,
+    val attachmentIds: List<String> = emptyList(),
+    val startedAt: Long = 0,
+    val status: String = "",
+)

@@ -219,7 +219,7 @@ export function registerIpc(
   );
 
   ipcMain.handle(IPC.streamStart, (_event, spec: StreamSpec) => {
-    if (!spec || (spec.kind !== 'chat' && spec.kind !== 'attach')) {
+    if (!spec || (spec.kind !== 'chat' && spec.kind !== 'attach' && spec.kind !== 'session')) {
       return { ok: false, httpCode: null, apiCode: 'bad_request', message: '非法的流请求' };
     }
     if (typeof spec.streamId !== 'string' || spec.streamId.length === 0 || spec.streamId.length > 64) {

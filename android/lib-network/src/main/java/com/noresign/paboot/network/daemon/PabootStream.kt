@@ -1,6 +1,7 @@
 package com.noresign.paboot.network.daemon
 
 import com.noresign.paboot.network.daemon.dto.ChatRequest
+import com.noresign.paboot.network.daemon.dto.SessionEventDto
 import com.noresign.paboot.network.daemon.dto.SseFrame
 import com.noresign.paboot.network.http.parseApiErrorBody
 import com.noresign.paboot.network.sse.OkHttpSseSource
@@ -65,6 +66,33 @@ class PabootStream(
                 when (cause) {
                     is SseException -> emit(describe(cause))
                     is SerializationException -> emit(ChatStreamEvent.Failed("无法解析 daemon 事件帧（协议可能不兼容）"))
+                    else -> throw cause
+                }
+            }
+    }
+
+    /** `GET /api/sessions/:id/events`：会话级提示流（别的端开始的 run、标题变化）。 */
+    fun sessionEvents(baseUrl: String, token: String, sessionId: String): Flow<SessionWatchEvent> {
+        val request = Request.Builder()
+            .url(PabootClient.normalizeBaseUrl(baseUrl) + "api/sessions/$sessionId/events")
+            .header(AUTH_HEADER, "Bearer $token")
+            .build()
+        val events: Flow<SessionWatchEvent> = sse.events(request)
+            .transform { event ->
+                emit(SessionWatchEvent.Event(json.decodeFromString(SessionEventDto.serializer(), event.data)))
+            }
+        return events
+            .onCompletion { cause -> if (cause == null) emit(SessionWatchEvent.Closed) }
+            .catch { cause ->
+                when (cause) {
+                    is SseException -> emit(
+                        SessionWatchEvent.Failed(
+                            message = describe(cause).message,
+                            httpCode = cause.httpCode,
+                            apiCode = parseApiErrorBody(cause.body)?.code,
+                        ),
+                    )
+                    is SerializationException -> emit(SessionWatchEvent.Failed("无法解析会话事件（协议可能不兼容）"))
                     else -> throw cause
                 }
             }

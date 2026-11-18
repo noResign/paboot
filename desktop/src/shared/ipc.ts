@@ -3,7 +3,7 @@
  * daemon proxy plus a handful of connection/supervisor channels — not one
  * channel per endpoint. Type safety lives in renderer/src/ipc/client.ts.
  */
-import type { SseFrame } from './contract';
+import type { SessionEvent, SseFrame } from './contract';
 
 export const IPC = {
   boot: 'app:boot',
@@ -317,7 +317,19 @@ export interface AttachStreamSpec {
   after: number | null;
 }
 
-export type StreamSpec = ChatStreamSpec | AttachStreamSpec;
+/**
+ * Watch a session for work started elsewhere (another device) and title
+ * changes. Stays open while the session is on screen; it carries no transcript
+ * frames, so a reconnect is simply "open it again and take the snapshot".
+ */
+export interface SessionStreamSpec {
+  kind: 'session';
+  streamId: string;
+  connectionId: string;
+  sessionId: string;
+}
+
+export type StreamSpec = ChatStreamSpec | AttachStreamSpec | SessionStreamSpec;
 
 export type StreamPhase = 'connecting' | 'live' | 'reconnecting';
 
@@ -329,6 +341,7 @@ export type StreamOutcome = 'finished' | 'settled' | 'giveup' | 'cancelled';
  */
 export type StreamEvent =
   | { streamId: string; kind: 'frames'; frames: SseFrame[] }
+  | { streamId: string; kind: 'session'; event: SessionEvent }
   | { streamId: string; kind: 'phase'; phase: StreamPhase; attempt: number }
   | {
       streamId: string;

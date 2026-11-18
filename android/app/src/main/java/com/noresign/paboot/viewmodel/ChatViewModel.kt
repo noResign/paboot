@@ -20,6 +20,9 @@ import com.noresign.paboot.util.formatTokens
 import com.noresign.paboot.util.friendlyError
 import com.noresign.paboot.util.friendlyMessage
 import com.noresign.paboot.network.daemon.ChatStreamEvent
+import com.noresign.paboot.network.daemon.SessionWatchEvent
+import com.noresign.paboot.network.daemon.dto.SessionEventDto
+import com.noresign.paboot.network.daemon.dto.SessionRunBriefDto
 import com.noresign.paboot.model.chat.AttachmentDraft
 import com.noresign.paboot.model.chat.ChatUiMessage
 import com.noresign.paboot.model.chat.ContentBlock
@@ -184,6 +187,13 @@ class ChatViewModel(
         }
     private var streamJob: Job? = null
 
+    /** 会话级提示流（别的端开始的 run / 标题变化）；与 run 流相互独立。 */
+    private var sessionWatchJob: Job? = null
+    /** 上次从服务端拿到的 recency，用来发现「离线期间跑完的 run」。 */
+    private var lastActiveAt: Long? = null
+    /** 已在聊天里渲染过的 run id（外部 run 去重用）。 */
+    private var knownRunIds: Set<String> = emptySet()
+
     /** 已收到的最大 `seq`，重连时作为 `?after=` 游标（-1 = 本轮还没收到任何帧）。 */
     private var lastSeq = -1L
 
@@ -234,6 +244,10 @@ class ChatViewModel(
         _models.value = emptyList()
         _modelsError.value = null
         modelsRuntime = null
+        sessionWatchJob?.cancel()
+        sessionWatchJob = null
+        lastActiveAt = null
+        knownRunIds = emptySet()
         this.sessionId = sessionId
         // 通知的抑制条件：用户此刻正看着这个会话（新会话先登记 null，拿到 id 后再更新）
         ChatVisibility.enter(sessionId)
@@ -265,18 +279,116 @@ class ChatViewModel(
                         _sessionMemoryMode.value = session.memoryMode ?: "normal"
                         _sessionModel.value = session.model
                         _sessionModelParameters.value = session.modelParameters ?: emptyMap()
+                        lastActiveAt = session.lastActiveAt
+                        knownRunIds = r.data.runs.map { it.id }.toSet()
                         // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
                         val runningRunId = session.runningRunId
                         _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
                         if (session.running && runningRunId != null) {
                             attach(runningRunId)
                         }
+                        startSessionWatch(sessionId)
                     }
                     is NetworkResult.Error -> _error.value = friendlyError(r)
                 }
             } finally {
                 // 出错也要复位，否则指示器会一直转。
                 _historyLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * 订阅会话级提示流：别的端开始的 run、标题变化。
+     *
+     * 服务端每次连接先发 `state` 快照，所以断线重连不需要游标；404/401/403 视为永久结束。
+     */
+    private fun startSessionWatch(sessionId: String) {
+        sessionWatchJob?.cancel()
+        sessionWatchJob = viewModelScope.launch {
+            var attempt = 0
+            while (isActive && this@ChatViewModel.sessionId == sessionId) {
+                var reached = false
+                var fatal = false
+                repository.sessionEvents(sessionId).collect { event ->
+                    when (event) {
+                        is SessionWatchEvent.Event -> {
+                            reached = true
+                            applySessionEvent(event.event)
+                        }
+                        is SessionWatchEvent.Failed -> {
+                            if (event.httpCode == 401 || event.httpCode == 403 || event.httpCode == 404) {
+                                fatal = true
+                            }
+                        }
+                        SessionWatchEvent.Closed -> Unit
+                    }
+                }
+                if (!isActive || fatal || this@ChatViewModel.sessionId != sessionId) break
+                attempt = if (reached) 0 else attempt + 1
+                delay(minOf(10_000L, 1_000L shl minOf(attempt, 4)))
+            }
+        }
+    }
+
+    private fun applySessionEvent(event: SessionEventDto) {
+        val sid = sessionId ?: return
+        when (event) {
+            is SessionEventDto.State -> {
+                if (event.session.id != sid) return
+                event.session.title?.let { _sessionTitle.value = it }
+                // 自己正在跑的 run 以 run 流为准，提示流不重复渲染。
+                if (_streaming.value) return
+                val stale = lastActiveAt == null || event.session.lastActiveAt > (lastActiveAt ?: 0)
+                if (event.session.runningRunId != null || stale) {
+                    syncSessionFromDaemon(sid)
+                }
+            }
+            is SessionEventDto.SessionUpdated -> {
+                if (event.sessionId == sid) event.title?.let { _sessionTitle.value = it }
+            }
+            is SessionEventDto.RunStarted -> appendExternalRun(sid, event.sessionId, event.run)
+            is SessionEventDto.RunFinished -> appendExternalRun(sid, event.sessionId, event.run)
+        }
+    }
+
+    /** 别的端发起的 run：补上用户气泡后 attach 到它的流（已结束也会全量回放）。 */
+    private fun appendExternalRun(sid: String, eventSessionId: String, run: SessionRunBriefDto) {
+        if (eventSessionId != sid || _streaming.value) return
+        if (run.id in knownRunIds) return
+        knownRunIds = knownRunIds + run.id
+        _messages.update {
+            it + ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds) +
+                ChatUiMessage.Assistant()
+        }
+        attach(run.id)
+    }
+
+    /** 重连后补偿：离线期间可能有 run 跑完，重新拉详情并重建历史。 */
+    private fun syncSessionFromDaemon(sid: String) {
+        viewModelScope.launch {
+            if (sessionId != sid || _streaming.value) return@launch
+            when (val r = repository.sessionDetail(sid)) {
+                is NetworkResult.Success -> {
+                    if (sessionId != sid || _streaming.value) return@launch
+                    val session = r.data.session
+                    _sessionTitle.value = session.title
+                    _sessionPermissionMode.value = clampPermissionMode(
+                        session.permissionMode,
+                        _bypassAllowed.value,
+                    )
+                    _sessionMemoryMode.value = session.memoryMode ?: "normal"
+                    _sessionModel.value = session.model
+                    _sessionModelParameters.value = session.modelParameters ?: emptyMap()
+                    lastActiveAt = session.lastActiveAt
+                    knownRunIds = r.data.runs.map { it.id }.toSet()
+                    val runningRunId = session.runningRunId
+                    _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
+                    if (session.running && runningRunId != null) {
+                        attach(runningRunId)
+                    }
+                }
+                is NetworkResult.Error -> Unit
             }
         }
     }

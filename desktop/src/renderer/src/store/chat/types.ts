@@ -89,6 +89,8 @@ export interface ChatSessionState {
   connectionId: string;
   sessionId: string | null;
   title: string | null;
+  /** Server-side recency, used to notice runs finished while disconnected. */
+  lastActiveAt: number | null;
   cwd: string | null;
   runtime: string | null;
   permissionMode: string | null;
@@ -102,7 +104,10 @@ export interface ChatSessionState {
   /** The session's runs, newest last — each carries its checkpoint (or null). */
   runs: RunDto[];
   runId: string | null;
+  /** The open run stream, if this chat is attached to one. */
   streamId: string | null;
+  /** The session watch (`/api/sessions/:id/events`), independent of any run. */
+  sessionStreamId: string | null;
   phase: ChatPhase;
   error: string | null;
   historyLoading: boolean;
@@ -128,6 +133,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     connectionId,
     sessionId: null,
     title: null,
+    lastActiveAt: null,
     cwd: null,
     runtime: null,
     permissionMode: null,
@@ -137,6 +143,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     runs: [],
     runId: null,
     streamId: null,
+    sessionStreamId: null,
     phase: 'idle',
     error: null,
     historyLoading: false,
