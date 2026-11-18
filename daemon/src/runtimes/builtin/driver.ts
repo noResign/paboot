@@ -485,6 +485,11 @@ async function runBuiltin(
           .then((title) => {
             if (title !== null && title !== session.title) {
               ctx.db.setSessionTitle(session.id, title);
+              ctx.sessionNotifier.publish(session.id, {
+                type: 'session_updated',
+                sessionId: session.id,
+                title,
+              });
             }
           })
           .catch((error) => {

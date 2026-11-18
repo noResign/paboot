@@ -11,6 +11,7 @@ import { Db } from '../src/db/db';
 import { KnowledgeStore } from '../src/knowledge/store';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { startSessionRun, type RunSink } from '../src/runs/run-service';
 import { getActiveRun } from '../src/runtimes/active-runs';
 import { DEFAULT_BUILTIN_CONFIG, type BuiltinRuntimeConfig } from '../src/runtimes/builtin/config';
@@ -164,6 +165,7 @@ function harness(
     title: sessionTitle,
   });
   const notifier = new RunNotifier();
+  const sessionNotifier = new SessionNotifier();
   const permissions = new PermissionManager(1_000);
   const knowledge = new KnowledgeStore(dataDir);
   const attachments = new AttachmentStore(db, dataDir);
@@ -186,6 +188,7 @@ function harness(
     builtinConfig,
     permissions,
     notifier,
+    sessionNotifier,
     hookPath: '/missing-hook.js',
     mcpServerPath: '/missing-mcp-server.js',
   } as unknown as AppContext;

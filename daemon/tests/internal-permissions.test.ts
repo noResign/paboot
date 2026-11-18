@@ -9,6 +9,7 @@ import type { AppContext } from '../src/app/context';
 import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { registerPermissionRoutes } from '../src/routes/permissions';
 
 const servers: Server[] = [];
@@ -48,9 +49,10 @@ async function harness(permissionMode: string | null) {
   });
   const permissions = new PermissionManager(60_000);
   const notifier = new RunNotifier();
+  const sessionNotifier = new SessionNotifier();
   const events: string[] = [];
   notifier.register('run-1', (event) => events.push(event.type));
-  const ctx = { db, permissions, notifier } as unknown as AppContext;
+  const ctx = { db, permissions, notifier, sessionNotifier } as unknown as AppContext;
   const app = express();
   app.use(express.json());
   registerPermissionRoutes(app, ctx);

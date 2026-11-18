@@ -336,6 +336,30 @@ export interface SseFrame {
   event: NormalizedEvent;
 }
 
+/**
+ * The subset of a run a session watcher needs to append it to an open
+ * transcript without re-reading the whole session.
+ */
+export interface SessionRunBrief {
+  id: string;
+  prompt: string;
+  attachmentIds: string[];
+  startedAt: number;
+  status: string;
+}
+
+/**
+ * A session-scoped hint stream (`GET /api/sessions/:id/events`), separate from
+ * a run's event stream: these are not transcript events and are never
+ * persisted. A client watching a session uses them to notice work started
+ * elsewhere, and reconnects by taking the `state` snapshot as the truth.
+ */
+export type SessionEvent =
+  | { type: 'state'; session: SessionDto }
+  | { type: 'run_started'; sessionId: string; run: SessionRunBrief }
+  | { type: 'run_finished'; sessionId: string; run: SessionRunBrief }
+  | { type: 'session_updated'; sessionId: string; title: string | null };
+
 export type PermissionDecision = 'allow' | 'deny';
 
 /** UserInput uses the permission queue for pending/resolved lifecycle only.

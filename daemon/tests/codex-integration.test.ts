@@ -9,6 +9,7 @@ import { Db } from '../src/db/db';
 import type { AppContext } from '../src/app/context';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { registerRuntimeDrivers } from '../src/runtimes/drivers';
 import { createRegistry } from '../src/runtimes/registry';
 import { defaultCapabilities } from '../src/runtimes/types';
@@ -101,7 +102,7 @@ async function api(config: Record<string, unknown> = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'paboot-codex-knowledge-'));
   tempDirs.push(dataDir);
   const ctx = {
-    db, registry, permissions: new PermissionManager(), notifier: new RunNotifier(),
+    db, registry, permissions: new PermissionManager(), notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     knowledge: new KnowledgeStore(dataDir),
     attachments: new AttachmentStore(db, dataDir),
     config: { permissionMode: 'default', host: '127.0.0.1', port: 1, runIdleTimeoutMs: 0, ...config },

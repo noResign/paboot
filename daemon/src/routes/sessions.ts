@@ -3,7 +3,9 @@ import type { AppContext } from '../app/context.js';
 import type { EndRow, SessionRow } from '../db/db.js';
 import { resolveSessionEndsScope } from '../ends/scope.js';
 import { endDto } from './ends.js';
-import type { SessionEndsResponse } from '../types/api.js';
+import type { SessionDto, SessionEndsResponse, SessionEvent } from '../types/api.js';
+import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import { sseHeaders } from '../http/sse.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { runningRunBySession } from '../runs/session-runs.js';
 import { runDto } from '../db/dto.js';
@@ -22,7 +24,7 @@ function sessionDto(
   s: SessionRow,
   runningRunId: string | null = null,
   scheduledTaskCount = 0,
-) {
+): SessionDto {
   return {
     id: s.id,
     runtime: s.runtime,
@@ -30,7 +32,7 @@ function sessionDto(
     permissionMode: resolveEffectiveStoredPermissionMode(
       s.permission_mode,
       ctx.builtinConfig,
-    ),
+    ) as ProductPermissionMode,
     model: s.model,
     modelParameters: parseStoredModelParameters(s.model_parameters),
     cwd: s.cwd,
@@ -41,7 +43,7 @@ function sessionDto(
     runningRunId,
     scheduledTaskCount,
     purpose: s.purpose ?? null,
-    memoryMode: s.memory_mode,
+    memoryMode: s.memory_mode as SessionDto['memoryMode'],
   };
 }
 
@@ -82,6 +84,41 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     });
   });
 
+  /**
+   * Session-scoped hint stream. Used by an open client to notice work started
+   * elsewhere (another device) and title changes, without polling. The first
+   * event is always a `state` snapshot, so a reconnect never has to guess what
+   * it missed; nothing here is persisted.
+   */
+  app.get('/api/sessions/:id/events', (req, res) => {
+    const s = visibleSession(ctx, req.params.id);
+    if (!s) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    res.writeHead(200, sseHeaders());
+    res.write(': connected\n\n');
+
+    const send = (event: SessionEvent): void => {
+      if (res.writableEnded) return;
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+    const running = runningRunBySession(ctx);
+    send({
+      type: 'state',
+      session: sessionDto(ctx, s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
+    });
+
+    const unsubscribe = ctx.sessionNotifier.subscribe(s.id, send);
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) res.write(': keepalive\n\n');
+    }, 15_000);
+    res.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
+
   // Rename a session.
   app.patch('/api/sessions/:id', (req, res) => {
     const s = visibleSession(ctx, req.params.id);
@@ -96,6 +133,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     ctx.db.setSessionTitle(s.id, title.slice(0, 200));
+    ctx.sessionNotifier.publish(s.id, { type: 'session_updated', sessionId: s.id, title: title.slice(0, 200) });
     ctx.db.audit('rename_session', s.id);
     const running = runningRunBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;

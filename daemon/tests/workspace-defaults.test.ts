@@ -10,6 +10,7 @@ import { PermissionManager } from '../src/permissions/permissions';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerWorkspaceRoutes } from '../src/routes/workspaces';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
 import { defaultCapabilities } from '../src/runtimes/types';
 
@@ -89,7 +90,7 @@ async function startApi(): Promise<Harness> {
     db,
     registry,
     permissions: new PermissionManager(1000, () => {}),
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     config: {
       permissionMode: 'ask',
       host: '127.0.0.1',

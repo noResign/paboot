@@ -19,6 +19,7 @@ import { ProviderManager } from './providers/provider-manager.js';
 import { PermissionManager } from './permissions/permissions.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
+import { SessionNotifier } from './runs/session-notifier.js';
 import { DebugRecorder } from './debug/recorder.js';
 import { registerRuntimeDrivers } from './runtimes/drivers.js';
 import { loadBuiltinConfig, logBuiltinConfigWarnings } from './runtimes/builtin/config.js';
@@ -167,6 +168,7 @@ async function main(): Promise<void> {
   if (prunedSpill > 0) log.info(`spill: pruned ${prunedSpill} expired file(s)`);
 
   const notifier = new RunNotifier();
+  const sessionNotifier = new SessionNotifier();
   const memory = new MemoryStore(config.dataDir);
   // [debug] process-local debug capture; auto mode is idle without a /debug client
   const debug = new DebugRecorder({
@@ -206,6 +208,7 @@ async function main(): Promise<void> {
       },
     ),
     notifier,
+    sessionNotifier,
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
     mcpServerPath: path.join(
       path.dirname(fileURLToPath(import.meta.url)),

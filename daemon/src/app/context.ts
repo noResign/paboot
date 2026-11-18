@@ -8,6 +8,7 @@ import type { MemoryWorker } from '../memory/worker.js';
 import type { ProviderManager } from '../providers/provider-manager.js';
 import type { PermissionManager } from '../permissions/permissions.js';
 import type { RunNotifier } from '../runs/run-notifier.js';
+import type { SessionNotifier } from '../runs/session-notifier.js';
 import type { Registry } from '../runtimes/registry.js';
 import type { BuiltinRuntimeConfig } from '../runtimes/builtin/config.js';
 import type { SpillStore } from '../runtimes/builtin/tools/spill.js';
@@ -45,6 +46,8 @@ export interface AppContext {
   registry: Registry;
   permissions: PermissionManager;
   notifier: RunNotifier;
+  /** Session-scoped hints (run started/finished elsewhere, title changed). */
+  sessionNotifier: SessionNotifier;
   /** Absolute path to the compiled PreToolUse permission-hook script. */
   hookPath: string;
   /** Absolute path to the compiled `paboot_tasks` MCP server entry. */

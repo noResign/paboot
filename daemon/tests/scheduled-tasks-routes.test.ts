@@ -7,6 +7,7 @@ import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerScheduledTaskRoutes } from '../src/routes/scheduled-tasks';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
 
 const servers: Server[] = [];
@@ -70,7 +71,7 @@ async function setup(): Promise<Harness> {
       ],
     },
     permissions: new PermissionManager(),
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     config: {},
     hookPath: '',
   } as unknown as AppContext;
