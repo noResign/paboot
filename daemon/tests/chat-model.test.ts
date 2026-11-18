@@ -12,6 +12,7 @@ import { registerChatRoutes } from '../src/routes/chat';
 import { registerSessionRoutes } from '../src/routes/sessions';
 import { listActiveRuns, registerActiveRun } from '../src/runtimes/active-runs';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { PermissionManager } from '../src/permissions/permissions';
 
 vi.mock('../src/workspaces/checkpoints', () => ({
@@ -59,7 +60,7 @@ async function setup() {
       detection: () => ({ available: true }),
       detect: async () => ({ available: true }),
     },
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     permissions: new PermissionManager(),
     config: { runIdleTimeoutMs: 0, permissionMode: 'ask' },
     hookPath: '',

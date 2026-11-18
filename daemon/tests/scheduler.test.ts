@@ -6,6 +6,7 @@ import type { AppContext } from '../src/app/context';
 import { Db, type ScheduledTaskRow } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { createCommandDriver } from '../src/runtimes/command';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
 import { fireScheduledTask, reconcileScheduledTasks, runDueScheduledTasks } from '../src/scheduling/scheduler';
@@ -57,7 +58,7 @@ function harness(driver?: RuntimeDriver, detectionAvailable = true): Harness {
       detect: async () => (detectionAvailable ? { available: true } : { available: false }),
     },
     permissions: new PermissionManager(),
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     config: {},
     hookPath: '',
   } as unknown as AppContext;

@@ -18,6 +18,7 @@ import { captureRunObservation } from '../memory/observe.js';
 import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
 import { mergePreludes } from '../context/prelude.js';
 import { perRunToolServers } from '../mcp/injection.js';
+import { sessionRunBrief } from '../db/dto.js';
 import { endsContext } from './end-context.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
@@ -137,6 +138,17 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     trigger: input.trigger,
     permissionMode,
   });
+  // Tell anyone watching this session (another device, another window) that
+  // its transcript is about to grow. The run's own event stream stays the
+  // source of truth; this is only the "something started" hint.
+  const createdRun = ctx.db.getRun(runId);
+  if (createdRun) {
+    ctx.sessionNotifier.publish(session.id, {
+      type: 'run_started',
+      sessionId: session.id,
+      run: sessionRunBrief(createdRun),
+    });
+  }
   for (const id of input.attachmentIds ?? []) {
     ctx.attachments.bind(id, { runId });
   }
@@ -399,6 +411,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         status: runDeleted ? 'deleted' : finalOutcome.status,
         error: finalOutcome.error,
       });
+      publishRunFinished(ctx, sessionId, runId);
       if (finalOutcome.error && finalOutcome.status === 'failed') {
         send({ type: 'error', code: 'run_failed', message: finalOutcome.error, terminal: true });
       }
@@ -410,6 +423,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       ctx.db.updateRun(runId, { status: 'failed', endedAt: Date.now(), error: message });
       // [debug]
       ctx.debug?.finishRun(runId, { status: 'failed', error: message });
+      publishRunFinished(ctx, sessionId, runId);
       send({ type: 'error', code: 'run_error', message, terminal: true });
       return { status: 'failed', exitCode: null, error: message };
     } finally {
@@ -420,6 +434,17 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   })();
 
   return { runId, done };
+}
+
+/** Publish the terminal hint once the run row carries its final status. */
+function publishRunFinished(ctx: AppContext, sessionId: string, runId: string): void {
+  const row = ctx.db.getRun(runId);
+  if (!row) return;
+  ctx.sessionNotifier.publish(sessionId, {
+    type: 'run_finished',
+    sessionId,
+    run: sessionRunBrief(row),
+  });
 }
 
 /**

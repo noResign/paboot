@@ -6,6 +6,7 @@ import type { AppContext } from '../src/app/context';
 import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerActiveRun } from '../src/runtimes/active-runs';
 
@@ -49,7 +50,7 @@ function makeCtx(db: Db): AppContext {
       detect: async () => ({ available: true }),
     },
     permissions: new PermissionManager(),
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     config: { host: '127.0.0.1', port: 0, tls: false, runIdleTimeoutMs: 0, permissionTimeoutMs: 1000, token: 't' },
     hookPath: '',
   } as unknown as AppContext;

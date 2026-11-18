@@ -1,6 +1,6 @@
 import type { RunCheckpointRow, RunRow } from './db.js';
 import { parseStoredModelParameters } from './model-selection.js';
-import type { RunDto } from '../types/api.js';
+import type { RunDto, SessionRunBrief } from '../types/api.js';
 
 function parseAttachmentIds(value: string | null): string[] {
   if (!value) return [];
@@ -10,6 +10,17 @@ function parseAttachmentIds(value: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/** The slice a session watcher gets when a run starts or finishes elsewhere. */
+export function sessionRunBrief(r: RunRow): SessionRunBrief {
+  return {
+    id: r.id,
+    prompt: r.prompt,
+    attachmentIds: parseAttachmentIds(r.attachment_ids),
+    startedAt: r.started_at,
+    status: r.status,
+  };
 }
 
 /** Shared run mapping so session and scheduled-task responses agree. */

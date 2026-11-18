@@ -15,6 +15,7 @@ import { PermissionManager } from '../src/permissions/permissions';
 import { registerMemoryRoutes } from '../src/routes/memory';
 import { startSessionRun, type RunSink } from '../src/runs/run-service';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import type { RuntimeDriver } from '../src/runtimes/RuntimeDriver';
 
 const dbs: Db[] = [];
@@ -131,7 +132,7 @@ describe('observation capture', () => {
       memory: store,
       builtinConfig: DEFAULT_BUILTIN_CONFIG,
       permissions: new PermissionManager(),
-      notifier: new RunNotifier(),
+      notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
       registry: { detection: () => undefined },
     } as unknown as AppContext;
     const sink: RunSink = { frame: () => {}, end: () => {} };

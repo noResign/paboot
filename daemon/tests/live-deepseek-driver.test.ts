@@ -9,6 +9,7 @@ import { Db } from '../src/db/db';
 import { KnowledgeStore } from '../src/knowledge/store';
 import { PermissionManager } from '../src/permissions/permissions';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { startSessionRun, type RunSink } from '../src/runs/run-service';
 import { createBuiltinDriver } from '../src/runtimes/builtin/driver';
 import { createRegistry } from '../src/runtimes/registry';
@@ -75,6 +76,7 @@ function setup() {
     model: 'deepseek:deepseek-flash',
   });
   const notifier = new RunNotifier();
+  const sessionNotifier = new SessionNotifier();
   const permissions = new PermissionManager(5_000);
   const knowledge = new KnowledgeStore(dataDir);
   const attachments = new AttachmentStore(db, dataDir);
@@ -96,6 +98,7 @@ function setup() {
     registry,
     permissions,
     notifier,
+    sessionNotifier,
     hookPath: '/missing-hook.js',
     mcpServerPath: '/missing-mcp-server.js',
   } as unknown as AppContext;

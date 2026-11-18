@@ -81,6 +81,7 @@
 | `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
 | `GET /api/sessions/:id/ends` | 是 | 会话端集合（primaryEndId + ends，含 role/summary） |
 | `PUT /api/sessions/:id/ends` | 是 | `{endIds: string[] \| null}`；收窄端集合，空/null 回到工作区默认 |
+| `GET /api/sessions/:id/events` | 是 | SSE：会话级提示流。首帧 `state`（含 `runningRunId`）后推 `run_started` / `run_finished` / `session_updated`（标题变化）。不持久化，重连以 `state` 为准 |
 | `GET /api/sessions/:id` | 是 | 会话 + 消息 + 运行 |
 | `PATCH /api/sessions/:id` | 是 | 重命名（body `{title}`） |
 | `DELETE /api/sessions/:id` | 是 | 删除会话（先取消进行中的 run，级联删） |
@@ -165,6 +166,18 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
 
 `context_compacted` 只有 builtin 会发：自动压缩更早历史后报告 `beforeTokens` / `afterTokens`
 （估算值）。它不产生聊天消息，客户端渲染成一行系统提示；历史重建时不会回放（压缩是内部动作）。
+
+**会话级事件流**（`GET /api/sessions/:id/events`）与 run 流是两条不同的连接。它的 data 直接是
+`SessionEvent`，不带 `{runId, seq}` 信封，也不落库：
+
+| `type` | 载荷 | 客户端动作 |
+|---|---|---|
+| `state` | `session: SessionDto` | 连接/重连后的权威快照：对标题、`runningRunId` |
+| `run_started` | `run: SessionRunBrief` | 该会话在别处开始了 run：若本地没在跑，追加用户消息 + 助手占位并 attach 到 `run.id` |
+| `run_finished` | `run: SessionRunBrief` | 结束提示；已 attach 到该 run 时以 run 流终局为准 |
+| `session_updated` | `sessionId, title` | 标题变化（builtin 首轮生成或另一端重命名），原地更新标题/会话列表 |
+
+自动标题仍只由 builtin 在首轮生成；本流只是把结果推给所有打开该会话的客户端。
 
 **`question` 有两种回答通道**：
 

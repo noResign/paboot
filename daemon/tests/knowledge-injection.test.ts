@@ -9,6 +9,7 @@ import { Db } from '../src/db/db';
 import { knowledgePrelude } from '../src/runs/knowledge-context';
 import { startSessionRun } from '../src/runs/run-service';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { KnowledgeStore } from '../src/knowledge/store';
 import { PermissionManager } from '../src/permissions/permissions';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
@@ -75,7 +76,7 @@ function harness(family: 'dev' | 'life' = 'dev', nativeSystemPrompt = false): Ha
     config: { dataDir },
     db,
     knowledge,
-    notifier: new RunNotifier(),
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(),
     permissions: new PermissionManager(1000, () => {}),
     registry: {
       detection: () => ({

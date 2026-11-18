@@ -12,6 +12,7 @@ import { captureCheckpoint, repoRootFor } from '../src/workspaces/checkpoints';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerRunRoutes } from '../src/routes/runs';
 import { RunNotifier } from '../src/runs/run-notifier';
+import { SessionNotifier } from '../src/runs/session-notifier';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerActiveRun } from '../src/runtimes/active-runs';
 import type { RunOutcome } from '../src/runtimes/engine';
@@ -48,7 +49,7 @@ async function setup(detecting = false) {
   const detect = vi.fn(() => detection.promise);
   const ctx = {
     db, registry: { driver: () => ({ start }), detection: () => detecting ? undefined : { available: true }, detect },
-    notifier: new RunNotifier(), permissions: new PermissionManager(), config: {}, hookPath: '',
+    notifier: new RunNotifier(), sessionNotifier: new SessionNotifier(), permissions: new PermissionManager(), config: {}, hookPath: '',
   } as unknown as AppContext;
   const app = express(); app.use(express.json()); registerChatRoutes(app, ctx); registerRunRoutes(app, ctx);
   const server: Server = app.listen(0);
