@@ -1,16 +1,19 @@
 import { RunStreamer } from './run-streamer';
+import { SessionStreamer } from './session-streamer';
 import { ROUTES } from '../../shared/routes';
 import type { DaemonClient } from '../daemon/client';
 import type { SseFrame } from '../../shared/contract';
 import type { StartStreamResult, StreamCancelInput, StreamEvent, StreamSpec } from '../../shared/ipc';
 
+type Streamer = RunStreamer | SessionStreamer;
+
 /**
- * Owns every live run stream in the main process. The renderer reloads, HMRs
- * and switches sessions freely; streams survive it and events are pushed by
- * `webContents.send`.
+ * Owns every live stream in the main process: run transcripts and the lighter
+ * per-session watch. The renderer reloads, HMRs and switches sessions freely;
+ * streams survive it and events are pushed by `webContents.send`.
  */
 export class StreamManager {
-  private readonly streams = new Map<string, RunStreamer>();
+  private readonly streams = new Map<string, Streamer>();
   /** streamId → the connection it belongs to, so a host can be dropped cleanly. */
   private readonly owners = new Map<string, string>();
 
@@ -30,6 +33,26 @@ export class StreamManager {
     }
     // Chosen by the renderer so it can register the id before any event lands.
     const streamId = spec.streamId;
+    if (spec.kind === 'session') {
+      const streamer = new SessionStreamer(streamId, {
+        client,
+        emit: (event) => this.send(event),
+        now: this.now,
+        sleep: this.sleep,
+        finished: () => {
+          this.streams.delete(streamId);
+          this.owners.delete(streamId);
+        },
+      });
+      this.streams.set(streamId, streamer);
+      this.owners.set(streamId, spec.connectionId);
+      const result = await streamer.start(spec);
+      if (!result.ok) {
+        this.streams.delete(streamId);
+        this.owners.delete(streamId);
+      }
+      return result;
+    }
     const streamer = new RunStreamer(streamId, {
       client,
       emit: (event) => this.send(event),

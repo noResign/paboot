@@ -74,6 +74,7 @@ export const ROUTES = {
   changesDiff: '/api/changes/diff',
   sessions: '/api/sessions',
   session: (id: string) => `/api/sessions/${encodeURIComponent(id)}`,
+  sessionEvents: (id: string) => `/api/sessions/${encodeURIComponent(id)}/events`,
   sessionModel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/model`,
   runs: '/api/runs',
   run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,

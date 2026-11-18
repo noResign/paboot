@@ -13,7 +13,9 @@ import {
 import { LineSplitter, SseParser } from '../../shared/sse-parse';
 import type { NormalizedEvent, SseFrame } from '../../shared/contract';
 import type { DaemonClient } from '../daemon/client';
-import type { StartStreamResult, StreamEvent, StreamSpec } from '../../shared/ipc';
+import type { AttachStreamSpec, ChatStreamSpec, StartStreamResult, StreamEvent } from '../../shared/ipc';
+
+type RunSpec = ChatStreamSpec | AttachStreamSpec;
 
 export interface StreamerDeps {
   client: DaemonClient;
@@ -78,7 +80,7 @@ export class RunStreamer {
   }
 
   /** Resolves once the first attempt's fate is known (pre-flight errors included). */
-  async start(spec: StreamSpec): Promise<StartStreamResult> {
+  async start(spec: RunSpec): Promise<StartStreamResult> {
     const gen = ++this.gen;
     const ready = deferred<StartStreamResult>();
     void this.loop(spec, gen, ready).finally(() => this.deps.finished());
@@ -100,8 +102,8 @@ export class RunStreamer {
     }
   }
 
-  private async loop(spec: StreamSpec, gen: number, ready: Deferred<StartStreamResult>): Promise<void> {
-    let current: StreamSpec = spec;
+  private async loop(spec: RunSpec, gen: number, ready: Deferred<StartStreamResult>): Promise<void> {
+    let current: RunSpec = spec;
     let after: number | null = spec.kind === 'attach' ? spec.after : null;
     // An attach already knows its run; a new chat learns it from the first frame.
     if (spec.kind === 'attach') this.runId = spec.runId;
@@ -214,7 +216,7 @@ export class RunStreamer {
   }
 
   private async attempt(
-    spec: StreamSpec,
+    spec: RunSpec,
     after: number | null,
     gen: number,
     attemptNumber: number,
@@ -304,7 +306,7 @@ export class RunStreamer {
     }
   }
 
-  private open(spec: StreamSpec, after: number | null, signal: AbortSignal): Promise<Response> {
+  private open(spec: RunSpec, after: number | null, signal: AbortSignal): Promise<Response> {
     if (spec.kind === 'attach') {
       return this.deps.client.open(
         {

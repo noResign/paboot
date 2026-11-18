@@ -44,6 +44,12 @@ final class ChatViewModel {
 
     private var streamTask: Task<Void, Never>?
     private var historyTask: Task<Void, Never>?
+    /// Session watch (`/api/sessions/:id/events`); independent of any run stream.
+    private var sessionWatchTask: Task<Void, Never>?
+    /// Server recency, to notice runs finished while disconnected.
+    private var lastActiveAt: Int64?
+    /// Runs already rendered (dedupe for work started on another device).
+    private var knownRunIds: Set<String> = []
     private var streamGeneration = 0
     private var lastSeq: Int64 = -1
     /// SSE frames are applied in small batches instead of one by one. Text streams
@@ -109,7 +115,7 @@ final class ChatViewModel {
 
     // MARK: - History
 
-    private func loadHistory(sessionId: String) async {
+    private func loadHistory(sessionId: String, startWatch: Bool = true) async {
         state.loadingHistory = true
         defer { state.loadingHistory = false }
 
@@ -130,6 +136,8 @@ final class ChatViewModel {
             state.memoryMode = session.memoryMode ?? "normal"
             state.model = session.model
             state.modelParameters = session.modelParameters ?? [:]
+            lastActiveAt = session.lastActiveAt
+            knownRunIds = Set(detail.runs.map(\.id))
             loadModels()
 
             var messages: [ChatUiMessage] = []
@@ -212,6 +220,9 @@ final class ChatViewModel {
                     after: nil,
                     resend: nil
                 )
+            }
+            if startWatch {
+                startSessionWatch(sessionId: session.id)
             }
         } catch {
             guard !Task.isCancelled else { return }
@@ -359,6 +370,8 @@ final class ChatViewModel {
     func detach() {
         historyTask?.cancel()
         historyTask = nil
+        sessionWatchTask?.cancel()
+        sessionWatchTask = nil
         streamGeneration += 1
         streamTask?.cancel()
         streamTask = nil
@@ -367,6 +380,95 @@ final class ChatViewModel {
         pendingFrames.removeAll(keepingCapacity: true)
         state.streaming = false
         state.reconnecting = false
+    }
+
+    // MARK: - Session watch
+
+    /// Watch for runs started on another device and for title changes. The
+    /// daemon answers every connection with a `state` snapshot, so a reconnect
+    /// never needs a cursor.
+    private func startSessionWatch(sessionId: String) {
+        sessionWatchTask?.cancel()
+        sessionWatchTask = Task { [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                guard let self, self.sessionId == sessionId else { return }
+                var reached = false
+                var fatal = false
+                do {
+                    for try await event in self.repository.sessionEvents(sessionId: sessionId) {
+                        if Task.isCancelled { return }
+                        reached = true
+                        self.applySessionEvent(event)
+                    }
+                } catch {
+                    if Task.isCancelled { return }
+                    if let pabootError = error as? PabootError,
+                       case .http(let status, _) = pabootError,
+                       status == 401 || status == 403 || status == 404 {
+                        fatal = true
+                    }
+                }
+                guard !Task.isCancelled, !fatal, self.sessionId == sessionId else { return }
+                attempt = reached ? 0 : attempt + 1
+                let seconds = min(10, 1 << min(attempt, 4))
+                try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+            }
+        }
+    }
+
+    private func applySessionEvent(_ event: SessionEventDto) {
+        guard let sid = sessionId else { return }
+        switch event {
+        case .state(let session):
+            guard session.id == sid else { return }
+            if let title = session.title, !title.isEmpty { state.title = title }
+            // Our own run stream is the truth while it is open.
+            guard !state.streaming else { return }
+            let stale = lastActiveAt == nil || session.lastActiveAt > (lastActiveAt ?? 0)
+            if session.runningRunId != nil || stale {
+                Task { [weak self] in
+                    await self?.loadHistory(sessionId: sid, startWatch: false)
+                }
+            }
+        case .sessionUpdated(let eventSessionId, let title):
+            if eventSessionId == sid, let title, !title.isEmpty {
+                state.title = title
+            }
+        case .runStarted(let eventSessionId, let run),
+             .runFinished(let eventSessionId, let run):
+            appendExternalRun(sid: sid, eventSessionId: eventSessionId, run: run)
+        case .unknown:
+            break
+        }
+    }
+
+    /// Another device started (or just finished) a run: add its prompt, then
+    /// attach to the run stream — which replays from zero even if it is over.
+    private func appendExternalRun(
+        sid: String,
+        eventSessionId: String,
+        run: SessionEventDto.RunBrief
+    ) {
+        guard eventSessionId == sid, !state.streaming, !knownRunIds.contains(run.id) else { return }
+        knownRunIds.insert(run.id)
+        state.messages.append(
+            ChatUiMessage(
+                id: "u-\(run.id)",
+                role: .user,
+                text: run.prompt,
+                sentAt: run.startedAt,
+                attachmentIds: run.attachmentIds
+            )
+        )
+        state.messages.append(ChatUiMessage(id: "a-\(run.id)", role: .assistant, done: false))
+        state.runId = run.id
+        startStream(
+            initial: repository.runStream(runId: run.id, after: nil),
+            runId: run.id,
+            after: nil,
+            resend: nil
+        )
     }
 
     // MARK: - Stream loop
