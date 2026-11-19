@@ -68,12 +68,13 @@ export function ChatView({
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
-  // per session is cheap after the first call.
+  // per session is cheap after the first call. A session that has not been
+  // created yet already knows its runtime (`startNew`), so the picker can be
+  // populated before the first message.
   useEffect(() => {
-    const sessionId = chat?.sessionId;
     const runtime = chat?.runtime;
     setModelsError(null);
-    if (!sessionId || !runtime) {
+    if (!runtime) {
       setModels([]);
       return;
     }
@@ -90,7 +91,7 @@ export function ChatView({
     return () => {
       live = false;
     };
-  }, [chat?.sessionId, chat?.runtime]);
+  }, [chat?.runtime]);
 
   // This component outlives the session switch (it reads the active chat from
   // the store), so local rollback state would otherwise follow the user to the
@@ -258,7 +259,7 @@ export function ChatView({
         </div>
 
         <div className="chat-head-actions">
-          {chat.sessionId && (
+          {(chat.sessionId || chat.pendingNew) && (
             <button
               className={`btn ghost${asideVisible ? ' active' : ''}`}
               title={asideVisible ? '收起文件栏' : '在右侧显示文件改动 / 全部文件'}
@@ -354,7 +355,7 @@ export function ChatView({
         disabled={busy || chat.historyLoading}
         busy={busy}
         placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
-        showModel={Boolean(chat.sessionId)}
+        showModel={Boolean(chat.sessionId || chat.pendingNew)}
         model={chat.model}
         models={models}
         modelsError={modelsError}

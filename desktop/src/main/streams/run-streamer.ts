@@ -327,6 +327,10 @@ export class RunStreamer {
           runtime: spec.runtime,
           workspaceId: spec.workspaceId,
           permissionMode: spec.permissionMode,
+          ...(spec.model ? { model: spec.model } : {}),
+          ...(spec.modelParameters && Object.keys(spec.modelParameters).length
+            ? { modelParameters: spec.modelParameters }
+            : {}),
           ...(spec.attachmentIds?.length ? { attachmentIds: spec.attachmentIds } : {}),
           commandId: spec.commandId,
         },

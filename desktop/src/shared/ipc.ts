@@ -299,6 +299,13 @@ export interface ChatStreamSpec {
   workspaceId?: string;
   permissionMode?: string;
   /**
+   * Creation-time model selection. Only meaningful on a new session (`sessionId
+   * === null`): the chat page lets the user pick a model before the first
+   * message, and the daemon stores it on the session it creates here.
+   */
+  model?: string | null;
+  modelParameters?: Record<string, string> | null;
+  /**
    * Idempotency key for `POST /api/chat`. A retry carrying the same value makes
    * the daemon re-attach to the run it already started instead of starting a
    * second one — which is what lets main resend a request whose response was
