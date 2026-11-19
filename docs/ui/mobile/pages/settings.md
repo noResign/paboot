@@ -1,4 +1,4 @@
-# ⑦ 设置（Settings）· ⑧ 工作区管理 · ⑨ 目录选择器 · ⑩ 会话权限
+# ⑦ 设置（Settings）· ⑧ 工作区管理 · ⑨ 目录选择器 · ⑩ 会话权限 · 模型 Provider
 
 > 文档索引见 [../README.md](../../README.md)；Design Tokens 与组件库见 [../design-principles.md](../../shared/design-principles.md)。章节编号沿用拆分前的 `ui_design.md`，未重新编号。
 
@@ -34,8 +34,6 @@
 - 修改默认权限模式 → `PATCH /api/config`（`defaultPermissionMode`）；
 - 切换当前 Workspace → 更新客户端本地 `selectedWorkspaceId`，并通知 ② 会话、⑤ 文件刷新；
 - 工作区增删改 → 进入 ⑧ 工作区管理。
-
----
 
 ### 6.6.1 ⑧ 工作区管理（Workspace Management）🟡 M2
 
@@ -126,3 +124,22 @@
 - 切模式 → `PATCH /api/sessions/:id/permissions`；
 - 撤销 → `DELETE /api/sessions/:id/permissions/grants/:toolName`；
 - 成功之后刷新 UI；如果当前模式为 `bypass`，已授权工具显示为“已暂停”。
+
+### 6.6.4 模型 Provider（Provider 管理）🟢
+
+**目的**：配置 builtin runtime 与 Memory 共用的模型 provider。
+
+**关键元素**：
+1. 顶栏：标题「模型 Provider」+ 右上「+ 新增」。
+2. 说明：API Key 只写入 daemon 本机，不回传客户端。
+3. Provider 卡片：名称 / id / baseURL / 模型数 / Key 状态；操作「编辑 · 测试 · 刷新 · 删除」。
+4. **语音识别（列表末尾，独立一张卡）**：DeepSeek ASR 的 API Key。
+   - **这一项不属于上面的 provider 目录**：provider 的 Key 写在 daemon、由 daemon 调用；
+     语音识别的 Key 留在手机（Android 加密存储 / iOS Keychain），识别请求由手机直连 DeepSeek。
+   - 卡内显示 `Key 已配置 / 未配置 Key` + 「设置 / 更换 API Key」+「清除」。
+   - 输入框默认掩码，**右侧有眼睛按钮**可临时查看明文（核对粘贴是否正确）；
+     同一枚眼睛也挂在 Provider 编辑对话框的 API Key 字段上。
+   - 放在本页而不是 ⑦ 设置：「配模型」时这两件事在同一处完成；⑦ 设置里只留一句指路。
+   - 语音输入入口与交互见 ③ 聊天页（§7.6），识别器未配置时的错误文案指向本页。
+
+---

@@ -50,7 +50,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
@@ -59,7 +58,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.noresign.paboot.BuildConfig
-import com.noresign.paboot.data.local.SecretStore
 import com.noresign.paboot.data.local.SettingsStore
 import com.noresign.paboot.data.update.AppUpdater
 import com.noresign.paboot.notify.NotificationPermission
@@ -95,9 +93,6 @@ fun SettingsScreen(
     var renameOpen by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(SettingsStore.backgroundNotifications) }
     var notificationsGranted by remember { mutableStateOf(NotificationPermission.isGranted(context)) }
-    var asrKeyConfigured by remember { mutableStateOf(SecretStore.hasAsrApiKey()) }
-    var showAsrKeyDialog by remember { mutableStateOf(false) }
-    var asrKeyInput by remember { mutableStateOf("") }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { notificationsGranted = NotificationPermission.isGranted(context) }
@@ -228,68 +223,13 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("管理模型 Provider") }
 
-                    SectionTitle("语音识别")
+                    // 语音识别的 Key 移到「模型 Provider」页（配模型时一起配），
+                    // 这里只留一句指路，避免同一个 key 在两处各配一次。
                     Text(
-                        "语音输入由手机直接调用 DeepSeek 识别，不经过 daemon；Key 只保存在本机。",
+                        "语音识别用的 DeepSeek Key 在「模型 Provider」里填写。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    InfoRow("DeepSeek API Key", if (asrKeyConfigured) "已配置" else "未配置")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                asrKeyInput = ""
-                                showAsrKeyDialog = true
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(if (asrKeyConfigured) "更换 API Key" else "设置 API Key") }
-                        if (asrKeyConfigured) {
-                            OutlinedButton(
-                                onClick = {
-                                    SecretStore.asrApiKey = null
-                                    asrKeyConfigured = false
-                                },
-                            ) { Text("清除") }
-                        }
-                    }
-                    if (showAsrKeyDialog) {
-                        AlertDialog(
-                            onDismissRequest = {
-                                showAsrKeyDialog = false
-                                asrKeyInput = ""
-                            },
-                            title = { Text("DeepSeek API Key") },
-                            text = {
-                                OutlinedTextField(
-                                    value = asrKeyInput,
-                                    onValueChange = { asrKeyInput = it },
-                                    singleLine = true,
-                                    visualTransformation = PasswordVisualTransformation(),
-                                    placeholder = { Text("sk-…") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    enabled = asrKeyInput.isNotBlank(),
-                                    onClick = {
-                                        SecretStore.asrApiKey = asrKeyInput.trim()
-                                        asrKeyConfigured = SecretStore.hasAsrApiKey()
-                                        showAsrKeyDialog = false
-                                        asrKeyInput = ""
-                                    },
-                                ) { Text("保存") }
-                            },
-                            dismissButton = {
-                                TextButton(
-                                    onClick = {
-                                        showAsrKeyDialog = false
-                                        asrKeyInput = ""
-                                    },
-                                ) { Text("取消") }
-                            },
-                        )
-                    }
 
                     SectionTitle("新会话默认权限")
                     permissionModeOptions(null, state.bypassAllowed).forEach { (mode, desc) ->

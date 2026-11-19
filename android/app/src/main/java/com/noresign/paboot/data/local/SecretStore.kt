@@ -26,7 +26,7 @@ object SecretStore {
 
     private val kv: MMKV by lazy { MMKV.defaultMMKV() }
 
-    /** 用户在设置页填写的 DeepSeek API Key，仅用于语音识别。 */
+    /** 用户在「模型 Provider」页填写的 DeepSeek API Key，仅用于语音识别。 */
     var asrApiKey: String?
         get() = readEncrypted(ASR_KEY)
         set(value) = writeEncrypted(ASR_KEY, value)

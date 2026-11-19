@@ -67,8 +67,8 @@ fun friendlyMessage(
     "disabled" -> "任务已停用"
 
     // 语音识别（客户端直连 DeepSeek）
-    "asr_not_configured" -> "语音识别未配置，请到设置页填写 DeepSeek API Key"
-    "asr_invalid_key" -> "DeepSeek API Key 无效，请到设置页检查"
+    "asr_not_configured" -> "语音识别未配置，请到「模型 Provider」页填写 DeepSeek API Key"
+    "asr_invalid_key" -> "DeepSeek API Key 无效，请到「模型 Provider」页检查"
     "asr_insufficient_balance" -> "DeepSeek 账户余额不足"
     "asr_no_speech" -> "没有识别到语音，请再说一次"
     "asr_too_large" -> "录音过长，请缩短后重试"
