@@ -48,6 +48,29 @@ source（每个模型 step）。
 知识根 `<dataDir>/workspaces/<id>/` 同时作为 dev run 的附加目录传给 runtime
 （`run-service.extraDirsForRun`），因此需要正文时模型可以直接 Read/Write，而不是依赖注入正文。
 
+### 3.1 端上下文（`end` 段）
+
+端的**名称 / 一句话描述 / 注意事项**走两条通道，内容由同一个渲染器 `ends/render.ts` 产出，
+保证换 runtime 不换语义：
+
+| runtime | 通道 | 频率 |
+|---|---|---|
+| Claude / Codex | 首条消息前导块（system prompt） | 每轮 |
+| DeepSeek | 首条用户消息前导 | 仅首条，resume 不重复 |
+| **builtin** | 自己的 `runtime` 段：`EndsContextSource`（`runtimes/builtin/context/ends.ts`） | 每个模型 step |
+| `command` 会话 | 不注入 | — |
+
+内容规则（`renderEndContext`）：
+
+- **主端**：`## End: <名称>` + 描述 + 注意事项，均不截断；两者都为空时该段不出现
+  （`## Ends` 的「主端」行仍带名称）。
+- **其他端**：一行 `- <名称> — <描述≤80> · 注意：<注意事项≤120>`，最多 7 个（`END_INDEX_MAX = 8`），
+  超出折叠成「还有 N 个端」。**注意事项对其他端同样注入**——那是作者写的「别动 versionCode」，
+  正是碰到该端时最需要的。
+- **不含 `kind`**：它是内部标签（只决定激活时种哪些规范），界面上已不出现，所以也不进 prompt。
+- 整块预算 `END_CONTEXT_BUDGET = 2000` 字符：要装得下最坏情况（主端全文 + 7 行索引），
+  否则 assembler 会整段丢弃索引（它只整段丢，不做半段截断）。
+
 ## 4. 预算
 
 - 默认按**字符数**测量（D32）；`ContextAssemblyOptions.measure` 可注入别的测量函数（后续 tokenizer）。

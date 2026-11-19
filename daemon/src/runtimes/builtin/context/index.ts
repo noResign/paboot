@@ -1,4 +1,5 @@
 export * from './assembly.js';
+export * from './ends.js';
 export * from './environment.js';
 export * from './knowledge.js';
 export * from './memory.js';

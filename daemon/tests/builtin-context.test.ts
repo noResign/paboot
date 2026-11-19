@@ -9,6 +9,7 @@ import {
   builtinGlobalPromptSections,
   collectRuntimeContext,
   compilePromptSections,
+  EndsContextSource,
   EnvironmentContextSource,
   ProjectDocsContextSource,
   WorkspaceKnowledgeContextSource,
@@ -104,6 +105,41 @@ function section(id: string, order: number, text: string): PromptSectionSpec {
 }
 
 describe('P3.3 context sources', () => {
+  // Builtin has no first-message prelude, so without this source a builtin run
+  // saw no end context at all while Claude / Codex / DeepSeek did.
+  it('contributes the primary end and an index of the others', () => {
+    const { runtime } = makeContext({ workspaceRoot: tempDir() });
+    const source = new EndsContextSource(() => ({
+      workspace: null,
+      session: { id: 'session-1' } as never,
+      ends: [
+        { id: 'e1', name: 'Android', summary: '主 App', notes: '构建前先 clean' },
+        { id: 'e2', name: 'iOS', summary: '客户端', notes: '不要动版本号' },
+      ] as never,
+      primary: { id: 'e1', name: 'Android', summary: '主 App', notes: '构建前先 clean' } as never,
+    }));
+
+    const contributions = source.collect(runtime);
+    expect(contributions.map((item) => item.source)).toEqual(['end:primary', 'end:index']);
+    const body = contributions.map((item) => item.content).join('\n');
+    expect(body).toContain('## End: Android');
+    expect(body).toContain('构建前先 clean');
+    expect(body).toContain('不要动版本号');
+    expect(body).not.toContain('（');
+  });
+
+  it('contributes nothing outside a dev workspace', () => {
+    const { runtime } = makeContext({ workspaceRoot: tempDir() });
+    const source = new EndsContextSource(() => ({
+      workspace: null,
+      session: { id: 'session-1' } as never,
+      ends: [{ id: 'e1', name: 'A', summary: 's', notes: 'n' }] as never,
+      primary: { id: 'e1', name: 'A', summary: 's', notes: 'n' } as never,
+    }));
+    const life = { ...runtime, agent: { ...runtime.agent, workspace: { ...runtime.agent.workspace, family: 'life' as const } } };
+    expect(source.collect(life)).toEqual([]);
+  });
+
   it('renders deterministic environment facts', () => {
     const { runtime } = makeContext({
       workspaceRoot: tempDir(),
