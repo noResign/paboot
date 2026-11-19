@@ -61,6 +61,50 @@ describe('model selection before the session exists', () => {
   });
 });
 
+describe('permission mode before the session exists', () => {
+  const newKey = 'host::new';
+
+  beforeEach(() => {
+    useChat.setState({
+      activeKey: newKey,
+      streamKeys: {},
+      byKey: {
+        [newKey]: {
+          ...emptyChat(newKey, 'host'),
+          runtime: 'builtin',
+          pendingNew: { runtime: 'builtin', workspaceId: 'w', permissionMode: 'ask' },
+        },
+      },
+    });
+  });
+
+  // `send` reads the creation parameters from `pendingNew`, so a mode picked on
+  // the pending page has to land there too — patching only the visible field
+  // would show a mode the first run does not use.
+  it('updates the creation parameter, not just the visible one', () => {
+    useChat.getState().setPermissionMode('acceptEdits');
+    const chat = useChat.getState().byKey[newKey]!;
+    expect(chat.permissionMode).toBe('acceptEdits');
+    expect(chat.pendingNew?.permissionMode).toBe('acceptEdits');
+  });
+
+  it('carries the mode on the first chat request', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
+    useChat.getState().setPermissionMode('bypass');
+    await useChat.getState().send('hi');
+
+    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
+    expect(spec).toMatchObject({ sessionId: null, permissionMode: 'bypass' });
+  });
+
+  it('leaves an existing session without creation parameters', () => {
+    const chat = { ...emptyChat(newKey, 'host'), sessionId: 's' };
+    useChat.setState({ byKey: { [newKey]: chat } });
+    useChat.getState().setPermissionMode('ask');
+    expect(useChat.getState().byKey[newKey]!.pendingNew).toBeNull();
+  });
+});
+
 describe('title sync', () => {
   it('renames the open chat in place', () => {
     useChat.getState().patchTitle('host', 's', '新名字');

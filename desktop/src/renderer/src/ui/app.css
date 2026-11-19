@@ -665,10 +665,36 @@ kbd {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/*
+ * A session that does not exist yet is named by its first prompt — no edit
+ * affordance. Deliberately *not* `.readonly`: that is the global read-only field
+ * chrome (padding + border + fill, see the form section below), and reusing it
+ * here painted a rounded box around the title.
+ */
+.chat-title.no-rename {
+  cursor: default;
+}
+/*
+ * Inline rename. It inherits the global form-control chrome (1px border, 8px
+ * radius, white fill, 10px padding), which in a 48px header reads as a heavy
+ * input box sitting where text should be. While editing it should look like the
+ * title, so the chrome is transparent and only appears on focus.
+ */
 .title-input {
   font-weight: 600;
   font-size: 14px;
-  height: 24px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  /* The column stretches its children, which made the box span the header. */
+  align-self: flex-start;
+  width: min(100%, 420px);
+}
+.title-input:focus {
+  border-color: var(--border);
+  background: var(--surface-2);
 }
 .end-chips {
   position: relative;
@@ -4875,6 +4901,27 @@ a.btn {
 }
 
 /* ---- workspace new-session defaults ---- */
+/* Workspace-level memory master switch, beside the new-session defaults. */
+.ws-memory {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ws-memory .switch {
+  align-items: center;
+  flex: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.ws-memory .switch input {
+  margin-top: 0;
+}
+.ws-memory-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .ws-defaults {
   display: flex;
   flex-direction: column;
