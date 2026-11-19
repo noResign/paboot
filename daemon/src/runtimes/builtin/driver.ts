@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { AppContext } from '../../app/context.js';
-import { resolveSessionEnd } from '../../ends/scope.js';
+import { resolveSessionEnd, resolveSessionEndsScope } from '../../ends/scope.js';
 import type { SessionRow, WorkspaceRow } from '../../db/db.js';
 import { log } from '../../platform/log.js';
 import type { NormalizedEvent, PermissionStatus, QuestionDto } from '../../types/api.js';
@@ -21,6 +21,7 @@ import { createTokenCalibrator } from './tokens.js';
 import {
   assembleAgentContext,
   builtinGlobalPromptSections,
+  EndsContextSource,
   EnvironmentContextSource,
   MemoryBriefContextSource,
   ProjectDocsContextSource,
@@ -162,6 +163,9 @@ async function runBuiltin(
       promptPreset: preset,
       contextSources: [
         new EnvironmentContextSource(),
+        // End identity + description/notes: external runtimes get this as a
+        // first-message prelude, builtin has no such channel.
+        new EndsContextSource(() => resolveSessionEndsScope(ctx.db, session)),
         new ProjectDocsContextSource({
           maxFileBytes: builtinConfig.projectDocs.maxFileBytes,
           maxTokens: budget.projectDocsTokens,

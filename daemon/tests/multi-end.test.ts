@@ -120,6 +120,60 @@ describe('multi-end session scope', () => {
 });
 
 describe('end lifecycle and session ends routes', () => {
+  // `kind` is an internal tag now: clients do not send it, and the default must
+  // not be a template id — `android` used to seed Android conventions onto every
+  // new end.
+  it('defaults an omitted kind to generic and seeds no conventions', async () => {
+    const { db, knowledge, workspace, url, root } = await boot();
+    const end = await createEnd(url, workspace.id, { name: 'App' });
+    await bindRoot(url, workspace.id, end.id, root);
+
+    const activated = await fetch(
+      `${url}/api/workspaces/${workspace.id}/ends/${end.id}/activate`,
+      { method: 'POST' },
+    );
+    expect(activated.status).toBe(200);
+    expect(db.getEnd(end.id)?.kind).toBe('generic');
+    expect(knowledge.list(workspace.id, { kind: 'convention', endId: end.id })).toHaveLength(0);
+  });
+
+  // The create form collects a description up front; the endpoint already
+  // accepted these fields, so this locks in that they land on the new row.
+  it('stores the description given at creation', async () => {
+    const { db, workspace, url } = await boot();
+    const res = await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'App',
+        summary: 'Android 客户端',
+        notes: '不要改 versionCode 规则',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { end: { id: string } };
+    const row = db.getEnd(body.end.id);
+    expect(row?.summary).toBe('Android 客户端');
+    expect(row?.notes).toBe('不要改 versionCode 规则');
+  });
+
+  it('accepts explicit kinds and seeds a preset template', async () => {
+    const { knowledge, workspace, url, root } = await boot();
+    const end = await createEnd(url, workspace.id, { name: 'Android', kind: 'android' });
+    await bindRoot(url, workspace.id, end.id, root);
+
+    await fetch(`${url}/api/workspaces/${workspace.id}/ends/${end.id}/activate`, { method: 'POST' });
+    expect(knowledge.list(workspace.id, { kind: 'convention', endId: end.id })).toHaveLength(1);
+
+    const tooLong = await fetch(`${url}/api/workspaces/${workspace.id}/ends`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Broken', kind: 'x'.repeat(33) }),
+    });
+    expect(tooLong.status).toBe(400);
+    expect(((await tooLong.json()) as { code: string }).code).toBe('bad_request');
+  });
+
   it('patches text and seeds domain conventions on activation', async () => {
     const { db, knowledge, workspace, url, root } = await boot();
     const end = await createEnd(url, workspace.id, { name: 'App', kind: 'android' });
@@ -223,17 +277,27 @@ describe('end lifecycle and session ends routes', () => {
       status: 'active',
     });
     db.updateEnd(android.id, { summary: '主 App', notes: '构建前先 ./gradlew clean' });
-    db.createEnd({
+    const ios = db.createEnd({
       workspaceId: workspace.id,
       family: 'dev',
       kind: 'ios',
       name: 'iOS',
       status: 'active',
     });
+    db.updateEnd(ios.id, { summary: '客户端', notes: '不要动 Info.plist 版本号' });
     const prelude = endsContext(ctx, session, workspace);
-    expect(prelude?.prefix).toContain('## End: Android');
-    expect(prelude?.prefix).toContain('构建前先 ./gradlew clean');
-    expect(prelude?.prefix).toContain('## Ends');
-    expect(prelude?.prefix).toContain('iOS');
+    const text = prelude?.prefix ?? '';
+    expect(text).toContain('## End: Android');
+    expect(text).toContain('构建前先 ./gradlew clean');
+    expect(text).toContain('## Ends');
+    expect(text).toContain('iOS');
+    // Other ends carry their notes too: the author's warnings are what a run
+    // touching that end needs most.
+    expect(text).toContain('不要动 Info.plist 版本号');
+    // `kind` is an internal tag (it no longer appears in any UI), so it must not
+    // leak into the prompt either.
+    expect(text).not.toContain('android');
+    expect(text).not.toContain('ios）');
+    expect(text).not.toContain('kind');
   });
 });

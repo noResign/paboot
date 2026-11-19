@@ -195,11 +195,20 @@ export function registerEndRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     const name = typeof req.body?.['name'] === 'string' ? req.body['name'].trim() : '';
-    const kind = typeof req.body?.['kind'] === 'string' ? req.body['kind'] : 'android';
+    // `kind` is an internal tag, not a user-facing choice: it only selects which
+    // conventions get seeded on activation (`domainById`). Clients no longer send
+    // it, so the default must not be a template id — `android` would silently seed
+    // Android conventions onto every new end. Unknown kinds seed nothing.
+    const rawKind = typeof req.body?.['kind'] === 'string' ? req.body['kind'].trim() : '';
+    const kind = rawKind || 'generic';
     const summary = typeof req.body?.['summary'] === 'string' ? req.body['summary'].trim() : '';
     const notes = typeof req.body?.['notes'] === 'string' ? req.body['notes'] : '';
     if (!name) {
       res.status(400).json({ error: 'name is required', code: 'bad_request' });
+      return;
+    }
+    if (kind.length > 32) {
+      res.status(400).json({ error: 'kind is too long (max 32)', code: 'bad_request' });
       return;
     }
     if (summary.length > 200) {

@@ -15,6 +15,7 @@ export type RuntimeContextKind =
   | 'environment'
   | 'project'
   | 'knowledge'
+  | 'end'
   | 'memory'
   | 'skill-catalog'
   | 'todo'
