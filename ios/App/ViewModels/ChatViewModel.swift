@@ -451,6 +451,10 @@ final class ChatViewModel {
         run: SessionEventDto.RunBrief
     ) {
         guard eventSessionId == sid, !state.streaming, !knownRunIds.contains(run.id) else { return }
+        // History is on its way: the messages are about to be replaced by the
+        // rebuild, and `knownRunIds` is still empty in that window — the two
+        // together are what made a known run look unknown and get appended twice.
+        guard !state.loadingHistory else { return }
         knownRunIds.insert(run.id)
         state.messages.append(
             ChatUiMessage(
@@ -688,6 +692,13 @@ final class ChatViewModel {
 
     private func handle(_ event: NormalizedEvent, runId: String) {
         state.runId = runId
+        // This run is ours: remember it. `run_finished` can arrive after `done`
+        // cleared streaming, and at that point `knownRunIds` only holds runs seen
+        // when the detail was fetched — the hint would be treated as another
+        // device's run and the prompt appended twice.
+        if !runId.isEmpty {
+            knownRunIds.insert(runId)
+        }
 
         if case .permissionRequest(let request) = event {
             // The run pauses for an approval, so the thinking spinner must stop.

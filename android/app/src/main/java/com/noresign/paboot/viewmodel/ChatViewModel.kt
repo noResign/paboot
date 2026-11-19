@@ -355,6 +355,10 @@ class ChatViewModel(
     /** 别的端发起的 run：补上用户气泡后 attach 到它的流（已结束也会全量回放）。 */
     private fun appendExternalRun(sid: String, eventSessionId: String, run: SessionRunBriefDto) {
         if (eventSessionId != sid || _streaming.value) return
+        // 历史正在加载：消息马上会被重建覆盖，此时按提示补气泡只是猜测；而这期间
+        // knownRunIds 还是空的，正好会让「已知的 run」看起来像未知的。
+        if (_historyLoading.value) return
+        // knownRunIds 在拉详情后会按 runs 重建，重进会话的历史也由此去重。
         if (run.id in knownRunIds) return
         knownRunIds = knownRunIds + run.id
         _messages.update {
@@ -733,6 +737,12 @@ class ChatViewModel(
     private fun handleFrame(evt: ChatStreamEvent.Frame) {
         val frame = evt.frame
         _runId.value = frame.runId
+        // 这是本端自己发起的 run，先记下来：run_finished 的会话事件可能在 done 之后才到，
+        // 那时 knownRunIds 只含「拉详情时见过的 run」，会被当成别的端的 run，从而重复追加
+        // 一条用户气泡并全量回放一次。
+        if (frame.runId.isNotBlank() && frame.runId !in knownRunIds) {
+            knownRunIds = knownRunIds + frame.runId
+        }
         val e = frame.event
         if (e is NormalizedEvent.Status) e.runtime?.let { _sessionRuntime.value = it }
         if (e is NormalizedEvent.Status && e.sessionId != null && sessionId == null) {
