@@ -81,11 +81,16 @@ class PcmWavRecorder(
                     bytes[index * 2 + 1] = ((sample shr 8) and 0xff).toByte()
                     sum += sample.toDouble() * sample
                 }
-                synchronized(lock) {
-                    if (!capturing) break
+                // 停止后不能再写入：stop() 在同一把锁里取走并清空缓冲。
+                // `break` 不能直接写在 synchronized 里——它是 inline 函数，非局部
+                // break/continue 要 Kotlin 2.2 才支持，本仓库的语言版本是 2.1。
+                val kept = synchronized(lock) {
+                    if (!capturing) return@synchronized false
                     pcm.write(bytes)
                     total += bytes.size
+                    true
                 }
+                if (!kept) break
 
                 val rms = sqrt(sum / read)
                 val db = 20 * log10(max(rms, 1.0) / 32768.0)
