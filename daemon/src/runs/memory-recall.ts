@@ -29,6 +29,8 @@ export interface RunMemoryRecall extends ContextPrelude {
   hits: number;
   /** [debug] Recall diagnostics: cue / query / dropped items. */
   cue: boolean;
+  /** True when a cue found no term hits and fell back to recent context. */
+  broadened: boolean;
   query: string;
   terms: string[];
   dropped: RecallDrop[];
@@ -148,6 +150,15 @@ export function memoryRecall(
       seen.add(key);
       lines.push(line);
     }
+    // Broadening: an explicit cue with nothing to search on ("接着上次那个弄")
+    // still means "look at the past". Rather than injecting nothing, fall back
+    // to the newest cross-session summaries/observations. Raw claims stay out:
+    // recency alone is not evidence of relevance, and this path runs often.
+    let broadened = false;
+    if (cue && lines.length === 0) {
+      lines.push(...recentFallback(ctx, policy, session.id, MAX_RECALL_ITEMS));
+      broadened = lines.length > 0;
+    }
     if (lines.length === 0) return null;
     const content = trimLines('## 相关记忆\n以下按需核对；与当前说法冲突时以当前为准。', lines, MAX_RECALL_CHARS);
     const section: ContextSection = {
@@ -159,11 +170,14 @@ export function memoryRecall(
     };
     const prelude = renderContextPrelude([section], session.runtime);
     if (!prelude) return null;
-    log.info(`memory recall: ${lines.length} hit(s) for ${session.runtime}`);
+    log.info(
+      `memory recall: ${lines.length} hit(s) for ${session.runtime}${broadened ? ' (recent fallback)' : ''}`,
+    );
     return {
       ...prelude,
       hits: lines.length,
       cue,
+      broadened,
       query,
       terms,
       dropped,
@@ -240,6 +254,44 @@ function hitKind(kind: string): RecallDrop['kind'] {
     default:
       return 'source';
   }
+}
+
+/**
+ * Newest cross-session summaries/observations for a cue with no search terms.
+ * Deliberately excludes claims: "recent" is not "relevant", and this path can
+ * run on every "continue" turn.
+ */
+function recentFallback(
+  ctx: AppContext,
+  policy: ReturnType<typeof resolveReadPolicy>,
+  currentSessionId: string,
+  maxItems: number,
+): string[] {
+  const candidates: Array<{ createdAt: number; line: string }> = [];
+  for (const readScope of policy.scopes) {
+    for (const summary of ctx.memory!.listSessionSummaries(readScope.scope, undefined, 4)) {
+      if (summary.sessionId === currentSessionId) continue;
+      if (!scopeAllowsSensitivity(policy, summary.scope, summary.sensitivity)) continue;
+      const detail =
+        summary.completed.trim() === '' ? '' : ` — ${compact(summary.completed, 160)}`;
+      candidates.push({
+        createdAt: summary.createdAt,
+        line: `- [最近] ${compact(summary.request, 100)}${detail} #sum_${short(summary.id)}`,
+      });
+    }
+    for (const observation of ctx.memory!.listObservations(readScope.scope, 4)) {
+      if (observation.sessionId === currentSessionId) continue;
+      if (!scopeAllowsSensitivity(policy, observation.scope, observation.sensitivity)) continue;
+      candidates.push({
+        createdAt: observation.createdAt,
+        line:
+          `- [最近] ${compact(observation.title, 120)}（${observation.type}）` +
+          ` #obs_${short(observation.id)}`,
+      });
+    }
+  }
+  candidates.sort((a, b) => b.createdAt - a.createdAt);
+  return candidates.slice(0, Math.min(maxItems, 3)).map((candidate) => candidate.line);
 }
 
 function isRelevant(text: string, terms: readonly string[]): boolean {

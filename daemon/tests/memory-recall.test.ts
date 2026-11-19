@@ -111,6 +111,36 @@ describe('memory recall', () => {
     expect(result?.prefix).toContain('补登录重构集成测试');
   });
 
+  it('falls back to recent cross-session context when a cue has nothing to search on', () => {
+    const { store, workspace, session, ctx } = setup();
+    store.upsertSessionSummary({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      sessionId: 's-earlier',
+      runId: null,
+      request: '修复登录页报错',
+      completed: '已修复并补了测试',
+    });
+
+    const result = memoryRecall(ctx, session, workspace, '接着上次那个弄吧');
+    expect(result?.broadened).toBe(true);
+    expect(result?.prefix).toContain('[最近]');
+    expect(result?.prefix).toContain('修复登录页报错');
+  });
+
+  it('does not fall back to the current session own summary', () => {
+    const { store, workspace, session, ctx } = setup();
+    store.upsertSessionSummary({
+      scope: `workspace:${workspace.id}`,
+      endId: null,
+      sessionId: session.id,
+      runId: null,
+      request: '当前会话的旧事',
+    });
+
+    expect(memoryRecall(ctx, session, workspace, '接着上次那个弄吧')).toBeNull();
+  });
+
   it('does not recall a claim the operator marked wrong', () => {
     const { store, workspace, session, ctx } = setup();
     const claim = store.insertClaim({
