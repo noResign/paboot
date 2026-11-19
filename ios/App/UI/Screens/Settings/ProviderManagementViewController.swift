@@ -186,7 +186,7 @@ final class ProviderManagementViewController: UIViewController {
             message: "仅用于语音识别，保存在本机 Keychain。",
             preferredStyle: .alert
         )
-        alert.addTextField { [weak self] field in
+        alert.addTextField { field in
             field.placeholder = "sk-…"
             field.isSecureTextEntry = true
             field.autocapitalizationType = .none
@@ -194,7 +194,7 @@ final class ProviderManagementViewController: UIViewController {
             // 清除按钮与 rightView 抢同一个位置：编辑时清除按钮会盖住眼睛，
             // 而编辑时正是要看明文的时候，所以这里不要清除按钮。
             field.clearButtonMode = .never
-            self?.attachRevealButton(to: field, label: "API Key")
+            attachRevealButton(to: field, label: "API Key")
         }
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self, weak alert] _ in
@@ -540,38 +540,6 @@ private final class ProviderEditorViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    /// 在安全输入框右侧挂一枚眼睛：默认掩码，点一下显示明文，便于核对粘贴的 Key。
-    /// `UIAlertController` 里的输入框也能用——它就是个普通 `UITextField`，靠 `rightView` 放按钮。
-    private func attachRevealButton(to field: UITextField, label: String) {
-        let eye = UIButton(type: .system)
-        eye.tintColor = Theme.Colors.textSecondary
-        eye.setImage(UIImage(systemName: "eye"), for: .normal)
-        eye.frame = CGRect(x: 0, y: 0, width: 30, height: 24)
-        eye.accessibilityLabel = "显示\(label)"
-        eye.addAction(
-            UIAction { [weak field, weak eye] _ in
-                guard let field else { return }
-                let reveal = field.isSecureTextEntry
-                // 切换 secure 会让已输入内容在某些系统版本上被清掉，先存后写回。
-                let existing = field.text ?? ""
-                field.isSecureTextEntry = !reveal
-                field.text = ""
-                field.insertText(existing)
-                eye?.setImage(
-                    UIImage(systemName: reveal ? "eye.slash" : "eye"),
-                    for: .normal
-                )
-                eye?.accessibilityLabel = "\(reveal ? "隐藏" : "显示")\(label)"
-            },
-            for: .touchUpInside
-        )
-        // 包一层：`rightView` 贴着边框，留出与正文相同的边距。
-        let container = UIView(frame: CGRect(x: 0, y: 0, width: 38, height: 24))
-        container.addSubview(eye)
-        field.rightView = container
-        field.rightViewMode = .always
-    }
-
     private func configureField(_ field: UITextField, placeholder: String, secure: Bool = false) {
         field.placeholder = placeholder
         field.isSecureTextEntry = secure
@@ -618,4 +586,37 @@ private func normalizedProviderLabel(_ value: String) -> String {
 private func showProviderId(_ provider: ProviderDto) -> Bool {
     normalizedProviderLabel(provider.id)
         != normalizedProviderLabel(provider.label.isEmpty ? provider.id : provider.label)
+}
+
+/// 在安全输入框右侧挂一枚眼睛：默认掩码，点一下显示明文，便于核对粘贴的 Key。
+/// `UIAlertController` 里的输入框也能用——它就是个普通 `UITextField`，靠 `rightView` 放按钮。
+/// 文件级而非某个类的成员：provider 编辑器与语音识别弹窗分属两个 view controller。
+private func attachRevealButton(to field: UITextField, label: String) {
+    let eye = UIButton(type: .system)
+    eye.tintColor = Theme.Colors.textSecondary
+    eye.setImage(UIImage(systemName: "eye"), for: .normal)
+    eye.frame = CGRect(x: 0, y: 0, width: 30, height: 24)
+    eye.accessibilityLabel = "显示\(label)"
+    eye.addAction(
+        UIAction { [weak field, weak eye] _ in
+            guard let field else { return }
+            let reveal = field.isSecureTextEntry
+            // 切换 secure 会让已输入内容在某些系统版本上被清掉，先存后写回。
+            let existing = field.text ?? ""
+            field.isSecureTextEntry = !reveal
+            field.text = ""
+            field.insertText(existing)
+            eye?.setImage(
+                UIImage(systemName: reveal ? "eye.slash" : "eye"),
+                for: .normal
+            )
+            eye?.accessibilityLabel = "\(reveal ? "隐藏" : "显示")\(label)"
+        },
+        for: .touchUpInside
+    )
+    // 包一层：`rightView` 贴着边框，留出与正文相同的边距。
+    let container = UIView(frame: CGRect(x: 0, y: 0, width: 38, height: 24))
+    container.addSubview(eye)
+    field.rightView = container
+    field.rightViewMode = .always
 }
