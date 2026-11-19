@@ -226,6 +226,14 @@ export const useChat = create<ChatStore>((set, get) => ({
       runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
       workspaceId: chat.pendingNew?.workspaceId ?? undefined,
       permissionMode: chat.pendingNew?.permissionMode,
+      // The chat page exposes the model picker before the session exists; the
+      // choice only has somewhere to live once the daemon creates it.
+      ...(chat.pendingNew
+        ? {
+            model: chat.model,
+            modelParameters: Object.keys(chat.modelParameters).length ? chat.modelParameters : null,
+          }
+        : {}),
       // One send = one run. A stable id lets a resend re-attach instead of
       // starting a second run if the response was lost.
       commandId: crypto.randomUUID(),
@@ -433,7 +441,17 @@ export const useChat = create<ChatStore>((set, get) => ({
   async setSessionSelection(model, modelParameters) {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
-    if (!key || !chat?.sessionId) return;
+    if (!key || !chat) return;
+
+    // A session that does not exist yet has nothing to persist to: keep the
+    // choice in state and let the first `send` carry it to the daemon.
+    if (!chat.sessionId) {
+      if (!chat.pendingNew) return;
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({ ...current, model, modelParameters })),
+      }));
+      return;
+    }
 
     const res = await api.updateSessionModel(
       chat.sessionId,
