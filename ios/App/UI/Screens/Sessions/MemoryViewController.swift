@@ -713,6 +713,9 @@ private final class MemoryDetailViewController: UIViewController {
         let edit = UIButton(type: .system)
         edit.setTitle("改正", for: .normal)
         edit.titleLabel?.font = Typography.body
+        // Off means "stop learning": viewing and forgetting stay available, but
+        // correcting is a write the daemon refuses (memory_not_enabled).
+        edit.isEnabled = settings?.enabled != false
         edit.addTarget(self, action: #selector(startEdit), for: .touchUpInside)
         let forget = UIButton(type: .system)
         forget.setTitle("忘记", for: .normal)
@@ -740,6 +743,7 @@ private final class MemoryDetailViewController: UIViewController {
             button.setTitle(title, for: .normal)
             button.titleLabel?.font = Typography.body
             button.tintColor = action == "wrong" ? Theme.Colors.error : Theme.Colors.primary
+            button.isEnabled = settings?.enabled != false
             button.addAction(
                 UIAction { [weak self] _ in self?.sendFeedback(action) },
                 for: .touchUpInside

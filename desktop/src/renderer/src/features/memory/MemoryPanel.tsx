@@ -148,6 +148,8 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
     if (!claimsRes.ok) {
       const code = (claimsRes.data as { code?: string } | null)?.code;
       if (code === 'memory_not_enabled') {
+        // Current daemons answer reads even when the switch is off, so this only
+        // fires against an older one — show the switch, not an error.
         setClaims([]);
         setStatus(null);
         setError(null);
@@ -789,7 +791,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
             </div>
             {memoryDisabled ? (
               <p className="hint mem-status-hint">
-                勾选上方「启用记忆」后开始捕获、整理与注入。
+                记忆已关闭：不再捕获与注入。已有记忆仍可查看和忘记；要改正、合并或裁决，先勾选上方「启用记忆」。
               </p>
             ) : (
               !modelAvailable && (
@@ -1236,7 +1238,12 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                         </>
                       ) : (
                         <>
-                          <button className="btn" onClick={() => startEdit(selected)}>
+                          <button
+                            className="btn"
+                            onClick={() => startEdit(selected)}
+                            disabled={busy || memoryDisabled}
+                            title={memoryDisabled ? '记忆已关闭，先启用后再改正' : undefined}
+                          >
                             改正
                           </button>
                           <button className="btn ghost" onClick={() => setForgetId(selected.id)}>
@@ -1252,21 +1259,21 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                         <span className="hint">这条记忆：</span>
                         <button
                           className="btn ghost"
-                          disabled={busy}
+                          disabled={busy || memoryDisabled}
                           onClick={() => void sendFeedback(selected, 'helpful')}
                         >
                           有用
                         </button>
                         <button
                           className="btn ghost"
-                          disabled={busy}
+                          disabled={busy || memoryDisabled}
                           onClick={() => void sendFeedback(selected, 'stale')}
                         >
                           过时了
                         </button>
                         <button
                           className="btn ghost"
-                          disabled={busy}
+                          disabled={busy || memoryDisabled}
                           onClick={() => void sendFeedback(selected, 'wrong')}
                         >
                           不准确
@@ -1291,7 +1298,12 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                       <option value="personal">personal</option>
                       <option value="life_only">life_only</option>
                     </select>
-                    <button className="btn" disabled={busy} onClick={() => void promote(selected)}>
+                    <button
+                      className="btn"
+                      disabled={busy || memoryDisabled}
+                      title={memoryDisabled ? '记忆已关闭，先启用后再提升' : undefined}
+                      onClick={() => void promote(selected)}
+                    >
                       提升为全局记忆
                     </button>
                   </div>

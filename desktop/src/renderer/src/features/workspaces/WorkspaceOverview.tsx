@@ -65,6 +65,12 @@ export function WorkspaceOverview({
   const [selectedEndId, setSelectedEndId] = useState<string | null>(null);
   const [startAddingEnd, setStartAddingEnd] = useState(false);
   const [ends, setEnds] = useState<EndDto[]>([]);
+  /**
+   * The memory card's copy has to match the switch it opens — that switch is in
+   * 设置 → 工作区 too, so a hard-coded "默认关闭" becomes a lie once it is on.
+   * `null` = not loaded yet.
+   */
+  const [memoryEnabled, setMemoryEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -82,6 +88,18 @@ export function WorkspaceOverview({
       cancelled = true;
     };
   }, [workspace?.id, endsOpen]);
+
+  // Re-read after the memory panel closes: it can flip the same switch.
+  useEffect(() => {
+    if (!workspace) return;
+    let cancelled = false;
+    void api.workspaceMemory(workspace.id).then((res) => {
+      if (!cancelled && res.ok) setMemoryEnabled(res.data.enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace?.id, memoryOpen]);
 
   function openPicker(mode: PickerMode): void {
     setPickerError(null);
@@ -271,10 +289,14 @@ export function WorkspaceOverview({
             <span className="hint">
               {isLife
                 ? '个人空间里的长期事实会自动整理；新会话按记忆注入，可查看来源、改正或忘记。'
-                : '这个工作区的长期记忆默认关闭；打开后可启用捕获、整理与注入。'}
+                : memoryEnabled
+                  ? '长期记忆已启用：会话内容会在后台整理，新会话按记忆注入。'
+                  : '这个工作区的长期记忆默认关闭；打开后可启用捕获、整理与注入。'}
             </span>
             <span className="wo-knowledge-meta">
-              <span className="wo-knowledge-chip">{isLife ? '自动整理' : '默认关闭'}</span>
+              <span className="wo-knowledge-chip">
+                {isLife ? '自动整理' : memoryEnabled ? '已启用' : '默认关闭'}
+              </span>
               <span className="wo-knowledge-chip">
                 {isLife ? '来源可追溯' : '可允许个人空间读取'}
               </span>
@@ -383,7 +405,7 @@ export function WorkspaceOverview({
                 <span className="wo-knowledge-copy">
                   <b>{end.name}</b>
                   <span className="hint">
-                    {end.kind} · {end.roots.length} 个目录
+                    {end.roots.length} 个目录
                     {end.summary ? ` · ${end.summary}` : ''}
                   </span>
                   <span className="wo-knowledge-meta">
