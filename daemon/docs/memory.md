@@ -157,8 +157,11 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
   继续 / 接着」等明确线索时直接召回；没有线索时要求至少命中一个 ≥3 字段或两个 ≥2 字段，
   避免无关新会话串入别人的时间线。open loop 标题命中（或「继续」线索）时优先注入
   `[未完成]` 项。取最多 5 条 claim / observation / summary / document，按 read-policy 过滤后
-  作为 `## 相关记忆` 追加。Claude / Codex 每轮生效；只有首条前导的 runtime（DeepSeek resume）
-  只在首轮生效；builtin 目前只注入 brief。
+  作为 `## 相关记忆` 追加。**放宽兜底**：有明确线索但词面检索一条都没命中时（「接着上次那个弄」），
+  改取其他会话最近的 1–3 条 session summary / observation（`[最近]` 标记）；当前会话的
+  summary / observation 仍排除，且不兜底旧 claim——「最近」不等于「相关」。
+  Claude / Codex 每轮生效；只有首条前导的 runtime（DeepSeek resume）只在首轮生效；
+  builtin 目前只注入 brief。
 - **检索（D31）**：`mem_search` FTS5 trigram。查询 ≥3 个码点时先走 FTS（子串 + bm25），
   无命中退 LIKE；1–2 个码点直接 LIKE；多词再退「任一词 OR」并按命中次数排序。
   `secret` 不建索引；`private` 只在允许它的 scope 返回；`excluded` source 不返回。
@@ -242,8 +245,8 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
 
 ## 8. 已知限制
 
-- `provider_override` 已持久化，但 worker 仍使用全局 `memory_model`；按 workspace 选 provider
-  留到后续。
+- **记忆抽取统一使用全局 `memory_model`**（2026-11-19 决定）：字段 / 列 `provider_override`
+  保留但当前不生效、不展示；按 workspace 选 provider 留到确有需要时再做。
 - claim 主语仍是 user；relation 可带 object entity，但还没有按 entity 检索 / 加权。
 - entity 跨 scope 只有 link + 显式 merge，自动 link 未实现；桌面端有实体列表 / merge / unmerge /
   跨 scope link 操作，Android / iOS 只读列表。
