@@ -1266,12 +1266,9 @@ private final class WorkspaceOverviewViewController: UIViewController {
                         : "没有启用的端；已归档的端可在桌面端恢复。"
                     return
                 }
+                // 领域（kind）不再是界面概念，只作内部标签，这里只显示名称与摘要。
                 detail.text = activeEnds.map { end in
-                    var line = "\(end.name)（\(end.kind)）"
-                    if !end.summary.isEmpty {
-                        line += " · \(end.summary)"
-                    }
-                    return line
+                    end.summary.isEmpty ? end.name : "\(end.name) · \(end.summary)"
                 }.joined(separator: "\n")
             } catch {
                 detail.text = "端状态不可用"

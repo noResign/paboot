@@ -510,11 +510,25 @@ export const api = {
     request<EndsResponse>({ method: 'GET', path: ROUTES.workspaceEnds(id) }),
   endSuggestions: (id: string) =>
     request<EndSuggestionsResponse>({ method: 'GET', path: ROUTES.workspaceEndSuggestions(id) }),
-  createWorkspaceEnd: (id: string, name: string, kind?: string) =>
+  /**
+   * `kind` is an internal tag and no longer sent by the UI; `summary` / `notes`
+   * are the same fields the detail pane edits, so an end can be described at
+   * creation instead of only afterwards.
+   */
+  createWorkspaceEnd: (
+    id: string,
+    name: string,
+    extra?: { kind?: string; summary?: string; notes?: string },
+  ) =>
     request<EndResponse>({
       method: 'POST',
       path: ROUTES.workspaceEnds(id),
-      body: kind ? { name, kind } : { name },
+      body: {
+        name,
+        ...(extra?.kind ? { kind: extra.kind } : {}),
+        ...(extra?.summary ? { summary: extra.summary } : {}),
+        ...(extra?.notes ? { notes: extra.notes } : {}),
+      },
     }),
   bindEndRoot: (id: string, endId: string, root: string) =>
     request<EndResponse>({
