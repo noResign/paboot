@@ -15,7 +15,7 @@ interface Props {
   disabled: boolean;
   busy: boolean;
   placeholder: string;
-  /** Bottom-left model picker; hidden until the session exists. */
+  /** Bottom-left model picker; also shown on a not-yet-created session. */
   showModel: boolean;
   model: string | null;
   models: ModelOptionDto[];

@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../ipc/client', () => ({ api: { session: vi.fn() }, connectionApi: {} }));
+vi.mock('../ipc/client', () => ({
+  api: { session: vi.fn(), updateSessionModel: vi.fn() },
+  connectionApi: { streamStart: vi.fn() },
+}));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
 vi.mock('../notify/notifier', () => ({ notifyRunFinished: vi.fn(), notifyPermission: vi.fn(), closePermissionNotification: vi.fn() }));
-import { api } from '../ipc/client';
+import { api, connectionApi } from '../ipc/client';
 import { useChat } from './chat';
 import { emptyChat } from './chat/types';
 import type { RunDto } from '../../../shared/contract';
@@ -15,6 +18,46 @@ beforeEach(() => {
     activeKey: key, streamKeys: { stream: key }, failedIds: [],
     byKey: { [key]: { ...emptyChat(key, 'host'), sessionId: 's', streamId: 'stream', runId: 'r', phase: 'live',
       messages: [{ kind: 'user', id: 'u', text: 'hello', runId: 'r' }] } },
+  });
+});
+
+describe('model selection before the session exists', () => {
+  const newKey = 'host::new';
+
+  beforeEach(() => {
+    useChat.setState({
+      activeKey: newKey,
+      streamKeys: {},
+      byKey: {
+        [newKey]: {
+          ...emptyChat(newKey, 'host'),
+          runtime: 'builtin',
+          pendingNew: { runtime: 'builtin', workspaceId: 'w', permissionMode: 'ask' },
+        },
+      },
+    });
+  });
+
+  it('keeps the choice in state instead of calling the session endpoint', async () => {
+    await useChat.getState().setSessionSelection('p:m', { reasoningEffort: 'high' });
+    const chat = useChat.getState().byKey[newKey]!;
+    expect(chat.model).toBe('p:m');
+    expect(chat.modelParameters).toEqual({ reasoningEffort: 'high' });
+    expect(api.updateSessionModel).not.toHaveBeenCalled();
+  });
+
+  it('sends the choice with the first chat request, which creates the session', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
+    await useChat.getState().setSessionSelection('p:m', { reasoningEffort: 'high' });
+    await useChat.getState().send('hi');
+
+    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
+    expect(spec).toMatchObject({
+      kind: 'chat',
+      sessionId: null,
+      model: 'p:m',
+      modelParameters: { reasoningEffort: 'high' },
+    });
   });
 });
 
