@@ -441,13 +441,13 @@ private fun EndsCard(state: EndStatusUiState) {
                             val activeEnds = state.activeEnds
                             when {
                                 activeEnds.isNotEmpty() -> activeEnds
-                                    .mapIndexed { _: Int, end: WorkspaceRepository.EndSummary ->
+                                    // 领域（kind）不再是界面概念，只作内部标签，这里只显示名称与摘要。
+                                    .joinToString("\n") { end ->
                                         buildString {
-                                            append(end.name).append("（").append(end.kind).append("）")
+                                            append(end.name)
                                             if (end.summary.isNotBlank()) append(" · ").append(end.summary)
                                         }
                                     }
-                                    .joinToString("\n")
                                 state.archivedEndNames.isEmpty() -> "尚未添加端；请在桌面端添加。"
                                 else -> "没有启用的端；已归档的端可在桌面端恢复。"
                             }

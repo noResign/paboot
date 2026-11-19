@@ -100,7 +100,7 @@ export function SessionEndsChips({
                 checked={sessionEnds.some((item) => item.id === end.id)}
                 onChange={() => toggle(end.id)}
               />
-              <span>{end.name}（{end.kind}）</span>
+              <span>{end.name}</span>
             </label>
           ))}
           <button className="btn" disabled={busy} onClick={() => void save(null)}>
