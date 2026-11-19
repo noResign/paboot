@@ -216,8 +216,19 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
 
 - 所有 memory 端点必须带 `sessionId` 或显式 `scope`，没有默认全局。
 - GET 允许 agent token；写端点由现有 role policy 限定 operator token。
-- 未启用的 workspace（dev 默认、或显式关闭的 life）读 / 写 claims 返回 `400 memory_not_enabled`；
-  **会话级 `memory_mode` 例外**：即使 workspace 未启用也能保存（只是暂时不产生效果）。
+- **未启用的 workspace（dev 默认、或显式关闭的 life）语义**：关闭 = 不再学习，不是隐藏历史。
+  - 读放行：`GET /api/memory/*`（claims / timeline / search / brief / entities / disputes /
+    duplicates / loops / sources / status）仍返回这个 workspace **自己 scope** 的内容；
+    read-policy 只给 `workspace:<id>`（`profileMode=off`、不含 `user`、不读别的 dev），
+    所以「关闭」既不会读到别人的，也不会漏掉自己的。
+  - `DELETE /api/memory/claims/:id`（忘记）放行——清理已积累的数据不应以重新开启采集为代价。
+  - 其余写入仍返回 `400 memory_not_enabled`：`PATCH claims`（改正）、`promote`、`remember`、
+    `feedback`、`entities` 合并 / 撤销、`disputes`、`duplicates`、`entity-links`、`loops`。
+    理由：这些都会**产生或改写知识**，与「关掉后不再学习」矛盾。
+  - 内部端点（`/api/internal/memory/*`，即 MCP 的 `search_memory` 等）仍整体拒绝：
+    agent 在关闭状态下拿不到任何记忆。
+  - 注入本就不受影响：`isMemoryInjectionEnabled` 单独判定（`enabled && injectionEnabled`）。
+  - **会话级 `memory_mode` 例外**：即使 workspace 未启用也能保存（只是暂时不产生效果）。
 - claim 读取走 read-policy；PATCH / DELETE / feedback 只允许调用方自己的 scope，
   跨 workspace 读到的 dev claim 是只读的。
 - 设置端点按 family 校验字段：`profileMode` 仅 life，`lifeReadable` 仅 dev。
