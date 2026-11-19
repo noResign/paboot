@@ -12,7 +12,12 @@ import {
 } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
 import { DirectoryPickerDialog } from './DirectoryPickerDialog';
-import type { AgentDto, ProductPermissionMode, WorkspaceDto } from '../../../../shared/contract';
+import type {
+  AgentDto,
+  ProductPermissionMode,
+  WorkspaceDto,
+  WorkspaceMemoryDto,
+} from '../../../../shared/contract';
 
 type PickerState = { mode: 'create' | 'add-dir'; workspaceId?: string };
 
@@ -44,6 +49,11 @@ export function WorkspaceSection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentDto[]>([]);
+  /** Workspace memory master switch, keyed by workspace id (see the `memory` row). */
+  const [memory, setMemory] = useState<Record<string, WorkspaceMemoryDto>>({});
+  /** True once the batch below answered — a missing entry then means "unavailable". */
+  const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [memoryBusyId, setMemoryBusyId] = useState<string | null>(null);
 
   const workspacePaths = useMemo(() => scope.workspaces.map((item) => item.path), [scope.workspaces]);
   // The life workspace is reset-only, so it never gets an editable card here.
@@ -65,6 +75,47 @@ export function WorkspaceSection() {
       live = false;
     };
   }, [connectionId]);
+
+  // The memory master switch lives here as well as in the memory panel
+  // (`docs/ui/desktop/pages/memory.md`): enabling memory is a workspace-level
+  // decision, and hunting for it inside a panel is how it reads as "missing".
+  // One GET per managed workspace — the answer is a handful of flags.
+  const managedIds = useMemo(
+    () => managedWorkspaces.map((workspace) => workspace.id).join(','),
+    [managedWorkspaces],
+  );
+  useEffect(() => {
+    if (!connectionId || !managedIds) return;
+    let live = true;
+    void Promise.all(
+      managedIds.split(',').map((id) => api.workspaceMemory(id).then((res) => [id, res] as const)),
+    ).then((results) => {
+      if (!live) return;
+      const next: Record<string, WorkspaceMemoryDto> = {};
+      for (const [id, res] of results) {
+        if (res.ok) next[id] = res.data;
+      }
+      setMemory(next);
+      setMemoryLoaded(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [connectionId, managedIds]);
+
+  /** Toggle the workspace's memory master switch; the panel reads the same endpoint. */
+  async function toggleMemory(workspace: WorkspaceDto, enabled: boolean): Promise<void> {
+    setMemoryBusyId(workspace.id);
+    const res = await api.updateWorkspaceMemory(workspace.id, { enabled });
+    setMemoryBusyId(null);
+    if (!res.ok) {
+      const data = res.data as { error?: string; message?: string };
+      setNotice(data?.message ?? data?.error ?? `保存记忆设置失败（HTTP ${res.status}）`);
+      return;
+    }
+    setMemory((current) => ({ ...current, [workspace.id]: res.data }));
+    setNotice(enabled ? '已启用工作区记忆' : '已关闭工作区记忆');
+  }
 
   /** Runs a mutation, routing its failure (or a success line) into the banner. */
   async function run(id: string, action: () => Promise<WorkspaceMutation>, success: string): Promise<void> {
@@ -229,6 +280,29 @@ export function WorkspaceSection() {
             ))}
 
             <div className="ws-card-footer">
+              <div className="ws-memory">
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={memory[workspace.id]?.enabled === true}
+                    disabled={memoryBusyId === workspace.id || !memory[workspace.id]}
+                    onChange={(event) => void toggleMemory(workspace, event.target.checked)}
+                  />
+                  <span>工作区记忆</span>
+                </label>
+                <span className="ws-memory-hint">
+                  {!memory[workspace.id]
+                    ? memoryLoaded
+                      ? '记忆设置不可用'
+                      : '读取中…'
+                    : memory[workspace.id]!.enabled
+                      ? memory[workspace.id]!.injectionEnabled
+                        ? '已启用：捕获并注入到新会话'
+                        : '已启用：只记录，不注入'
+                      : '默认关闭；开启后捕获整理，并注入到新会话'}
+                </span>
+              </div>
+
               <div className="ws-defaults">
                 <div className="ws-defaults-head">
                   <span>新会话默认</span>

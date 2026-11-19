@@ -168,6 +168,10 @@ fun MemoryScreen(
     var query by remember { mutableStateOf("") }
     var collapsed by remember { mutableStateOf(setOf<String>()) }
 
+    // 关闭记忆后仍可查看与忘记（清理不该被开关挡住），改正 / 反馈这类写入在服务端会
+    // 返回 memory_not_enabled，这里同步置灰，避免点了才报错。
+    val writesEnabled = (state as? MemoryUiState.Content)?.settings?.enabled != false
+
     LaunchedEffect(workspaceId) { viewModel.load(workspaceId) }
     LaunchedEffect(message) {
         if (message != null) {
@@ -237,7 +241,7 @@ fun MemoryScreen(
                     if (current.settings?.enabled == false) {
                         item(key = "disabled-hint") {
                             Text(
-                                "记忆未启用；请在桌面端打开这个工作区的记忆。",
+                                "记忆未启用：不再捕获与注入，已有记忆仍可查看和忘记；改正等写入需先在桌面端启用。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -323,6 +327,7 @@ fun MemoryScreen(
         ) {
             MemoryDetail(
                 claim = claim,
+                writesEnabled = writesEnabled,
                 onEdit = {
                     selected = null
                     editing = claim
@@ -1056,6 +1061,8 @@ private fun EmptyState(icon: ImageVector, title: String, hint: String) {
 @Composable
 private fun MemoryDetail(
     claim: MemoryClaimDto,
+    /** 记忆关闭时只保留「忘记」：查看与清理始终可用。 */
+    writesEnabled: Boolean,
     onEdit: () -> Unit,
     onForget: () -> Unit,
     onFeedback: (String) -> Unit,
@@ -1201,6 +1208,7 @@ private fun MemoryDetail(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button(
                 onClick = onEdit,
+                enabled = writesEnabled && !busy,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
             ) {
@@ -1237,7 +1245,7 @@ private fun MemoryDetail(
                 ).forEach { (action, label) ->
                     OutlinedButton(
                         onClick = { onFeedback(action) },
-                        enabled = !busy,
+                        enabled = !busy && writesEnabled,
                         shape = RoundedCornerShape(12.dp),
                     ) {
                         Text(label, style = MaterialTheme.typography.labelMedium)
