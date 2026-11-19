@@ -74,3 +74,47 @@ describe('RunStreamer command idempotency', () => {
     expect(events.some((e) => e.kind === 'done' && e.outcome === 'giveup')).toBe(false);
   });
 });
+
+describe('RunStreamer chat body', () => {
+  function streamer(body: unknown[]) {
+    const client = {
+      open: async (req: { path: string; body?: unknown }) => {
+        body.push(req.body);
+        return sse(frame('r-1', 1, { type: 'status', label: 'succeeded', terminal: true }));
+      },
+    } as unknown as StreamerDeps['client'];
+    const deps: StreamerDeps = {
+      client,
+      emit: () => {},
+      probeRunActive: async () => false,
+      fetchEvents: async () => [],
+      now: () => 0,
+      random: () => 0,
+      sleep: async () => {},
+      finished: () => {},
+    };
+    return new RunStreamer('s1', deps);
+  }
+
+  const base: ChatStreamSpec = {
+    kind: 'chat',
+    streamId: 's1',
+    connectionId: 'c1',
+    sessionId: null,
+    prompt: 'hi',
+    commandId: 'cmd-1',
+  };
+
+  it('carries a model picked before the first message', async () => {
+    const bodies: unknown[] = [];
+    await streamer(bodies).start({ ...base, model: 'p:m', modelParameters: { reasoningEffort: 'high' } });
+    expect(bodies[0]).toMatchObject({ model: 'p:m', modelParameters: { reasoningEffort: 'high' } });
+  });
+
+  it('omits the model fields when nothing was picked', async () => {
+    const bodies: unknown[] = [];
+    await streamer(bodies).start(base);
+    expect(bodies[0]).not.toHaveProperty('model');
+    expect(bodies[0]).not.toHaveProperty('modelParameters');
+  });
+});
