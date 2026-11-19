@@ -133,3 +133,135 @@ describe('finished run metadata', () => {
     expect(useChat.getState().byKey[key]).toBe(newer);
   });
 });
+
+describe('session watch hints for a run already on screen', () => {
+  // The daemon publishes `run_started` / `run_finished` for every run, including
+  // the one this client is streaming. The terminal hint can land after `done`
+  // cleared `streamId` and before the refetched `runs` list arrives, which is
+  // exactly when "is it in `runs`?" answers "no" — and the prompt got appended a
+  // second time, duplicating the user bubble and replaying the whole reply.
+  //
+  // The condition is the transcript itself: a rendered run has a user message
+  // carrying its id (stamped from the first streamed frame, and by the rebuild).
+  it('does not append a finished run that this client streamed itself', () => {
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { watch: key },
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's',
+          // The user message carries the run id, exactly as `reduceFrames` stamps it.
+          messages: [{ kind: 'user', id: 'u', text: 'hello', runId: 'r' }],
+          // `done` already closed the stream; `runs` is still stale.
+          streamId: null,
+          sessionStreamId: 'watch',
+          runs: [],
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'watch',
+      kind: 'session',
+      event: {
+        type: 'run_finished',
+        sessionId: 's',
+        run: { id: 'r', prompt: 'hello', startedAt: 1, attachmentIds: [], status: 'succeeded' },
+      },
+    } as never);
+
+    expect(useChat.getState().byKey[key]!.messages).toEqual([
+      { kind: 'user', id: 'u', text: 'hello', runId: 'r' },
+    ]);
+  });
+
+  it('still appends a run started on another device', () => {
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { watch: key },
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's',
+          streamId: null,
+          sessionStreamId: 'watch',
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'watch',
+      kind: 'session',
+      event: {
+        type: 'run_started',
+        sessionId: 's',
+        run: { id: 'other', prompt: 'from phone', startedAt: 1, attachmentIds: [], status: 'running' },
+      },
+    } as never);
+
+    const messages = useChat.getState().byKey[key]!.messages;
+    expect(messages[0]).toMatchObject({ kind: 'user', text: 'from phone', runId: 'other' });
+  });
+
+  // Reopening a session empties `messages` until the rebuild lands, so a hint in
+  // that window has nothing to check against and would append a bubble the
+  // rebuild immediately re-orders.
+  it('ignores hints while history is loading', () => {
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { watch: key },
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's',
+          historyLoading: true,
+          streamId: null,
+          sessionStreamId: 'watch',
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'watch',
+      kind: 'session',
+      event: {
+        type: 'run_finished',
+        sessionId: 's',
+        run: { id: 'r', prompt: 'hello', startedAt: 1, attachmentIds: [], status: 'succeeded' },
+      },
+    } as never);
+
+    expect(useChat.getState().byKey[key]!.messages).toEqual([]);
+  });
+
+  // After a reload the transcript is the only memory: rebuilt history stamps each
+  // user message with its run id, so "already on screen" still answers true.
+  it('does not re-append a prompt that is already on screen', () => {
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { watch: key },
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's',
+          streamId: null,
+          sessionStreamId: 'watch',
+          messages: [{ kind: 'user', id: 'u', text: 'hello', runId: 'r' }],
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'watch',
+      kind: 'session',
+      event: {
+        type: 'run_finished',
+        sessionId: 's',
+        run: { id: 'r', prompt: 'hello', startedAt: 1, attachmentIds: [], status: 'succeeded' },
+      },
+    } as never);
+
+    expect(useChat.getState().byKey[key]!.messages).toHaveLength(1);
+  });
+});

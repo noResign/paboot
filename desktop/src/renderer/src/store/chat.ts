@@ -849,12 +849,29 @@ function applySessionEvent(
     return;
   }
 
-  // run_started / run_finished
-  if (chat.streamId) return;
+  // run_started / run_finished. The daemon publishes these for *every* run,
+  // including the one this client is streaming, so the hint has to be
+  // idempotent rather than "usually skipped".
+  //
+  // Neither of the two cheap guards is reliable on its own: `streamId` is already
+  // null once `done` lands, and `runs` only catches up a round trip later. The one
+  // fact that survives both windows is that a rendered run has a user message
+  // carrying its id — stamped from the first frame we stream, and by
+  // `rebuildHistory` on every reload. So that is the only condition worth
+  // encoding; no parallel bookkeeping to keep in sync.
+  //
+  // While history is loading there are no messages to check against, and the
+  // rebuild that is already in flight contains this run — so stay out of its way.
+  if (chat.streamId || chat.historyLoading) return;
   // The rail shows `running`, which just changed on the server.
   void useSessions.getState().refreshCurrent(chat.connectionId, { silent: true });
-  if (chat.runs.some((run) => run.id === event.run.id)) return;
+  if (isRunRendered(chat, event.run.id)) return;
   appendExternalRun(set, key, chat.connectionId, event.run);
+}
+
+/** Has this run already produced a bubble in the transcript? */
+function isRunRendered(chat: ChatSessionState, runId: string): boolean {
+  return chat.messages.some((message) => message.kind === 'user' && message.runId === runId);
 }
 
 function patchSessionTitle(
