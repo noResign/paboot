@@ -162,8 +162,19 @@ interface MemoryTarget {
  * Resolve `sessionId` / `scope` and apply the workspace switch + read policy.
  * Dev workspaces are readable once enabled; life composes `user` + life +
  * readable dev workspaces. Explicit `scope=user` is operator-level read-only.
+ *
+ * `allowDisabled` is for the endpoints that must keep working after the switch
+ * is turned off — the reads (`GET /api/memory/*`) and `forget`, so an operator
+ * can still audit and purge what was already learned. Everything that *writes*
+ * knowledge (remember / correct / promote / merge / feedback) keeps the gate:
+ * "off" means this workspace stops learning, not that it hides its history.
  */
-function resolveScope(ctx: AppContext, req: Request, res: Response): MemoryTarget | null {
+function resolveScope(
+  ctx: AppContext,
+  req: Request,
+  res: Response,
+  options?: { allowDisabled?: boolean },
+): MemoryTarget | null {
   try {
     const resolved = resolveMemoryScope(
       { sessionId: req.query['sessionId'] ?? req.body?.['sessionId'], scope: req.query['scope'] },
@@ -178,7 +189,7 @@ function resolveScope(ctx: AppContext, req: Request, res: Response): MemoryTarge
       return null;
     }
     const settings = ctx.db.getMemorySettings(workspace.id);
-    if (!isMemoryEnabled(workspace, settings)) {
+    if (!isMemoryEnabled(workspace, settings) && !options?.allowDisabled) {
       res.status(400).json({
         error: 'memory is not enabled for this workspace',
         code: 'memory_not_enabled',
@@ -417,7 +428,7 @@ function internalSearchHits(
 
 export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/memory/brief', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const brief = buildMemoryBrief(ctx.memory!, target.policy, {
       scope: target.scope,
@@ -440,7 +451,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/claims', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const status = req.query['status'] ?? 'active';
     if (!isClaimStatus(status)) {
@@ -453,7 +464,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/claims/:id', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const claim = requireReadableClaim(ctx, req, res, target);
     if (!claim) return;
@@ -491,7 +502,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.delete('/api/memory/claims/:id', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const claim = requireWritableClaim(ctx, req, res, target);
     if (!claim) return;
@@ -525,7 +536,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/duplicates', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const status = typeof req.query['status'] === 'string' ? req.query['status'] : 'pending';
     if (!['pending', 'merged', 'distinct', 'dismissed'].includes(status)) {
@@ -592,7 +603,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/entities', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const status = req.query['status'] ?? 'active';
     if (status !== 'active' && status !== 'merged') {
@@ -690,7 +701,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/disputes', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const disputes = ctx.memory!.listDisputes(target.scope).map(toDisputeDto);
     const dto: MemoryDisputesResponse = { disputes };
@@ -740,7 +751,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/entity-links', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const links = ctx.memory!.listEntityLinks(target.scope).map(toLinkDto);
     const dto: MemoryEntityLinksResponse = { links };
@@ -854,7 +865,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/search', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const query = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
     if (query === '') {
@@ -988,7 +999,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/timeline', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const requestedLimit = Number(req.query['limit'] ?? 50);
     const limit = Number.isInteger(requestedLimit)
@@ -1031,7 +1042,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/loops', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     // D38: `candidate_done` loops are proposed completions awaiting review.
     // They leave `open` so `[未完成]` recall stops showing finished work, but
@@ -1077,7 +1088,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.get('/api/memory/sources/:id', (req, res) => {
-    const target = resolveScope(ctx, req, res);
+    const target = resolveScope(ctx, req, res, { allowDisabled: true });
     if (!target) return;
     const source = ctx.memory!.getSource(req.params['id']!);
     if (
@@ -1165,7 +1176,7 @@ export function registerMemoryRoutes(app: Express, ctx: AppContext): void {
 
   app.get('/api/memory/status', async (req, res) => {
     try {
-      const target = resolveScope(ctx, req, res);
+      const target = resolveScope(ctx, req, res, { allowDisabled: true });
       if (!target) return;
       const extractionModel = configuredMemoryModel(
         (key) => ctx.db.getSetting(key),

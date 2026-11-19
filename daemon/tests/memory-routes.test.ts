@@ -114,15 +114,72 @@ describe('memory routes (M0)', () => {
     expect(body.claims[0]?.evidence).toEqual([]);
   });
 
-  it('requires a scope and rejects a disabled dev workspace', async () => {
-    const { url, db } = await setup();
+  it('requires a scope', async () => {
+    const { url } = await setup();
     const missing = await fetch(`${url}/api/memory/claims`);
     expect(missing.status).toBe(400);
+  });
 
-    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag');
-    const rejected = await fetch(`${url}/api/memory/claims?scope=workspace:${dev!.id}`);
-    expect(rejected.status).toBe(400);
-    expect(((await rejected.json()) as { code: string }).code).toBe('memory_not_enabled');
+  // Turning the switch off stops learning, not history. The panel has to stay
+  // able to show and purge what was already captured — otherwise "off" hides
+  // data that the user can neither inspect nor delete without re-enabling.
+  it('keeps a disabled workspace readable and forgettable, but not writable', async () => {
+    const { url, db, store } = await setup();
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    const claim = claimIn(store, dev.id, null, '用的是 Node 24');
+
+    const listed = await fetch(`${url}/api/memory/claims?scope=workspace:${dev.id}`);
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as { claims: { id: string }[] };
+    expect(body.claims.map((item) => item.id)).toEqual([claim.id]);
+
+    // Correcting is a write and stays refused — "off" means nothing new is learned.
+    const corrected = await fetch(
+      `${url}/api/memory/claims/${claim.id}?scope=workspace:${dev.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ summary: '用的是 Node 22' }),
+      },
+    );
+    expect(corrected.status).toBe(400);
+    expect(((await corrected.json()) as { code: string }).code).toBe('memory_not_enabled');
+
+    // Forget still works: cleanup must not require turning capture back on.
+    const forgotten = await fetch(
+      `${url}/api/memory/claims/${claim.id}?scope=workspace:${dev.id}`,
+      { method: 'DELETE' },
+    );
+    expect(forgotten.status).toBe(200);
+    expect(store.getClaim(claim.id)).toBeUndefined();
+  });
+
+  // The panel is an operator view; the agent is not. A closed workspace must not
+  // hand memories to a run in it, or "off" would still leak into prompts.
+  it('keeps the internal run-scoped reads closed while memory is off', async () => {
+    const { url, db, store } = await setup();
+    const dev = db.seedDefaultWorkspace(tmpDir('repo'), 'ask', 'flag')!;
+    claimIn(store, dev.id, null, '用的是 Node 24');
+    const session = db.createSession({
+      id: 's-dev',
+      runtime: 'claude',
+      workspaceId: dev.id,
+      permissionMode: 'ask',
+      cwd: dev.path,
+    });
+    db.createRun({
+      id: 'run-dev',
+      sessionId: session.id,
+      runtime: 'claude',
+      model: null,
+      prompt: 'x',
+      status: 'running',
+      permissionMode: 'ask',
+    });
+
+    const searched = await fetch(`${url}/api/internal/memory/search?runId=run-dev&q=Node`);
+    expect(searched.status).toBe(400);
+    expect(((await searched.json()) as { code: string }).code).toBe('memory_not_enabled');
   });
 
   it('exposes effective settings and validates family-specific fields', async () => {

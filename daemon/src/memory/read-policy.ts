@@ -28,13 +28,25 @@ export interface ReadPolicyInput {
  * D7 / D27 read composition:
  *   dev  → only its own workspace;
  *   life → `user` + life workspace + every `life_readable=1` dev workspace.
- * A disabled workspace contributes nothing. Cross-workspace dev claims are
- * normal-only; private never crosses and secret never leaves the store.
+ * A disabled workspace contributes nothing *to others* and consumes nothing
+ * shared, but its own history stays readable: turning the switch off stops
+ * capture and injection, it does not hide (or silently orphan) what was already
+ * learned — the panel has to be able to show, correct and forget it.
+ * Cross-workspace dev claims are normal-only; private never crosses and secret
+ * never leaves the store.
  */
 export function resolveReadPolicy(input: ReadPolicyInput): MemoryReadPolicy {
   const { workspace } = input;
   const own = effectiveMemorySettings(workspace, input.getSettings(workspace.id));
-  if (!own.enabled) return { scopes: [], profileMode: 'off', includesUser: false };
+  if (!own.enabled) {
+    // Own scope only: no `user` profile, no readable dev workspaces — a closed
+    // workspace must not pull in anything it did not already own.
+    return {
+      scopes: [{ scope: `workspace:${workspace.id}`, includePrivate: true }],
+      profileMode: 'off',
+      includesUser: false,
+    };
+  }
 
   if (workspace.family === 'dev') {
     return {

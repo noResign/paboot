@@ -170,6 +170,22 @@ describe('memory read policy', () => {
     expect(policy.includesUser).toBe(false);
   });
 
+  it('keeps a disabled workspace readable, but only through its own scope', () => {
+    const { db, life } = setup();
+    db.putMemorySettings(life.id, { enabled: false, injectionEnabled: true, providerOverride: null });
+    const workspace = db.getWorkspace(life.id)!;
+    const policy = resolveReadPolicy({
+      workspace,
+      workspaces: db.listWorkspaces(),
+      getSettings: (id) => db.getMemorySettings(id),
+    });
+    // Its own history stays reviewable (the panel can show and forget it), but a
+    // closed workspace must not pull in the shared profile or other workspaces.
+    expect(policy.scopes).toEqual([{ scope: `workspace:${life.id}`, includePrivate: true }]);
+    expect(policy.includesUser).toBe(false);
+    expect(policy.profileMode).toBe('off');
+  });
+
   it('lets life read user + life + only readable/enabled dev workspaces', () => {
     const { db, life, dev } = setup();
     const readable = db.createWorkspace({
