@@ -4,8 +4,10 @@ import { api } from '../../ipc/client';
 import { useSessions } from '../../store/sessions';
 import { formatContextUsage, contextPercent } from '../../../../shared/format';
 import {
+  PERMISSION_MODE_LABEL,
   clampPermissionMode,
   permissionModeLabel,
+  permissionModeOptions,
 } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
@@ -96,10 +98,15 @@ export function ChatView({
   // This component outlives the session switch (it reads the active chat from
   // the store), so local rollback state would otherwise follow the user to the
   // next session. A confirmation/notice belongs to the session it was raised in.
+  // The same goes for an open rename box: leaving it set would put the previous
+  // session's title into an input over the new one — including a session that
+  // has no title to rename yet.
   useEffect(() => {
     setRollback(null);
     setRollbackBusy(false);
     setRollbackNotice(null);
+    setRenaming(false);
+    setDraft('');
   }, [chat?.key]);
 
   // The success notice is informational — it should not sit above the
@@ -125,16 +132,19 @@ export function ChatView({
 
   /** Secondary session actions, so the header keeps two or three visible controls. */
   function overflowMenu(current: ChatSessionState): MenuItem[] {
-    const items: MenuItem[] = [
-      {
+    const items: MenuItem[] = [];
+    // Renaming writes `PATCH /api/sessions/:id`; a session that does not exist
+    // yet takes its title from the first prompt instead.
+    if (current.sessionId) {
+      items.push({
         id: 'rename',
         label: '重命名会话',
         run: () => {
           setDraft(current.title ?? '');
           setRenaming(true);
         },
-      },
-    ];
+      });
+    }
     if (current.sessionId) {
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
       const memoryMode = current.memoryMode ?? 'normal';
@@ -165,9 +175,35 @@ export function ChatView({
           run: () => onOpenTasks(current.sessionId as string, current.title ?? null),
         });
       }
+    } else if (current.pendingNew) {
+      // Same menu shape as a real session, so the header does not grow a set of
+      // items the moment the first message lands. All three write `sessions.*`,
+      // which has no row to write to yet — hence disabled, not hidden.
+      items.push(
+        { id: 'permissions', label: '会话权限（需先发消息）', disabled: true, run: () => {} },
+        { id: 'memory', label: '记忆（需先发消息）', disabled: true, run: () => {} },
+        { id: 'tasks', label: '定时任务（需先发消息）', disabled: true, run: () => {} },
+      );
     }
     items.push({ id: 'collapse-chat', label: '收起会话列', run: onCollapseChat });
     return items;
+  }
+
+  /** The permission mode pill: a real session opens ⑩, a pending one edits the creation parameter. */
+  function openPermissionControl(event: React.MouseEvent, current: ChatSessionState): void {
+    if (current.sessionId) {
+      setShowPerms(true);
+      return;
+    }
+    openMenu(
+      event,
+      permissionModeOptions(current.runtime, bypassAllowed).map((option) => ({
+        id: `mode-${option.mode}`,
+        label: PERMISSION_MODE_LABEL[option.mode],
+        disabled: current.permissionMode === option.mode,
+        run: () => setPermissionMode(option.mode),
+      })),
+    );
   }
 
   async function commitRename(): Promise<void> {
@@ -212,7 +248,13 @@ export function ChatView({
     <div className="chat">
       <div className="chat-head">
         <div className="chat-head-main">
-          {renaming ? (
+          {/*
+            A session that does not exist yet has no title to edit — the daemon
+            names it after the first prompt. The `sessionId` guard is structural,
+            not just defensive: `renaming` is component-local and must never be
+            able to put a text box where the "新会话" label belongs.
+          */}
+          {renaming && chat.sessionId ? (
             <input
               className="title-input"
               autoFocus
@@ -226,9 +268,16 @@ export function ChatView({
             />
           ) : (
             <div
-              className="chat-title"
-              title={`${chat.title ?? '未命名会话'}（点击重命名）`}
+              className={`chat-title${chat.sessionId ? '' : ' no-rename'}`}
+              title={
+                chat.sessionId
+                  ? `${chat.title ?? '未命名会话'}（点击重命名）`
+                  : '标题由第一条消息生成'
+              }
               onClick={() => {
+                // The daemon names a new session after its first prompt; there
+                // is nothing to rename until then.
+                if (!chat.sessionId) return;
                 setDraft(chat.title ?? '');
                 setRenaming(true);
               }}
@@ -249,7 +298,15 @@ export function ChatView({
               <SessionEndsChips sessionId={chat.sessionId} workspaceId={workspaceId} />
             )}
             {chat.permissionMode && (
-              <button className="badge-btn" title="会话权限设置" onClick={() => setShowPerms(true)}>
+              <button
+                className="badge-btn"
+                title={
+                  chat.sessionId
+                    ? '会话权限设置'
+                    : '首条消息之前切换权限模式（随这条消息一起提交）'
+                }
+                onClick={(event) => openPermissionControl(event, chat)}
+              >
                 {permissionModeLabel(
                   clampPermissionMode(chat.permissionMode as ProductPermissionMode, bypassAllowed),
                 )}
@@ -269,7 +326,7 @@ export function ChatView({
               文件
             </button>
           )}
-          {chat.contextUsage && <ContextRing usage={chat.contextUsage} />}
+          {chat.contextUsage ? <ContextRing usage={chat.contextUsage} /> : <ContextRingPlaceholder />}
           <RunStatus chat={chat} />
           <button
             className="icon-btn"
@@ -465,6 +522,22 @@ function ContextRing({ usage }: { usage: NonNullable<ChatSessionState['contextUs
           strokeDashoffset={circumference * (1 - percent / 100)}
           transform="rotate(-90 12 12)"
         />
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * No run has reported usage yet — a session that has not sent its first message,
+ * or a runtime that never sends `usage`. Draws the same empty track a 0% ring
+ * would: it holds the ring's place so the header does not shift when real data
+ * arrives, without inventing a number.
+ */
+function ContextRingPlaceholder() {
+  return (
+    <span className="ctx-ring" title="还没有上下文用量（发出第一条消息后显示）">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r={9} fill="none" stroke="var(--border)" strokeWidth="2.5" />
       </svg>
     </span>
   );

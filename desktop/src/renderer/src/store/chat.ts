@@ -410,7 +410,16 @@ export const useChat = create<ChatStore>((set, get) => ({
   setPermissionMode(mode) {
     const key = get().activeKey;
     if (!key) return;
-    set((state) => ({ byKey: patch(state, key, (chat) => ({ ...chat, permissionMode: mode })) }));
+    set((state) => ({
+      byKey: patch(state, key, (chat) => ({
+        ...chat,
+        permissionMode: mode,
+        // Before the session exists the mode is a creation parameter: `send`
+        // reads it from `pendingNew`, so updating only the visible field would
+        // show a mode the first run does not actually use.
+        pendingNew: chat.pendingNew ? { ...chat.pendingNew, permissionMode: mode } : null,
+      })),
+    }));
   },
 
   clearError() {
