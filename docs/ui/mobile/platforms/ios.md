@@ -142,7 +142,7 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 5. **Markdown**：`swift-markdown` 0.7.x（0.8+ 要求 Swift 6.2）+ 自绘 UIKit block view；
    代码块 / 表格是原生视图；语法高亮是轻量 token lexer，不做语义分析；链接仅样式、不可点击。
 6. **语音输入**：按住说话 → 本地录 16 kHz 单声道 WAV → 客户端直连 DeepSeek ASR，
-   识别结果只填入输入框；API Key 存 Keychain（设置页填写），不经过 daemon。
+   识别结果只填入输入框；API Key 存 Keychain（在「模型 Provider」页填写），不经过 daemon。
 
 ## 9. 实现顺序与提交规范
 

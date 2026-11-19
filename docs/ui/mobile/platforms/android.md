@@ -130,7 +130,7 @@ connect（门禁，startDestination）
 | 屏幕 | 状态 |
 |---|---|
 | 会话列表 | 按 cwd 分组的逻辑**下沉在 `SessionListViewModel`**，产出 `SessionListModel`：根目录会话平铺置顶 + 子目录分组，子目录头显示相对路径、默认折叠 |
-| 聊天 | 流式文字 / 思考块 / 工具卡 / 用量条；输入区支持**语音输入**（按住说话 → 客户端直连 DeepSeek ASR → 填入输入框，不自动发送；需在设置页配置 API Key） |
+| 聊天 | 流式文字 / 思考块 / 工具卡 / 用量条；输入区支持**语音输入**（按住说话 → 客户端直连 DeepSeek ASR → 填入输入框，不自动发送；需在「模型 Provider」页配置 API Key） |
 | 文件 | 目录树 + 文本与媒体预览（详见 `docs/ui/mobile/pages/files.md`） |
 | 连接 / 新建会话 / 设置 | 已对齐 token |
 

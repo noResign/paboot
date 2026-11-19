@@ -78,10 +78,7 @@ final class ProviderManagementViewController: UIViewController {
             let spinner = UIActivityIndicatorView(style: .medium)
             spinner.startAnimating()
             contentStack.addArrangedSubview(spinner)
-            return
-        }
-
-        if state.providers.isEmpty {
+        } else if state.providers.isEmpty {
             let empty = UILabel()
             empty.text = "还没有 Provider，点右上角「+ 新增」添加一个。"
             empty.font = Typography.body
@@ -90,12 +87,126 @@ final class ProviderManagementViewController: UIViewController {
             empty.numberOfLines = 0
             empty.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
             contentStack.addArrangedSubview(empty)
-            return
+        } else {
+            for provider in state.providers {
+                contentStack.addArrangedSubview(makeProviderCard(provider, busy: state.busy))
+            }
         }
 
-        for provider in state.providers {
-            contentStack.addArrangedSubview(makeProviderCard(provider, busy: state.busy))
+        // 语音识别：唯一不走 daemon 的一项 —— Key 存本机 Keychain，识别请求由
+        // 手机直接发往 DeepSeek。放在 provider 列表之后单独说明，且不受 provider
+        // 加载失败影响（没有 provider 也能配语音）。
+        contentStack.addArrangedSubview(makeSectionTitle("语音识别"))
+        contentStack.addArrangedSubview(makeAsrCard())
+    }
+
+    /// 小标题：`SettingsSectionTitle` 在设置页里是 private，这里自带一个同等样式。
+    private func makeSectionTitle(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = Typography.cardTitle
+        label.textColor = Theme.Colors.textPrimary
+        return label
+    }
+
+    private func makeAsrCard() -> UIView {
+        let card = UIView()
+        card.backgroundColor = Theme.Colors.surface
+        card.layer.cornerRadius = Radius.card
+        card.layer.borderWidth = 1
+        card.layer.borderColor = Theme.Colors.border.resolvedColor(with: traitCollection).cgColor
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Spacing.xs),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Spacing.md),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Spacing.md),
+        ])
+
+        let configured = AsrKeyStore.isConfigured
+
+        let header = UIStackView()
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = Spacing.xs
+        let title = UILabel()
+        title.text = "DeepSeek"
+        title.font = Typography.cardTitle
+        header.addArrangedSubview(title)
+        header.addArrangedSubview(UIView())
+        let status = UILabel()
+        status.text = configured ? "Key 已配置" : "未配置 Key"
+        status.font = Typography.caption
+        status.textColor = configured ? Theme.Colors.primary : Theme.Colors.textSecondary
+        header.addArrangedSubview(status)
+        stack.addArrangedSubview(header)
+
+        let hint = UILabel()
+        hint.text = "按住说话时的识别服务。Key 只保存在本机，识别请求由手机直接发往 DeepSeek，不经过 daemon。"
+        hint.font = Typography.caption
+        hint.textColor = Theme.Colors.textSecondary
+        hint.numberOfLines = 0
+        stack.addArrangedSubview(hint)
+
+        let actions = UIStackView()
+        actions.axis = .horizontal
+        actions.spacing = Spacing.sm
+        let edit = UIButton(type: .system)
+        edit.setTitle(configured ? "更换 API Key" : "设置 API Key", for: .normal)
+        edit.titleLabel?.font = Typography.body
+        edit.addAction(UIAction { [weak self] _ in self?.presentAsrKeyEditor() }, for: .touchUpInside)
+        actions.addArrangedSubview(edit)
+        if configured {
+            let clear = UIButton(type: .system)
+            clear.setTitle("清除", for: .normal)
+            clear.titleLabel?.font = Typography.body
+            clear.tintColor = Theme.Colors.error
+            clear.addAction(
+                UIAction { [weak self] _ in
+                    AsrKeyStore.set(nil)
+                    self?.rerender()
+                },
+                for: .touchUpInside
+            )
+            actions.addArrangedSubview(clear)
         }
+        actions.addArrangedSubview(UIView())
+        stack.addArrangedSubview(actions)
+        return card
+    }
+
+    private func presentAsrKeyEditor() {
+        let alert = UIAlertController(
+            title: "DeepSeek API Key",
+            message: "仅用于语音识别，保存在本机 Keychain。",
+            preferredStyle: .alert
+        )
+        alert.addTextField { [weak self] field in
+            field.placeholder = "sk-…"
+            field.isSecureTextEntry = true
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            // 清除按钮与 rightView 抢同一个位置：编辑时清除按钮会盖住眼睛，
+            // 而编辑时正是要看明文的时候，所以这里不要清除按钮。
+            field.clearButtonMode = .never
+            self?.attachRevealButton(to: field, label: "API Key")
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self, weak alert] _ in
+            AsrKeyStore.set(alert?.textFields?.first?.text)
+            self?.rerender()
+        })
+        present(alert, animated: true)
+    }
+
+    /// 重画整页：Key 是本机状态，不经过 viewModel。
+    private func rerender() {
+        render(viewModel.state)
     }
 
     private func makeProviderCard(_ provider: ProviderDto, busy: Bool) -> UIView {
@@ -429,6 +540,38 @@ private final class ProviderEditorViewController: UIViewController {
         present(alert, animated: true)
     }
 
+    /// 在安全输入框右侧挂一枚眼睛：默认掩码，点一下显示明文，便于核对粘贴的 Key。
+    /// `UIAlertController` 里的输入框也能用——它就是个普通 `UITextField`，靠 `rightView` 放按钮。
+    private func attachRevealButton(to field: UITextField, label: String) {
+        let eye = UIButton(type: .system)
+        eye.tintColor = Theme.Colors.textSecondary
+        eye.setImage(UIImage(systemName: "eye"), for: .normal)
+        eye.frame = CGRect(x: 0, y: 0, width: 30, height: 24)
+        eye.accessibilityLabel = "显示\(label)"
+        eye.addAction(
+            UIAction { [weak field, weak eye] _ in
+                guard let field else { return }
+                let reveal = field.isSecureTextEntry
+                // 切换 secure 会让已输入内容在某些系统版本上被清掉，先存后写回。
+                let existing = field.text ?? ""
+                field.isSecureTextEntry = !reveal
+                field.text = ""
+                field.insertText(existing)
+                eye?.setImage(
+                    UIImage(systemName: reveal ? "eye.slash" : "eye"),
+                    for: .normal
+                )
+                eye?.accessibilityLabel = "\(reveal ? "隐藏" : "显示")\(label)"
+            },
+            for: .touchUpInside
+        )
+        // 包一层：`rightView` 贴着边框，留出与正文相同的边距。
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 38, height: 24))
+        container.addSubview(eye)
+        field.rightView = container
+        field.rightViewMode = .always
+    }
+
     private func configureField(_ field: UITextField, placeholder: String, secure: Bool = false) {
         field.placeholder = placeholder
         field.isSecureTextEntry = secure
@@ -441,6 +584,9 @@ private final class ProviderEditorViewController: UIViewController {
         field.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
         field.leftViewMode = .always
         field.heightAnchor.constraint(greaterThanOrEqualToConstant: 46).isActive = true
+        if secure {
+            attachRevealButton(to: field, label: "API Key")
+        }
     }
 
     private func sectionLabel(_ text: String) -> UILabel {

@@ -217,7 +217,7 @@ final class ChatViewController: UIViewController {
         }
         let alert = UIAlertController(
             title: "语音识别未配置",
-            message: "请先在设置页填写 DeepSeek API Key。",
+            message: "请先在「模型 Provider」页填写 DeepSeek API Key。",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))

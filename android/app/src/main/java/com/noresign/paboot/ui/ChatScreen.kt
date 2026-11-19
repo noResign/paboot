@@ -237,7 +237,7 @@ fun ChatScreen(
         if (!SecretStore.hasAsrApiKey()) {
             Toast.makeText(
                 context,
-                "请先在设置页配置 DeepSeek API Key",
+                "请先在「模型 Provider」页配置 DeepSeek API Key",
                 Toast.LENGTH_SHORT,
             ).show()
             return

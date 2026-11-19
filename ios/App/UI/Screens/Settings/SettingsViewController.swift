@@ -31,9 +31,6 @@ final class SettingsViewController: UIViewController {
     private let currentWorkspaceRow = SettingsInfoRow(title: "当前工作区", monospaced: true)
     private let manageWorkspacesButton = UIButton(type: .system)
     private let manageProvidersButton = UIButton(type: .system)
-    private let asrKeyRow = SettingsInfoRow(title: "DeepSeek API Key")
-    private let setAsrKeyButton = UIButton(type: .system)
-    private let clearAsrKeyButton = UIButton(type: .system)
 
     private let permissionErrorLabel = UILabel()
     private var permissionRows: [PermissionModeRow] = []
@@ -259,62 +256,18 @@ final class SettingsViewController: UIViewController {
         contentStack.addArrangedSubview(manageProvidersButton)
     }
 
+    /// 语音识别的 Key 在「模型 Provider」页填写：配模型时它属于同一件事，
+    /// 两处各配一次只会让用户怀疑哪个生效。
     private func configureVoiceSection() {
         contentStack.addArrangedSubview(SettingsSectionTitle("语音识别"))
 
         let hint = UILabel()
-        hint.text = "语音输入由手机直接调用 DeepSeek 识别，不经过 daemon；Key 只保存在本机 Keychain。"
+        hint.text = "语音输入由手机直接调用 DeepSeek 识别，不经过 daemon；"
+            + "Key 在「模型 Provider」页填写，只保存在本机 Keychain。"
         hint.font = Typography.caption
         hint.textColor = Theme.Colors.textSecondary
         hint.numberOfLines = 0
         contentStack.addArrangedSubview(hint)
-        contentStack.addArrangedSubview(asrKeyRow)
-
-        configureOutlinedActionButton(setAsrKeyButton, title: "设置 API Key")
-        setAsrKeyButton.addAction(
-            UIAction { [weak self] _ in self?.presentAsrKeyEditor() },
-            for: .touchUpInside
-        )
-        contentStack.addArrangedSubview(setAsrKeyButton)
-
-        configureOutlinedActionButton(clearAsrKeyButton, title: "清除 API Key")
-        clearAsrKeyButton.addAction(
-            UIAction { [weak self] _ in
-                AsrKeyStore.set(nil)
-                self?.renderAsrKey()
-            },
-            for: .touchUpInside
-        )
-        contentStack.addArrangedSubview(clearAsrKeyButton)
-        renderAsrKey()
-    }
-
-    private func renderAsrKey() {
-        let configured = AsrKeyStore.isConfigured
-        asrKeyRow.setValue(configured ? "已配置" : "未配置")
-        setAsrKeyButton.configuration?.title = configured ? "更换 API Key" : "设置 API Key"
-        clearAsrKeyButton.isHidden = !configured
-    }
-
-    private func presentAsrKeyEditor() {
-        let alert = UIAlertController(
-            title: "DeepSeek API Key",
-            message: "仅用于语音识别，保存在本机 Keychain。",
-            preferredStyle: .alert
-        )
-        alert.addTextField { field in
-            field.placeholder = "sk-…"
-            field.isSecureTextEntry = true
-            field.autocapitalizationType = .none
-            field.autocorrectionType = .no
-            field.clearButtonMode = .whileEditing
-        }
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self, weak alert] _ in
-            AsrKeyStore.set(alert?.textFields?.first?.text)
-            self?.renderAsrKey()
-        })
-        present(alert, animated: true)
     }
 
     private func configurePermissionSection() {

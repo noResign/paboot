@@ -11,9 +11,9 @@ enum AsrServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "语音识别未配置，请到设置页填写 DeepSeek API Key"
+            return "语音识别未配置，请到「模型 Provider」页填写 DeepSeek API Key"
         case .invalidKey:
-            return "DeepSeek API Key 无效，请到设置页检查"
+            return "DeepSeek API Key 无效，请到「模型 Provider」页检查"
         case .insufficientBalance:
             return "DeepSeek 账户余额不足"
         case .noSpeech:

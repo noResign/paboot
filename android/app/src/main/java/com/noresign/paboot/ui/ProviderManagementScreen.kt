@@ -19,9 +19,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -49,10 +52,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.noresign.paboot.data.local.SecretStore
 import com.noresign.paboot.network.daemon.dto.ProviderDto
 import com.noresign.paboot.ui.theme.LocalSemanticColors
 import com.noresign.paboot.viewmodel.ProviderDraft
@@ -68,6 +74,13 @@ fun ProviderManagementScreen(
     var editorTarget by remember { mutableStateOf<ProviderDto?>(null) }
     var editorOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ProviderDto?>(null) }
+    // 语音识别的 key 与下面的 provider 不是一回事：它存在本机（SecretStore），由手机直连
+    // DeepSeek，不经过 daemon。放在同一页是因为「配模型」时它们属于同一件事。
+    var asrKeyConfigured by remember { mutableStateOf(SecretStore.hasAsrApiKey()) }
+    var showAsrKeyDialog by remember { mutableStateOf(false) }
+    var asrKeyInput by remember { mutableStateOf("") }
+    // Key 默认掩码；眼睛按钮临时显示明文，方便核对粘贴得对不对。
+    var asrKeyVisible by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -90,73 +103,151 @@ fun ProviderManagementScreen(
             )
         },
     ) { padding ->
-        if (state.loading && state.providers.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Text(
+                    "builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机，不会回传客户端。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            state.error?.let { message ->
                 item {
                     Text(
-                        "builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机，不会回传客户端。",
+                        message,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                }
-                state.error?.let { message ->
-                    item {
-                        Text(
-                            message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-                state.notice?.let { message ->
-                    item {
-                        Text(
-                            message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                if (state.providers.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "还没有 Provider，点右上角「+ 新增」添加一个。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                items(state.providers, key = { it.id }) { provider ->
-                    ProviderCard(
-                        provider = provider,
-                        busy = state.busy,
-                        onEdit = {
-                            editorTarget = provider
-                            editorOpen = true
-                            viewModel.clearMessages()
-                        },
-                        onTest = { viewModel.test(provider) },
-                        onRefresh = { viewModel.refreshModels(provider) },
-                        onDelete = { deleteTarget = provider },
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
+            state.notice?.let { message ->
+                item {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            if (state.loading && state.providers.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { CircularProgressIndicator() }
+                }
+            } else if (state.providers.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "还没有 Provider，点右上角「+ 新增」添加一个。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(state.providers, key = { it.id }) { provider ->
+                ProviderCard(
+                    provider = provider,
+                    busy = state.busy,
+                    onEdit = {
+                        editorTarget = provider
+                        editorOpen = true
+                        viewModel.clearMessages()
+                    },
+                    onTest = { viewModel.test(provider) },
+                    onRefresh = { viewModel.refreshModels(provider) },
+                    onDelete = { deleteTarget = provider },
+                )
+            }
+            // 语音识别：唯一不走 daemon 的一项，所以放在 provider 列表之后单独说明。
+            item {
+                AsrKeySection(
+                    configured = asrKeyConfigured,
+                    onChange = {
+                        asrKeyInput = ""
+                        asrKeyVisible = false
+                        showAsrKeyDialog = true
+                    },
+                    onClear = {
+                        SecretStore.asrApiKey = null
+                        asrKeyConfigured = false
+                    },
+                )
+            }
         }
+    }
+
+    if (showAsrKeyDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAsrKeyDialog = false
+                asrKeyInput = ""
+            },
+            title = { Text("DeepSeek API Key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "仅用于语音识别，保存在本机；识别请求由手机直接发往 DeepSeek。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = asrKeyInput,
+                        onValueChange = { asrKeyInput = it },
+                        singleLine = true,
+                        visualTransformation = if (asrKeyVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        placeholder = { Text("sk-…") },
+                        trailingIcon = {
+                            IconButton(onClick = { asrKeyVisible = !asrKeyVisible }) {
+                                Icon(
+                                    imageVector = if (asrKeyVisible) {
+                                        Icons.Rounded.VisibilityOff
+                                    } else {
+                                        Icons.Rounded.Visibility
+                                    },
+                                    contentDescription = if (asrKeyVisible) "隐藏 API Key" else "显示 API Key",
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = asrKeyInput.isNotBlank(),
+                    onClick = {
+                        SecretStore.asrApiKey = asrKeyInput.trim()
+                        asrKeyConfigured = SecretStore.hasAsrApiKey()
+                        showAsrKeyDialog = false
+                        asrKeyInput = ""
+                    },
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAsrKeyDialog = false
+                        asrKeyInput = ""
+                    },
+                ) { Text("取消") }
+            },
+        )
     }
 
     if (editorOpen) {
@@ -324,6 +415,106 @@ private fun ProviderBadge(text: String, containerColor: Color, contentColor: Col
     }
 }
 
+/**
+ * 语音识别用的 DeepSeek Key。
+ *
+ * 它不属于上面的 provider 目录：provider 的 key 写在 daemon 本机、由 daemon 调用；
+ * 这个 key 留在手机（加密存储），识别请求由手机直接发往 DeepSeek。放在同一页是因为
+ * 「我在配模型」时这也是模型配置的一部分，不再让用户在设置页里分两处找。
+ */
+@Composable
+private fun AsrKeySection(
+    configured: Boolean,
+    onChange: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(top = 6.dp)) {
+        Text(
+            "语音识别",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 13.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "DeepSeek",
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "按住说话时的识别服务",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    AsrKeyStatus(configured)
+                }
+                Text(
+                    "Key 只保存在本机，识别请求由手机直接发往 DeepSeek，不经过 daemon。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(top = 3.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onChange) {
+                        Text(if (configured) "更换 API Key" else "设置 API Key")
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (configured) {
+                        TextButton(onClick = onClear) {
+                            Text("清除", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AsrKeyStatus(configured: Boolean) {
+    val colors = LocalSemanticColors.current
+    val color = if (configured) colors.success else colors.warning
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = if (configured) "Key 已配置" else "未配置 Key",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+        )
+    }
+}
+
 @Composable
 private fun StatChip(text: String) {
     Box(
@@ -352,6 +543,7 @@ private fun ProviderEditorDialog(
     var label by remember(provider) { mutableStateOf(provider?.label ?: "") }
     var baseUrl by remember(provider) { mutableStateOf(provider?.baseUrl ?: "") }
     var apiKey by remember(provider) { mutableStateOf("") }
+    var apiKeyVisible by remember(provider) { mutableStateOf(false) }
     var clearKey by remember(provider) { mutableStateOf(false) }
     var modelIds by remember(provider) {
         mutableStateOf(provider?.models?.joinToString("\n") { it.id } ?: "")
@@ -427,7 +619,24 @@ private fun ProviderEditorDialog(
                         )
                     },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (apiKeyVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                            Icon(
+                                imageVector = if (apiKeyVisible) {
+                                    Icons.Rounded.VisibilityOff
+                                } else {
+                                    Icons.Rounded.Visibility
+                                },
+                                contentDescription = if (apiKeyVisible) "隐藏 API Key" else "显示 API Key",
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (provider?.hasApiKey == true) {
