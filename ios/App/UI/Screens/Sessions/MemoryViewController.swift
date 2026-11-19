@@ -553,7 +553,9 @@ final class MemoryViewController: UIViewController, UITableViewDataSource, UITab
             claim: claim,
             repository: repository,
             workspaceId: workspaceId,
-            workspaceName: workspaceName
+            workspaceName: workspaceName,
+            // 关闭记忆后仍可查看与忘记；改正 / 反馈这类写入由服务端拒绝，这里同步置灰。
+            writesEnabled: settings?.enabled != false
         ) { [weak self] in
             self?.load()
         }
@@ -573,6 +575,8 @@ private final class MemoryDetailViewController: UIViewController {
     private let repository: MemoryRepository
     private let workspaceId: String
     private let workspaceName: String
+    /// False when the workspace's memory switch is off: the daemon refuses writes.
+    private let writesEnabled: Bool
     private var claim: MemoryClaimDto
     private let onChanged: () -> Void
 
@@ -584,12 +588,14 @@ private final class MemoryDetailViewController: UIViewController {
         repository: MemoryRepository,
         workspaceId: String,
         workspaceName: String,
+        writesEnabled: Bool,
         onChanged: @escaping () -> Void
     ) {
         self.claim = claim
         self.repository = repository
         self.workspaceId = workspaceId
         self.workspaceName = workspaceName
+        self.writesEnabled = writesEnabled
         self.onChanged = onChanged
         super.init(nibName: nil, bundle: nil)
     }
@@ -715,7 +721,7 @@ private final class MemoryDetailViewController: UIViewController {
         edit.titleLabel?.font = Typography.body
         // Off means "stop learning": viewing and forgetting stay available, but
         // correcting is a write the daemon refuses (memory_not_enabled).
-        edit.isEnabled = settings?.enabled != false
+        edit.isEnabled = writesEnabled
         edit.addTarget(self, action: #selector(startEdit), for: .touchUpInside)
         let forget = UIButton(type: .system)
         forget.setTitle("忘记", for: .normal)
@@ -743,7 +749,7 @@ private final class MemoryDetailViewController: UIViewController {
             button.setTitle(title, for: .normal)
             button.titleLabel?.font = Typography.body
             button.tintColor = action == "wrong" ? Theme.Colors.error : Theme.Colors.primary
-            button.isEnabled = settings?.enabled != false
+            button.isEnabled = writesEnabled
             button.addAction(
                 UIAction { [weak self] _ in self?.sendFeedback(action) },
                 for: .touchUpInside
