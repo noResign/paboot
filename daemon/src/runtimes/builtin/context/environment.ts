@@ -9,15 +9,14 @@ export class EnvironmentContextSource implements RuntimeContextSource {
   readonly id = 'environment';
 
   collect(context: RuntimeContextCollectContext): RuntimeContextContribution[] {
-    const now = context.now ?? Date.now();
-    const date = new Date(now).toISOString();
+    // No clock here: a per-run timestamp would rewrite the cached system prompt
+    // every turn for information the model can get from a tool or the user.
     const lines = [
       '## Runtime environment',
       `- workspace: ${context.agent.workspace.name} (${context.agent.workspace.id})`,
       `- workspace root: ${context.agent.workspace.root}`,
       `- cwd: ${context.agent.cwd}`,
       `- platform: ${process.platform} ${process.arch}`,
-      `- time (UTC): ${date}`,
     ];
     if (context.agent.extraDirs.length > 0) {
       lines.push(`- additional roots: ${context.agent.extraDirs.join(', ')}`);

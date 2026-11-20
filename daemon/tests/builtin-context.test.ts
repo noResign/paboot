@@ -141,14 +141,20 @@ describe('P3.3 context sources', () => {
   });
 
   it('renders deterministic environment facts', () => {
+    const root = tempDir();
     const { runtime } = makeContext({
-      workspaceRoot: tempDir(),
+      workspaceRoot: root,
       now: Date.UTC(2026, 10, 5, 12, 34, 56),
     });
     const [contribution] = new EnvironmentContextSource().collect(runtime);
     expect(contribution?.source).toBe('environment');
     expect(contribution?.content).toContain('workspace: Acme (ws-1)');
-    expect(contribution?.content).toContain('time (UTC): 2026-11-05T12:34:56.000Z');
+    // No clock: a per-run timestamp would rewrite the cached system prompt.
+    expect(contribution?.content).not.toContain('time (UTC)');
+    const [other] = new EnvironmentContextSource().collect(
+      makeContext({ workspaceRoot: root, now: Date.UTC(2027, 0, 1) }).runtime,
+    );
+    expect(other?.content).toBe(contribution?.content);
   });
 
   it('loads project-root CLAUDE.md and AGENTS.md once, from a nested cwd', async () => {

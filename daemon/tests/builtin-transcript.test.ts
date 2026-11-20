@@ -185,7 +185,7 @@ describe('native transcript store', () => {
 });
 
 describe('transcript request projection', () => {
-  it('keeps only the latest runtime-context snapshot', () => {
+  it('drops runtime-context snapshots from the request (they live in the system prompt)', () => {
     const messages = [
       message(1, 'user', [{ type: 'text', text: 'old context' }], {
         kind: 'runtime-context',
@@ -201,7 +201,7 @@ describe('transcript request projection', () => {
     ];
 
     expect(selectActiveRuntimeContext(messages)?.seq).toBe(3);
-    expect(projectActiveMessages(messages).map((row) => row.seq)).toEqual([2, 3]);
+    expect(projectActiveMessages(messages).map((row) => row.seq)).toEqual([2]);
   });
 
   it('renders user, assistant tool calls, tool results and images for providers', async () => {

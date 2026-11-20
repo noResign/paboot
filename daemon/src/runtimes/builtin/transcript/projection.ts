@@ -13,10 +13,11 @@ export function selectActiveRuntimeContext(messages: readonly NativeMessage[]): 
   return null;
 }
 
-/** Keep all ordinary messages and only the newest runtime-context snapshot. */
+/**
+ * Runtime context now lives in the system prompt, so historical snapshots are
+ * audited in SQLite but never rendered as chat messages (including sessions
+ * written before the move).
+ */
 export function projectActiveMessages(messages: readonly NativeMessage[]): NativeMessage[] {
-  const active = selectActiveRuntimeContext(messages);
-  return messages.filter(
-    (message) => message.source.kind !== 'runtime-context' || message === active,
-  );
+  return messages.filter((message) => message.source.kind !== 'runtime-context');
 }

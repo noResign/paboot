@@ -132,7 +132,8 @@ describe('builtin step debug', () => {
       provider: 'fake',
       model: 'fake-1',
     });
-    expect(record.request.system).toBe('SYSTEM PROMPT');
+    // Runtime context is part of the system prompt now.
+    expect(record.request.system).toBe('SYSTEM PROMPT\n\nRUNTIME CONTEXT');
     expect(record.context.runtimeContext.text).toBe('RUNTIME CONTEXT');
     expect(record.estimatedTokens).toBeGreaterThan(0);
     expect(calls[0]).toBe(record.request);

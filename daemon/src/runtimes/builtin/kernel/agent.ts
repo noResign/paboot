@@ -131,7 +131,6 @@ export class AgentKernel {
         }
 
         const context = await this.deps.assembleContext(this.deps.toolDescriptors);
-        await this.persistRuntimeContext(agent, context);
         const loaded = await this.loadMessages(
           context,
           toolSchemas,
@@ -139,8 +138,8 @@ export class AgentKernel {
           agent.signal,
         );
         const messages = loaded.messages;
-        const systemText = withSummary(context.system.text, loaded.summary);
-        const systemParts = buildSystemParts(context.system, loaded.summary);
+        const systemText = withRuntimeContext(context, loaded.summary);
+        const systemParts = buildSystemParts(context, loaded.summary);
 
         if (loaded.compacted) {
           agent.eventSink.emit({
@@ -163,7 +162,6 @@ export class AgentKernel {
           model: this.deps.model,
           system: systemText,
           ...(systemParts.length > 0 ? { systemParts } : {}),
-          promptCache: true,
           messages,
           tools: toolSchemas,
           ...(this.deps.modelSnapshot.maxOutput ? { maxTokens: this.deps.modelSnapshot.maxOutput } : {}),
@@ -471,9 +469,6 @@ export class AgentKernel {
 
     const read = async (boundary: number, pruneThrough: number | null): Promise<LlmMessage[]> => {
       const list = this.deps.transcript.list(this.deps.threadId, boundary);
-      const latestContext = this.deps.transcript.latestContext(this.deps.threadId);
-      // The environment snapshot may predate the compaction boundary; keep it.
-      if (latestContext && latestContext.seq <= boundary) list.unshift(latestContext);
       return renderTranscriptMessages(
         list,
         this.renderOptions(
@@ -498,7 +493,7 @@ export class AgentKernel {
     const measure = this.deps.tokenCalibrator.measure;
     const estimate = (list: LlmMessage[], summary: string | null): number =>
       estimateRequestTokens({
-        system: withSummary(context.system.text, summary),
+        system: withRuntimeContext(context, summary),
         messages: list,
         tools,
         measure,
@@ -543,36 +538,6 @@ export class AgentKernel {
         afterTokens: Math.max(0, Math.round(estimate(messages, written.summary))),
       },
     };
-  }
-
-  private async persistRuntimeContext(
-    agent: AgentRunContext,
-    context: AgentContextAssembly,
-  ): Promise<void> {
-    const latest = this.deps.transcript.latestContext(this.deps.threadId);
-    const latestText = latest?.blocks
-      .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n\n') ?? null;
-    const currentText = context.runtimeContext.text;
-    if (latestText === currentText) return;
-    if (currentText.length === 0 && latest === null) return;
-    this.deps.transcript.append({
-      threadId: this.deps.threadId,
-      role: 'user',
-      blocks: currentText ? [{ type: 'text', text: currentText }] : [],
-      source: {
-        kind: 'runtime-context',
-        sourceKey: 'runtime-snapshot',
-        version: context.runtimeContext.version,
-        sections: context.runtimeContext.contributions.map((item) => ({
-          name: item.source,
-          text: item.content,
-        })),
-      },
-      runId: agent.runId,
-      step: null,
-    });
   }
 
   private appendToolResult(
@@ -632,15 +597,35 @@ function withSummary(system: string, summary: string | null): string {
   return system.trim() ? `${system}\n\n${block}` : block;
 }
 
-/** Stable text gets its own cache breakpoint; dynamic text and the summary do not. */
+/**
+ * Runtime context (environment / docs / knowledge / skills / memory index)
+ * belongs to the system channel now, not to a user-role transcript message.
+ */
+function withRuntimeContext(
+  context: AgentContextAssembly,
+  summary: string | null,
+): string {
+  const combined = [context.system.text, context.runtimeContext.text.trim()]
+    .filter((text) => text.length > 0)
+    .join('\n\n');
+  return withSummary(combined, summary);
+}
+
+/**
+ * Split system text into stable/dynamic parts, but do NOT mark a cache
+ * breakpoint for now (explicit prompt caching is intentionally opt-in later).
+ */
 function buildSystemParts(
-  system: PromptCompileResult,
+  context: AgentContextAssembly,
   summary: string | null,
 ): LlmSystemPart[] {
   const parts: LlmSystemPart[] = [];
-  if (system.stableText.trim()) parts.push({ text: system.stableText, cache: true });
+  const stable = [context.system.stableText, context.runtimeContext.text.trim()]
+    .filter((text) => text.trim().length > 0)
+    .join('\n\n');
+  if (stable) parts.push({ text: stable });
   const dynamic = [
-    system.dynamicText,
+    context.system.dynamicText,
     summary ? `## Earlier conversation summary\n${summary}` : '',
   ]
     .filter((text) => text.trim().length > 0)

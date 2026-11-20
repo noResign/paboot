@@ -293,16 +293,16 @@ describe('builtin driver E2E with fake provider', () => {
     const messages = h.db.listNativeMessages(thread!.id);
     expect(messages.map((message) => message.role)).toEqual([
       'user',
-      'user',
       'assistant',
       'tool',
       'assistant',
     ]);
-    expect(messages.some((message) => message.source.kind === 'runtime-context')).toBe(true);
-    expect(messages[2]?.blocks).toContainEqual(
+    // Runtime context belongs to the system prompt now, not the transcript.
+    expect(messages.some((message) => message.source.kind === 'runtime-context')).toBe(false);
+    expect(messages[1]?.blocks).toContainEqual(
       expect.objectContaining({ type: 'tool_call', name: 'Read', id: 'call_read' }),
     );
-    expect(messages[3]?.blocks).toContainEqual(
+    expect(messages[2]?.blocks).toContainEqual(
       expect.objectContaining({ type: 'tool_result', toolUseId: 'call_read' }),
     );
   });

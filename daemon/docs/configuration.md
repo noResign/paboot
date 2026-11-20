@@ -267,8 +267,9 @@ projectDocsTokens = min(ceil(runtimeTokens × shareOfRuntimeContext), projectDoc
   `toolResultPruneTarget × window` 以下就不做摘要；否则把更早的前缀交给同一个 provider 生成
   ≤`maxSummaryTokens` 的摘要，写入 `native_compactions`（原始 transcript 不删）。待摘要前缀
   小于 `minCompactTokens` 时直接跳过；摘要失败只记 warning，不中断 run。
-- **prompt cache**：Anthropic 会把 stable system 段（含工具 schema）与最后一条消息作为缓存断点；
-  dynamic 段与摘要不参与缓存断点。OpenAI / DeepSeek 依赖稳定前缀，不再额外传缓存字段。
+- **prompt cache**：显式缓存断点当前**关闭**（不发 `cache_control`，也不设 `promptCache`）。
+  system 仍按 stable → dynamic → 历史摘要 的顺序排列，动态内容在尾部；以后要开缓存时，
+  只需恢复 stable 段与最后一条消息的断点。OpenAI / DeepSeek 始终依赖稳定前缀。
 
 #### 安全档位（daemon 全局）
 

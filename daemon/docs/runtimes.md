@@ -71,8 +71,8 @@ Codex 的 `item/tool/requestUserInput` 也走同一条事件与卡片（不再�
 
 **长会话**：接近模型窗口时先在渲染层把旧的超大工具结果换成占位（保留 spill 指针），仍超阈值
 再按 turn 边界把更早的前缀摘成一段写进 `native_compactions`；原文不删，重启后按
-`through_seq` 恢复为「摘要 + 最近消息」。Anthropic 请求会对 stable system 段与最后一条消息
-加 `cache_control` 断点，OpenAI / DeepSeek 依赖稳定前缀。细节与阈值见
+`through_seq` 恢复为「摘要 + 最近消息」。provider 请求按 stable → dynamic → 摘要排序，
+但**显式缓存断点当前关闭**（不传 `cache_control`）；以后需要时再恢复。细节与阈值见
 [configuration.md](configuration.md) 的 `context.compaction`。
 
 所有运行时都通过 `RuntimeDriver` 注册执行驱动，`routes/chat.ts` 只按 id 取
