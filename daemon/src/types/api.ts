@@ -1011,3 +1011,93 @@ export interface MemorySessionModeRequest {
   sessionId: string;
   mode: MemorySessionModeDto;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent profiles（会话里的「助手」）
+//
+// 与 `AgentDto` 区分：那个是「后端插件的 runtime」（claude / codex），这个是「房间里
+// 干活的那个助手」——有名字、简介、自己的目录与权限上限。一个 runtime 可以承载多个。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** `GET /api/workspaces/:id/agents` 的一项。**不含机制字段**（那是创建者视角）。 */
+export interface AgentProfileDto {
+  id: string;
+  name: string;
+  /** 空值已回退到 `name`，客户端可直接渲染。 */
+  summary: string;
+  avatar: string | null;
+  kind: 'builtin' | 'runtime' | 'peer';
+  /** 实际执行用哪个 backend：builtin / claude / codex / deepseek / peer。 */
+  backend: string;
+  /** 外部 CLI：群聊里只允许显式 @。 */
+  heavy: boolean;
+  enabled: boolean;
+  /** 背后那个东西现在能不能跑（CLI 装了 / key 有 / 对端在线）。 */
+  online: boolean;
+  /** `enabled && online` —— 唯一能真正被 @ 起任务的状态。 */
+  available: boolean;
+}
+
+export interface AgentProfilesResponse {
+  agents: AgentProfileDto[];
+}
+
+/** `GET /api/agent-profiles/:id` —— 创建者视角，含机制字段。 */
+export interface AgentProfileDetailDto extends AgentProfileDto {
+  workspaceId: string;
+  instructions: string;
+  model: string | null;
+  modelParameters: Record<string, string> | null;
+  /** workspace 内的执行目录；`null` = 主目录。 */
+  cwd: string | null;
+  /** 附加可操作目录，每项都在 workspace 内。 */
+  extraDirs: string[];
+  readOnly: boolean;
+  /** ask | acceptEdits | bypass —— 这个 agent 的权限上限。 */
+  permissionCeiling: ProductPermissionMode;
+  toolsAllow: string[] | null;
+  toolsDeny: string[] | null;
+  skills: string[] | null;
+  /** Run budget override; `null` = the runtime's defaults. */
+  budget: { maxSteps?: number; maxToolCalls?: number } | null;
+  version: number;
+  isImplicit: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AgentProfileDetailResponse {
+  agent: AgentProfileDetailDto;
+  maxSummaryChars: number;
+}
+
+/** `GET /api/sessions/:id/agents` 的一项：成员身份 + 是否已有对话。 */
+export interface SessionAgentDto extends AgentProfileDto {
+  role: 'leader' | 'member';
+  /** 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。 */
+  hasContext: boolean;
+}
+
+export interface SessionAgentsResponse {
+  leaderId: string | null;
+  agents: SessionAgentDto[];
+}
+
+/** 新建 / 编辑 agent 的请求体；字段都可选，服务端只改传了的。 */
+export interface AgentProfileRequest {
+  name?: string;
+  summary?: string;
+  avatar?: string | null;
+  kind?: 'builtin' | 'runtime' | 'peer';
+  runtime?: string | null;
+  instructions?: string;
+  model?: string | null;
+  cwd?: string | null;
+  extraDirs?: string[];
+  readOnly?: boolean;
+  permissionCeiling?: ProductPermissionMode;
+  toolsAllow?: string[];
+  toolsDeny?: string[];
+  heavy?: boolean;
+  enabled?: boolean;
+}

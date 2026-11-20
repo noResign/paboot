@@ -15,6 +15,9 @@ import type {
 } from '../../../shared/ipc';
 import type {
   AgentModelsResponse,
+  AgentProfileDetailResponse,
+  AgentProfileRequest,
+  AgentProfilesResponse,
   AgentsResponse,
   ChangesResponse,
   ConfigResponse,
@@ -70,6 +73,7 @@ import type {
   CreateScheduledTaskRequest,
   UpdateScheduledTaskRequest,
   TaskConfigSessionResponse,
+  SessionAgentsResponse,
   SessionDetailResponse,
   SessionsResponse,
   UpdateSessionModelResponse,
@@ -275,6 +279,52 @@ export const api = {
     }),
   session: (id: string) =>
     request<SessionDetailResponse>({ method: 'GET', path: ROUTES.session(id) }),
+
+  // Agent profiles（会话里的「助手」）。老 daemon 上这些端点 404 —— 调用方据此把
+  // 入口藏起来，而不是当成错误弹给用户。
+  workspaceAgents: (workspaceId: string, includeDisabled = false) =>
+    request<AgentProfilesResponse>({
+      method: 'GET',
+      path: ROUTES.workspaceAgents(workspaceId),
+      query: includeDisabled ? { includeDisabled: '1' } : undefined,
+    }),
+  createAgentProfile: (workspaceId: string, body: AgentProfileRequest) =>
+    request<AgentProfileDetailResponse>({
+      method: 'POST',
+      path: ROUTES.workspaceAgents(workspaceId),
+      body,
+    }),
+  agentProfile: (id: string) =>
+    request<AgentProfileDetailResponse>({ method: 'GET', path: ROUTES.agentProfiles(id) }),
+  updateAgentProfile: (id: string, body: AgentProfileRequest) =>
+    request<AgentProfileDetailResponse>({
+      method: 'PATCH',
+      path: ROUTES.agentProfiles(id),
+      body,
+    }),
+  deleteAgentProfile: (id: string) =>
+    request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.agentProfiles(id) }),
+  sessionAgents: (sessionId: string) =>
+    request<SessionAgentsResponse>({ method: 'GET', path: ROUTES.sessionAgents(sessionId) }),
+  addSessionAgent: (sessionId: string, agentId: string) =>
+    request<{ ok: boolean }>({
+      method: 'POST',
+      path: ROUTES.sessionAgents(sessionId),
+      body: { agentId },
+    }),
+  removeSessionAgent: (sessionId: string, agentId: string) =>
+    request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.sessionAgent(sessionId, agentId) }),
+  setSessionLeader: (sessionId: string, agentId: string) =>
+    request<{ ok: boolean }>({
+      method: 'PATCH',
+      path: ROUTES.sessionLeader(sessionId),
+      body: { agentId },
+    }),
+  resetAgentContext: (sessionId: string, agentId: string) =>
+    request<{ ok: boolean }>({
+      method: 'POST',
+      path: ROUTES.sessionAgentReset(sessionId, agentId),
+    }),
   renameSession: (id: string, title: string) =>
     request<{ ok: boolean }>({ method: 'PATCH', path: ROUTES.session(id), body: { title } }),
   deleteSession: (id: string) =>

@@ -32,6 +32,15 @@ final class ChatViewModel {
         var attachments: [ChatAttachmentDraft] = []
         /// Voice transcription in flight: composer disables the mic meanwhile.
         var transcribing = false
+        /// 会话成员（助手）。空 + `agentsSupported == false` 表示老 daemon：
+        /// UI 不显示任何 agent 入口，而不是显示一个空面板。
+        var sessionAgents: [SessionAgentDto] = []
+        var leaderId: String?
+        var agentsSupported = false
+        /// 工作区里可被拉进会话的助手（新建时选人 / 添加成员）。
+        var workspaceAgents: [AgentProfileDto] = []
+        /// 新建会话时选定的主答；nil = 工作区默认。
+        var pendingAgentId: String?
     }
 
     @Published private(set) var state = State()
@@ -41,6 +50,7 @@ final class ChatViewModel {
     private var sessionId: String?
     private let workspaceId: String?
     private var runtime: String?
+    private let agentRepository: any AgentRepositoryProtocol
 
     private var streamTask: Task<Void, Never>?
     private var historyTask: Task<Void, Never>?
@@ -69,11 +79,14 @@ final class ChatViewModel {
         runtime: String? = nil,
         permissionMode: String? = nil,
         title: String? = nil,
+        agentProfileId: String? = nil,
         repository: any ChatRepositoryProtocol = ChatRepository(),
-        asrRepository: any AsrRepositoryProtocol = AsrRepository()
+        asrRepository: any AsrRepositoryProtocol = AsrRepository(),
+        agentRepository: any AgentRepositoryProtocol = AgentRepository()
     ) {
         self.repository = repository
         self.asrRepository = asrRepository
+        self.agentRepository = agentRepository
         self.sessionId = sessionId
         self.workspaceId = workspaceId
         self.runtime = runtime
@@ -82,6 +95,7 @@ final class ChatViewModel {
         state.runtime = runtime ?? ""
         state.permissionMode = permissionMode ?? "ask"
         state.title = title ?? (sessionId == nil ? "新会话" : "会话")
+        state.pendingAgentId = agentProfileId
     }
 
     var modelLabel: String {
@@ -139,6 +153,7 @@ final class ChatViewModel {
             lastActiveAt = session.lastActiveAt
             knownRunIds = Set(detail.runs.map(\.id))
             loadModels()
+            loadSessionAgents()
 
             var messages: [ChatUiMessage] = []
             var todos: [TodoItem] = []
@@ -332,6 +347,8 @@ final class ChatViewModel {
             model: isNewSession ? state.model : nil,
             modelParameters: isNewSession && !state.modelParameters.isEmpty ? state.modelParameters : nil,
             runtime: isNewSession ? runtime : nil,
+            // 只有新会话才带 agentId：已有会话由成员关系决定主答，重发带上也不报错。
+            agentId: isNewSession ? state.pendingAgentId : nil,
             permissionMode: isNewSession ? state.permissionMode : nil,
             attachmentIds: uploaded.isEmpty ? nil : uploaded,
             commandId: UUID().uuidString
@@ -1051,4 +1068,102 @@ final class ChatViewModel {
             }
         }
     }
-}
+}    // MARK: - 会话里的助手（agent）
+    //
+    // 404 一律当成「这台 daemon 还没有这个功能」：静默关掉入口，不弹错误。
+
+    func loadSessionAgents() {
+        guard let id = state.sessionId else { return }
+        Task {
+            do {
+                let roster = try await agentRepository.sessionAgents(sessionId: id)
+                state.agentsSupported = true
+                state.sessionAgents = roster.agents
+                state.leaderId = roster.leaderId
+            } catch let error as PabootError {
+                if case .http(let status, _) = error, status == 404 {
+                    state.agentsSupported = false
+                    state.sessionAgents = []
+                    state.leaderId = nil
+                } else {
+                    state.error = error.localizedDescription
+                }
+            } catch {
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// 用当前会话所属工作区刷新候选助手。
+    func refreshWorkspaceAgents() {
+        Task {
+            var workspaceId = self.workspaceId
+            if workspaceId == nil, let id = state.sessionId,
+               let detail = try? await repository.sessionDetail(id: id) {
+                workspaceId = detail.session.workspaceId
+            }
+            guard let workspaceId else { return }
+            state.workspaceAgents = (try? await agentRepository.listByWorkspace(workspaceId: workspaceId)) ?? []
+        }
+    }
+
+    func selectPendingAgent(_ agentId: String?) {
+        state.pendingAgentId = agentId
+    }
+
+    func addSessionAgent(_ agentId: String) {
+        guard let id = state.sessionId else { return }
+        Task {
+            do {
+                try await agentRepository.addToSession(sessionId: id, agentId: agentId)
+                loadSessionAgents()
+            } catch {
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    func removeSessionAgent(_ agentId: String) {
+        guard let id = state.sessionId else { return }
+        Task {
+            do {
+                try await agentRepository.removeFromSession(sessionId: id, agentId: agentId)
+                loadSessionAgents()
+            } catch {
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// 把「主答」交给另一个成员；会话的 runtime 会跟着它变。
+    func setLeader(_ agentId: String) {
+        guard let id = state.sessionId else { return }
+        Task {
+            do {
+                try await agentRepository.setLeader(sessionId: id, agentId: agentId)
+                loadSessionAgents()
+                if let detail = try? await repository.sessionDetail(id: id) {
+                    state.runtime = detail.session.runtime
+                }
+            } catch {
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// 重置某个 agent 在本会话的对话。
+    ///
+    /// 只清 paboot 侧的 thread 绑定；runtime 自己存的记忆清不掉 —— 文案要说清。
+    func resetAgentContext(_ agentId: String) {
+        guard let id = state.sessionId else { return }
+        Task {
+            do {
+                try await agentRepository.resetContext(sessionId: id, agentId: agentId)
+                loadSessionAgents()
+            } catch {
+                state.error = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Streaming

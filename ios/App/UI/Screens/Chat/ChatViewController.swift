@@ -816,7 +816,20 @@ final class ChatViewController: UIViewController {
             self?.openSessionTasks()
         }
 
-        let menu = UIMenu(children: [
+        // 助手入口只在 daemon 支持时出现：老版本没有这个端点，一个点了没反应的
+        // 菜单项比不显示更糟。
+        var assistantSection: [UIMenu] = []
+        if state.agentsSupported, state.sessionId != nil {
+            let leaderName = state.sessionAgents.first { $0.id == state.leaderId }?.name ?? "—"
+            let assistantsAction = UIAction(
+                title: "助手：\(state.sessionAgents.count) 个成员 · 主答「\(leaderName)」"
+            ) { [weak self] _ in
+                self?.presentAssistants()
+            }
+            assistantSection = [UIMenu(options: .displayInline, children: [assistantsAction])]
+        }
+
+        let menu = UIMenu(children: assistantSection + [
             UIMenu(title: "权限模式", options: .displayInline, children: permissionActions),
             modelMenu,
             UIMenu(title: "记忆", options: .displayInline, children: [memoryMenu]),
@@ -834,6 +847,19 @@ final class ChatViewController: UIViewController {
         )
         item.accessibilityLabel = "会话设置"
         navigationItem.rightBarButtonItem = item
+    }
+
+    private func presentAssistants() {
+        // 打开时顺手刷新候选池：用户可能刚在别处建过新 agent。
+        viewModel.refreshWorkspaceAgents()
+        let sheet = AssistantSheetViewController(viewModel: viewModel)
+        let navigation = UINavigationController(rootViewController: sheet)
+        navigation.modalPresentationStyle = .pageSheet
+        if let presentation = navigation.sheetPresentationController {
+            presentation.detents = [.medium(), .large()]
+            presentation.prefersGrabberVisible = true
+        }
+        present(navigation, animated: true)
     }
 
     private func openSessionTasks() {

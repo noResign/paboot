@@ -9,6 +9,7 @@ import com.noresign.paboot.data.repository.AsrRepository
 import com.noresign.paboot.data.repository.AttachmentRepository
 import com.noresign.paboot.data.repository.ChatRepository
 import com.noresign.paboot.data.repository.MetaRepository
+import com.noresign.paboot.data.repository.AgentRepository
 import com.noresign.paboot.data.repository.SessionRepository
 import com.noresign.paboot.data.repository.WorkspaceRepository
 import com.noresign.paboot.ui.identity.clampPermissionMode
@@ -65,6 +66,7 @@ sealed class SessionPermissionsUiState {
 
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
+    private val agentRepository: AgentRepository = AgentRepository(),
     private val sessionRepository: SessionRepository = SessionRepository(),
     private val metaRepository: MetaRepository = MetaRepository(),
     private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
@@ -111,6 +113,32 @@ class ChatViewModel(
 
     private val _sessionRuntime = MutableStateFlow<String?>(null)
     val sessionRuntime = _sessionRuntime.asStateFlow()
+
+    /**
+     * 会话成员（助手）。
+     *
+     * 空列表 + [agentsSupported] 为 false 表示老 daemon：UI 不显示任何 agent 入口，
+     * 而不是显示一个空面板 —— 「这里什么都没有」和「这个版本没有这个功能」是两件事。
+     */
+    private val _sessionAgents = MutableStateFlow<List<SessionAgentDto>>(emptyList())
+    val sessionAgents = _sessionAgents.asStateFlow()
+
+    private val _leaderId = MutableStateFlow<String?>(null)
+    val leaderId = _leaderId.asStateFlow()
+
+    private val _agentsSupported = MutableStateFlow(false)
+    val agentsSupported = _agentsSupported.asStateFlow()
+
+    /** 工作区里可被拉进会话的 agent（新建会话选人 / 添加成员时用）。 */
+    private val _workspaceAgents = MutableStateFlow<List<AgentProfileDto>>(emptyList())
+    val workspaceAgents = _workspaceAgents.asStateFlow()
+
+    /** 新建会话时选定的 agent；null = 用工作区默认。 */
+    private val _pendingAgentId = MutableStateFlow<String?>(null)
+    val pendingAgentId = _pendingAgentId.asStateFlow()
+
+    private val _agentError = MutableStateFlow<String?>(null)
+    val agentError = _agentError.asStateFlow()
 
     /**
      * 会话级：当前上下文窗口占用（顶栏展示）。
@@ -288,6 +316,7 @@ class ChatViewModel(
                             attach(runningRunId)
                         }
                         startSessionWatch(sessionId)
+                        loadSessionAgents(sessionId)
                     }
                     is NetworkResult.Error -> _error.value = friendlyError(r)
                 }
@@ -539,6 +568,8 @@ class ChatViewModel(
         // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
         val sessionIdAtSend = sessionId
         val runtime = initialRuntime
+        // 只有新会话才带 agentId：已有会话由成员关系决定主答。
+        val agentIdForNewSession = if (sessionIdAtSend == null) _pendingAgentId.value else null
         val workspaceId = initialWorkspaceId
         val permissionMode = initialPermissionMode
         val model = if (sessionIdAtSend == null) _sessionModel.value else null
@@ -551,6 +582,7 @@ class ChatViewModel(
                 sessionId = sessionIdAtSend,
                 prompt = prompt,
                 runtime = runtime,
+                agentId = agentIdForNewSession,
                 workspaceId = workspaceId,
                 permissionMode = permissionMode,
                 model = model,
@@ -568,6 +600,7 @@ class ChatViewModel(
         )
         _attachments.value = emptyList()
         initialRuntime = null
+        _pendingAgentId.value = null
         initialWorkspaceId = null
         initialPermissionMode = null
     }
@@ -1198,6 +1231,123 @@ class ChatViewModel(
             _permissionInputError.value = null
             _permission.value = permissionQueue.removeFirstOrNull()
         }
+    }
+
+    // ── 会话里的助手（agent）────────────────────────────────────
+    //
+    // 404 一律当成「这台 daemon 还没有这个功能」：静默关掉入口，不弹错误。
+    // 「这里什么都没有」和「这个版本没有这个东西」是两件事。
+
+    fun loadSessionAgents(sessionId: String) {
+        viewModelScope.launch {
+            when (val r = agentRepository.sessionAgents(sessionId)) {
+                is NetworkResult.Success -> {
+                    _agentsSupported.value = true
+                    _sessionAgents.value = r.data.agents
+                    _leaderId.value = r.data.leaderId
+                    _agentError.value = null
+                }
+                is NetworkResult.Error -> {
+                    if (r.code == 404) {
+                        _agentsSupported.value = false
+                        _sessionAgents.value = emptyList()
+                        _leaderId.value = null
+                    } else {
+                        _agentError.value = r.message
+                    }
+                }
+            }
+        }
+    }
+
+    /** 工作区里可选的 agent（新建会话选人 / 添加成员）。 */
+    fun loadWorkspaceAgents(workspaceId: String) {
+        viewModelScope.launch {
+            when (val r = agentRepository.listByWorkspace(workspaceId)) {
+                is NetworkResult.Success -> {
+                    _agentsSupported.value = true
+                    _workspaceAgents.value = r.data
+                }
+                is NetworkResult.Error -> if (r.code != 404) _agentError.value = r.message
+            }
+        }
+    }
+
+    fun selectPendingAgent(agentId: String?) {
+        _pendingAgentId.value = agentId
+    }
+
+    /**
+     * 用当前会话所属工作区刷新候选 agent。
+     *
+     * 已有会话从它自己的记录取；新会话用待发送时选定的工作区。两者都没有时
+     * 交给 workspaceRepository 决定（与服务端同样的兜底顺序）。
+     */
+    fun refreshWorkspaceAgents() {
+        viewModelScope.launch {
+            val id = sessionId?.let { repository.sessionDetail(it) }
+                ?.let { if (it is NetworkResult.Success) it.data.session.workspaceId else null }
+                ?: initialWorkspaceId
+                ?: (workspaceRepository.config() as? NetworkResult.Success)?.data?.defaultWorkspaceId
+            if (id != null) loadWorkspaceAgents(id)
+        }
+    }
+
+    fun addSessionAgent(agentId: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = agentRepository.addToSession(id, agentId)) {
+                is NetworkResult.Success -> loadSessionAgents(id)
+                is NetworkResult.Error -> _agentError.value = r.message
+            }
+        }
+    }
+
+    fun removeSessionAgent(agentId: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = agentRepository.removeFromSession(id, agentId)) {
+                is NetworkResult.Success -> loadSessionAgents(id)
+                is NetworkResult.Error -> _agentError.value = r.message
+            }
+        }
+    }
+
+    /** 把「主答」交给另一个成员；会话的 runtime 会跟着它变。 */
+    fun setLeader(agentId: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = agentRepository.setLeader(id, agentId)) {
+                is NetworkResult.Success -> {
+                    loadSessionAgents(id)
+                    val detail = repository.sessionDetail(id)
+                    if (detail is NetworkResult.Success) {
+                        _sessionRuntime.value = detail.data.session.runtime
+                    }
+                }
+                is NetworkResult.Error -> _agentError.value = r.message
+            }
+        }
+    }
+
+    /**
+     * 重置某个 agent 在本会话的对话。
+     *
+     * 只清 paboot 侧的 thread 绑定。runtime 自己存的记忆（例如 Claude 的项目记忆）
+     * 清不掉，所以文案说的是「重置对话」，不是「清空上下文」。
+     */
+    fun resetAgentContext(agentId: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = agentRepository.resetContext(id, agentId)) {
+                is NetworkResult.Success -> loadSessionAgents(id)
+                is NetworkResult.Error -> _agentError.value = r.message
+            }
+        }
+    }
+
+    fun clearAgentError() {
+        _agentError.value = null
     }
 
     fun stop() {

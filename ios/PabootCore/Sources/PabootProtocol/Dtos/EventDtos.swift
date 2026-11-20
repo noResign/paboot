@@ -241,6 +241,8 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
     public let model: String?
     public let modelParameters: [String: String]?
     public let runtime: String?
+    /// 新建会话时指定的主答 agent。已有会话忽略它（成员关系说了算），重发带上也不报错。
+    public let agentId: String?
     public let permissionMode: String?
     public let attachmentIds: [String]?
     /// Idempotency key: retrying the same send re-attaches to the run it already started.
@@ -253,6 +255,7 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         model: String? = nil,
         modelParameters: [String: String]? = nil,
         runtime: String? = nil,
+        agentId: String? = nil,
         permissionMode: String? = nil,
         attachmentIds: [String]? = nil,
         commandId: String? = nil
@@ -263,6 +266,7 @@ public struct ChatRequest: Encodable, Equatable, Sendable {
         self.model = model
         self.modelParameters = modelParameters
         self.runtime = runtime
+        self.agentId = agentId
         self.permissionMode = permissionMode
         self.attachmentIds = attachmentIds
         self.commandId = commandId

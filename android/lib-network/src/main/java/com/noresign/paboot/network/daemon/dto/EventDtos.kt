@@ -141,6 +141,11 @@ data class ChatRequest(
     val model: String? = null,
     val modelParameters: Map<String, String>? = null,
     val runtime: String? = null,
+    /**
+     * 新建会话时指定的主答 agent。已有会话忽略这个字段（成员关系说了算）——
+     * 重发时带上它不该报错。
+     */
+    val agentId: String? = null,
     val permissionMode: String? = null,
     /** 已上传的图片附件 id；与文字一起发给 runtime。 */
     val attachmentIds: List<String>? = null,

@@ -132,14 +132,14 @@ describe('agent API', () => {
     expect(agent.name).toBe('审阅');
     expect(agent.version).toBe(1);
 
-    const patched = await h.request('PATCH', `/api/agents/${agent.id}`, { summary: '只读审查' });
+    const patched = await h.request('PATCH', `/api/agent-profiles/${agent.id}`, { summary: '只读审查' });
     expect(patched.status).toBe(200);
     const after = (await patched.json()) as { agent: { summary: string; version: number } };
     expect(after.agent.summary).toBe('只读审查');
     expect(after.agent.version).toBe(2);
 
-    expect((await h.request('DELETE', `/api/agents/${agent.id}`)).status).toBe(204);
-    expect((await h.request('GET', `/api/agents/${agent.id}`)).status).toBe(404);
+    expect((await h.request('DELETE', `/api/agent-profiles/${agent.id}`)).status).toBe(204);
+    expect((await h.request('GET', `/api/agent-profiles/${agent.id}`)).status).toBe(404);
   });
 
   it('rejects a cwd outside the workspace with a typed error', async () => {
@@ -171,7 +171,7 @@ describe('agent API', () => {
       expect(row).not.toHaveProperty(hidden);
     }
     // ...but the detail endpoint is the owner's view and does show them.
-    const detail = (await (await h.request('GET', `/api/agents/${row.id as string}`)).json()) as {
+    const detail = (await (await h.request('GET', `/api/agent-profiles/${row.id as string}`)).json()) as {
       agent: Record<string, unknown>;
     };
     expect(detail.agent.readOnly).toBe(true);

@@ -438,6 +438,122 @@ public final class PabootAPI {
         try await get("api/agents/\(agentId)/models", authenticated: true, as: AgentModelsResponse.self)
     }
 
+    // MARK: - 会话里的 agent（可复用的助手定义）
+    //
+    // 与上面的 `agents()`（runtime 插件清单）不同：这里是「房间里干活的那个助手」。
+    // 端点挂在 `/api/agent-profiles`，老 daemon 上会 404 —— 调用方据此把入口藏起来，
+    // 而不是当成错误弹给用户。
+
+    public func workspaceAgents(
+        workspaceId: String,
+        includeDisabled: Bool = false
+    ) async throws -> AgentProfilesResponse {
+        try await get(
+            "api/workspaces/\(workspaceId)/agents",
+            query: includeDisabled ? [URLQueryItem(name: "includeDisabled", value: "1")] : [],
+            authenticated: true,
+            as: AgentProfilesResponse.self
+        )
+    }
+
+    public func createAgentProfile(
+        workspaceId: String,
+        body: AgentProfileRequest
+    ) async throws -> AgentProfileDetailResponse {
+        try await request(
+            "POST",
+            path: "api/workspaces/\(workspaceId)/agents",
+            body: try JSONEncoder().encode(body),
+            authenticated: true,
+            as: AgentProfileDetailResponse.self
+        )
+    }
+
+    public func agentProfile(id: String) async throws -> AgentProfileDetailResponse {
+        try await get("api/agent-profiles/\(id)", authenticated: true, as: AgentProfileDetailResponse.self)
+    }
+
+    public func updateAgentProfile(
+        id: String,
+        body: AgentProfileRequest
+    ) async throws -> AgentProfileDetailResponse {
+        try await request(
+            "PATCH",
+            path: "api/agent-profiles/\(id)",
+            body: try JSONEncoder().encode(body),
+            authenticated: true,
+            as: AgentProfileDetailResponse.self
+        )
+    }
+
+    public func deleteAgentProfile(id: String) async throws {
+        _ = try await http.send(
+            try makeRequest(
+                method: "DELETE",
+                path: "api/agent-profiles/\(id)",
+                query: [],
+                body: nil,
+                authenticated: true
+            )
+        )
+    }
+
+    public func sessionAgents(sessionId: String) async throws -> SessionAgentsResponse {
+        try await get("api/sessions/\(sessionId)/agents", authenticated: true, as: SessionAgentsResponse.self)
+    }
+
+    public func addSessionAgent(sessionId: String, agentId: String) async throws {
+        _ = try await http.send(
+            try makeRequest(
+                method: "POST",
+                path: "api/sessions/\(sessionId)/agents",
+                query: [],
+                body: try JSONSerialization.data(withJSONObject: ["agentId": agentId]),
+                authenticated: true
+            )
+        )
+    }
+
+    public func removeSessionAgent(sessionId: String, agentId: String) async throws {
+        _ = try await http.send(
+            try makeRequest(
+                method: "DELETE",
+                path: "api/sessions/\(sessionId)/agents/\(agentId)",
+                query: [],
+                body: nil,
+                authenticated: true
+            )
+        )
+    }
+
+    /// 把「主答」交给另一个成员；会话的 runtime 会跟着它变。
+    public func setSessionLeader(sessionId: String, agentId: String) async throws {
+        _ = try await http.send(
+            try makeRequest(
+                method: "PATCH",
+                path: "api/sessions/\(sessionId)/leader",
+                query: [],
+                body: try JSONSerialization.data(withJSONObject: ["agentId": agentId]),
+                authenticated: true
+            )
+        )
+    }
+
+    /// 重置某个 agent 在本会话的对话。
+    ///
+    /// 只清 paboot 侧的 thread 绑定；runtime 自己存的记忆清不掉 —— 文案要说清。
+    public func resetAgentContext(sessionId: String, agentId: String) async throws {
+        _ = try await http.send(
+            try makeRequest(
+                method: "POST",
+                path: "api/sessions/\(sessionId)/agents/\(agentId)/reset-context",
+                query: [],
+                body: nil,
+                authenticated: true
+            )
+        )
+    }
+
     // MARK: - LLM providers
 
     public func providers() async throws -> ProvidersResponse {

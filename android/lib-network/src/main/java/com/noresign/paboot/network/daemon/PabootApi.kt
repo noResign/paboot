@@ -1,7 +1,11 @@
 package com.noresign.paboot.network.daemon
 
 import com.noresign.paboot.network.daemon.dto.AgentModelsResponse
+import com.noresign.paboot.network.daemon.dto.AgentProfileDetailResponse
+import com.noresign.paboot.network.daemon.dto.AgentProfileRequest
+import com.noresign.paboot.network.daemon.dto.AgentProfilesResponse
 import com.noresign.paboot.network.daemon.dto.AgentsResponse
+import com.noresign.paboot.network.daemon.dto.SessionAgentsResponse
 import com.noresign.paboot.network.daemon.dto.AttachmentDto
 import com.noresign.paboot.network.daemon.dto.ChangesResponse
 import com.noresign.paboot.network.daemon.dto.DiffResponse
@@ -102,6 +106,55 @@ interface PabootApi {
 
     @GET("api/agents/{id}/models")
     suspend fun agentModels(@Path("id") id: String): AgentModelsResponse
+
+    // ── 会话里的 agent（可复用的助手定义）──────────────────────────
+    //
+    // 与上面 api/agents（runtime 插件清单）不同：这里管的是「房间里干活的那个助手」。
+
+    @GET("api/workspaces/{id}/agents")
+    suspend fun workspaceAgents(
+        @Path("id") workspaceId: String,
+        @Query("includeDisabled") includeDisabled: String? = null,
+    ): AgentProfilesResponse
+
+    @POST("api/workspaces/{id}/agents")
+    suspend fun createAgentProfile(
+        @Path("id") workspaceId: String,
+        @Body body: AgentProfileRequest,
+    ): AgentProfileDetailResponse
+
+    @GET("api/agent-profiles/{id}")
+    suspend fun agentProfile(@Path("id") id: String): AgentProfileDetailResponse
+
+    @PATCH("api/agent-profiles/{id}")
+    suspend fun updateAgentProfile(
+        @Path("id") id: String,
+        @Body body: AgentProfileRequest,
+    ): AgentProfileDetailResponse
+
+    @DELETE("api/agent-profiles/{id}")
+    suspend fun deleteAgentProfile(@Path("id") id: String): OkResponse
+
+    @GET("api/sessions/{id}/agents")
+    suspend fun sessionAgents(@Path("id") id: String): SessionAgentsResponse
+
+    @POST("api/sessions/{id}/agents")
+    suspend fun addSessionAgent(@Path("id") id: String, @Body body: JsonObject): OkResponse
+
+    @DELETE("api/sessions/{id}/agents/{agentId}")
+    suspend fun removeSessionAgent(
+        @Path("id") id: String,
+        @Path("agentId") agentId: String,
+    ): OkResponse
+
+    @PATCH("api/sessions/{id}/leader")
+    suspend fun setSessionLeader(@Path("id") id: String, @Body body: JsonObject): OkResponse
+
+    @POST("api/sessions/{id}/agents/{agentId}/reset-context")
+    suspend fun resetAgentContext(
+        @Path("id") id: String,
+        @Path("agentId") agentId: String,
+    ): OkResponse
 
     @GET("api/providers")
     suspend fun providers(): ProvidersResponse

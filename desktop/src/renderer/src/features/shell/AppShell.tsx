@@ -913,6 +913,7 @@ export function AppShell() {
 
       {newSessionOpen && (
         <NewSessionDialog
+          workspaceId={workspaceId || null}
           workspaceName={selectedWorkspaceLabel}
           workspacePath={selectedWorkspace?.path ?? null}
           defaultRuntime={selectedWorkspace?.defaultRuntime ?? null}

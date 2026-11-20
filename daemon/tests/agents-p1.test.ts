@@ -552,3 +552,78 @@ describe('builtin transcripts are keyed by agent', () => {
     expect(threadA.id).not.toBe(threadB.id);
   });
 });
+
+describe('choosing the agent when creating a session', () => {
+  it('binds the chosen agent as leader and runs on its backend', async () => {
+    const h = await startApi();
+    const workspace = workspaceOf(h.db, h.workspaceId);
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: 'chosen',
+      kind: 'runtime',
+      runtime: 'codex',
+    });
+
+    const response = await chat(h.base, { prompt: 'hi', agentId: agent.id });
+    expect(response.status).toBe(200);
+    await response.text();
+
+    const session = h.db.listSessions()[0]!;
+    expect(h.db.getSessionLeader(session.id)?.agent_id).toBe(agent.id);
+    expect(session.runtime).toBe('codex');
+    expect(h.starts.at(-1)!.cwd).toBe(h.workspacePath);
+  });
+
+  it('rejects an unknown or foreign agent instead of falling back silently', async () => {
+    const h = await startApi();
+    const missing = await chat(h.base, { prompt: 'hi', agentId: 'ag_nope' });
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as { code: string }).code).toBe('unknown_agent');
+
+    const other = new Db(':memory:');
+    const otherWorkspacePath = fs.realpathSync(tempDir('agent-other-ws-'));
+    const otherWorkspace = other.createWorkspace({ name: 'other', path: otherWorkspacePath });
+    const foreign = createAgent(other, otherWorkspace, {
+      workspaceId: otherWorkspace.id,
+      name: 'foreign',
+      kind: 'builtin',
+    });
+    const cross = await chat(h.base, { prompt: 'hi', agentId: foreign.id });
+    expect(cross.status).toBe(400);
+    expect(((await cross.json()) as { code: string }).code).toBe('unknown_agent');
+  });
+
+  it('refuses a disabled agent', async () => {
+    const h = await startApi();
+    const workspace = workspaceOf(h.db, h.workspaceId);
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: 'off',
+      kind: 'runtime',
+      runtime: 'claude',
+      enabled: false,
+    });
+    const response = await chat(h.base, { prompt: 'hi', agentId: agent.id });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('agent_disabled');
+  });
+
+  it('ignores agentId on an existing session rather than failing the send', async () => {
+    const h = await startApi();
+    const workspace = workspaceOf(h.db, h.workspaceId);
+    await (await chat(h.base, { prompt: 'a' })).text();
+    const session = h.db.listSessions()[0]!;
+    const stray = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: 'stray',
+      kind: 'runtime',
+      runtime: 'codex',
+    });
+
+    // A retry that echoes the agent it picked must not 400 — membership decides.
+    const response = await chat(h.base, { prompt: 'b', sessionId: session.id, agentId: stray.id });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(h.db.getSessionLeader(session.id)?.agent_id).not.toBe(stray.id);
+  });
+});

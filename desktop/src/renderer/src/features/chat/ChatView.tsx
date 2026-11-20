@@ -20,6 +20,7 @@ import { useStickToBottom } from './useStickToBottom';
 import { transcriptSignature } from './transcriptSignature';
 import { TodoPanel } from './TodoPanel';
 import { PermissionDialog, InlinePermissionCard } from '../permissions/PermissionDialog';
+import { AssistantDialog } from './AssistantDialog';
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
 import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
@@ -56,10 +57,14 @@ export function ChatView({
   const clearError = useChat((state) => state.clearError);
   const setMemoryMode = useChat((state) => state.setMemoryMode);
   const setSessionSelection = useChat((state) => state.setSessionSelection);
+  const syncSession = useChat((state) => state.syncSession);
 
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [showPerms, setShowPerms] = useState(false);
+  const [showAssistants, setShowAssistants] = useState(false);
+  /** 这台 daemon 是否支持助手功能；404 = 老版本，入口隐藏而不是点了没反应。 */
+  const [agentsSupported, setAgentsSupported] = useState(false);
   // Rollback is destructive: two-step confirm, and a second step when it would
   // also discard later runs.
   const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
@@ -68,6 +73,24 @@ export function ChatView({
   const [models, setModels] = useState<ModelOptionDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+
+  // Probe once per session: the assistant endpoints only exist on a daemon that
+  // knows about agents. A 404 hides the entry rather than offering a menu item
+  // that does nothing.
+  useEffect(() => {
+    const sessionId = chat?.sessionId;
+    if (!sessionId) {
+      setAgentsSupported(false);
+      return;
+    }
+    let live = true;
+    void api.sessionAgents(sessionId).then((res) => {
+      if (live) setAgentsSupported(res.ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, [chat?.sessionId]);
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
   // per session is cheap after the first call. A session that has not been
@@ -146,6 +169,9 @@ export function ChatView({
       });
     }
     if (current.sessionId) {
+      if (agentsSupported) {
+        items.push({ id: 'assistants', label: '助手…', run: () => setShowAssistants(true) });
+      }
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
       const memoryMode = current.memoryMode ?? 'normal';
       items.push(
@@ -444,6 +470,14 @@ export function ChatView({
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />
+
+      {showAssistants && chat.sessionId && (
+        <AssistantDialog
+          sessionId={chat.sessionId}
+          onClose={() => setShowAssistants(false)}
+          onLeaderChanged={syncSession}
+        />
+      )}
 
       {showPerms && chat.sessionId && (
         <SessionPermissionsDialog

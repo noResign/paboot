@@ -18,6 +18,11 @@ import {
 import type { Agent, AgentAvailability } from '../agents/index.js';
 import type { WorkspaceRow } from '../db/db.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import type {
+  AgentProfileDetailDto,
+  AgentProfileDto,
+  SessionAgentDto,
+} from '../types/api.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
 
 /**
@@ -29,7 +34,11 @@ import { isProductPermissionMode } from '../permissions/permission-mode.js';
  * endpoint, which is the one an editor uses.
  */
 
-function agentSummaryDto(agent: Agent, availability: AgentAvailability) {
+/**
+ * Shapes below mirror the wire contract in `types/api.ts` — that file is the
+ * source of truth (Desktop imports it directly), so the routes only assemble it.
+ */
+function agentSummaryDto(agent: Agent, availability: AgentAvailability): AgentProfileDto {
   return {
     id: agent.id,
     name: agent.name,
@@ -45,7 +54,7 @@ function agentSummaryDto(agent: Agent, availability: AgentAvailability) {
   };
 }
 
-function agentDetailDto(agent: Agent) {
+function agentDetailDto(agent: Agent): AgentProfileDetailDto {
   return {
     ...agentSummaryDto(agent, { enabled: agent.enabled, online: true, available: agent.enabled }),
     workspaceId: agent.workspaceId,
@@ -108,6 +117,12 @@ async function availabilityOf(ctx: AppContext, agent: Agent): Promise<AgentAvail
   return { enabled: true, online: true, available: true };
 }
 
+/**
+ * Mounted under `/api/agent-profiles` for the definition resource and
+ * `/api/workspaces/:id/agents` for the listing, deliberately *not* under
+ * `/api/agents` — that path already means "the runtime plugins we can drive"
+ * and overloading it would make `GET /api/agents/claude` ambiguous.
+ */
 export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/workspaces/:id/agents', async (req, res) => {
     const workspace = workspaceOr404(ctx, req.params.id!, res);
@@ -159,7 +174,7 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     }
   });
 
-  app.get('/api/agents/:id', (req, res) => {
+  app.get('/api/agent-profiles/:id', (req, res) => {
     const agent = getAgent(ctx.db, req.params.id!);
     if (!agent) {
       res.status(404).json({ error: 'agent not found', code: 'not_found' });
@@ -168,7 +183,7 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     res.json({ agent: agentDetailDto(agent) });
   });
 
-  app.patch('/api/agents/:id', (req, res) => {
+  app.patch('/api/agent-profiles/:id', (req, res) => {
     const agent = getAgent(ctx.db, req.params.id!);
     if (!agent) {
       res.status(404).json({ error: 'agent not found', code: 'not_found' });
@@ -202,7 +217,7 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     }
   });
 
-  app.delete('/api/agents/:id', (req, res) => {
+  app.delete('/api/agent-profiles/:id', (req, res) => {
     try {
       removeAgent(ctx.db, req.params.id!);
       res.status(204).end();
