@@ -1,19 +1,57 @@
 /**
  * `agents/` — the multi-agent domain module.
  *
- * P0 scope: the shadow backfill and the session→agent resolution fallback.
- * Nothing in the request path calls these yet; they exist so P1 has a settled
- * shape and a single place to grow.
+ * Everything outside this folder imports *this file only*. The internal split
+ * (store / service / resolve) is free to change; the surface below is not,
+ * because `routes/` depends on it and `tests/architecture.test.ts` guards the
+ * boundary.
  *
- * Boundary: this module owns agent definitions and their per-session threads.
- * It must not import `routes/`, and everything outside it imports this file
- * only — never an internal module directly — so the surface stays deliberate.
+ * Boundary rules:
+ *   - this module must not import `routes/` or `rooms/`;
+ *   - `runtimes/` and `llm/` must not import it at all — they only ever see
+ *     "prompt + cwd + permission", which is what lets a fourth runtime drop in
+ *     without touching agents.
  */
 export {
   backfillMultiAgent,
-  resolveAgentForSession,
+  backfillNativeThreadAgents,
   DEFAULT_IMPLICIT_RUNTIME,
   type BackfillLogger,
   type BackfillResult,
-  type ResolvedAgent,
 } from './backfill.js';
+
+export {
+  AgentValidationError,
+  addToSession,
+  createAgent,
+  ensureThread,
+  getAgent,
+  listAgents,
+  listThreads,
+  MAX_SUMMARY_CHARS,
+  removeAgent,
+  sessionRoster,
+  setLeader,
+  syncSessionRuntime,
+  updateAgent,
+} from './service.js';
+
+export {
+  backendFor,
+  defaultAgentFor,
+  resolveSessionAgent,
+  type ResolvedSessionAgent,
+} from './resolve.js';
+
+export { getLeader, listSessionAgents } from './store.js';
+
+export type {
+  Agent,
+  AgentAvailability,
+  AgentBudgetOverride,
+  AgentKind,
+  AgentRunTarget,
+  AgentThread,
+  CreateAgentInput,
+  UpdateAgentInput,
+} from './types.js';

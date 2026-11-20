@@ -2,11 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  backfillMultiAgent,
-  resolveAgentForSession,
-  DEFAULT_IMPLICIT_RUNTIME,
-} from '../src/agents/index';
+import { backfillMultiAgent, DEFAULT_IMPLICIT_RUNTIME, resolveSessionAgent } from '../src/agents/index';
 import { Db, MULTI_AGENT_BACKFILL_KEY, implicitAgentId } from '../src/db/db';
 
 /**
@@ -246,55 +242,65 @@ describe('dual write (P0)', () => {
   });
 });
 
-describe('resolveAgentForSession fallback (P0)', () => {
+describe('session → agent resolution', () => {
+  /** Resolve through the same path a run uses, with the workspace in hand. */
+  function resolve(db: Db, sessionId: string) {
+    const session = db.getSession(sessionId)!;
+    const workspace = session.workspace_id ? db.getWorkspace(session.workspace_id)! : null;
+    return resolveSessionAgent(db, session, workspace);
+  }
+
   it('prefers the session leader', () => {
     const db = new Db(tempDbPath());
     const workspaceId = makeWorkspace(db);
     const sessionId = makeSession(db, workspaceId, { runtime: 'claude' });
     backfillMultiAgent(db, silentLog);
 
-    const resolved = resolveAgentForSession(db, sessionId);
+    const resolved = resolve(db, sessionId);
     expect(resolved?.source).toBe('leader');
-    expect(resolved?.runtime).toBe('claude');
-    expect(resolved?.id).toBe(implicitAgentId(workspaceId, 'claude'));
+    expect(resolved!.agent.id).toBe(implicitAgentId(workspaceId, 'claude'));
+    // The thread is opened on demand, with the agent's own backend and cwd.
+    expect(resolved!.thread.backend).toBe('claude');
+    expect(resolved!.thread.nativeSessionId).toBeNull();
   });
 
-  it('falls back to the workspace default when there is no leader row', () => {
+  it('adopts the workspace default when the leader row was dropped', () => {
     const db = new Db(tempDbPath());
     const workspaceId = makeWorkspace(db);
     backfillMultiAgent(db, silentLog);
     const sessionId = makeSession(db, workspaceId, { runtime: 'claude' });
-    // Simulate a row whose leader was dropped (e.g. an agent deleted later).
     (db as unknown as { db: { prepare: (sql: string) => { run: (...a: unknown[]) => unknown } } }).db
       .prepare('DELETE FROM session_agents WHERE session_id = ?')
       .run(sessionId);
 
-    const resolved = resolveAgentForSession(db, sessionId);
+    const resolved = resolve(db, sessionId);
     expect(resolved?.source).toBe('workspace_default');
-    expect(resolved?.id).toBe(db.getWorkspaceDefaultAgentId(workspaceId));
+    // Adopting it makes the next resolution a plain leader lookup.
+    expect(db.getSessionLeader(sessionId)?.agent_id).toBe(resolved!.agent.id);
+    expect(resolve(db, sessionId)?.source).toBe('leader');
   });
 
-  it('never throws for an unattributable session', () => {
+  it('never throws for an unattributable session, and writes no agent', () => {
     const db = new Db(tempDbPath());
     const workspaceId = makeWorkspace(db);
     const sessionId = makeSession(db, workspaceId, { runtime: 'deepseek' });
-    // Strip every shadow row so no fallback step can succeed.
     const raw = (db as unknown as { db: { prepare: (sql: string) => { run: (...a: unknown[]) => unknown } } }).db;
     raw.prepare('DELETE FROM agent_threads WHERE session_id = ?').run(sessionId);
     raw.prepare('DELETE FROM session_agents WHERE session_id = ?').run(sessionId);
     raw.prepare('DELETE FROM agents WHERE workspace_id = ?').run(workspaceId);
 
-    const resolved = resolveAgentForSession(db, sessionId);
-    expect(resolved).not.toBeNull();
-    expect(resolved!.runtime).toBe('deepseek');
-    // No agent anywhere: a stable synthetic id, and nothing written to the DB.
-    expect(resolved!.source).toBe('synthesized');
+    const resolved = resolve(db, sessionId);
+    expect(resolved?.source).toBe('synthesized');
+    expect(resolved!.agent.runtime).toBe('deepseek');
     expect(db.listAgents(workspaceId)).toHaveLength(0);
   });
 
-  it('returns null for an unknown session id', () => {
+  it('returns null when the session has no workspace', () => {
     const db = new Db(tempDbPath());
-    expect(resolveAgentForSession(db, 'does-not-exist')).toBeNull();
+    const workspaceId = makeWorkspace(db);
+    const sessionId = makeSession(db, workspaceId, { runtime: 'claude' });
+    const session = { ...db.getSession(sessionId)!, workspace_id: null };
+    expect(resolveSessionAgent(db, session, null)).toBeNull();
   });
 });
 

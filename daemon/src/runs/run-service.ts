@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
+import type { Agent, AgentThread } from '../agents/index.js';
 import type { SessionRow, WorkspaceRow } from '../db/db.js';
 import { parseStoredModelParameters } from '../db/model-selection.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import {
   resolveEffectivePermissionMode,
+  stricterPermissionMode,
 } from '../permissions/security-profile.js';
 import type { RuntimeDriver } from '../runtimes/RuntimeDriver.js';
 import type { RunOutcome } from '../runtimes/engine.js';
@@ -53,6 +55,16 @@ export interface StartSessionRunInput {
   taskId?: string | null;
   commandId?: string | null;
   sink: RunSink;
+  /**
+   * The agent answering this message plus its conversation handle.
+   *
+   * When present these override the session's runtime / cwd / native id: two
+   * agents in one room each run in their own directory with their own provider
+   * conversation. When absent the run behaves exactly as it did before agents
+   * existed — the scheduler and the command runner still take that path.
+   */
+  agent?: Agent;
+  thread?: AgentThread;
 }
 
 export interface RunHandle {
@@ -70,8 +82,10 @@ export function extraDirsForRun(
   ctx: AppContext,
   session: SessionRow,
   workspace: WorkspaceRow,
+  /** The directory this run actually starts in (an agent may work in a subdir). */
+  runCwd: string,
 ): string[] {
-  const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== session.cwd);
+  const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== runCwd);
   if (workspace.family === 'dev') {
     try {
       wanted.push(ensureKnowledgeRoot(ctx.knowledge.root(workspace.id)));
@@ -97,13 +111,35 @@ export function extraDirsForRun(
  */
 export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): RunHandle {
   const { session, workspace, prompt, driver, model, modelParameters } = input;
+  // Everything below reads the *effective* run identity rather than the session
+  // row, so one session can host several agents without any further branching
+  // here: runtime, cwd and the provider conversation all come from the agent's
+  // thread when there is one.
+  const thread = input.thread;
+  const agent = input.agent;
+  const runtime = thread?.backend ?? session.runtime;
+  const runCwd = thread?.cwd ?? session.cwd;
+  const resumeNativeSessionId = thread ? thread.nativeSessionId : session.native_session_id;
+  const effectiveModel = model ?? agent?.model ?? session.model ?? null;
   // Single security boundary for every runtime and every entry point (chat,
   // scheduled runs, run-now). A stored `bypass` is honored only when the
   // daemon-wide policy allows it.
-  const permissionMode = resolveEffectivePermissionMode(
+  const resolvedMode = resolveEffectivePermissionMode(
     input.permissionMode,
     ctx.builtinConfig,
   );
+  // The agent's ceiling only ever tightens: an agent declared `ask` stays `ask`
+  // in a `bypass` room, and a loose agent cannot loosen a strict room either.
+  //
+  // Two kinds are exempt:
+  //   - implicit agents are the stand-in for the pre-agent daemon, so they must
+  //     not narrow anything (a workspace default of `acceptEdits` has to keep
+  //     meaning `acceptEdits`);
+  //   - peer agents approve on the other machine under their contract, so a
+  //     local ceiling would describe a decision this daemon does not make.
+  const ceilingApplies = agent !== undefined && !agent.isImplicit && agent.kind !== 'peer';
+  const permissionMode =
+    agent && ceilingApplies ? stricterPermissionMode(resolvedMode, agent.permissionCeiling) : resolvedMode;
   const runId = randomUUID();
 
   ctx.db.touchWorkspace(workspace.id);
@@ -116,8 +152,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     input.trigger === 'user' ? 'chat' : 'scheduled_run',
     JSON.stringify({
       sessionId: session.id,
-      runtime: session.runtime,
-      model: model ?? null,
+      runtime,
+      model: effectiveModel,
       modelParameters: modelParameters ?? null,
       trigger: input.trigger,
       taskId: input.taskId ?? null,
@@ -127,8 +163,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   ctx.db.createRun({
     id: runId,
     sessionId: session.id,
-    runtime: session.runtime,
-    model,
+    runtime,
+    model: effectiveModel,
     modelParameters,
     prompt,
     attachmentIds: input.attachmentIds ?? [],
@@ -159,8 +195,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     runId,
     sessionId: session.id,
     workspaceId: workspace.id,
-    runtime: session.runtime,
-    model: model ?? session.model ?? null,
+    runtime,
+    model: effectiveModel,
   });
 
   const done = (async (): Promise<RunOutcome> => {
@@ -195,7 +231,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // Snapshot the workspace before the run can touch it, so its changes can be
     // diffed and rolled back later. Best-effort: a non-git cwd or a git failure
     // just means no checkpoint, and the run proceeds anyway.
-    const repoRoot = await repoRootFor(session.cwd);
+    const repoRoot = await repoRootFor(runCwd);
     const preRef = repoRoot ? await captureCheckpoint(repoRoot, `${runId}-pre`) : null;
     if (repoRoot) {
       ctx.db.upsertRunCheckpoint({
@@ -211,7 +247,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     send({
       type: 'status',
       label: 'starting',
-      runtime: session.runtime,
+      runtime,
       sessionId: session.id,
     });
 
@@ -220,7 +256,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
     // the primary to be granted explicitly). The engine also exports the same
     // set to the hook as its spawn-time allowlist.
-    const extraDirs = extraDirsForRun(ctx, session, workspace);
+    const extraDirs = extraDirsForRun(ctx, session, workspace, runCwd);
 
     // Knowledge goes to the runtime only: the user message and `runs.prompt`
     // stay raw so replay/capture see what the user actually typed.
@@ -238,8 +274,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     const injected = mergePreludes(knowledge, ends, memory);
     const promptWithRecall = recall ? `${recall.prefix}\n\n${prompt}` : prompt;
     const nativeSystemPrompt =
-      injected !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
-    const usePrelude = injected !== null && !nativeSystemPrompt && !session.native_session_id;
+      injected !== null && ctx.registry.detection(runtime)?.capabilities.nativeSystemPrompt === true;
+    const usePrelude = injected !== null && !nativeSystemPrompt && resumeNativeSessionId === null;
     const promptSent = usePrelude && injected ? `${injected.prefix}\n\n${promptWithRecall}` : promptWithRecall;
     if (knowledge) {
       const mode = nativeSystemPrompt
@@ -258,7 +294,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     ctx.notifier.register(runId, send);
     // One list for every runtime: argv/RPC drivers translate these specs into
     // their own MCP config, the builtin driver consumes them in-process.
-    const toolServers = perRunToolServers(ctx, runId, session.runtime, session.id);
+    const toolServers = perRunToolServers(ctx, runId, runtime, session.id);
 
     // [debug] Capture what paboot is about to inject before the driver
     // starts, so a provider/spawn failure still leaves it in the debug view.
@@ -274,16 +310,16 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       sessionId: session.id,
       workspaceId: workspace.id,
       runId,
-      runtime: session.runtime,
+      runtime,
       sessionKind: session.kind,
       purpose: session.purpose,
       memoryMode: session.memory_mode,
-      model: model ?? session.model ?? null,
+      model: effectiveModel,
       modelParameters: modelParameters ?? parseStoredModelParameters(session.model_parameters),
       permissionMode,
       extraDirs,
       toolServers,
-      resumeNativeSession: session.native_session_id !== null,
+      resumeNativeSession: resumeNativeSessionId !== null,
       knowledge: knowledge === null ? null : {
         prefix: knowledge.prefix,
         used: knowledge.used,
@@ -336,16 +372,23 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       const active = driver.start({
         runId,
         sessionId,
+        // The in-process runtime keys its transcripts by agent; other drivers
+        // ignore this. Passing it here keeps `runtimes/` free of agent imports.
+        ...(agent ? { agentId: agent.id } : {}),
         prompt: promptSent,
-        cwd: session.cwd,
-        model: model ?? undefined,
+        cwd: runCwd,
+        model: effectiveModel ?? undefined,
         modelParameters: modelParameters ?? undefined,
         permissionMode,
-        resumeNativeSessionId: session.native_session_id ?? undefined,
-        // The driver reports the session's native id once known: a host-picking
-        // runtime names it up front, a self-allocating one (Codex) when the
-        // provider reports it.
-        onNativeSessionId: (nativeId) => ctx.db.setNativeSessionId(sessionId, nativeId),
+        resumeNativeSessionId: resumeNativeSessionId ?? undefined,
+        // The driver reports the native id once known: a host-picking runtime
+        // names it up front, a self-allocating one (Codex) when the provider
+        // reports it. With a thread it belongs to that thread alone — writing it
+        // session-wide would hand one agent's conversation to its room-mates.
+        onNativeSessionId: (nativeId) =>
+          thread
+            ? ctx.db.setAgentThreadNativeId(thread.id, nativeId)
+            : ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
         attachmentIds: input.attachmentIds,
         images,
@@ -364,14 +407,15 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       let finalOutcome = outcome;
       if (
         outcome.status === 'failed' &&
-        session.native_session_id &&
+        resumeNativeSessionId &&
         MISSING_NATIVE_SESSION_RE.test(outcome.error ?? '') &&
         ctx.db.getRun(runId)
       ) {
-        ctx.db.clearNativeSessionId(sessionId);
+        if (thread) ctx.db.clearAgentThreadNativeId(thread.id);
+        else ctx.db.clearNativeSessionId(sessionId);
         finalOutcome = { ...outcome, error: RESET_NATIVE_SESSION_MESSAGE };
         log.warn(
-          `run ${runId}: native session ${session.native_session_id} no longer exists; reset for the next run`,
+          `run ${runId}: native session ${resumeNativeSessionId} no longer exists; reset for the next run`,
         );
       }
       if (!ctx.db.getRun(runId)) {

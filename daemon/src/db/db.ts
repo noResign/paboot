@@ -988,6 +988,17 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`).run(title, id);
   }
 
+  /**
+   * Mirror the leader's backend onto the session row.
+   *
+   * `sessions.runtime` predates agents and is still what older clients read and
+   * what the scheduler looks up. Keeping it equal to the leader's backend means
+   * that old read path stays correct without changing those callers.
+   */
+  setSessionRuntime(id: string, runtime: string): void {
+    this.db.prepare(`UPDATE sessions SET runtime = ? WHERE id = ?`).run(runtime, id);
+  }
+
   setSessionModelSelection(
     id: string,
     model: string | null,
@@ -1000,18 +1011,55 @@ export class Db {
 
   setNativeSessionId(id: string, nativeSessionId: string): void {
     this.db.prepare(`UPDATE sessions SET native_session_id = ? WHERE id = ?`).run(nativeSessionId, id);
-    // Dual-write (P0): `sessions.native_session_id` stays the source of truth
-    // until P1 flips the read path to `agent_threads`. No thread row yet (a
-    // session created after the backfill marker) simply updates zero rows.
+    // Legacy mirror: keep the session's own column in step for readers that
+    // have not moved to threads yet. The authoritative per-agent write is
+    // `setAgentThreadNativeId` — this one must not touch other agents' threads.
     this.db
-      .prepare(`UPDATE agent_threads SET native_session_id = ?, last_used_at = ? WHERE session_id = ?`)
-      .run(nativeSessionId, Date.now(), id);
+      .prepare(
+        `UPDATE agent_threads SET native_session_id = ?, last_used_at = ?
+         WHERE session_id = ? AND agent_id = (
+           SELECT agent_id FROM session_agents WHERE session_id = ? AND role = 'leader'
+         )`,
+      )
+      .run(nativeSessionId, Date.now(), id, id);
+  }
+
+  /**
+   * Record the provider's handle on one specific thread.
+   *
+   * `sessions.native_session_id` mirrors the leader's conversation for readers
+   * that predate agents (and for the scheduler, which looks the session up by
+   * runtime), so it is kept in step whenever the leader's thread is written.
+   * Other agents' threads never touch it — that is what stops one agent's
+   * conversation from being handed to its room-mates.
+   */
+  setAgentThreadNativeId(threadId: string, nativeSessionId: string): void {
+    const row = this.db
+      .prepare(`SELECT session_id AS sessionId, agent_id AS agentId FROM agent_threads WHERE id = ?`)
+      .get(threadId) as unknown as { sessionId: string; agentId: string } | undefined;
+    this.db
+      .prepare(`UPDATE agent_threads SET native_session_id = ?, status = 'idle', last_used_at = ? WHERE id = ?`)
+      .run(nativeSessionId, Date.now(), threadId);
+    if (!row) return;
+    const leader = this.getSessionLeader(row.sessionId);
+    if (leader?.agent_id === row.agentId) {
+      this.db
+        .prepare(`UPDATE sessions SET native_session_id = ? WHERE id = ?`)
+        .run(nativeSessionId, row.sessionId);
+    }
   }
 
   /** Forget a native id the runtime no longer recognizes; the next run starts fresh. */
   clearNativeSessionId(id: string): void {
     this.db.prepare(`UPDATE sessions SET native_session_id = NULL WHERE id = ?`).run(id);
-    this.db.prepare(`UPDATE agent_threads SET native_session_id = NULL WHERE session_id = ?`).run(id);
+    this.db
+      .prepare(
+        `UPDATE agent_threads SET native_session_id = NULL
+         WHERE session_id = ? AND agent_id = (
+           SELECT agent_id FROM session_agents WHERE session_id = ? AND role = 'leader'
+         )`,
+      )
+      .run(id, id);
   }
 
   setSessionPermissionMode(id: string, mode: string): void {
@@ -1668,6 +1716,266 @@ export class Db {
       .all(workspaceId) as unknown as AgentRow[];
   }
 
+  /** Insert a fully-formed agent row. Callers validate; this only writes. */
+  insertAgent(row: AgentRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO agents
+           (id, workspace_id, name, summary, avatar, kind, runtime, peer_id, remote_agent_id,
+            model, model_parameters, instructions, cwd, extra_dirs, read_only,
+            permission_ceiling, tools_allow, tools_deny, skills, budget_json, heavy,
+            is_implicit, enabled, version, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.workspace_id,
+        row.name,
+        row.summary,
+        row.avatar,
+        row.kind,
+        row.runtime,
+        row.peer_id,
+        row.remote_agent_id,
+        row.model,
+        row.model_parameters,
+        row.instructions,
+        row.cwd,
+        row.extra_dirs,
+        row.read_only,
+        row.permission_ceiling,
+        row.tools_allow,
+        row.tools_deny,
+        row.skills,
+        row.budget_json,
+        row.heavy,
+        row.is_implicit,
+        row.enabled,
+        row.version,
+        row.created_at,
+        row.updated_at,
+      );
+  }
+
+  /**
+   * Overwrite the editable columns of an agent. `version` and `updated_at` are
+   * supplied by the service so the increment stays in one place.
+   */
+  updateAgentRow(
+    id: string,
+    row: Pick<
+      AgentRow,
+      | 'name'
+      | 'summary'
+      | 'avatar'
+      | 'runtime'
+      | 'model'
+      | 'model_parameters'
+      | 'instructions'
+      | 'cwd'
+      | 'extra_dirs'
+      | 'read_only'
+      | 'permission_ceiling'
+      | 'tools_allow'
+      | 'tools_deny'
+      | 'skills'
+      | 'budget_json'
+      | 'heavy'
+      | 'enabled'
+      | 'version'
+      | 'updated_at'
+    >,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE agents SET
+           name = ?, summary = ?, avatar = ?, runtime = ?, model = ?, model_parameters = ?,
+           instructions = ?, cwd = ?, extra_dirs = ?, read_only = ?, permission_ceiling = ?,
+           tools_allow = ?, tools_deny = ?, skills = ?, budget_json = ?, heavy = ?,
+           enabled = ?, version = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(
+        row.name,
+        row.summary,
+        row.avatar,
+        row.runtime,
+        row.model,
+        row.model_parameters,
+        row.instructions,
+        row.cwd,
+        row.extra_dirs,
+        row.read_only,
+        row.permission_ceiling,
+        row.tools_allow,
+        row.tools_deny,
+        row.skills,
+        row.budget_json,
+        row.heavy,
+        row.enabled,
+        row.version,
+        row.updated_at,
+        id,
+      );
+  }
+
+  deleteAgentRow(id: string): void {
+    this.db.prepare(`DELETE FROM agents WHERE id = ?`).run(id);
+  }
+
+  /** Another agent in the workspace already holds this name (case-insensitive). */
+  agentNameConflict(workspaceId: string, name: string, exceptId: string | null): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM agents WHERE workspace_id = ? AND lower(name) = lower(?) AND id <> ? LIMIT 1`,
+      )
+      .get(workspaceId, name, exceptId ?? '') as unknown as { id: string } | undefined;
+    return row !== undefined;
+  }
+
+  // ---- session agents (membership) ----
+
+  listSessionAgents(sessionId: string): SessionAgentRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM session_agents WHERE session_id = ?
+         ORDER BY CASE role WHEN 'leader' THEN 0 ELSE 1 END, joined_at ASC`,
+      )
+      .all(sessionId) as unknown as SessionAgentRow[];
+  }
+
+  upsertSessionAgent(row: SessionAgentRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_agents (session_id, agent_id, role, added_by, joined_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, agent_id) DO UPDATE SET role = excluded.role`,
+      )
+      .run(row.session_id, row.agent_id, row.role, row.added_by, row.joined_at);
+  }
+
+  deleteSessionAgent(sessionId: string, agentId: string): void {
+    this.db
+      .prepare(`DELETE FROM session_agents WHERE session_id = ? AND agent_id = ?`)
+      .run(sessionId, agentId);
+  }
+
+  listSessionsForAgent(agentId: string): string[] {
+    return (
+      this.db
+        .prepare(`SELECT session_id AS id FROM session_agents WHERE agent_id = ?`)
+        .all(agentId) as unknown as { id: string }[]
+    ).map((row) => row.id);
+  }
+
+  // ---- agent threads ----
+
+  listAgentThreads(sessionId: string): AgentThreadRow[] {
+    return this.db
+      .prepare(`SELECT * FROM agent_threads WHERE session_id = ?`)
+      .all(sessionId) as unknown as AgentThreadRow[];
+  }
+
+  /**
+   * Open (or reuse) the context handle for one agent in one session.
+   *
+   * A thread snapshots the agent's version at open time: if the agent is later
+   * edited, the snapshot is what tells us the conversation was built under a
+   * different persona, which is otherwise invisible drift.
+   */
+  ensureAgentThread(input: {
+    id: string;
+    sessionId: string;
+    agentId: string;
+    backend: string;
+    cwd: string;
+    modelSnapshot: string | null;
+    agentVersion: number;
+    now: number;
+  }): AgentThreadRow {
+    const existing = this.getAgentThread(input.sessionId, input.agentId);
+    if (existing) return existing;
+    this.db
+      .prepare(
+        `INSERT INTO agent_threads
+           (id, session_id, agent_id, backend, native_session_id, cwd, model_snapshot,
+            agent_version, status, last_seen_seq, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'idle', 0, ?, ?)
+         ON CONFLICT (session_id, agent_id) DO NOTHING`,
+      )
+      .run(
+        input.id,
+        input.sessionId,
+        input.agentId,
+        input.backend,
+        input.cwd,
+        input.modelSnapshot,
+        input.agentVersion,
+        input.now,
+        input.now,
+      );
+    return this.getAgentThread(input.sessionId, input.agentId) as AgentThreadRow;
+  }
+
+  updateAgentThread(
+    id: string,
+    patch: { cwd?: string; status?: string; modelSnapshot?: string | null },
+  ): void {
+    const current = this.db.prepare(`SELECT * FROM agent_threads WHERE id = ?`).get(id) as unknown as
+      | AgentThreadRow
+      | undefined;
+    if (!current) return;
+    this.db
+      .prepare(
+        `UPDATE agent_threads SET cwd = ?, status = ?, model_snapshot = ?, last_used_at = ? WHERE id = ?`,
+      )
+      .run(
+        patch.cwd ?? current.cwd,
+        patch.status ?? current.status,
+        patch.modelSnapshot !== undefined ? patch.modelSnapshot : current.model_snapshot,
+        Date.now(),
+        id,
+      );
+  }
+
+  deleteAgentThreads(sessionId: string, agentId: string): void {
+    this.db
+      .prepare(`DELETE FROM agent_threads WHERE session_id = ? AND agent_id = ?`)
+      .run(sessionId, agentId);
+  }
+
+  /**
+   * Drop one thread's provider handle; its history rows stay.
+   *
+   * `sessions.native_session_id` mirrors the leader's thread for readers that
+   * predate agents, so it is cleared too when the reset hits the leader. Leaving
+   * it behind would make the legacy column claim a conversation that no longer
+   * exists — the next run would resume it and fail all over again.
+   */
+  clearAgentThreadNativeId(threadId: string): void {
+    const row = this.db
+      .prepare(`SELECT session_id AS sessionId, agent_id AS agentId FROM agent_threads WHERE id = ?`)
+      .get(threadId) as unknown as { sessionId: string; agentId: string } | undefined;
+    this.db
+      .prepare(`UPDATE agent_threads SET native_session_id = NULL, status = 'broken', last_used_at = ? WHERE id = ?`)
+      .run(Date.now(), threadId);
+    if (!row) return;
+    const leader = this.getSessionLeader(row.sessionId);
+    if (leader?.agent_id === row.agentId) {
+      this.db.prepare(`UPDATE sessions SET native_session_id = NULL WHERE id = ?`).run(row.sessionId);
+    }
+  }
+
+  /** Reset one agent's conversation in one session, keeping its history rows. */
+  clearAgentThreadByOwner(sessionId: string, agentId: string): void {
+    this.db
+      .prepare(
+        `UPDATE agent_threads SET native_session_id = NULL, status = 'broken', last_used_at = ?
+         WHERE session_id = ? AND agent_id = ?`,
+      )
+      .run(Date.now(), sessionId, agentId);
+  }
+
   /**
    * Distinct (workspace, runtime) pairs that live sessions actually use.
    * Sessions pointing at a workspace that no longer exists are excluded: they
@@ -1743,6 +2051,36 @@ export class Db {
            JOIN workspaces w ON w.id = s.workspace_id
            JOIN session_agents sa ON sa.session_id = s.id AND sa.role = 'leader'
            WHERE s.kind IN ('chat', 'command')`,
+        )
+        .run().changes,
+    );
+  }
+
+  /**
+   * Point builtin transcripts at the agent that owns the session.
+   *
+   * Before agents, every builtin transcript was keyed `agent_id = 'builtin'`.
+   * Once the driver passes the real agent id, those rows would no longer be
+   * found and every existing conversation would appear to have been forgotten.
+   * This rewrites them in place, one session at a time.
+   *
+   * Only the leader is remapped: a single-agent session is the only shape that
+   * existed before, so there is exactly one thread per session to move.
+   */
+  backfillNativeThreadAgents(): number {
+    return Number(
+      this.db
+        .prepare(
+          `UPDATE native_threads
+           SET agent_id = (
+             SELECT sa.agent_id FROM session_agents sa
+             WHERE sa.session_id = native_threads.session_id AND sa.role = 'leader'
+           )
+           WHERE agent_id = 'builtin'
+             AND EXISTS (
+               SELECT 1 FROM session_agents sa
+               WHERE sa.session_id = native_threads.session_id AND sa.role = 'leader'
+             )`,
         )
         .run().changes,
     );

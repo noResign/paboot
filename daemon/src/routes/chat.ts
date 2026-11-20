@@ -16,6 +16,7 @@ import {
   resolveNewSessionPermissionMode,
   resolveNewSessionRuntime,
 } from '../workspaces/workspace-defaults.js';
+import { resolveSessionAgent } from '../agents/index.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import {
   isValidModelParameters,
@@ -175,11 +176,17 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    if (session && requestedRuntime && requestedRuntime !== session.runtime) {
+    // Who answers, and on which backend, is decided before the driver is looked
+    // up: the agent owns the runtime, and `sessions.runtime` is only a mirror of
+    // its leader. Resolving first is what lets one session host agents on
+    // different runtimes.
+    let resolved = session ? resolveSessionAgent(ctx.db, session, workspace) : null;
+    const sessionBackend = resolved?.thread.backend ?? session?.runtime;
+    if (session && requestedRuntime && requestedRuntime !== sessionBackend) {
       res.status(400).json({ error: 'runtime does not match session', code: 'runtime_mismatch' });
       return;
     }
-    const runtime = session?.runtime ?? resolveNewSessionRuntime(workspace, requestedRuntime);
+    const runtime = sessionBackend ?? resolveNewSessionRuntime(workspace, requestedRuntime);
 
     // The execution seam is the registered driver; argv (Claude) and RPC
     // (Codex) runtimes both provide one. The route never branches on the
@@ -263,9 +270,12 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       requestedSessionPermissionMode,
       ctx.builtinConfig,
     );
-    // A request-level model overrides for this run; otherwise the session's
-    // creation-time choice decides, and absent both the runtime's default wins.
-    const effectiveModel = model ?? normalizeModel(session?.model) ?? undefined;
+    // Model precedence is decided by the run, not here: a request-level value
+    // wins, then the agent's own choice, then the session's creation-time pick.
+    // Passing the session's model down as if it were a request would mask the
+    // agent's choice, so only an explicit body value is forwarded.
+    const requestedModel = model ?? undefined;
+    const sessionModel = requestedModel ?? normalizeModel(session?.model) ?? null;
     // Same precedence for the knobs: a request-level override wins, otherwise
     // the session's saved selection, otherwise the provider defaults.
     const effectiveParameters = body.modelParameters !== undefined
@@ -282,7 +292,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         runtime,
         workspaceId: workspace.id,
         permissionMode: sessionPermissionMode,
-        model: effectiveModel ?? null,
+        model: sessionModel,
         modelParameters: effectiveParameters,
         cwd: workspace.path,
         title: titleFromPrompt(prompt),
@@ -293,6 +303,17 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       ctx.attachments.bind(id, { sessionId: session.id, workspaceId: workspace.id });
     }
 
+    // A brand-new session has no membership rows yet, so resolve again now that
+    // it exists. Resolution never throws: a workspace with no agents yields a
+    // synthesized one that behaves exactly like the pre-agent daemon.
+    resolved ??= resolveSessionAgent(ctx.db, session, workspace);
+    // Mirror the leader's backend onto the session row so older clients and the
+    // scheduler keep reading a correct value.
+    if (resolved && session.runtime !== resolved.thread.backend) {
+      ctx.db.setSessionRuntime(session.id, resolved.thread.backend);
+      session = ctx.db.getSession(session.id) ?? session;
+    }
+
     const sink = new ChatSseSink(res);
     try {
       const handle = startSessionRun(ctx, {
@@ -301,12 +322,13 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         prompt,
         driver,
         permissionMode: sessionPermissionMode,
-        model: effectiveModel ?? null,
+        model: requestedModel ?? null,
         modelParameters: effectiveParameters ?? null,
         attachmentIds,
         trigger: 'user',
         commandId: commandId ?? null,
         sink,
+        ...(resolved ? { agent: resolved.agent, thread: resolved.thread } : {}),
       });
       await handle.done;
     } catch (err) {

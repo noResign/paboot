@@ -26,6 +26,7 @@ import { registerScheduledTaskRoutes } from '../routes/scheduled-tasks.js';
 import { registerEndRoutes } from '../routes/ends.js';
 import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
 import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
+import { registerAgentsRoutes } from '../routes/agents.js';
 import { registerWorkspaceRoutes } from '../routes/workspaces.js';
 
 export type ServerHooks = SystemRouteHooks;
@@ -58,6 +59,7 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerDeployRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerFsRoutes(app, ctx);
+  registerAgentsRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
   registerKnowledgeRoutes(app, ctx);
   registerMemoryRoutes(app, ctx);

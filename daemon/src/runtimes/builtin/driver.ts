@@ -119,7 +119,10 @@ async function runBuiltin(
     }
 
     const transcript = createTranscriptStore(ctx.db);
-    const thread = transcript.getOrCreateThread({ sessionId: session.id, agentId: 'builtin' });
+    // Keyed by agent so two agents in one session keep separate transcripts.
+    // `builtin` is the fallback for callers that predate agents (command runs).
+    const agentId = req.agentId ?? 'builtin';
+    const thread = transcript.getOrCreateThread({ sessionId: session.id, agentId });
     const isFirstTurn = transcript.list(thread.id).length === 0;
     const userBlocks: TranscriptContentBlock[] = [];
     if (req.prompt) userBlocks.push({ type: 'text', text: req.prompt });
@@ -159,7 +162,7 @@ async function runBuiltin(
     const preset: AgentPromptPreset = { id: 'builtin-default', version: 1 };
     const presets = new Map([[preset.id, preset]]);
     const contextProfile: AgentContextProfile = {
-      agentId: 'builtin',
+      agentId,
       promptPreset: preset,
       contextSources: [
         new EnvironmentContextSource(),
@@ -362,7 +365,7 @@ async function runBuiltin(
         session: {
           id: session.id,
           workspaceId: workspace.id,
-          agentId: 'builtin',
+          agentId,
           endId: resolveSessionEnd(ctx.db, session)?.id ?? null,
           memoryMode: session.memory_mode,
           purpose: session.purpose,

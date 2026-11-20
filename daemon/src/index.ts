@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   // Multi-agent shadow tables: fill agents/session_agents/agent_threads so the
   // next phase has real data to read. Additive and failure-tolerant — a bug
   // here leaves the shadow tables incomplete, never a broken request.
-  const { backfillMultiAgent } = await import('./agents/index.js');
+  const { backfillMultiAgent, backfillNativeThreadAgents } = await import('./agents/index.js');
   const backfill = backfillMultiAgent(db, log);
   if (backfill.ran && (backfill.implicitAgents || backfill.leadersAdded || backfill.threadsAdded)) {
     log.info(
@@ -153,6 +153,10 @@ async function main(): Promise<void> {
         `${backfill.leadersAdded} leader(s), ${backfill.threadsAdded} thread(s)`,
     );
   }
+  // Second stage, gated separately: move pre-agent builtin transcripts onto
+  // their session's leader so existing conversations survive the driver switch.
+  const movedThreads = backfillNativeThreadAgents(db, log);
+  if (movedThreads > 0) log.info(`multi-agent backfill: ${movedThreads} native thread(s) re-keyed`);
 
   // Older daemons disabled tasks when their session disappeared. Tidy those
   // dangling rows once at boot so the task list cannot show broken entries.

@@ -80,6 +80,32 @@ function seedImplicitAgents(db: Db): number {
  */
 export const DEFAULT_IMPLICIT_RUNTIME = 'builtin';
 
+/**
+ * Second-stage backfill, gated separately from the first so databases that
+ * already ran it still pick this up.
+ *
+ * It rewrites `native_threads.agent_id` from the pre-agent constant to the
+ * session's leader. This must run in the same release as the driver change that
+ * starts passing the real agent id — doing it earlier would strand existing
+ * conversations (the driver would look up `builtin` and find nothing), and later
+ * would mean every old builtin session briefly looks empty.
+ */
+export const NATIVE_THREAD_AGENTS_KEY = 'multi_agent_native_thread_agents_v1';
+
+export function backfillNativeThreadAgents(db: Db, log: BackfillLogger): number {
+  if (db.getSetting(NATIVE_THREAD_AGENTS_KEY)) return 0;
+  try {
+    const moved = db.backfillNativeThreadAgents();
+    db.setSetting(NATIVE_THREAD_AGENTS_KEY, '1');
+    return moved;
+  } catch (error) {
+    // A failure leaves the marker unset so the next boot retries; the driver
+    // then simply opens a fresh transcript rather than failing the request.
+    log.warn('multi-agent backfill: native thread agents failed', error);
+    return 0;
+  }
+}
+
 export function backfillMultiAgent(db: Db, log: BackfillLogger): BackfillResult {
   const result: BackfillResult = { implicitAgents: 0, leadersAdded: 0, threadsAdded: 0, ran: false };
   if (db.getSetting(MULTI_AGENT_BACKFILL_KEY)) return result;
@@ -109,62 +135,4 @@ export function backfillMultiAgent(db: Db, log: BackfillLogger): BackfillResult 
 
   db.setSetting(MULTI_AGENT_BACKFILL_KEY, '1');
   return result;
-}
-
-/**
- * Resolution order for "which agent owns this session".
- *
- * P0 exposes it so the dual-write can attribute runs, but `/api/chat` keeps
- * using `sessions.runtime` until P1 flips the read path. Step 4 never throws:
- * an unknown session must degrade to a synthesized agent rather than fail a
- * user's message.
- */
-export interface ResolvedAgent {
-  id: string;
-  workspaceId: string;
-  runtime: string;
-  /** Which fallback step produced this answer; useful in logs and tests. */
-  source: 'leader' | 'workspace_default' | 'implicit' | 'synthesized';
-}
-
-export function resolveAgentForSession(db: Db, sessionId: string): ResolvedAgent | null {
-  const session = db.getSession(sessionId);
-  if (!session) return null;
-  const workspaceId = session.workspace_id ?? null;
-
-  const leader = db.getSessionLeader(sessionId);
-  if (leader) {
-    const agent = db.getAgent(leader.agent_id);
-    if (agent) {
-      return { id: agent.id, workspaceId: agent.workspace_id, runtime: agent.runtime ?? session.runtime, source: 'leader' };
-    }
-  }
-
-  if (workspaceId) {
-    const defaultAgentId = db.getWorkspaceDefaultAgentId(workspaceId);
-    if (defaultAgentId) {
-      const agent = db.getAgent(defaultAgentId);
-      if (agent) {
-        return {
-          id: agent.id,
-          workspaceId: agent.workspace_id,
-          runtime: agent.runtime ?? session.runtime,
-          source: 'workspace_default',
-        };
-      }
-    }
-    const implicit = db.listAgents(workspaceId).filter((agent: AgentRow) => agent.is_implicit === 1);
-    const matching = implicit.find((agent) => agent.runtime === session.runtime) ?? implicit[0];
-    if (matching) {
-      return { id: matching.id, workspaceId, runtime: matching.runtime ?? session.runtime, source: 'implicit' };
-    }
-  }
-
-  // Last resort: a stable synthetic id derived from the runtime, never written.
-  return {
-    id: `synthetic:${session.runtime}`,
-    workspaceId: workspaceId ?? '',
-    runtime: session.runtime,
-    source: 'synthesized',
-  };
 }

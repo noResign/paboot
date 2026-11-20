@@ -1,5 +1,5 @@
 import type { ProductPermissionMode } from './permission-mode.js';
-import { isProductPermissionMode } from './permission-mode.js';
+import { isProductPermissionMode, PRODUCT_PERMISSION_MODES } from './permission-mode.js';
 
 /**
  * The two explicit bypass switches, kept per profile. This is the only config
@@ -46,6 +46,23 @@ export function resolveEffectivePermissionMode(
 ): ProductPermissionMode {
   if (requested === 'bypass' && !isBypassAllowed(config)) return 'acceptEdits';
   return requested;
+}
+
+/**
+ * The stricter of two modes.
+ *
+ * An agent's own ceiling and the session's mode both apply, and neither may
+ * widen the other: `ask < acceptEdits < bypass`, so the lower value wins. A
+ * room that was opened in "ask" must not silently become "bypass" because a
+ * loose agent joined it, and an agent that declares itself `ask` must not be
+ * loosened by a room someone else configured.
+ */
+export function stricterPermissionMode(
+  a: ProductPermissionMode,
+  b: ProductPermissionMode,
+): ProductPermissionMode {
+  const rank = (mode: ProductPermissionMode): number => PRODUCT_PERMISSION_MODES.indexOf(mode);
+  return rank(a) <= rank(b) ? a : b;
 }
 
 /** Same gate for a raw stored mode that may be legacy/invalid. */

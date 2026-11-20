@@ -162,3 +162,57 @@ describe('daemon source layout', () => {
     expect(problems).toEqual([]);
   });
 });
+
+/**
+ * The `agents/` module boundary.
+ *
+ * `agents/` is a self-contained domain: it owns agent definitions and their
+ * per-session threads, and everyone else reaches it through `agents/index.ts`
+ * only. That single entry point is what lets its internals change without
+ * touching rooms or routes, and what keeps `runtimes/` ignorant of the concept
+ * entirely — a fourth runtime must drop in without knowing agents exist.
+ */
+describe('agents module boundary', () => {
+  const agentsDir = path.join(srcDir, 'agents');
+
+  it('does not import routes/ or rooms/', () => {
+    const problems: string[] = [];
+    for (const file of walk(agentsDir)) {
+      for (const ref of importsIn(file)) {
+        if (/^(\.\.\/)+(routes|rooms)\//.test(ref.specifier)) {
+          problems.push(`${path.relative(srcDir, file)}:${ref.line} imports '${ref.specifier}'`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('is imported from outside only through its index', () => {
+    const problems: string[] = [];
+    for (const file of walk(srcDir)) {
+      if (file.startsWith(agentsDir + path.sep)) continue;
+      for (const ref of importsIn(file)) {
+        if (!/agents\/[^/]+\.js$/.test(ref.specifier)) continue;
+        if (ref.specifier.endsWith('agents/index.js')) continue;
+        problems.push(
+          `${path.relative(srcDir, file)}:${ref.line} imports '${ref.specifier}' — use agents/index.js`,
+        );
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('keeps runtimes/ and llm/ unaware of agents', () => {
+    const problems: string[] = [];
+    for (const dir of ['runtimes', 'llm']) {
+      for (const file of walk(path.join(srcDir, dir))) {
+        for (const ref of importsIn(file)) {
+          if (ref.specifier.includes('/agents/')) {
+            problems.push(`${path.relative(srcDir, file)}:${ref.line} imports '${ref.specifier}'`);
+          }
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});

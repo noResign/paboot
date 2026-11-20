@@ -89,7 +89,7 @@ describe('workspace knowledge scaffolding', () => {
     });
     const ctx = { db, knowledge: store } as unknown as AppContext;
 
-    expect(extraDirsForRun(ctx, session, workspace)).toContain(store.root(workspace.id));
+    expect(extraDirsForRun(ctx, session, workspace, session.cwd)).toContain(store.root(workspace.id));
 
     const { workspace: life } = db.ensureLifeWorkspace(tmpDir('knowledge-extra-life'));
     const lifeSession = db.createSession({
@@ -99,7 +99,7 @@ describe('workspace knowledge scaffolding', () => {
       permissionMode: 'ask',
       cwd: life.path,
     });
-    expect(extraDirsForRun(ctx, lifeSession, life)).not.toContain(store.root(life.id));
+    expect(extraDirsForRun(ctx, lifeSession, life, lifeSession.cwd)).not.toContain(store.root(life.id));
   });
 
   it('scaffolds a workspace created through POST /api/workspaces', async () => {

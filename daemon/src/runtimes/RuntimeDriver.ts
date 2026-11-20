@@ -12,6 +12,15 @@ import type { RuntimeImageInput, ToolServerSpec } from './types.js';
 export interface RuntimeDriverRequest {
   runId: string;
   sessionId: string;
+  /**
+   * Opaque agent id for runtimes that keep their own per-agent state.
+   *
+   * Only the in-process builtin runtime uses it, to key its transcript threads
+   * by agent so two agents in one session do not read each other's history.
+   * Deliberately a bare string: `runtimes/` must not depend on the agent domain,
+   * and a fourth runtime should not have to learn what an agent is.
+   */
+  agentId?: string;
   prompt: string;
   cwd: string;
   model?: string;
