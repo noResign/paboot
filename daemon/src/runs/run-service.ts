@@ -232,10 +232,15 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     const ends = endsContext(ctx, session, workspace);
     const memory = memoryContext(ctx, session, workspace);
     const recall = memoryRecall(ctx, session, workspace, prompt);
-    const injected = mergePreludes(knowledge, ends, memory, recall);
+    // Only stable context goes into the (cacheable) system prompt. Per-turn
+    // recall is appended to *this user message* instead: it changes every turn,
+    // and putting it in the system block would invalidate the whole prefix.
+    const injected = mergePreludes(knowledge, ends, memory);
+    const promptWithRecall = recall ? `${recall.prefix}\n\n${prompt}` : prompt;
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(session.runtime)?.capabilities.nativeSystemPrompt === true;
     const usePrelude = injected !== null && !nativeSystemPrompt && !session.native_session_id;
+    const promptSent = usePrelude && injected ? `${injected.prefix}\n\n${promptWithRecall}` : promptWithRecall;
     if (knowledge) {
       const mode = nativeSystemPrompt
         ? 'system prompt'
@@ -316,7 +321,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       },
       injectionMode,
       prompt,
-      promptSent: usePrelude && injected ? `${injected.prefix}\n\n${prompt}` : prompt,
+      promptSent,
       systemContext: nativeSystemPrompt && injected ? injected.prefix : null,
     });
 
@@ -331,7 +336,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       const active = driver.start({
         runId,
         sessionId,
-        prompt: usePrelude && injected ? `${injected.prefix}\n\n${prompt}` : prompt,
+        prompt: promptSent,
         cwd: session.cwd,
         model: model ?? undefined,
         modelParameters: modelParameters ?? undefined,

@@ -182,6 +182,36 @@ export function buildLifeBrief(
   );
 }
 
+/**
+ * The always-on slice of progressive disclosure: a few claims the operator
+ * explicitly confirmed. Nothing derived is included, so one-off statements in a
+ * work session never turn into a persona. Rendered lines are stable until the
+ * user confirms, edits, or removes something.
+ */
+export function buildConfirmedProfile(
+  store: MemoryStore,
+  policy: MemoryReadPolicy,
+  options: { max?: number; now?: number } = {},
+): string[] {
+  const now = options.now ?? Date.now();
+  const max = options.max ?? 5;
+  const seen = new Set<string>();
+  const claims: MemoryClaim[] = [];
+  for (const readScope of policy.scopes) {
+    for (const claim of store.listClaims(readScope.scope, 'active')) {
+      if (claim.authority !== 'user_confirmed') continue;
+      if (!claimAllowed(claim, policy)) continue;
+      if (claim.validTo !== null && claim.validTo <= now) continue;
+      const key = `${claim.predicate}|${claim.objectText ?? claim.summary}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      claims.push(claim);
+    }
+  }
+  claims.sort((a, b) => b.updatedAt - a.updatedAt);
+  return claims.slice(0, max).map(renderClaimLine);
+}
+
 function defaultScope(scopes: readonly ReadScope[]): MemoryScope {
   return scopes.find((item) => item.scope.startsWith('workspace:'))?.scope ?? scopes[0]!.scope;
 }

@@ -104,7 +104,7 @@ function validExtraction(sourceId: string): string {
 }
 
 describe('memory injection metadata', () => {
-  it('exposes the brief claim ids used by the renderer', () => {
+  it('exposes the stable index instead of claim ids', () => {
     const { store, workspace, session, ctx } = setup();
     const claim = store.insertClaim({
       scope: `workspace:${workspace.id}`,
@@ -119,9 +119,10 @@ describe('memory injection metadata', () => {
 
     const result = memoryContext(ctx, session, workspace);
     expect(result).not.toBeNull();
-    expect(result!.claims).toBe(1);
-    expect(result!.usedClaimIds).toEqual([claim.id]);
-    expect(result!.prefix).toContain('住在上海');
+    expect(result!.claims).toBe(0);
+    expect(result!.usedClaimIds).toEqual([]);
+    expect(result!.prefix).toContain('长期记忆');
+    expect(result!.prefix).not.toContain(claim.summary);
   });
 
   it('exposes recall query, cue and dropped items', () => {

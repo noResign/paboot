@@ -23,7 +23,7 @@ import {
   builtinGlobalPromptSections,
   EndsContextSource,
   EnvironmentContextSource,
-  MemoryBriefContextSource,
+  MemoryIndexContextSource,
   ProjectDocsContextSource,
   WorkspaceKnowledgeContextSource,
 } from './context/index.js';
@@ -174,7 +174,8 @@ async function runBuiltin(
         new WorkspaceKnowledgeContextSource(ctx.knowledge),
         ...(ctx.memory
           ? [
-              new MemoryBriefContextSource(ctx.memory, {
+              new MemoryIndexContextSource({
+                store: ctx.memory,
                 resolvePolicy: (snapshot) => {
                   const workspace = ctx.db.getWorkspace(snapshot.id);
                   if (!workspace) {

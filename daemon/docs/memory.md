@@ -9,7 +9,7 @@
 
 - life 会话结束后捕获 user / assistant 可见文本；
 - 后台用共享 LLM 抽取 claim（事实 / 偏好 / 关系 / 画像）；
-- 新会话注入 brief；
+- system prompt 注入固定记忆索引，claim 通过 memory 工具按需查询；
 - 客户端只读 + 改正 / 忘记；
 - **M1.1**：dev workspace 可选开启记忆；每 workspace 开关 / 注入开关 / provider override；
   life 的 `profileMode`、dev 的 `lifeReadable`；读写都走统一的 read-policy。
@@ -137,8 +137,12 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
 
 ## 5. 注入
 
-- brief 由 `memory/brief.ts` 确定性拼装：`## 关于你` / `## 当前计划` / `## 偏好` /
-  `## 注意`；每条带短 ID（`#claim_ab12`）与有效期。
+- **渐进式披露（当前策略）**：system prompt 里只有一段固定的记忆索引（「有长期记忆，涉及偏好
+  或过去决定时先调用 `search_memory` / `memory_timeline` / `list_open_loops`」）。claim 本身
+  不再自动注入；细节由 memory 工具按需查询，结果作为 tool result 追加在对话尾部。
+  这样 system 在一次会话内保持字节稳定，缓存不会因为新 claim 而失效。
+- brief 仍由 `memory/brief.ts` 确定性拼装（`关于你` / `当前计划` / `偏好` / `注意`），
+  但只服务于手动 `GET /api/memory/brief`、UI 预览和评测；不进入自动注入。
 - **分区（D37）**：`关于你` 是 fact / profile / relation（含 `habit` / `schedule` 这类既有习惯），
   `当前计划` 是 `focus` / `plan` / `goal`，`偏好` 是 kind=preference。`## 注意` 是固定免责声明，
   并说明「当前计划只列最近几条，更早的可用 search_memory 查到」。
@@ -160,8 +164,9 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
   作为 `## 相关记忆` 追加。**放宽兜底**：有明确线索但词面检索一条都没命中时（「接着上次那个弄」），
   改取其他会话最近的 1–3 条 session summary / observation（`[最近]` 标记）；当前会话的
   summary / observation 仍排除，且不兜底旧 claim——「最近」不等于「相关」。
-  Claude / Codex 每轮生效；只有首条前导的 runtime（DeepSeek resume）只在首轮生效；
-  builtin 目前只注入 brief。
+  **位置**：召回是每轮变化的临时内容，因此不再进 system prompt，而是拼在**当前用户消息**前面；
+  它只改变对话尾部，不会让前缀缓存失效。只有首条前导的 runtime（DeepSeek resume）仍只在首轮生效。
+  builtin 不走自动召回，靠工具按需查询。
 - **检索（D31）**：`mem_search` FTS5 trigram。查询 ≥3 个码点时先走 FTS（子串 + bm25），
   无命中退 LIKE；1–2 个码点直接 LIKE；多词再退「任一词 OR」并按命中次数排序。
   `secret` 不建索引；`private` 只在允许它的 scope 返回；`excluded` source 不返回。
@@ -173,19 +178,17 @@ episode（M3）；connector、user scope 导出 / 重置（M4）；实体参与�
 - **timeline**：把 read-policy 内所有 scope 的 observation + session summary 按时间倒序合并；
   只用于展示，不整段进 prompt。
 - **时间线不进 prompt**：当前会话自己的 observation / summary 本来就是已有对话的压缩版，
-  runtime 历史里已经有，再注入只会重复并破坏 prompt caching；因此自动注入只保留 claim brief
-  与按轮召回。时间线保留给 UI（workspace 级总览，每条带 `sessionId`）和相关性召回。
-  未来如果检测到 runtime 已压缩历史，再考虑注入一次摘要。
-- **本会话回声过滤（D39）**：同一个理由也适用于 claim——证据**只**来自当前会话的 claim 不进
-  brief、也不进按轮召回（`excludeSessionId` / `claimsOnlyFromSession`）。被更早会话强化过的
-  claim 保留（那属于跨会话知识）；没有 evidence 的 claim 也保留（无从归属，不猜）。
+  runtime 历史里已经有，再注入只会重复并破坏 prompt caching。时间线保留给 UI（workspace 级
+  总览，每条带 `sessionId`）和按轮召回。未来如果检测到 runtime 已压缩历史，再考虑注入一次摘要。
+- **本会话回声过滤（D39）**：证据**只**来自当前会话的 claim 不进 brief、也不进按轮召回
+  （`excludeSessionId` / `claimsOnlyFromSession`）。被更早会话强化过的 claim 保留（那属于
+  跨会话知识）；没有 evidence 的 claim 也保留（无从归属，不猜）。
   手动 `GET /api/memory/brief` 不带这个过滤，UI 要看到全部。
-  实测：138 条 claim 的库里，一次会话贡献 9 条且全部只来自自身，注入预算 1/3 花在重复内容上；
-  过滤后换回 5 条原本被预算挤掉的跨会话记忆。
 - 注入块：`<paboot-memory-context>…</paboot-memory-context>`。
-- 外部 runtime：与 K0 知识合并后走 native system prompt / 首条消息前导；resume 默认不重注入。
-- builtin：`MemoryBriefContextSource` 进入 ContextAssembler 的 runtime-context，使用同一份
-  settings + read-policy。
+- 外部 runtime：静态记忆索引与 K0 知识合并后走 native system prompt / 首条消息前导；
+  按轮召回拼在当前用户消息前面；resume 默认不重注入。
+- builtin：`MemoryIndexContextSource` 只贡献一段固定索引，随 runtime-context 一起并入
+  **system prompt**（不再写 user-role snapshot）；claim 通过 memory 工具查询。
 - `sessions.memory_mode = off | no_injection` 不注入；workspace 关闭或
   `injection_enabled=0` 也不注入（仍按开关决定是否捕获）。
 

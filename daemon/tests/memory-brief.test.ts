@@ -8,7 +8,7 @@ import { buildLifeBrief } from '../src/memory/brief';
 import { MemoryStore } from '../src/memory/store';
 import type { CreateClaimInput } from '../src/memory/types';
 import { memoryContext } from '../src/runs/memory-context';
-import { MemoryBriefContextSource } from '../src/runtimes/builtin/context/memory';
+import { MemoryIndexContextSource } from '../src/runtimes/builtin/context/memory';
 import type { RuntimeContextCollectContext } from '../src/runtimes/builtin/runtime-context';
 
 const dbs: Db[] = [];
@@ -423,18 +423,33 @@ describe('memory injection context', () => {
     return db.getSession(row.id) as SessionRow;
   }
 
-  it('wraps the brief for a life chat', () => {
+  it('injects a stable memory index for a life chat, not the claim list', () => {
     const { db, store, workspace, endId } = setup();
     store.insertClaim(claim({ scope: `workspace:${workspace.id}`, endId }));
+    store.insertClaim(
+      claim({
+        scope: `workspace:${workspace.id}`,
+        endId,
+        predicate: 'prefers',
+        objectText: 'pnpm',
+        kind: 'preference',
+        summary: '偏好 pnpm',
+        authority: 'user_confirmed',
+      }),
+    );
     const result = memoryContext(ctx(store, db), session(db, workspace), workspace);
 
     expect(result).not.toBeNull();
     expect(result!.prefix).toContain('<paboot-memory-context>');
-    expect(result!.prefix).toContain('住在上海');
-    expect(result!.claims).toBe(1);
+    expect(result!.prefix).toContain('长期记忆');
+    expect(result!.prefix).toContain('search_memory');
+    // Only user-confirmed facts ride along; derived ones stay queryable.
+    expect(result!.prefix).toContain('偏好 pnpm');
+    expect(result!.prefix).not.toContain('住在上海');
+    expect(result!.claims).toBe(0);
   });
 
-  it('injects for an enabled dev chat and honors injection-enabled', () => {
+  it('injects the memory index for an enabled dev chat and honors injection-enabled', () => {
     const { db, store } = setup();
     const dev = db.createWorkspace({
       name: 'repo',
@@ -457,15 +472,16 @@ describe('memory injection context', () => {
 
     db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: true, providerOverride: null });
     const enabled = memoryContext(ctx(store, db), devSession, db.getWorkspace(dev.id)!);
-    expect(enabled?.prefix).toContain('项目使用 Compose');
-    // The current session's own timeline is already in runtime history.
+    expect(enabled?.prefix).toContain('长期记忆');
+    // Claims and timelines are on-demand now, never in the system prompt.
+    expect(enabled?.prefix).not.toContain('项目使用 Compose');
     expect(enabled?.prefix).not.toContain('修复登录页');
 
     db.putMemorySettings(dev.id, { enabled: true, injectionEnabled: false, providerOverride: null });
     expect(memoryContext(ctx(store, db), devSession, db.getWorkspace(dev.id)!)).toBeNull();
   });
 
-  it('never injects the current session timeline (runtime already has it)', () => {
+  it('never injects the current session timeline or claims (only the index)', () => {
     const { db, store, workspace } = setup();
     const a = session(db, workspace);
     store.upsertObservation({
@@ -487,7 +503,10 @@ describe('memory injection context', () => {
       nextSteps: '补测试',
     });
 
-    expect(memoryContext(ctx(store, db), a, workspace)).toBeNull();
+    const result = memoryContext(ctx(store, db), a, workspace);
+    expect(result?.prefix).toContain('长期记忆');
+    expect(result?.prefix).not.toContain('会话 A 的工作');
+    expect(result?.prefix).not.toContain('继续做登录');
   });
 
   it('does not inject in dev, commands, builtin, authoring chats, or disabled sessions', () => {
@@ -515,7 +534,7 @@ describe('memory injection context', () => {
   it('builtin context obeys the session memory mode and authoring exclusion', () => {
     const { store, workspace, endId } = setup();
     store.insertClaim(claim({ scope: `workspace:${workspace.id}`, endId }));
-    const source = new MemoryBriefContextSource(store);
+    const source = new MemoryIndexContextSource();
     const context = (overrides: {
       memoryMode?: 'normal' | 'no_injection' | 'off' | null;
       purpose?: 'task_config' | null;
