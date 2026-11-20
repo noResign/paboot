@@ -142,6 +142,18 @@ async function main(): Promise<void> {
   // previous process left behind — reconcile it before serving requests.
   const orphanedRuns = db.interruptOrphanedRuns('daemon restarted while the run was in flight');
   if (orphanedRuns > 0) log.warn(`interrupted ${orphanedRuns} orphaned run(s) left by a previous process`);
+  // Multi-agent shadow tables: fill agents/session_agents/agent_threads so the
+  // next phase has real data to read. Additive and failure-tolerant — a bug
+  // here leaves the shadow tables incomplete, never a broken request.
+  const { backfillMultiAgent } = await import('./agents/index.js');
+  const backfill = backfillMultiAgent(db, log);
+  if (backfill.ran && (backfill.implicitAgents || backfill.leadersAdded || backfill.threadsAdded)) {
+    log.info(
+      `multi-agent backfill: ${backfill.implicitAgents} implicit agent(s), ` +
+        `${backfill.leadersAdded} leader(s), ${backfill.threadsAdded} thread(s)`,
+    );
+  }
+
   // Older daemons disabled tasks when their session disappeared. Tidy those
   // dangling rows once at boot so the task list cannot show broken entries.
   const orphanedTasks = db.deleteOrphanedScheduledTasks();

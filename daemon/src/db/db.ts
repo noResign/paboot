@@ -19,6 +19,74 @@ import { serializeModelParameters } from './model-selection.js';
 /** Setting key: the `env` / `cwd` startup workspace has already been seeded once. */
 const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
 
+/** Setting key: the multi-agent shadow backfill has completed for this database. */
+export const MULTI_AGENT_BACKFILL_KEY = 'multi_agent_backfill_v1';
+
+/**
+ * Implicit agents are keyed by (workspace, runtime) and given a deterministic
+ * id so re-running the backfill is a no-op and P1 can address them without a
+ * name lookup. They are the "there was only ever one agent" stand-in that P0
+ * hangs existing sessions off.
+ */
+export function implicitAgentId(workspaceId: string, runtime: string): string {
+  return `implicit:${workspaceId}:${runtime}`;
+}
+
+/** Minimal shape of an `agents` row. P1 grows the domain model on top of it. */
+export interface AgentRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  summary: string;
+  avatar: string | null;
+  kind: 'builtin' | 'runtime' | 'peer';
+  runtime: string | null;
+  peer_id: string | null;
+  remote_agent_id: string | null;
+  model: string | null;
+  model_parameters: string | null;
+  instructions: string;
+  cwd: string | null;
+  extra_dirs: string | null;
+  read_only: number;
+  permission_ceiling: string;
+  tools_allow: string | null;
+  tools_deny: string | null;
+  skills: string | null;
+  budget_json: string | null;
+  heavy: number;
+  is_implicit: number;
+  enabled: number;
+  version: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SessionAgentRow {
+  session_id: string;
+  agent_id: string;
+  role: 'leader' | 'member';
+  added_by: string | null;
+  joined_at: number;
+}
+
+export interface AgentThreadRow {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  backend: string;
+  native_session_id: string | null;
+  native_thread_id: string | null;
+  remote_thread_key: string | null;
+  cwd: string;
+  model_snapshot: string | null;
+  agent_version: number;
+  status: string;
+  last_seen_seq: number;
+  created_at: number;
+  last_used_at: number;
+}
+
 const NATIVE_MESSAGE_COLUMNS = `
   id, thread_id AS threadId, seq, role, blocks, source, source_kind AS sourceKind,
   source_key AS sourceKey, run_id AS runId, step, provider, model, usage,
@@ -556,6 +624,124 @@ export class Db {
       CREATE INDEX IF NOT EXISTS idx_tasks_due ON scheduled_tasks (enabled, next_run_at);
       CREATE INDEX IF NOT EXISTS idx_tasks_session ON scheduled_tasks (session_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON scheduled_tasks (workspace_id);
+
+      -- ───────────────────────────────────────────────────────────────
+      -- Multi-agent shadow tables (P0).
+      --
+      -- These are "shadow" in the DB-migration sense: they are populated
+      -- (seeded + backfilled + dual-written) but nothing in the request path
+      -- reads them yet, so a bug here can never break a user. They exist to
+      -- settle the shape before P1 starts reading from them.
+      --
+      -- Shape notes live next to the code that fills them: see src/agents/.
+      -- ───────────────────────────────────────────────────────────────
+
+      -- Agent definitions are workspace-scoped and stateless: the same agent
+      -- can sit in many rooms, each with its own agent_threads row.
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        avatar TEXT,
+        kind TEXT NOT NULL,
+        runtime TEXT,
+        peer_id TEXT,
+        remote_agent_id TEXT,
+        model TEXT,
+        model_parameters TEXT,
+        instructions TEXT NOT NULL DEFAULT '',
+        cwd TEXT,
+        extra_dirs TEXT,
+        read_only INTEGER NOT NULL DEFAULT 0,
+        permission_ceiling TEXT NOT NULL DEFAULT 'ask',
+        tools_allow TEXT,
+        tools_deny TEXT,
+        skills TEXT,
+        budget_json TEXT,
+        heavy INTEGER NOT NULL DEFAULT 0,
+        is_implicit INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (workspace_id, name)
+      );
+      CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents (workspace_id, enabled);
+
+      -- Room membership plus the leader flag. Exactly one leader per room.
+      CREATE TABLE IF NOT EXISTS session_agents (
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        added_by TEXT,
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, agent_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_agents_agent ON session_agents (agent_id);
+
+      -- Per (session, agent) context handle: the runtime's native session id or
+      -- thread id, plus the snapshot point this thread was built from.
+      CREATE TABLE IF NOT EXISTS agent_threads (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        backend TEXT NOT NULL,
+        native_session_id TEXT,
+        native_thread_id TEXT,
+        remote_thread_key TEXT,
+        cwd TEXT NOT NULL,
+        model_snapshot TEXT,
+        agent_version INTEGER NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'idle',
+        last_seen_seq INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER NOT NULL,
+        UNIQUE (session_id, agent_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_threads_agent ON agent_threads (agent_id);
+
+      -- One user input = one batch. Tasks run concurrently inside it; the batch
+      -- itself is not a barrier (03-room.md 4.2).
+      CREATE TABLE IF NOT EXISTS session_turns (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        token_limit INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        ended_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_turns_session
+        ON session_turns (session_id, created_at DESC);
+
+      -- One agent's unit of work. committed_seq ordering lives on messages,
+      -- not here: a task is visible only once its message is committed.
+      CREATE TABLE IF NOT EXISTS agent_tasks (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        parent_task_id TEXT,
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        needs_write INTEGER NOT NULL DEFAULT 0,
+        blocked_kind TEXT,
+        blocked_value TEXT,
+        message_id INTEGER,
+        run_id TEXT,
+        snapshot_seq INTEGER,
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        ended_at INTEGER,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_tasks_session
+        ON agent_tasks (session_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks (session_id, status);
+      CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent ON agent_tasks (agent_id, status);
     `);
     // Only Claude existed when this column was named for it; Codex stores its
     // thread id in the same slot. Rename before any read so old daemons keep
@@ -580,6 +766,36 @@ export class Db {
     );
     this.ensureColumn('runs', 'model_parameters', 'TEXT');
     this.ensureColumn('runs', 'attachment_ids', "TEXT NOT NULL DEFAULT '[]'");
+
+    // ── Multi-agent shadow columns (P0) ───────────────────────────────
+    // Same contract as the shadow tables above: written, never read by the
+    // request path yet. `session_id`/`runtime` stay the source of truth until
+    // P1 flips the read path over.
+    this.ensureColumn('workspaces', 'default_agent_id', 'TEXT');
+    this.ensureColumn('runs', 'agent_id', 'TEXT');
+    this.ensureColumn('runs', 'thread_id', 'TEXT');
+    this.ensureColumn('runs', 'turn_id', 'TEXT');
+    this.ensureColumn('runs', 'parent_run_id', 'TEXT');
+    // NULL = authored by the user; set once a message is attributed to an agent.
+    this.ensureColumn('messages', 'agent_id', 'TEXT');
+    this.ensureColumn('messages', 'turn_id', 'TEXT');
+    this.ensureColumn('messages', 'task_id', 'TEXT');
+    // Timeline position. NULL while streaming; assigned once at commit time so
+    // the order users see can never be reshuffled by a late-finishing task.
+    this.ensureColumn('messages', 'committed_seq', 'INTEGER');
+    // Room-level multiplexed SSE: room_seq orders frames within one session.
+    this.ensureColumn('events', 'session_id', 'TEXT');
+    this.ensureColumn('events', 'room_seq', 'INTEGER');
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_events_room ON events (session_id, room_seq);`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs (agent_id, started_at DESC);`,
+    );
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_messages_committed ON messages (session_id, committed_seq);`,
+    );
+
     this.ensureColumn('workspaces', 'is_builtin', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('workspaces', 'family', "TEXT NOT NULL DEFAULT 'dev'");
     this.ensureColumn('workspaces', 'profile_mode', "TEXT NOT NULL DEFAULT 'portable'");
@@ -667,7 +883,53 @@ export class Db {
         now,
         now,
       );
+    // Shadow rows (P0): give a brand-new session its leader and thread right
+    // away, so the shadow tables stay complete without waiting for a backfill
+    // run. Nothing reads them yet.
+    this.ensureShadowSessionRows(input.id);
     return this.getSession(input.id) as SessionRow;
+  }
+
+  /**
+   * Create the (leader, thread) pair for a session if it is missing.
+   *
+   * Idempotent and failure-tolerant: P0's shadow tables must never fail a user
+   * request, so anything unexpected here is swallowed.
+   */
+  private ensureShadowSessionRows(sessionId: string): void {
+    try {
+      const session = this.getSession(sessionId);
+      if (!session) return;
+      if (session.kind !== 'chat' && session.kind !== 'command') return;
+      const workspaceId = session.workspace_id;
+      if (!workspaceId || !this.getWorkspace(workspaceId)) return;
+      const agent = this.ensureImplicitAgent(workspaceId, session.runtime);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO session_agents (session_id, agent_id, role, added_by, joined_at)
+           VALUES (?, ?, 'leader', NULL, ?)`,
+        )
+        .run(sessionId, agent.id, session.created_at);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO agent_threads
+             (id, session_id, agent_id, backend, native_session_id, cwd,
+              agent_version, status, last_seen_seq, created_at, last_used_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, 'idle', 0, ?, ?)`,
+        )
+        .run(
+          `th_${sessionId}`,
+          sessionId,
+          agent.id,
+          session.runtime,
+          session.native_session_id,
+          session.cwd,
+          session.created_at,
+          session.last_active_at,
+        );
+    } catch {
+      // Shadow-only: never block or fail session creation.
+    }
   }
 
   getSession(id: string): SessionRow | undefined {
@@ -738,11 +1000,18 @@ export class Db {
 
   setNativeSessionId(id: string, nativeSessionId: string): void {
     this.db.prepare(`UPDATE sessions SET native_session_id = ? WHERE id = ?`).run(nativeSessionId, id);
+    // Dual-write (P0): `sessions.native_session_id` stays the source of truth
+    // until P1 flips the read path to `agent_threads`. No thread row yet (a
+    // session created after the backfill marker) simply updates zero rows.
+    this.db
+      .prepare(`UPDATE agent_threads SET native_session_id = ?, last_used_at = ? WHERE session_id = ?`)
+      .run(nativeSessionId, Date.now(), id);
   }
 
   /** Forget a native id the runtime no longer recognizes; the next run starts fresh. */
   clearNativeSessionId(id: string): void {
     this.db.prepare(`UPDATE sessions SET native_session_id = NULL WHERE id = ?`).run(id);
+    this.db.prepare(`UPDATE agent_threads SET native_session_id = NULL WHERE session_id = ?`).run(id);
   }
 
   setSessionPermissionMode(id: string, mode: string): void {
@@ -1352,6 +1621,214 @@ export class Db {
     this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
   }
 
+  // ---- agents (P0: shadow tables; nothing reads them in the request path) ----
+
+  /**
+   * Create the implicit "default" agent for a (workspace, runtime) pair, or
+   * return the existing one.
+   *
+   * The id is deterministic so re-running is a no-op and P1 can look a pair up
+   * without a name index. One implicit agent per runtime rather than one per
+   * workspace: a workspace can hold sessions of several runtimes, and invariant
+   * I3 wants `sessions.runtime === leader.runtime`.
+   */
+  ensureImplicitAgent(workspaceId: string, runtime: string): AgentRow {
+    const id = implicitAgentId(workspaceId, runtime);
+    const existing = this.db.prepare(`SELECT * FROM agents WHERE id = ?`).get(id) as unknown as AgentRow | undefined;
+    if (existing) return existing;
+
+    const now = Date.now();
+    const hasImplicit = this.db
+      .prepare(`SELECT 1 FROM agents WHERE workspace_id = ? AND is_implicit = 1 LIMIT 1`)
+      .get(workspaceId);
+    // First implicit agent in a workspace takes the plain name; the rest carry
+    // their runtime so `@默认` is never ambiguous.
+    let name = hasImplicit ? `默认 (${runtime})` : '默认';
+    for (let suffix = 2; this.agentNameTaken(workspaceId, name); suffix += 1) {
+      name = `默认 (${runtime} ${suffix})`;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO agents
+           (id, workspace_id, name, summary, kind, runtime, instructions, is_implicit,
+            enabled, version, created_at, updated_at)
+         VALUES (?, ?, ?, '', 'runtime', ?, '', 1, 1, 1, ?, ?)`,
+      )
+      .run(id, workspaceId, name, runtime, now, now);
+    return this.db.prepare(`SELECT * FROM agents WHERE id = ?`).get(id) as unknown as AgentRow;
+  }
+
+  getAgent(id: string): AgentRow | undefined {
+    return this.db.prepare(`SELECT * FROM agents WHERE id = ?`).get(id) as unknown as AgentRow | undefined;
+  }
+
+  listAgents(workspaceId: string): AgentRow[] {
+    return this.db
+      .prepare(`SELECT * FROM agents WHERE workspace_id = ? ORDER BY is_implicit ASC, created_at ASC`)
+      .all(workspaceId) as unknown as AgentRow[];
+  }
+
+  /**
+   * Distinct (workspace, runtime) pairs that live sessions actually use.
+   * Sessions pointing at a workspace that no longer exists are excluded: they
+   * cannot be attributed, and seeding an agent for a dangling workspace id
+   * would only create junk rows.
+   */
+  listSessionRuntimePairs(): { workspace_id: string; runtime: string }[] {
+    return this.db
+      .prepare(
+        `SELECT DISTINCT s.workspace_id, s.runtime FROM sessions s
+         JOIN workspaces w ON w.id = s.workspace_id
+         WHERE s.kind IN ('chat', 'command') AND s.workspace_id IS NOT NULL`,
+      )
+      .all() as unknown as { workspace_id: string; runtime: string }[];
+  }
+
+  /** Workspaces that have a configured default runtime but no sessions to infer from. */
+  listWorkspaceDefaultRuntimes(): { id: string; default_runtime: string | null }[] {
+    return this.db
+      .prepare(`SELECT id, default_runtime FROM workspaces`)
+      .all() as unknown as { id: string; default_runtime: string | null }[];
+  }
+
+  private agentNameTaken(workspaceId: string, name: string): boolean {
+    return Boolean(
+      this.db
+        .prepare(`SELECT 1 FROM agents WHERE workspace_id = ? AND name = ? LIMIT 1`)
+        .get(workspaceId, name),
+    );
+  }
+
+  setWorkspaceDefaultAgent(workspaceId: string, agentId: string): void {
+    this.db
+      .prepare(`UPDATE workspaces SET default_agent_id = ? WHERE id = ? AND default_agent_id IS NULL`)
+      .run(agentId, workspaceId);
+  }
+
+  getWorkspaceDefaultAgentId(workspaceId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT default_agent_id AS id FROM workspaces WHERE id = ?`)
+      .get(workspaceId) as unknown as { id: string | null } | undefined;
+    return row?.id ?? null;
+  }
+
+  /** Backfill step: give every live session a leader row. Set-based, idempotent. */
+  backfillSessionLeaders(): number {
+    return Number(
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO session_agents (session_id, agent_id, role, added_by, joined_at)
+           SELECT s.id, a.id, 'leader', NULL, s.created_at
+           FROM sessions s
+           JOIN workspaces w ON w.id = s.workspace_id
+           JOIN agents a ON a.workspace_id = s.workspace_id
+                        AND a.is_implicit = 1 AND a.runtime = s.runtime
+           WHERE s.kind IN ('chat', 'command') AND s.workspace_id IS NOT NULL`,
+        )
+        .run().changes,
+    );
+  }
+
+  /** Backfill step: give every live session one thread per its leader. Idempotent. */
+  backfillAgentThreads(): number {
+    return Number(
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO agent_threads
+             (id, session_id, agent_id, backend, native_session_id, cwd,
+              agent_version, status, last_seen_seq, created_at, last_used_at)
+           SELECT 'th_' || s.id, s.id, sa.agent_id, s.runtime, s.native_session_id, s.cwd,
+                  1, 'idle', 0, s.created_at, s.last_active_at
+           FROM sessions s
+           JOIN workspaces w ON w.id = s.workspace_id
+           JOIN session_agents sa ON sa.session_id = s.id AND sa.role = 'leader'
+           WHERE s.kind IN ('chat', 'command')`,
+        )
+        .run().changes,
+    );
+  }
+
+  getSessionLeader(sessionId: string): SessionAgentRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM session_agents WHERE session_id = ? AND role = 'leader'`)
+      .get(sessionId) as unknown as SessionAgentRow | undefined;
+  }
+
+  getAgentThread(sessionId: string, agentId: string): AgentThreadRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM agent_threads WHERE session_id = ? AND agent_id = ?`)
+      .get(sessionId, agentId) as unknown as AgentThreadRow | undefined;
+  }
+
+  /** Reconciliation helpers for `scripts/verify-shadow-tables.ts` (read-only). */
+
+  /**
+   * (workspace, runtime) pairs carrying more than one implicit agent. The
+   * deterministic-id seeding should make this impossible, so a hit means the
+   * seeding path was bypassed or the schema drifted.
+   */
+  listDuplicateImplicitAgents(): { workspace_id: string; runtime: string; count: number }[] {
+    return this.db
+      .prepare(
+        `SELECT workspace_id, runtime, COUNT(*) AS count FROM agents
+         WHERE is_implicit = 1 AND runtime IS NOT NULL
+         GROUP BY workspace_id, runtime HAVING COUNT(*) > 1`,
+      )
+      .all() as unknown as { workspace_id: string; runtime: string; count: number }[];
+  }
+
+  /** Implicit agents whose workspace no longer exists. */
+  listDanglingImplicitAgents(): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT a.id AS id FROM agents a
+           WHERE a.is_implicit = 1
+             AND NOT EXISTS (SELECT 1 FROM workspaces w WHERE w.id = a.workspace_id)`,
+        )
+        .all() as unknown as { id: string }[]
+    ).map((row) => row.id);
+  }
+
+  /** Shadow-table health counters used by `scripts/verify-shadow-tables.ts`. */  shadowTableCounts(): {
+    liveSessions: number;
+    withLeader: number;
+    withThread: number;
+    threads: number;
+    orphanThreads: number;
+    dualWriteMismatch: number;
+  } {
+    const count = (sql: string): number =>
+      Number((this.db.prepare(sql).get() as unknown as { n: number }).n);
+    return {
+      liveSessions: count(`SELECT COUNT(*) AS n FROM sessions WHERE kind IN ('chat','command')`),
+      withLeader: count(
+        `SELECT COUNT(*) AS n FROM sessions s
+         WHERE s.kind IN ('chat','command')
+           AND EXISTS (SELECT 1 FROM session_agents sa
+                       WHERE sa.session_id = s.id AND sa.role = 'leader')`,
+      ),
+      withThread: count(
+        `SELECT COUNT(*) AS n FROM sessions s
+         WHERE s.kind IN ('chat','command')
+           AND EXISTS (SELECT 1 FROM agent_threads t WHERE t.session_id = s.id)`,
+      ),
+      threads: count(`SELECT COUNT(*) AS n FROM agent_threads`),
+      orphanThreads: count(
+        `SELECT COUNT(*) AS n FROM agent_threads t
+         WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = t.session_id)`,
+      ),
+      // Only compares rows where both sides carry a value: NULL on either side
+      // means "not known yet", not a mismatch.
+      dualWriteMismatch: count(
+        `SELECT COUNT(*) AS n FROM sessions s
+         JOIN agent_threads t ON t.session_id = s.id
+         WHERE s.native_session_id IS NOT NULL AND t.native_session_id IS NOT NULL
+           AND s.native_session_id <> t.native_session_id`,
+      ),
+    };
+  }
+
   // ---- ends (P0: table + constraints; CRUD UI comes with S2/S3) ----
 
   createEnd(input: {
@@ -1721,10 +2198,11 @@ export class Db {
     trigger?: 'user' | 'scheduled' | 'run_now';
     permissionMode?: string | null;
   }): void {
+    const shadow = this.shadowRunAttribution(input.sessionId);
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode, agent_id, thread_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -1740,7 +2218,24 @@ export class Db {
         input.taskId ?? null,
         input.trigger ?? 'user',
         input.permissionMode ?? null,
+        shadow.agentId,
+        shadow.threadId,
       );
+  }
+
+  /** Shadow-note the agent/thread a run belongs to. Never throws. */
+  private shadowRunAttribution(sessionId: string): { agentId: string | null; threadId: string | null } {
+    try {
+      const session = this.getSession(sessionId);
+      if (!session) return { agentId: null, threadId: null };
+      const leader = this.getSessionLeader(sessionId);
+      if (!leader) return { agentId: null, threadId: null };
+      const thread = this.getAgentThread(sessionId, leader.agent_id);
+      return { agentId: leader.agent_id, threadId: thread?.id ?? null };
+    } catch {
+      // Shadow data must never break run creation.
+      return { agentId: null, threadId: null };
+    }
   }
 
   updateRun(
