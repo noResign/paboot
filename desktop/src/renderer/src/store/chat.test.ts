@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../ipc/client', () => ({
-  api: { session: vi.fn(), updateSessionModel: vi.fn() },
+  api: { session: vi.fn(), updateSessionModel: vi.fn(), sendTurn: vi.fn() },
   connectionApi: { streamStart: vi.fn() },
 }));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
@@ -321,5 +321,85 @@ describe('room stream reducer', () => {
     const pending = [next.permissions.active, ...next.permissions.queue].filter(Boolean);
     expect(pending).toHaveLength(1);
     expect(pending[0]!.runId).toBe('r1');
+  });
+});
+
+describe('room turns', () => {
+  const roomKey = 'host::turn';
+  beforeEach(() => {
+    vi.mocked(connectionApi.streamStart).mockReset();
+    vi.mocked(api.sendTurn).mockReset();
+    useChat.setState({
+      activeKey: roomKey,
+      streamKeys: {},
+      failedIds: [],
+      byKey: { [roomKey]: { ...emptyChat(roomKey, 'host'), sessionId: 's-turn' } },
+    });
+  });
+
+  it('does not send when the room stream cannot be opened', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({
+      ok: false,
+      httpCode: 500,
+      apiCode: null,
+      message: 'boom',
+    } as never);
+
+    await useChat.getState().sendTurn('hi', []);
+
+    expect(api.sendTurn).not.toHaveBeenCalled();
+    const chat = useChat.getState().byKey[roomKey]!;
+    expect(chat.error).toContain('房间流');
+    expect(chat.messages).toHaveLength(0);
+  });
+
+  it('stamps the turn onto the question so hints cannot duplicate it', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
+    await useChat.getState().sendTurn('hi', []);
+
+    expect(api.sendTurn).toHaveBeenCalledTimes(1);
+    const chat = useChat.getState().byKey[roomKey]!;
+    expect(chat.messages).toHaveLength(1);
+    expect(chat.messages[0]).toMatchObject({ kind: 'user', text: 'hi', turnId: 't1' });
+    expect(chat.roomStreamId).toBeTruthy();
+  });
+});
+
+describe('double submit', () => {
+  const roomKey = 'host::double';
+  beforeEach(() => {
+    vi.mocked(connectionApi.streamStart).mockReset();
+    vi.mocked(api.sendTurn).mockReset();
+    useChat.setState({
+      activeKey: roomKey,
+      streamKeys: {},
+      failedIds: [],
+      byKey: { [roomKey]: { ...emptyChat(roomKey, 'host'), sessionId: 's-double' } },
+    });
+  });
+
+  it('ignores a second send while the first turn request is in flight', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+    let release!: (value: unknown) => void;
+    vi.mocked(api.sendTurn).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }) as never,
+    );
+
+    const first = useChat.getState().sendTurn('hi', []);
+    await vi.waitFor(() => expect(api.sendTurn).toHaveBeenCalledTimes(1));
+    await useChat.getState().sendTurn('hi', []);
+    expect(api.sendTurn).toHaveBeenCalledTimes(1);
+
+    release({ ok: true, status: 202, data: { turnId: 't1', tasks: [] } });
+    await first;
+    expect(useChat.getState().byKey[roomKey]!.messages).toHaveLength(1);
   });
 });

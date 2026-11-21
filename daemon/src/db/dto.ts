@@ -20,6 +20,7 @@ export function sessionRunBrief(r: RunRow): SessionRunBrief {
     attachmentIds: parseAttachmentIds(r.attachment_ids),
     startedAt: r.started_at,
     status: r.status,
+    turnId: r.turn_id ?? null,
   };
 }
 

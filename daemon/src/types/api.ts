@@ -365,6 +365,8 @@ export interface SessionRunBrief {
   attachmentIds: string[];
   startedAt: number;
   status: string;
+  /** Set for room tasks: the turn whose question this run answers. */
+  turnId?: string | null;
 }
 
 /**

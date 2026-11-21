@@ -46,6 +46,15 @@ const nextId = (prefix: string): string => `${prefix}${++idCounter}`;
  */
 let openSeq = 0;
 
+/**
+ * Turns whose POST is in flight, per chat key.
+ *
+ * A fast double Enter/double click must not become two turns: each POST creates
+ * a new question on the timeline and a new set of runs. Checked synchronously,
+ * before any await, so both events see the same state.
+ */
+const turnsInFlight = new Set<string>();
+
 /** `Omit` over a union collapses its discriminant, so distribute it by hand. */
 type WithoutStreamId<T> = T extends unknown ? Omit<T, 'streamId'> : never;
 type StreamRequest = WithoutStreamId<StreamSpec>;
@@ -79,7 +88,8 @@ interface ChatStore {
    */
   sendTurn(text: string, mentionIds: string[]): Promise<void>;
   /** Open the room stream for the current multi-agent session (idempotent). */
-  ensureRoomStream(): Promise<void>;
+  /** Open the multiplexed room stream; false when it could not be established. */
+  ensureRoomStream(): Promise<boolean>;
   /** Close it when the session drops back to a single assistant. */
   closeRoomStream(): void;
   /**
@@ -180,7 +190,11 @@ export const useChat = create<ChatStore>((set, get) => ({
       })),
     }));
 
-    if (session.running && session.runningRunId) {
+    const running = runs.find((run) => run.id === session.runningRunId);
+    // Turn runs belong to the room stream; a per-run attach would block the
+    // composer and draw the question twice. ChatView opens the room stream once
+    // the roster is known.
+    if (session.running && session.runningRunId && !running?.turnId) {
       await attachRun(set, key, connectionId, session.runningRunId);
     }
     // Watch the session for work started elsewhere; it outlives individual runs.
@@ -271,38 +285,69 @@ export const useChat = create<ChatStore>((set, get) => ({
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
     const prompt = text.trim();
-    if (!key || !chat?.sessionId || !prompt) return;
+    if (!key || !chat?.sessionId || !prompt || turnsInFlight.has(key)) return;
 
-    set((state) => ({
-      byKey: patch(state, key, (current) => ({
-        ...current,
-        error: null,
-        messages: [
-          ...current.messages,
-          { kind: 'user', id: nextId('u'), text: prompt, at: Date.now() },
-        ],
-      })),
-    }));
+    turnsInFlight.add(key);
+    try {
+      // The answers exist only on the room stream. Sending before it is open
+      // leaves an invisible run behind and lets the session watcher attach a
+      // per-run stream to it (a second user bubble and a blocked composer).
+      if (!(await get().ensureRoomStream())) {
+        set((state) => ({
+          byKey: patch(state, key, (current) => ({
+            ...current,
+            error: '无法建立房间流，消息没有发送',
+          })),
+        }));
+        return;
+      }
 
-    // The daemon broadcasts answers on the room stream; make sure it is open
-    // before the first task can produce a frame.
-    await get().ensureRoomStream();
+      const messageId = nextId('u');
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          error: null,
+          messages: [
+            ...current.messages,
+            { kind: 'user', id: messageId, text: prompt, at: Date.now() },
+          ],
+        })),
+      }));
 
-    const res = await api.sendTurn(chat.sessionId, prompt, mentionIds);
-    if (res.ok) return;
-    const { apiCode, message } = apiErrorOf(res.data);
-    set((state) => ({
-      byKey: patch(state, key, (current) => ({
-        ...current,
-        error: friendlyMessage(apiCode, res.status, message, '发送失败'),
-      })),
-    }));
+      const res = await api.sendTurn(chat.sessionId, prompt, mentionIds);
+      if (res.ok) {
+        // Stamp the turn onto the question: session hints for any run of this
+        // turn then see it as already rendered instead of appending a copy.
+        const turnId = res.data.turnId;
+        set((state) => ({
+          byKey: patch(state, key, (current) => ({
+            ...current,
+            messages: current.messages.map((message) =>
+              message.kind === 'user' && message.id === messageId
+                ? { ...message, turnId }
+                : message,
+            ),
+          })),
+        }));
+        return;
+      }
+      const { apiCode, message } = apiErrorOf(res.data);
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          error: friendlyMessage(apiCode, res.status, message, '发送失败'),
+        })),
+      }));
+    } finally {
+      turnsInFlight.delete(key);
+    }
   },
 
-  async ensureRoomStream() {
+  async ensureRoomStream(): Promise<boolean> {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
-    if (!key || !chat?.sessionId || chat.roomStreamId) return;
+    if (!key || !chat?.sessionId) return false;
+    if (chat.roomStreamId) return true;
 
     // The room stream already carries every run's frames. A per-run stream left
     // from `/api/chat` would feed the same answer a second time (and to a card
@@ -335,13 +380,14 @@ export const useChat = create<ChatStore>((set, get) => ({
       after: chat.roomCursor,
     };
     const result = await connectionApi.streamStart({ ...spec, streamId });
-    if (result.ok) return;
+    if (result.ok) return true;
     set((state) => ({
       streamKeys: withoutKey(state.streamKeys, streamId),
       byKey: patch(state, key, (current) =>
         current.roomStreamId === streamId ? { ...current, roomStreamId: null } : current,
       ),
     }));
+    return false;
   },
 
   closeRoomStream() {
@@ -351,9 +397,21 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (!key || !streamId) return;
     void connectionApi.streamCancel({ streamId, abortRun: false });
     set((state) => ({
-      byKey: patch(state, key, (current) =>
-        current.roomStreamId === streamId ? { ...current, roomStreamId: null } : current,
-      ),
+      byKey: patch(state, key, (current) => {
+        if (current.roomStreamId !== streamId) return current;
+        // No stream means no more frames: keep whatever reached us rather than
+        // leaving it stuck in the pending area.
+        const flushed = current.pendingAnswers.map((answer) => ({
+          ...answer.message,
+          done: true,
+        }));
+        return {
+          ...current,
+          roomStreamId: null,
+          messages: flushed.length > 0 ? [...current.messages, ...flushed] : current.messages,
+          pendingAnswers: [],
+        };
+      }),
       streamKeys: withoutKey(state.streamKeys, streamId),
     }));
   },
@@ -1031,6 +1089,7 @@ async function rebuildHistory(
         id: nextId('u'),
         text: run.prompt,
         runId: run.id,
+        ...(turnId !== null ? { turnId } : {}),
         at: run.startedAt,
         ...(run.attachmentIds?.length ? { attachmentIds: run.attachmentIds } : {}),
       });
@@ -1159,13 +1218,27 @@ function applySessionEvent(
   // In a room, every run arrives on the multiplexed stream. Attaching a
   // per-run stream here would append a second user bubble and a second card.
   if (chat.roomStreamId) return;
-  if (isRunRendered(chat, event.run.id)) return;
+  // Room runs are room-owned even when the stream is not open yet: make it so
+  // instead of binding a one-run stream (which would block the composer).
+  if (event.run.turnId) {
+    void get().ensureRoomStream();
+    return;
+  }
+  if (isRunRendered(chat, event.run)) return;
   appendExternalRun(set, key, chat.connectionId, event.run);
 }
 
-/** Has this run already produced a bubble in the transcript? */
-function isRunRendered(chat: ChatSessionState, runId: string): boolean {
-  return chat.messages.some((message) => message.kind === 'user' && message.runId === runId);
+/** Has this run (or its turn) already produced a question bubble? */
+function isRunRendered(
+  chat: ChatSessionState,
+  run: { id: string; turnId?: string | null },
+): boolean {
+  return chat.messages.some(
+    (message) =>
+      message.kind === 'user' &&
+      (message.runId === run.id ||
+        (run.turnId !== undefined && run.turnId !== null && message.turnId === run.turnId)),
+  );
 }
 
 function patchSessionTitle(
@@ -1254,7 +1327,8 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
       contextUsage: rebuilt.contextUsage,
     })),
   }));
-  if (session.running && session.runningRunId) {
+  const running = runs.find((run) => run.id === session.runningRunId);
+  if (session.running && session.runningRunId && !running?.turnId) {
     void attachRun(set, key, before.connectionId, session.runningRunId);
   }
 }

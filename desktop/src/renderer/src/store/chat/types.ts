@@ -41,6 +41,8 @@ export type ChatMessage =
       id: string;
       text: string;
       runId?: string;
+      /** The room turn this question started; several runs answer it. */
+      turnId?: string | null;
       at?: number;
       attachmentIds?: string[];
     }
