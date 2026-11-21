@@ -1,0 +1,152 @@
+import { randomUUID } from 'node:crypto';
+import type { AgentTaskRow, Db, SessionRow, TurnRow, WorkspaceRow } from '../db/db.js';
+import { AgentValidationError } from './service.js';
+import { getLeader, listSessionAgents } from './store.js';
+import { parseMentionNames, mentionsAll, routeMentions, type MentionTarget } from './mentions.js';
+import type { Agent } from './types.js';
+
+/**
+ * Turn orchestration: one user input becomes a turn plus one task per agent it
+ * addresses.
+ *
+ * A turn is **not a barrier** (03-room.md §4.2). Creating it does not wait for
+ * anything; the tasks under it start as soon as the scheduler can run them. The
+ * turn exists only to group them for budget accounting.
+ *
+ * Deliberate ordering: the user's own message is written first, then the tasks.
+ * If task creation fails halfway, the user still sees their message rather than
+ * losing it into a rollback.
+ */
+
+export interface CreateTurnInput {
+  session: SessionRow;
+  workspace: WorkspaceRow;
+  prompt: string;
+  /** Agent ids the client resolved from its own mention chips. */
+  mentionIds: readonly string[];
+  /** Per-turn input-token ceiling; 0 = unlimited. */
+  tokenLimit?: number;
+}
+
+export interface CreatedTurn {
+  turn: TurnRow;
+  tasks: AgentTaskRow[];
+  /** The agents that will answer, in start order. */
+  addressed: { agentId: string; name: string; source: string }[];
+  /** Addressed agents that could not be used, with the reason. */
+  dropped: { id: string; reason: string }[];
+}
+
+/**
+ * Create a turn and its tasks.
+ *
+ * Throws `AgentValidationError` with `no_available_agent` when the message
+ * addresses nobody usable — the caller turns that into a 4xx instead of
+ * pretending the message was accepted.
+ */
+export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
+  const leader = getLeader(db, input.session.id);
+  if (!leader) {
+    throw new AgentValidationError('no_leader', 'this session has no agent to answer it');
+  }
+  const members = listSessionAgents(db, input.session.id).map((row) => row.agent);
+
+  // Structured mentions win; free-text `@name` is the fallback for clients that
+  // send plain text (or for someone typing in a raw field).
+  const all = mentionsAll(input.prompt);
+  const mentionIds =
+    input.mentionIds.length > 0
+      ? input.mentionIds
+      : parseMentionNames(input.prompt, members).map(
+          (name) => members.find((member) => member.name === name)?.id ?? name,
+        );
+
+  const routed = routeMentions({ mentionIds, all, leader, members });
+  if (routed.targets.length === 0) {
+    throw new AgentValidationError(
+      'no_available_agent',
+      routed.dropped.length > 0 ? 'the addressed agent is not available' : 'there is nobody to answer',
+    );
+  }
+
+  // Raw text keeps the `@name` the user typed: replay shows what they wrote, and
+  // mentions are request metadata, not part of the prompt (03-room.md B §9).
+  //
+  // Committed immediately *and* given a timeline position: the user's message is
+  // final the moment it is sent, and every task's snapshot must include it — a
+  // task that cannot see the question it is answering is worse than useless.
+  db.addCommittedMessage({
+    sessionId: input.session.id,
+    role: 'user',
+    content: input.prompt,
+    agentId: null,
+    turnId: null,
+    taskId: null,
+  });
+  db.touchSession(input.session.id);
+
+  const now = Date.now();
+  const turnId = `turn_${randomUUID()}`;
+  db.createTurn({
+    id: turnId,
+    sessionId: input.session.id,
+    prompt: input.prompt,
+    tokenLimit: input.tokenLimit ?? 0,
+    now,
+  });
+
+  // Messages already committed are what a task is allowed to see. Freezing it
+  // per task (here, at creation) is what makes a run reproducible: same snapshot
+  // + same prompt = same context, which prompt caching also depends on.
+  const snapshotSeq = db.maxCommittedSeq(input.session.id);
+
+  const tasks: AgentTaskRow[] = [];
+  for (const target of routed.targets) {
+    const id = `task_${randomUUID()}`;
+    db.createTask({
+      id,
+      sessionId: input.session.id,
+      turnId,
+      agentId: target.agent.id,
+      source: target.source,
+      prompt: input.prompt,
+      needsWrite: !target.agent.readOnly,
+      snapshotSeq,
+      now,
+    });
+    const created = db.getTask(id);
+    if (created) tasks.push(created);
+  }
+
+  return {
+    turn: db.getTurn(turnId)!,
+    tasks,
+    addressed: tasks.map((task, index) => ({
+      agentId: task.agent_id,
+      name: routed.targets[index]?.agent.name ?? '',
+      source: task.source,
+    })),
+    dropped: routed.dropped,
+  };
+}
+
+/**
+ * The single-writable rule (03-room.md §5.2).
+ *
+ * Enforced when membership changes, not when a run starts: telling someone
+ * "this room already has a writer" while they are editing is a save-time
+ * answer, whereas failing a run they just triggered is a surprise.
+ */
+export function assertWritableSlotFree(db: Db, sessionId: string, agent: Agent): void {
+  if (agent.readOnly) return;
+  const members = listSessionAgents(db, sessionId).map((row) => row.agent);
+  const otherWriter = members.find((member) => member.id !== agent.id && !member.readOnly);
+  if (otherWriter) {
+    throw new AgentValidationError(
+      'writable_agent_exists',
+      `this session already has a writable agent: ${otherWriter.name}`,
+    );
+  }
+}
+
+export type { MentionTarget };

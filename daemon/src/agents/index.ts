@@ -43,6 +43,17 @@ export {
   type ResolvedSessionAgent,
 } from './resolve.js';
 
+export { mentionsAll, parseMentionNames, routeMentions, type MentionTarget } from './mentions.js';
+
+export {
+  assertWritableSlotFree,
+  createTurn,
+  type CreatedTurn,
+  type CreateTurnInput,
+} from './turns.js';
+
+export { runTask, runTurn, type TaskOutcome, type TaskRunnerDeps } from './task-runner.js';
+
 export { getLeader, listSessionAgents } from './store.js';
 
 export type {

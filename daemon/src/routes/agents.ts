@@ -3,6 +3,7 @@ import type { AppContext } from '../app/context.js';
 import {
   addToSession,
   AgentValidationError,
+  assertWritableSlotFree,
   backendFor,
   createAgent,
   getAgent,
@@ -257,6 +258,11 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     const body = (req.body ?? {}) as { agentId?: unknown };
     const agentId = typeof body.agentId === 'string' ? body.agentId : '';
     try {
+      // The single-writable rule is checked here, at membership time: telling
+      // someone "this room already has a writer" while they are saving is a
+      // save-time answer, whereas failing a run they just triggered is a shock.
+      const agent = getAgent(ctx.db, agentId);
+      if (agent) assertWritableSlotFree(ctx.db, session.id, agent);
       addToSession(ctx.db, { id: session.id, workspaceId: session.workspace_id }, agentId);
       res.status(204).end();
     } catch (err) {

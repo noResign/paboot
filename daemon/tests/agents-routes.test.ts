@@ -207,6 +207,8 @@ describe('room membership API', () => {
         name: 'mate',
         kind: 'runtime',
         runtime: 'codex',
+        // 会话里已经有可写的 leader：新成员必须是只读的（03-room §5.2）。
+        readOnly: true,
       })
     ).json()) as { agent: { id: string } };
     const agentId = created.agent.id;
@@ -244,6 +246,7 @@ describe('room membership API', () => {
         name: 'second',
         kind: 'runtime',
         runtime: 'codex',
+        readOnly: true,
       })
     ).json()) as { agent: { id: string } };
     await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId: created.agent.id });

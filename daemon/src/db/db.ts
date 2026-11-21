@@ -70,6 +70,43 @@ export interface SessionAgentRow {
   joined_at: number;
 }
 
+/** Where a task came from. `relay`/`summon` arrive with the room features. */
+export type AgentTaskSource = 'mention' | 'leader_default' | 'summon' | 'steering' | 'summarize';
+
+export interface TurnRow {
+  id: string;
+  session_id: string;
+  prompt: string;
+  /** running | done | failed */
+  status: string;
+  input_tokens: number;
+  token_limit: number;
+  created_at: number;
+  ended_at: number | null;
+}
+
+export interface AgentTaskRow {
+  id: string;
+  session_id: string;
+  turn_id: string;
+  agent_id: string;
+  source: string;
+  parent_task_id: string | null;
+  prompt: string;
+  /** queued | running | done | failed | cancelled */
+  status: string;
+  needs_write: number;
+  blocked_kind: string | null;
+  blocked_value: string | null;
+  message_id: number | null;
+  run_id: string | null;
+  snapshot_seq: number | null;
+  created_at: number;
+  started_at: number | null;
+  ended_at: number | null;
+  error: string | null;
+}
+
 export interface AgentThreadRow {
   id: string;
   session_id: string;
@@ -1868,6 +1905,308 @@ export class Db {
     ).map((row) => row.id);
   }
 
+  /**
+   * Next room-wide frame position for this session.
+   *
+   * One counter per session over every agent's frames. A single number is what
+   * lets a reconnecting client say "I have seen up to N" instead of tracking a
+   * cursor per run, which is the whole point of multiplexing the room stream.
+   */
+  nextRoomSeq(sessionId: string): number {
+    const row = this.db
+      .prepare(`SELECT MAX(room_seq) AS seq FROM events WHERE session_id = ?`)
+      .get(sessionId) as unknown as { seq: number | null } | undefined;
+    return (row?.seq ?? 0) + 1;
+  }
+
+  /** Replay a room's frames after a cursor, oldest first. */
+  listRoomEvents(
+    sessionId: string,
+    afterRoomSeq = 0,
+    limit = 500,
+  ): { room_seq: number; run_id: string; seq: number; type: string; payload: string; created_at: number }[] {
+    return this.db
+      .prepare(
+        `SELECT room_seq, run_id, seq, type, payload, created_at FROM events
+         WHERE session_id = ? AND room_seq > ? AND room_seq IS NOT NULL
+         ORDER BY room_seq ASC LIMIT ?`,
+      )
+      .all(sessionId, afterRoomSeq, limit) as unknown as {
+      room_seq: number;
+      run_id: string;
+      seq: number;
+      type: string;
+      payload: string;
+      created_at: number;
+    }[];
+  }
+
+  // ---- timeline (committed_seq) ----
+  //
+  // `messages.id` is insertion order; `committed_seq` is the order users see.
+  // They differ because a long run may start early and finish late: ordering by
+  // `id` would leave its card stranded far above the conversation, so a card
+  // takes its place on the timeline only when it commits.
+
+  /** Highest timeline position in this session, or 0 when nothing is committed. */
+  maxCommittedSeq(sessionId: string): number {
+    const row = this.db
+      .prepare(`SELECT MAX(committed_seq) AS seq FROM messages WHERE session_id = ?`)
+      .get(sessionId) as unknown as { seq: number | null } | undefined;
+    return row?.seq ?? 0;
+  }
+
+  /**
+   * Append a message that is already final and give it a timeline position.
+   *
+   * Used for completed agent turns. Streaming content never lands here: it lives
+   * in the task/run until it is committed, which is what keeps the timeline from
+   * reshuffling under the user.
+   */
+  addCommittedMessage(input: {
+    sessionId: string;
+    role: 'user' | 'assistant';
+    content: string;
+    agentId: string | null;
+    turnId: string | null;
+    taskId: string | null;
+  }): number {
+    const seq = this.maxCommittedSeq(input.sessionId) + 1;
+    const info = this.db
+      .prepare(
+        `INSERT INTO messages (session_id, role, content, agent_id, turn_id, task_id, committed_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.sessionId,
+        input.role,
+        input.content,
+        input.agentId,
+        input.turnId,
+        input.taskId,
+        seq,
+        Date.now(),
+      );
+    return Number(info.lastInsertRowid);
+  }
+
+  /**
+   * Give the most recent unattributed assistant message its agent and position.
+   *
+   * `startSessionRun` persists the final text as a plain message (it has no idea
+   * about tasks). Promoting that row rather than inserting another keeps one
+   * visible answer per run, so the timeline cannot show the same text twice.
+   * Only rows with a NULL `committed_seq` are eligible — an already-positioned
+   * message must never be moved.
+   */
+  promoteLastAssistantMessage(input: {
+    sessionId: string;
+    agentId: string;
+    turnId: string | null;
+    taskId: string | null;
+  }): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM messages
+         WHERE session_id = ? AND role = 'assistant' AND committed_seq IS NULL
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(input.sessionId) as unknown as { id: number } | undefined;
+    if (!row) return null;
+    const seq = this.maxCommittedSeq(input.sessionId) + 1;
+    this.db
+      .prepare(
+        `UPDATE messages SET agent_id = ?, turn_id = ?, task_id = ?, committed_seq = ?
+         WHERE id = ?`,
+      )
+      .run(input.agentId, input.turnId, input.taskId, seq, row.id);
+    return row.id;
+  }
+
+  /** Messages in timeline order; `afterSeq` resumes a client that reconnected. */
+  listCommittedMessages(
+    sessionId: string,
+    afterSeq = 0,
+    limit = 200,
+  ): { id: number; role: string; content: string; agent_id: string | null; committed_seq: number; created_at: number }[] {
+    return this.db
+      .prepare(
+        `SELECT id, role, content, agent_id, committed_seq, created_at FROM messages
+         WHERE session_id = ? AND committed_seq IS NOT NULL AND committed_seq > ?
+         ORDER BY committed_seq ASC LIMIT ?`,
+      )
+      .all(sessionId, afterSeq, limit) as unknown as {
+      id: number;
+      role: string;
+      content: string;
+      agent_id: string | null;
+      committed_seq: number;
+      created_at: number;
+    }[];
+  }
+
+  // ---- turns & tasks ----
+  //
+  // A turn is one user input; the tasks under it are the agents it started.
+  // The turn is NOT a barrier (03-room.md 4.2): it exists to group tasks for
+  // budget accounting and the batch-epilogue, not to serialize them.
+
+  createTurn(input: {
+    id: string;
+    sessionId: string;
+    prompt: string;
+    tokenLimit: number;
+    now: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_turns (id, session_id, prompt, status, input_tokens, token_limit, created_at)
+         VALUES (?, ?, ?, 'running', 0, ?, ?)`,
+      )
+      .run(input.id, input.sessionId, input.prompt, input.tokenLimit, input.now);
+  }
+
+  getTurn(id: string): TurnRow | undefined {
+    return this.db.prepare(`SELECT * FROM session_turns WHERE id = ?`).get(id) as unknown as
+      | TurnRow
+      | undefined;
+  }
+
+  listTurns(sessionId: string, before: string | null, limit: number): TurnRow[] {
+    if (before) {
+      const anchor = this.getTurn(before);
+      if (!anchor) return [];
+      return this.db
+        .prepare(
+          `SELECT * FROM session_turns WHERE session_id = ? AND created_at < ?
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(sessionId, anchor.created_at, limit) as unknown as TurnRow[];
+    }
+    return this.db
+      .prepare(`SELECT * FROM session_turns WHERE session_id = ? ORDER BY created_at DESC LIMIT ?`)
+      .all(sessionId, limit) as unknown as TurnRow[];
+  }
+
+  /** Close a turn once every task under it has reached a terminal state. */
+  finishTurnIfSettled(id: string, now: number): boolean {
+    const open = this.db
+      .prepare(
+        `SELECT 1 FROM agent_tasks WHERE turn_id = ? AND status IN ('queued','running') LIMIT 1`,
+      )
+      .get(id);
+    if (open) return false;
+    const failed = this.db
+      .prepare(`SELECT 1 FROM agent_tasks WHERE turn_id = ? AND status = 'failed' LIMIT 1`)
+      .get(id);
+    this.db
+      .prepare(`UPDATE session_turns SET status = ?, ended_at = ? WHERE id = ? AND status = 'running'`)
+      .run(failed ? 'failed' : 'done', now, id);
+    return true;
+  }
+
+  createTask(input: {
+    id: string;
+    sessionId: string;
+    turnId: string;
+    agentId: string;
+    source: AgentTaskSource;
+    prompt: string;
+    needsWrite: boolean;
+    snapshotSeq: number;
+    now: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO agent_tasks
+           (id, session_id, turn_id, agent_id, source, prompt, status, needs_write,
+            snapshot_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.sessionId,
+        input.turnId,
+        input.agentId,
+        input.source,
+        input.prompt,
+        input.needsWrite ? 1 : 0,
+        input.snapshotSeq,
+        input.now,
+      );
+  }
+
+  getTask(id: string): AgentTaskRow | undefined {
+    return this.db.prepare(`SELECT * FROM agent_tasks WHERE id = ?`).get(id) as unknown as
+      | AgentTaskRow
+      | undefined;
+  }
+
+  listTasksByTurn(turnId: string): AgentTaskRow[] {
+    return this.db
+      .prepare(`SELECT * FROM agent_tasks WHERE turn_id = ? ORDER BY created_at ASC`)
+      .all(turnId) as unknown as AgentTaskRow[];
+  }
+
+  /** Tasks that are queued or running for a session, oldest first. */
+  listOpenTasks(sessionId: string): AgentTaskRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM agent_tasks WHERE session_id = ? AND status IN ('queued','running')
+         ORDER BY created_at ASC`,
+      )
+      .all(sessionId) as unknown as AgentTaskRow[];
+  }
+
+  updateTask(
+    id: string,
+    patch: {
+      status?: string;
+      runId?: string | null;
+      startedAt?: number | null;
+      endedAt?: number | null;
+      error?: string | null;
+      messageId?: number | null;
+    },
+  ): void {
+    const current = this.getTask(id);
+    if (!current) return;
+    this.db
+      .prepare(
+        `UPDATE agent_tasks SET status = ?, run_id = ?, started_at = ?, ended_at = ?,
+           error = ?, message_id = ? WHERE id = ?`,
+      )
+      .run(
+        patch.status ?? current.status,
+        patch.runId !== undefined ? patch.runId : current.run_id,
+        patch.startedAt !== undefined ? patch.startedAt : current.started_at,
+        patch.endedAt !== undefined ? patch.endedAt : current.ended_at,
+        patch.error !== undefined ? patch.error : current.error,
+        patch.messageId !== undefined ? patch.messageId : current.message_id,
+        id,
+      );
+  }
+
+  /** Every task still marked running — used to reconcile after a restart. */
+  listRunningTasks(): AgentTaskRow[] {
+    return this.db
+      .prepare(`SELECT * FROM agent_tasks WHERE status = 'running'`)
+      .all() as unknown as AgentTaskRow[];
+  }
+
+  /** Whether this session already has a member that may write to the workspace. */
+  sessionHasWritableAgent(sessionId: string): boolean {
+    return Boolean(
+      this.db
+        .prepare(
+          `SELECT 1 FROM session_agents sa
+           JOIN agents a ON a.id = sa.agent_id
+           WHERE sa.session_id = ? AND a.read_only = 0 AND a.enabled = 1 LIMIT 1`,
+        )
+        .get(sessionId),
+    );
+  }
+
   // ---- agent threads ----
 
   listAgentThreads(sessionId: string): AgentThreadRow[] {
@@ -2693,10 +3032,34 @@ export class Db {
 
   // ---- events ----
 
-  appendEvent(runId: string, seq: number, type: string, payload: unknown): void {
+  /**
+   * Append one frame to a run's event log.
+   *
+   * `sessionId`/`roomSeq` are the room-multiplexed coordinates: one cursor per
+   * session over every agent's frames, so a client that reconnects can resume
+   * with a single number instead of tracking N run cursors (07-client §1).
+   */
+  appendEvent(
+    runId: string,
+    seq: number,
+    type: string,
+    payload: unknown,
+    room?: { sessionId: string; roomSeq: number },
+  ): void {
     this.db
-      .prepare(`INSERT INTO events (run_id, seq, type, payload, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .run(runId, seq, type, JSON.stringify(payload), Date.now());
+      .prepare(
+        `INSERT INTO events (run_id, seq, type, payload, session_id, room_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        runId,
+        seq,
+        type,
+        JSON.stringify(payload),
+        room?.sessionId ?? null,
+        room?.roomSeq ?? null,
+        Date.now(),
+      );
   }
 
   listEvents(runId: string, afterSeq = 0): EventRow[] {
