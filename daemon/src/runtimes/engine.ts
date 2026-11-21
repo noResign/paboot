@@ -26,6 +26,8 @@ export interface RunOutcome {
   error: string | null;
   /** The committed transcript message for the answer, when one was written. */
   messageId?: number | null;
+  /** Final visible text; the room reads it to find leader summons. */
+  replyText?: string;
 }
 
 export interface RunRequest {

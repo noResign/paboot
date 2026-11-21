@@ -380,6 +380,71 @@ describe('room projection into a task prompt', () => {
   });
 });
 
+describe('leader summon', () => {
+  it('turns the leader’s @ into a supplement task that can see the main answer', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    const leader = getLeader(h.db, sessionId)!;
+    h.replies.set('claude', '我怀疑是连接池太小。@审阅 补充一下');
+
+    await turns(h, sessionId, { prompt: '并发有问题吗' });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const turn = h.db.listTurns(sessionId, null, 1)[0]!;
+    const tasks = h.db.listTasksByTurn(turn.id);
+    const main = tasks.find((task) => task.agent_id === leader.id)!;
+    const summon = tasks.find((task) => task.agent_id === review.agent_id)!;
+
+    expect(tasks).toHaveLength(2);
+    expect(main.source).toBe('leader_default');
+    expect(summon.source).toBe('summon');
+    expect(summon.parent_task_id).toBe(main.id);
+    // I25: the supplement was created after the main answer committed.
+    const mainMessage = h.db.listMessages(sessionId).find((m) => m.id === main.message_id)!;
+    expect(summon.snapshot_seq!).toBeGreaterThanOrEqual(mainMessage.committed_seq!);
+
+    const start = h.starts.at(-1)!;
+    expect(start.prompt).toContain('我怀疑是连接池太小');
+    expect(start.prompt).toContain('[默认] 我怀疑是连接池太小');
+    expect(turn.status).toBe('done');
+  });
+
+  it('does not let a summoned or explicitly addressed agent summon back', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    h.replies.set('codex', '好的。@默认 你也看看');
+
+    await turns(h, sessionId, { prompt: '审阅看下', mentions: [review.agent_id] });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const tasks = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.source).toBe('mention');
+  });
+
+  it('caps at three, drops duplicates and never picks the leader itself', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅', '记录', '性能', '安全']);
+    const leader = getLeader(h.db, sessionId)!;
+    h.replies.set('claude', '@审阅 @审阅 @记录 @性能 @安全 @默认 大家都看看');
+
+    await turns(h, sessionId, { prompt: '都看看' });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const summons = h.db
+      .listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id)
+      .filter((task) => task.source === 'summon');
+    expect(summons.map((task) => h.db.getAgent(task.agent_id)!.name)).toEqual([
+      '审阅',
+      '记录',
+      '性能',
+    ]);
+    expect(summons.some((task) => task.agent_id === leader.id)).toBe(false);
+  });
+});
+
 describe('room stream', () => {
   it('carries frames for every task with a single session cursor', async () => {
     const h = await startApi();

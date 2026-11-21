@@ -143,6 +143,48 @@ export function parseMentionNames(text: string, members: readonly Agent[]): stri
   return found;
 }
 
+/**
+ * Members addressed in `text`, in the order the text mentions them.
+ *
+ * Same whole-word / longest-name rules as `parseMentionNames`, but returns the
+ * agents and preserves textual order so "the first three" means what the
+ * reader thinks it means. Used for leader summons, where order decides who
+ * fits under the cap.
+ */
+export function findMentionedAgents(text: string, members: readonly Agent[]): Agent[] {
+  const hits: { agent: Agent; at: number; end: number }[] = [];
+  const consumed = new Set<number>();
+  const byLength = [...members].sort((a, b) => b.name.length - a.name.length);
+
+  for (const agent of byLength) {
+    const needle = `@${agent.name}`;
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(needle, from);
+      if (at < 0) break;
+      const end = at + needle.length;
+      const nextChar = text[end];
+      const isWholeWord = nextChar === undefined || !/[\p{L}\p{N}_]/u.test(nextChar);
+      const overlaps = [...consumed].some((index) => index >= at && index < end);
+      if (isWholeWord && !overlaps) {
+        hits.push({ agent, at, end });
+        for (let i = at; i < end; i += 1) consumed.add(i);
+      }
+      from = end;
+    }
+  }
+
+  hits.sort((a, b) => a.at - b.at);
+  const seen = new Set<string>();
+  const out: Agent[] = [];
+  for (const hit of hits) {
+    if (seen.has(hit.agent.id)) continue;
+    seen.add(hit.agent.id);
+    out.push(hit.agent);
+  }
+  return out;
+}
+
 /** True when the text addresses everyone. */
 export function mentionsAll(text: string): boolean {
   return /@all\b/i.test(text) || text.includes('@全体');

@@ -1,7 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import type { AppContext } from '../app/context.js';
 import type { AgentTaskRow, SessionRow, WorkspaceRow } from '../db/db.js';
-import { buildRoomProjection, ensureThread, getAgent, resolveSessionAgent } from './index.js';
+import {
+  buildRoomProjection,
+  buildRoomSystem,
+  ensureThread,
+  findMentionedAgents,
+  getAgent,
+  getLeader,
+  listSessionAgents,
+  resolveSessionAgent,
+} from './index.js';
 import { backendFor } from './resolve.js';
+import type { Agent } from './types.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import { log } from '../platform/log.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
@@ -125,6 +136,8 @@ async function runTaskOnce(
     snapshotSeq: task.snapshot_seq ?? 0,
     sinceSeq: thread.lastSeenSeq,
   });
+  // The stable half (who is here) goes with the other cacheable context.
+  const roomSystem = buildRoomSystem(ctx.db, { sessionId: session.id, selfAgentId: agent.id });
 
   try {
     const handle = startSessionRun(ctx, {
@@ -141,6 +154,7 @@ async function runTaskOnce(
       turnId: task.turn_id,
       agentTaskId: task.id,
       roomContext: roomContext ?? undefined,
+      roomSystem: roomSystem ?? undefined,
       sink,
       agent,
       thread,
@@ -154,6 +168,13 @@ async function runTaskOnce(
 
     if (outcome.status === 'succeeded') {
       ctx.db.updateTask(task.id, { status: 'done', endedAt: Date.now(), messageId });
+      summonSupplements(ctx, deps, {
+        session,
+        workspace,
+        task,
+        agent,
+        replyText: outcome.replyText ?? '',
+      });
       return { taskId: task.id, agentId: agent.id, status: 'done', messageId, error: null };
     }
 
@@ -177,6 +198,99 @@ async function runTaskOnce(
     ctx.db.updateTask(task.id, { status: 'failed', endedAt: Date.now(), error: message });
     return { taskId: task.id, agentId: agent.id, status: 'failed', messageId: null, error: message };
   }
+}
+
+/** One leader turn may summon at most this many supplements (11-router §B4). */
+export const MAX_SUMMONS = 3;
+
+/**
+ * Turn the leader's `@name`s into supplement tasks.
+ *
+ * Only the leader may summon, and only when it answered as the default speaker
+ * (`leader_default`): a user who explicitly @'d someone chose the responders
+ * themselves. A summoned agent's own `@`s never reach this function because its
+ * task source is `summon`, which is what bounds the depth at one.
+ *
+ * The leader does not wait: these tasks start after its run has already
+ * committed its answer, and their completion closes the turn.
+ */
+function summonSupplements(
+  ctx: AppContext,
+  deps: TaskRunnerDeps,
+  input: {
+    session: SessionRow;
+    workspace: WorkspaceRow;
+    task: AgentTaskRow;
+    agent: Agent;
+    replyText: string;
+  },
+): void {
+  const text = input.replyText.trim();
+  if (!text || input.task.source !== 'leader_default') return;
+  const leader = getLeader(ctx.db, input.session.id);
+  if (!leader || leader.id !== input.agent.id) return;
+  if (!ctx.db.getSession(input.session.id)) return;
+
+  // Nobody who is already answering this turn, and nobody who cannot run.
+  const already = new Set(
+    ctx.db.listTasksByTurn(input.task.turn_id).map((task) => task.agent_id),
+  );
+  const members = listSessionAgents(ctx.db, input.session.id)
+    .map((row) => row.agent)
+    .filter(
+      (member) =>
+        member.id !== input.agent.id && !already.has(member.id) && canRunAgent(ctx, member),
+    );
+  const chosen = findMentionedAgents(text, members).slice(0, MAX_SUMMONS);
+  if (chosen.length === 0) return;
+
+  // Created after the leader's answer is committed, so the supplement's
+  // projection includes it (invariant I25).
+  const snapshotSeq = ctx.db.maxCommittedSeq(input.session.id);
+  const now = Date.now();
+  const summons: AgentTaskRow[] = [];
+  for (const target of chosen) {
+    const id = `task_${randomUUID()}`;
+    ctx.db.createTask({
+      id,
+      sessionId: input.session.id,
+      turnId: input.task.turn_id,
+      agentId: target.id,
+      source: 'summon',
+      parentTaskId: input.task.id,
+      prompt: text,
+      needsWrite: !target.readOnly,
+      snapshotSeq,
+      now,
+    });
+    const created = ctx.db.getTask(id);
+    if (created) summons.push(created);
+  }
+  if (summons.length === 0) return;
+
+  log.info(
+    `turn ${input.task.turn_id}: ${input.agent.name} summoned ${summons.map((task) => task.agent_id).join(', ')}`,
+  );
+  for (const summon of summons) {
+    void runTask(ctx, deps, { session: input.session, workspace: input.workspace, task: summon })
+      .then(() => {
+        ctx.db.finishTurnIfSettled(summon.turn_id, Date.now());
+      })
+      .catch((error) => {
+        log.warn(`summon task ${summon.id} crashed`, error);
+        ctx.db.finishTurnIfSettled(summon.turn_id, Date.now());
+      });
+  }
+}
+
+/** Whether a member can actually take a run right now (same rule routing uses). */
+function canRunAgent(ctx: AppContext, agent: Agent): boolean {
+  if (!agent.enabled || agent.kind === 'peer') return false;
+  const backend = backendFor(agent);
+  const driver = ctx.registry.driver(backend);
+  if (!driver || driver.internal) return false;
+  const detection = ctx.registry.detection(backend);
+  return detection ? detection.available !== false : true;
 }
 
 /** Read a frame's payload back into the event the client expects. */

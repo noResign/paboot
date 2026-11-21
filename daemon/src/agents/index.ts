@@ -44,7 +44,15 @@ export {
   type ResolvedSessionAgent,
 } from './resolve.js';
 
-export { mentionsAll, parseMentionNames, routeMentions, type MentionTarget } from './mentions.js';
+export {
+  findMentionedAgents,
+  mentionsAll,
+  parseMentionNames,
+  routeMentions,
+  type MentionTarget,
+} from './mentions.js';
+
+export { buildRoomSystem, type RoomSystemInput } from './roster.js';
 
 export {
   buildRoomProjection,

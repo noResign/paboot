@@ -76,6 +76,11 @@ export interface StartSessionRunInput {
    * (cacheable) system block. Absent for single-agent runs.
    */
   roomContext?: string;
+  /**
+   * Stable room description (roster, plus leader routing) for the system
+   * block. Changes only when membership does, unlike `roomContext`.
+   */
+  roomSystem?: string;
   commandId?: string | null;
   sink: RunSink;
   /**
@@ -104,6 +109,18 @@ export interface RunHandle {
  * system-prompt runtimes get it every run; prelude runtimes get it on the first
  * message (the same rule the other stable context follows).
  */
+/** Stable room context (roster + leader routing), already formatted by agents/. */
+function roomPrelude(text: string | undefined): ContextPrelude | null {
+  const trimmed = text?.trim();
+  if (!trimmed) return null;
+  return {
+    prefix: `${MEMORY_CONTEXT_OPEN}\n${trimmed}\n${MEMORY_CONTEXT_CLOSE}`,
+    used: trimmed.length,
+    overBudget: false,
+    omitted: 0,
+  };
+}
+
 function agentPrelude(
   agent: Agent | undefined,
   backend: string,
@@ -351,6 +368,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       ends,
       memory,
       agentPrelude(agent, runtime, readOnlyEnforced),
+      roomPrelude(input.roomSystem),
     );
     // Per-turn context (room projection, memory recall) rides the user message
     // and is rebuilt for every run — never the cacheable system block.
@@ -560,7 +578,11 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         send({ type: 'error', code: 'run_failed', message: finalOutcome.error, terminal: true });
       }
       send({ type: 'status', label: finalOutcome.status, terminal: true });
-      return { ...finalOutcome, messageId };
+      return {
+        ...finalOutcome,
+        messageId,
+        ...(assistantText.trim() ? { replyText: assistantText.trim() } : {}),
+      };
     } catch (err) {
       log.error('run failed unexpectedly', err);
       const message = err instanceof Error ? err.message : String(err);

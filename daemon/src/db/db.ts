@@ -2146,6 +2146,8 @@ export class Db {
     turnId: string;
     agentId: string;
     source: AgentTaskSource;
+    /** Leader task that summoned this supplement; null for user-addressed work. */
+    parentTaskId?: string | null;
     prompt: string;
     needsWrite: boolean;
     snapshotSeq: number;
@@ -2154,9 +2156,9 @@ export class Db {
     this.db
       .prepare(
         `INSERT INTO agent_tasks
-           (id, session_id, turn_id, agent_id, source, prompt, status, needs_write,
+           (id, session_id, turn_id, agent_id, source, parent_task_id, prompt, status, needs_write,
             snapshot_seq, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -2164,6 +2166,7 @@ export class Db {
         input.turnId,
         input.agentId,
         input.source,
+        input.parentTaskId ?? null,
         input.prompt,
         input.needsWrite ? 1 : 0,
         input.snapshotSeq,
