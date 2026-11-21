@@ -24,10 +24,10 @@
 | `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
-| `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
-| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters`、`task_id`、`trigger`（`user\|scheduled\|run_now`）、`permission_mode` |
+| `messages` | 对话转录：user prompt + assistant 聚合后的可见文本；`agent_id` / `turn_id` / `task_id` 记录发言人归属，`committed_seq` 是时间线位置（NULL = 尚未定稿） |
+| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters`、`task_id`、`trigger`（`user\|scheduled\|run_now`）、`permission_mode`、`agent_id` / `thread_id` / `turn_id`（产生这一轮的 agent 与对话） |
 | `scheduled_tasks` | 定时任务：任务类型/目标会话/工作区/runtime、prompt 或 command、`cron_expr` + `timezone` + `schedule_preset`、`next_run_at`、执行状态、`enabled` / `disabled_reason`、`created_by`（见 [scheduled-tasks.md](scheduled-tasks.md)） |
-| `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放 |
+| `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放；`session_id` / `room_seq` 是房间流的游标（同一行，不重复写） |
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
 
@@ -238,6 +238,33 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 **重启对账**：daemon 启动时把所有仍是 `running` 的 run 标为 `interrupted`（进程已随上次退出消失，
 没有任何东西在跑），并给它的持久流补一帧终局 `status(label=interrupted)`。否则该 run 会永远读作
 "运行中"。
+
+## 多 agent 群聊（room）
+
+一个 Session 是一个房间：多个 agent 各自拥有 runtime / 工作目录 / 模型 / provider 会话
+（`agent_threads`），共用一条时间线。房间的 leader 是「用户建会话时选中的那个人」，API 可在
+daemon 侧更换（`PATCH /api/sessions/:id/leader`），客户端不暴露这个概念。
+
+- **归属**：`/api/chat` 与 turn 的答案在定稿时就把 `agent_id` / `turn_id` / `task_id` /
+  `committed_seq` 一起写入 `messages`，不存在「先写后认领」的竞态；`runs.agent_id` 记录实际
+  执行者。老数据由启动 backfill 按 leader 补齐。
+- **权限**：生效模式 = `min(会话模式, agent.permissionCeiling)`，只会收紧。implicit agent
+  （老 daemon 的替身）与 peer agent 不参与收紧。
+- **路由**：显式 `@名字` → 恰好这些成员（`heavy` 也允许，@ 就是它的显式请求）；`@all` →
+  所有 enabled 且非 heavy、非 peer 的成员；无 @ → leader。disabled / peer / 未知 id 进入
+  `dropped`，**不会**回落给 leader——静默换人回答比不回答更糟。
+- **并发**：同一 turn 的 tasks 同时开跑（turn 不是屏障），但同一 `(session, agent)` 的 run
+  串行排队：同一个 agent 的两轮若并发，会同时 `--resume` 同一个 provider 会话。
+- **端点**：
+  - `GET /api/workspaces/:id/agents`、`POST /api/workspaces/:id/agents`
+  - `GET|PATCH|DELETE /api/agent-profiles/:id`
+  - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
+    `PATCH /api/sessions/:id/leader`、`POST /api/sessions/:id/agents/:agentId/reset-context`
+  - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[]}`）→ 202
+    `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
+  - `GET /api/sessions/:id/stream?after=<roomSeq>`：一个会话一条流，承载所有 agent 的帧
+    （会话级通知也在内）。帧额外带 `roomSeq` / `taskId` / `agentId`；SSE 的 `id:` 是
+    `roomSeq`，省略 `after` 只收直播，给了则回放并分页（500 行/页）直到追平。
 
 ## 每轮 checkpoint 与回滚
 
