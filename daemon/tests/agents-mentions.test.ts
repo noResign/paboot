@@ -148,6 +148,17 @@ describe('findSummonMentions', () => {
     expect(findSummonMentions('> @审阅 看', members)).toEqual([]);
   });
 
+  it('strips the markdown a leader naturally uses before a mention', () => {
+    expect(findSummonMentions('- @审阅 看一下', members).map((a) => a.name)).toEqual(['审阅']);
+    expect(findSummonMentions('1. @审阅 看一下', members).map((a) => a.name)).toEqual(['审阅']);
+    expect(findSummonMentions('**@审阅** 看一下', members).map((a) => a.name)).toEqual(['审阅']);
+    expect(findSummonMentions('## 补充\n@实现 改一下', members).map((a) => a.name)).toEqual([
+      '实现',
+    ]);
+    // A bullet that is still prose does not summon.
+    expect(findSummonMentions('- 建议用户自己 @审阅 一下', members)).toEqual([]);
+  });
+
   it('preserves order across lines and dedupes', () => {
     const text = '@实现 写文档\n@审阅 看代码\n@审阅 再看一眼';
     expect(findSummonMentions(text, members).map((a) => a.name)).toEqual(['实现', '审阅']);

@@ -166,14 +166,29 @@ export function findSummonMentions(text: string, members: readonly Agent[]): Age
   const seen = new Set<string>();
   const out: Agent[] = [];
   for (const line of stripped.split('\n')) {
-    if (!line.trimStart().startsWith('@')) continue;
-    for (const agent of mentionsInText(line, members)) {
+    const summon = stripMarkdownPrefix(line);
+    if (!summon.startsWith('@')) continue;
+    for (const agent of mentionsInText(summon, members)) {
       if (seen.has(agent.id)) continue;
       seen.add(agent.id);
       out.push(agent);
     }
   }
   return out;
+}
+
+/**
+ * Remove the markdown decoration a leader naturally puts before a mention:
+ * headings, list markers (with optional task checkbox), and emphasis wrapping
+ * the mention itself. Without this, `- @name` and `**@name**` would silently
+ * never summon.
+ */
+function stripMarkdownPrefix(line: string): string {
+  return line
+    .trimStart()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, '')
+    .replace(/^(?:\*\*|__|\*|_)(?=@)/, '');
 }
 
 /** Whole-word `@name` hits inside one line, in textual order. */
