@@ -2023,6 +2023,41 @@ export class Db {
     return Number(info.lastInsertRowid);
   }
 
+  /**
+   * Committed messages a room projection may show one agent.
+   *
+   * Ordered by timeline position, bounded by the task's snapshot, and without
+   * the agent's own messages (its own history lives in its provider thread).
+   */
+  messagesForProjection(
+    sessionId: string,
+    afterSeq: number,
+    snapshotSeq: number,
+    excludeAgentId: string,
+  ): {
+    id: number;
+    role: string;
+    content: string;
+    agent_id: string | null;
+    committed_seq: number;
+  }[] {
+    return this.db
+      .prepare(
+        `SELECT id, role, content, agent_id, committed_seq FROM messages
+         WHERE session_id = ? AND committed_seq IS NOT NULL
+           AND committed_seq > ? AND committed_seq <= ?
+           AND (agent_id IS NULL OR agent_id <> ?)
+         ORDER BY committed_seq ASC`,
+      )
+      .all(sessionId, afterSeq, snapshotSeq, excludeAgentId) as unknown as {
+      id: number;
+      role: string;
+      content: string;
+      agent_id: string | null;
+      committed_seq: number;
+    }[];
+  }
+
   /** Messages in timeline order; `afterSeq` resumes a client that reconnected. */
   listCommittedMessages(
     sessionId: string,
@@ -2254,6 +2289,15 @@ export class Db {
         input.now,
       );
     return this.getAgentThread(input.sessionId, input.agentId) as AgentThreadRow;
+  }
+
+  /** Advance a thread's room cursor to a timeline position it has been given. */
+  setAgentThreadSeenSeq(id: string, seq: number): void {
+    this.db
+      .prepare(
+        `UPDATE agent_threads SET last_seen_seq = MAX(last_seen_seq, ?), last_used_at = ? WHERE id = ?`,
+      )
+      .run(seq, Date.now(), id);
   }
 
   updateAgentThread(

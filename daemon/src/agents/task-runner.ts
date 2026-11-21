@@ -1,6 +1,6 @@
 import type { AppContext } from '../app/context.js';
 import type { AgentTaskRow, SessionRow, WorkspaceRow } from '../db/db.js';
-import { ensureThread, getAgent, resolveSessionAgent } from './index.js';
+import { buildRoomProjection, ensureThread, getAgent, resolveSessionAgent } from './index.js';
 import { backendFor } from './resolve.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import { log } from '../platform/log.js';
@@ -116,6 +116,16 @@ async function runTaskOnce(
     },
   };
 
+  // What the rest of the room said before this task's snapshot. Own messages
+  // are excluded, so nothing here duplicates this agent's own thread.
+  const roomContext = buildRoomProjection(ctx.db, {
+    sessionId: session.id,
+    sessionTitle: session.title,
+    agentId: agent.id,
+    snapshotSeq: task.snapshot_seq ?? 0,
+    sinceSeq: thread.lastSeenSeq,
+  });
+
   try {
     const handle = startSessionRun(ctx, {
       session,
@@ -130,11 +140,15 @@ async function runTaskOnce(
       skipUserMessage: true,
       turnId: task.turn_id,
       agentTaskId: task.id,
+      roomContext: roomContext ?? undefined,
       sink,
       agent,
       thread,
     });
     ctx.db.updateTask(task.id, { runId: handle.runId });
+    // The projection is in this run's prompt; the next task for this agent only
+    // needs what was committed after this point.
+    ctx.db.setAgentThreadSeenSeq(thread.id, task.snapshot_seq ?? 0);
     const outcome = await handle.done;
     const messageId = outcome.messageId ?? null;
 

@@ -47,6 +47,13 @@ export {
 export { mentionsAll, parseMentionNames, routeMentions, type MentionTarget } from './mentions.js';
 
 export {
+  buildRoomProjection,
+  ROOM_CONTEXT_MAX_CHARS,
+  ROOM_CONTEXT_RECENT,
+  type RoomProjectionInput,
+} from './projection.js';
+
+export {
   assertWritableSlotFree,
   createTurn,
   type CreatedTurn,

@@ -340,6 +340,46 @@ describe('single writable rule', () => {
   });
 });
 
+describe('room projection into a task prompt', () => {
+  it('shows what was committed before the snapshot, minus the agent itself', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    const leader = getLeader(h.db, sessionId)!;
+
+    // One batch: same snapshot, so neither sibling can see the other.
+    await turns(h, sessionId, { prompt: '都上', mentions: [leader.id, review.agent_id] });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+    expect(h.starts.every((start) => !start.prompt.includes('<room-context'))).toBe(true);
+
+    // Addressed alone, the member sees the user and the leader — not itself.
+    await turns(h, sessionId, { prompt: '审阅再看看', mentions: [review.agent_id] });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const prompt = h.starts.at(-1)!.prompt;
+    expect(prompt).toContain('<room-context');
+    expect(prompt).toContain('[用户] 都上');
+    expect(prompt).toContain('[默认] claude 回答');
+    expect(prompt).not.toContain('[审阅] codex 回答');
+    // The current question is the prompt itself, not a second copy in the block.
+    expect(prompt.split('审阅再看看')).toHaveLength(2);
+
+    // Its room cursor advanced to the point it was shown.
+    const turn = h.db.listTurns(sessionId, null, 1)[0]!;
+    const [task] = h.db.listTasksByTurn(turn.id);
+    expect(h.db.getAgentThread(sessionId, review.agent_id)!.last_seen_seq).toBe(
+      task!.snapshot_seq,
+    );
+
+    // The leader's next turn sees the reviewer and not its own earlier answer.
+    await turns(h, sessionId, { prompt: '默认怎么看', mentions: [leader.id] });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+    const leaderPrompt = h.starts.at(-1)!.prompt;
+    expect(leaderPrompt).toContain('[审阅] codex 回答');
+    expect(leaderPrompt).not.toContain('[默认] claude 回答');
+  });
+});
+
 describe('room stream', () => {
   it('carries frames for every task with a single session cursor', async () => {
     const h = await startApi();

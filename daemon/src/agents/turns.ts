@@ -69,12 +69,20 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     );
   }
 
+  // Messages committed *before* this turn are what a task may see. The snapshot
+  // is taken before the user's message gets its position on purpose: that
+  // message travels as the task's prompt, so putting it in the room projection
+  // too would show every agent the question twice.
+  //
+  // Freezing it per turn (here, at creation) is what makes a run reproducible:
+  // same snapshot + same prompt = same context, which prompt caching depends on.
+  const snapshotSeq = db.maxCommittedSeq(input.session.id);
+
   // Raw text keeps the `@name` the user typed: replay shows what they wrote, and
   // mentions are request metadata, not part of the prompt (03-room.md B §9).
   //
-  // Committed immediately *and* given a timeline position: the user's message is
-  // final the moment it is sent, and every task's snapshot must include it — a
-  // task that cannot see the question it is answering is worse than useless.
+  // Committed immediately (a task that cannot see the question it is answering
+  // is worse than useless; it sees it as `prompt`) and given a timeline position.
   db.addCommittedMessage({
     sessionId: input.session.id,
     role: 'user',
@@ -94,11 +102,6 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     tokenLimit: input.tokenLimit ?? 0,
     now,
   });
-
-  // Messages already committed are what a task is allowed to see. Freezing it
-  // per task (here, at creation) is what makes a run reproducible: same snapshot
-  // + same prompt = same context, which prompt caching also depends on.
-  const snapshotSeq = db.maxCommittedSeq(input.session.id);
 
   const tasks: AgentTaskRow[] = [];
   for (const target of routed.targets) {

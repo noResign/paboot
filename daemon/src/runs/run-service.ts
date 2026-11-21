@@ -69,6 +69,13 @@ export interface StartSessionRunInput {
    * answering agent.
    */
   skipUserMessage?: boolean;
+  /**
+   * Prior room timeline for this agent, already formatted and bounded.
+   *
+   * Rebuilt per run, so it goes next to the user message rather than into the
+   * (cacheable) system block. Absent for single-agent runs.
+   */
+  roomContext?: string;
   commandId?: string | null;
   sink: RunSink;
   /**
@@ -345,11 +352,17 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       memory,
       agentPrelude(agent, runtime, readOnlyEnforced),
     );
-    const promptWithRecall = recall ? `${recall.prefix}\n\n${prompt}` : prompt;
+    // Per-turn context (room projection, memory recall) rides the user message
+    // and is rebuilt for every run — never the cacheable system block.
+    const perTurn = [input.roomContext?.trim(), recall?.prefix].filter(
+      (part): part is string => typeof part === 'string' && part !== '',
+    );
+    const promptWithContext =
+      perTurn.length > 0 ? `${perTurn.join('\n\n')}\n\n${prompt}` : prompt;
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(runtime)?.capabilities.nativeSystemPrompt === true;
     const usePrelude = injected !== null && !nativeSystemPrompt && resumeNativeSessionId === null;
-    const promptSent = usePrelude && injected ? `${injected.prefix}\n\n${promptWithRecall}` : promptWithRecall;
+    const promptSent = usePrelude && injected ? `${injected.prefix}\n\n${promptWithContext}` : promptWithContext;
     if (knowledge) {
       const mode = nativeSystemPrompt
         ? 'system prompt'
