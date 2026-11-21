@@ -64,6 +64,13 @@ export type ChatMessage =
       agentName?: string | null;
     };
 
+/** A room answer that has not committed yet — shown above the composer. */
+export interface PendingAnswer {
+  runId: string;
+  agentId: string | null;
+  message: Extract<ChatMessage, { kind: 'assistant' }>;
+}
+
 export interface TodoItem {
   content: string;
   status: string;
@@ -114,6 +121,14 @@ export interface ChatSessionState {
   /** Generic model knobs (e.g. reasoningEffort); empty = defaults. */
   modelParameters: Record<string, string>;
   messages: ChatMessage[];
+  /**
+   * Answers still being produced by a room run.
+   *
+   * They are deliberately **not** in `messages`: the timeline is commit-order
+   * only. A card moves in when its run reaches a terminal state, so it can
+   * never be reshuffled by a slower sibling. Key = run id.
+   */
+  pendingAnswers: PendingAnswer[];
   /** The session's runs, newest last — each carries its checkpoint (or null). */
   runs: RunDto[];
   runId: string | null;
@@ -158,6 +173,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     model: null,
     modelParameters: {},
     messages: [],
+    pendingAnswers: [],
     runs: [],
     runId: null,
     streamId: null,

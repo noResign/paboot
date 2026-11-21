@@ -4,7 +4,7 @@ import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
 import { applyFrame, buildAssistantFromEvents, finalizeLast, newAssistant } from './chat/applyEvent';
 import { dismissPermission, enqueuePermission, setInputError, setSubmitting } from './chat/permissions';
 import { emptyChat, emptyPermissions } from './chat/types';
-import type { PendingPermission } from './chat/types';
+import type { PendingAnswer, PendingPermission } from './chat/types';
 import type { ChatMessage, ChatSessionState, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
 import type { RunDto, SessionEvent, SessionRunBrief, SseFrame } from '../../../shared/contract';
@@ -645,9 +645,17 @@ export const useChat = create<ChatStore>((set, get) => ({
         set((state) => ({
           byKey: patch(state, key, (current) => {
             if (current.roomStreamId !== event.streamId) return current;
+            // The socket is gone; do not leave half-written cards in the
+            // pending area forever. Their text is best-effort anyway.
+            const flushed = current.pendingAnswers.map((answer) => ({
+              ...answer.message,
+              done: true,
+            }));
             return {
               ...current,
               roomStreamId: null,
+              messages: flushed.length > 0 ? [...current.messages, ...flushed] : current.messages,
+              pendingAnswers: [],
               ...(event.outcome === 'giveup'
                 ? { error: friendlyMessage(event.apiCode, event.httpCode, event.message ?? '房间流已断开') }
                 : {}),
@@ -901,6 +909,7 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
  */
 export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionState {
   let messages = chat.messages;
+  let pending = chat.pendingAnswers;
   let todos = chat.todos;
   let contextUsage = chat.contextUsage;
   let permissions = chat.permissions;
@@ -930,31 +939,58 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     if (!runId) continue;
 
     type Assistant = Extract<ChatMessage, { kind: 'assistant' }>;
-    let index = messages.findIndex(
-      (message) => message.kind === 'assistant' && message.runId === runId,
-    );
+    let index = pending.findIndex((answer) => answer.runId === runId);
     if (index < 0) {
-      messages = [
-        ...messages,
-        { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
-      ];
-      index = messages.length - 1;
+      const created: PendingAnswer = {
+        runId,
+        agentId: frame.agentId ?? null,
+        message: { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
+      };
+      pending = [...pending, created];
+      index = pending.length - 1;
     }
 
-    const target = messages[index] as Assistant;
+    const entry = pending[index]!;
     const next = applyFrame(
-      { messages: [target], todos, contextUsage, terminal: false, terminalSucceeded: false },
+      // Feed the reducer a one-message transcript so only this run's card
+      // changes; other agents' in-flight answers are untouched.
+      {
+        messages: [entry.message],
+        todos,
+        contextUsage,
+        terminal: false,
+        terminalSucceeded: false,
+      },
       frame,
       () => nextId('a'),
     );
     let updated = next.messages[next.messages.length - 1] as Assistant;
-    if (next.terminal) updated = finalizeLast([updated])[0] as Assistant;
-    messages = messages.map((message, i) => (i === index ? updated : message));
     todos = next.todos;
     contextUsage = next.contextUsage;
+
+    if (next.terminal) {
+      // Commit now: the timeline only ever grows in completion order, so a
+      // slow sibling can never push a finished answer above a newer question.
+      updated = finalizeLast([updated])[0] as Assistant;
+      messages = [...messages, updated];
+      pending = pending.filter((answer) => answer.runId !== runId);
+    } else {
+      pending = pending.map((answer, i) =>
+        i === index ? { ...answer, message: updated } : answer,
+      );
+    }
   }
 
-  return { ...chat, messages, todos, contextUsage, permissions, runtime, sessionId };
+  return {
+    ...chat,
+    messages,
+    pendingAnswers: pending,
+    todos,
+    contextUsage,
+    permissions,
+    runtime,
+    sessionId,
+  };
 }
 
 interface RebuiltHistory {

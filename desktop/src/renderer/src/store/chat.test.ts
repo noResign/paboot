@@ -8,6 +8,7 @@ vi.mock('../notify/notifier', () => ({ notifyRunFinished: vi.fn(), notifyPermiss
 import { api, connectionApi } from '../ipc/client';
 import { reduceRoomFrames, useChat } from './chat';
 import { emptyChat } from './chat/types';
+import type { ChatMessage } from './chat/types';
 import type { RunDto } from '../../../shared/contract';
 
 const run = { id: 'r', status: 'succeeded', checkpoint: { status: 'complete', preRef: 'pre', postRef: 'post' } } as RunDto;
@@ -270,36 +271,38 @@ describe('room stream reducer', () => {
   const frame = (runId: string, agentId: string | null, seq: number, event: unknown) =>
     ({ runId, seq, agentId, event }) as never;
 
-  it('keeps one card per run when several agents stream at once', () => {
+  it('keeps answers in the pending area until their run commits', () => {
     const base = emptyChat('host::room', 'host');
-    const next = reduceRoomFrames(base, [
+    const streaming = reduceRoomFrames(base, [
       frame('r1', 'a1', 1, { type: 'status', label: 'starting' }),
       frame('r2', 'a2', 1, { type: 'status', label: 'starting' }),
       frame('r1', 'a1', 2, { type: 'text_delta', delta: '审阅说' }),
       frame('r2', 'a2', 2, { type: 'text_delta', delta: '性能说' }),
       frame('r1', 'a1', 3, { type: 'text_delta', delta: '完了' }),
-      frame('r1', 'a1', 4, { type: 'status', label: 'succeeded', terminal: true }),
-      frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
     ]);
 
-    const answers = next.messages.filter((message) => message.kind === 'assistant');
-    expect(answers).toHaveLength(2);
+    // While both are still running, the timeline must not grow.
+    expect(streaming.messages).toHaveLength(0);
+    expect(streaming.pendingAnswers.map((answer) => answer.runId)).toEqual(['r1', 'r2']);
 
-    const first = answers.find((message) => message.kind === 'assistant' && message.runId === 'r1')!;
-    const second = answers.find((message) => message.kind === 'assistant' && message.runId === 'r2')!;
-    expect(first.kind === 'assistant' && first.agentId).toBe('a1');
-    expect(second.kind === 'assistant' && second.agentId).toBe('a2');
-    const text = (message: typeof first): string =>
+    const text = (message: ChatMessage): string =>
       message.kind === 'assistant'
-        ? message.blocks
-            .filter((block) => block.kind === 'text')
-            .map((block) => (block.kind === 'text' ? block.text : ''))
-            .join('')
+        ? message.blocks.map((block) => (block.kind === 'text' ? block.text : '')).join('')
         : '';
-    expect(text(first)).toBe('审阅说完了');
-    expect(text(second)).toBe('性能说');
-    expect(first.kind === 'assistant' && first.done).toBe(true);
-    expect(second.kind === 'assistant' && second.done).toBe(true);
+    expect(text(streaming.pendingAnswers[0]!.message)).toBe('审阅说完了');
+    expect(text(streaming.pendingAnswers[1]!.message)).toBe('性能说');
+
+    // r2 finishes first: it commits first, even though r1 started first.
+    const next = reduceRoomFrames(streaming, [
+      frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
+      frame('r1', 'a1', 4, { type: 'status', label: 'succeeded', terminal: true }),
+    ]);
+    expect(next.pendingAnswers).toHaveLength(0);
+    const answers = next.messages.filter((message) => message.kind === 'assistant');
+    expect(
+      answers.map((message) => (message.kind === 'assistant' ? message.runId : null)),
+    ).toEqual(['r2', 'r1']);
+    expect(answers.map(text)).toEqual(['性能说', '审阅说完了']);
   });
 
   it('enqueues permission requests without inventing an answer card', () => {

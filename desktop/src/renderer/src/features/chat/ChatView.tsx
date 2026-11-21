@@ -497,6 +497,29 @@ export function ChatView({
         )}
       </div>
 
+      {/* 进行区：答案定稿（run 终止）前不进时间线，避免慢的那位把已完成
+          的回答挤到新问题上面。这里只展示预览，提交后落到时间线底部。 */}
+      {chat.pendingAnswers.length > 0 && (
+        <div className="pending-answers">
+          {chat.pendingAnswers.map((answer) => {
+            const name =
+              sessionAgents.find((agent) => agent.id === answer.agentId)?.name ?? '助手';
+            const text = answer.message.blocks
+              .map((block) => (block.kind === 'text' ? block.text : ''))
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+            return (
+              <div className="pending-answer" key={answer.runId}>
+                <span className="pending-answer-dot" aria-hidden="true" />
+                <b>{name}</b>
+                <span className="pending-answer-text">{text ? text.slice(-220) : '正在回答…'}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <Composer
         disabled={busy || chat.historyLoading}
         busy={busy}

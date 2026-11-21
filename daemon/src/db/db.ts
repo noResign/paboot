@@ -3105,7 +3105,9 @@ export class Db {
 
   listRuns(sessionId: string): RunRow[] {
     return this.db
-      .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC`)
+      // `rowid` breaks the tie between a turn's runs: they are created in the
+      // same millisecond, and clients draw the question on the first one.
+      .prepare(`SELECT * FROM runs WHERE session_id = ? ORDER BY started_at ASC, rowid ASC`)
       .all(sessionId) as unknown as RunRow[];
   }
 
