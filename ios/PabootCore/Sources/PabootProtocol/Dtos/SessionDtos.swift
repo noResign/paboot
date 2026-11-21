@@ -121,6 +121,8 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let taskId: String?
     public let trigger: String?
     public let permissionMode: String?
+    /// 产生这次 run 的 agent；老 daemon 没有这个字段。
+    public let agentId: String?
     public let output: String?
 
     public init(from decoder: Decoder) throws {
@@ -141,13 +143,14 @@ public struct RunDto: Decodable, Equatable, Sendable {
         taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
         trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
         permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
+        agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
         output = try container.decodeIfPresent(String.self, forKey: .output)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, runtime, model, modelParameters, status, prompt, attachmentIds
         case startedAt, endedAt, exitCode, error, checkpoint
-        case taskId, trigger, permissionMode, output
+        case taskId, trigger, permissionMode, agentId, output
     }
 }
 

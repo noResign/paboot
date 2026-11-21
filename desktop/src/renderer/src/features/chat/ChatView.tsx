@@ -25,7 +25,11 @@ import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialo
 import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
-import type { ModelOptionDto, ProductPermissionMode } from '../../../../shared/contract';
+import type {
+  ModelOptionDto,
+  ProductPermissionMode,
+  SessionAgentDto,
+} from '../../../../shared/contract';
 
 interface Props {
   workspaceName: string | null;
@@ -64,6 +68,8 @@ export function ChatView({
   const [showAssistants, setShowAssistants] = useState(false);
   /** 这台 daemon 是否支持助手功能；404 = 老版本，入口隐藏而不是点了没反应。 */
   const [agentsSupported, setAgentsSupported] = useState(false);
+  /** 名册用来把消息上的 agentId 翻成显示名；只有一个成员时不标注。 */
+  const [sessionAgents, setSessionAgents] = useState<SessionAgentDto[]>([]);
   // Rollback is destructive: two-step confirm, and a second step when it would
   // also discard later runs.
   const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
@@ -84,12 +90,23 @@ export function ChatView({
     }
     let live = true;
     void api.sessionAgents(sessionId).then((res) => {
-      if (live) setAgentsSupported(res.ok);
+      if (!live) return;
+      setAgentsSupported(res.ok);
+      setSessionAgents(res.ok ? res.data.agents : []);
     });
     return () => {
       live = false;
     };
   }, [chat?.sessionId]);
+
+  /** Re-read the roster after the assistant dialog changed its membership. */
+  function refreshAgents(): void {
+    const sessionId = chat?.sessionId;
+    if (!sessionId) return;
+    void api.sessionAgents(sessionId).then((res) => {
+      setSessionAgents(res.ok ? res.data.agents : []);
+    });
+  }
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
   // per session is cheap after the first call. A session that has not been
@@ -421,6 +438,11 @@ export function ChatView({
               messages={chat.messages}
               scrollRef={scrollRef}
               runs={chat.runs}
+              agentNames={
+                sessionAgents.length > 1
+                  ? new Map(sessionAgents.map((agent) => [agent.id, agent.name]))
+                  : undefined
+              }
               onRollback={(runId) => setRollback({ runId, needForce: false })}
             />
           )}
@@ -473,7 +495,10 @@ export function ChatView({
       {showAssistants && chat.sessionId && (
         <AssistantDialog
           sessionId={chat.sessionId}
-          onClose={() => setShowAssistants(false)}
+          onClose={() => {
+            setShowAssistants(false);
+            refreshAgents();
+          }}
         />
       )}
 

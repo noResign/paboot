@@ -148,7 +148,9 @@ final class ChatViewModel {
             lastActiveAt = session.lastActiveAt
             knownRunIds = Set(detail.runs.map(\.id))
             loadModels()
-            loadSessionAgents()
+            // Await the roster: speaker labels are resolved while messages are
+            // built, so a fire-and-forget fetch would leave them all unnamed.
+            await refreshSessionAgents()
 
             var messages: [ChatUiMessage] = []
             var todos: [TodoItem] = []
@@ -168,7 +170,13 @@ final class ChatViewModel {
 
                 if run.id == session.runningRunId {
                     messages.append(
-                        ChatUiMessage(id: "a-\(run.id)", role: .assistant, done: false)
+                        ChatUiMessage(
+                            id: "a-\(run.id)",
+                            role: .assistant,
+                            done: false,
+                            agentId: run.agentId,
+                            agentName: nameFor(run.agentId)
+                        )
                     )
                     runningRunId = run.id
                     continue
@@ -176,7 +184,13 @@ final class ChatViewModel {
 
                 let frames = (try? await repository.runEvents(runId: run.id, after: nil)) ?? []
                 guard !Task.isCancelled else { return }
-                var assistant = ChatUiMessage(id: "a-\(run.id)", role: .assistant, done: true)
+                var assistant = ChatUiMessage(
+                    id: "a-\(run.id)",
+                    role: .assistant,
+                    done: true,
+                    agentId: run.agentId,
+                    agentName: nameFor(run.agentId)
+                )
 
                 for event in ChatEventReducer.coalesced(frames.map(\.event)) {
                     if case .permissionRequest = event {
@@ -1079,22 +1093,26 @@ final class ChatViewModel {
     }
 
     func loadSessionAgents() {
+        Task { await refreshSessionAgents() }
+    }
+
+    /// Read the roster. Callers that build the transcript await this first so
+    /// `nameFor` has an answer; the menu path can fire and forget.
+    private func refreshSessionAgents() async {
         guard let id = state.sessionId else { return }
-        Task {
-            do {
-                let roster = try await agentRepository.sessionAgents(sessionId: id)
-                state.agentsSupported = true
-                state.sessionAgents = roster.agents
-            } catch let error as PabootError {
-                if case .http(let status, _) = error, status == 404 {
-                    state.agentsSupported = false
-                    state.sessionAgents = []
-                } else {
-                    state.error = error.localizedDescription
-                }
-            } catch {
+        do {
+            let roster = try await agentRepository.sessionAgents(sessionId: id)
+            state.agentsSupported = true
+            state.sessionAgents = roster.agents
+        } catch let error as PabootError {
+            if case .http(let status, _) = error, status == 404 {
+                state.agentsSupported = false
+                state.sessionAgents = []
+            } else {
                 state.error = error.localizedDescription
             }
+        } catch {
+            state.error = error.localizedDescription
         }
     }
 

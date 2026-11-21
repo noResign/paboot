@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,6 +48,7 @@ import com.noresign.paboot.model.chat.ChatUiMessage
 import com.noresign.paboot.model.chat.ContentBlock
 import com.noresign.paboot.util.formatMessageTime
 import com.noresign.paboot.model.chat.segmentBlocks
+import com.noresign.paboot.ui.identity.agentColor
 import kotlinx.coroutines.launch
 
 @Composable
@@ -288,19 +290,4 @@ private fun NoticeLine(text: String) {
             .fillMaxWidth()
             .padding(vertical = 4.dp),
     )
-}
-
-/**
- * 稳定散布色：同一个助手在任何界面都是同一个颜色。
- *
- * 按 id 散列而不是名字：改名不该换颜色，否则用户会以为是另一个助手。
- * 与助手面板（AssistantSheet）用的是同一套调色板与算法。
- */
-internal fun agentColor(id: String): Color {
-    val palette = listOf(
-        Color(0xFF5B8DEF), Color(0xFF14B8A6), Color(0xFFF59E0B),
-        Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFF10B981),
-    )
-    val hash = id.fold(0) { acc, ch -> (acc * 31 + ch.code) and 0x7FFFFFFF }
-    return palette[hash % palette.size]
 }

@@ -14,6 +14,8 @@ import com.noresign.paboot.data.repository.SessionRepository
 import com.noresign.paboot.data.repository.WorkspaceRepository
 import com.noresign.paboot.ui.identity.clampPermissionMode
 import com.noresign.paboot.network.daemon.dto.ModelOptionDto
+import com.noresign.paboot.network.daemon.dto.AgentProfileDto
+import com.noresign.paboot.network.daemon.dto.SessionAgentDto
 import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.notify.RunWatchCenter
 import com.noresign.paboot.util.ReconnectPolicy
@@ -432,14 +434,19 @@ class ChatViewModel(
         var latestTodos = emptyList<TodoItem>()
         for (run in runs) {
             list += ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds)
+            // 群聊的发言人归属挂在 run 上：重建历史时把它带到气泡上，
+            // 名字由会话成员表在渲染层解析。
+            val speaker = run.agentId
             if (run.id == runningRunId) {
                 // 运行中：attach() 会追加并续流
-                list += ChatUiMessage.Assistant()
+                list += ChatUiMessage.Assistant(agentId = speaker)
             } else {
                 when (val ev = repository.runEvents(run.id)) {
                     is NetworkResult.Success ->
                         list += buildAssistantFromEvents(ev.data.events) { latestTodos = it }
-                    is NetworkResult.Error -> list += ChatUiMessage.Assistant(done = true)
+                            .copy(agentId = speaker)
+                    is NetworkResult.Error ->
+                        list += ChatUiMessage.Assistant(done = true, agentId = speaker)
                 }
             }
         }
@@ -447,7 +454,11 @@ class ChatViewModel(
         if (list.isEmpty() && messages.isNotEmpty()) {
             list += messages.map { m ->
                 if (m.role == "user") ChatUiMessage.User(m.content, m.createdAt)
-                else ChatUiMessage.Assistant(blocks = listOf(ContentBlock.Text(m.content)), done = true)
+                else ChatUiMessage.Assistant(
+                    blocks = listOf(ContentBlock.Text(m.content)),
+                    done = true,
+                    agentId = m.agentId,
+                )
             }
         }
         // 只在整段历史归约完成后写一次，避免跨 run 的中间态闪现。

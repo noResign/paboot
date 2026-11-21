@@ -210,6 +210,7 @@ final class AssistantMessageCell: UITableViewCell {
             UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1),
             UIColor(red: 0.93, green: 0.28, blue: 0.59, alpha: 1),
             UIColor(red: 0.55, green: 0.36, blue: 0.96, alpha: 1),
+            UIColor(red: 0.06, green: 0.73, blue: 0.51, alpha: 1),
         ]
         let hash = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
         return palette[hash % palette.count]

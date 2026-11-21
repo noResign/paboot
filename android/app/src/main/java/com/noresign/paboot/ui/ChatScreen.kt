@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.noresign.paboot.audio.PcmWavRecorder
 import com.noresign.paboot.ui.chat.ChatImagePrep
+import com.noresign.paboot.ui.identity.agentColor
 import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
@@ -573,8 +574,11 @@ fun ChatScreen(
             streaming = streaming,
             loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
-            // 群聊里靠它把 agentId 翻成名字；单聊没有任何成员时是空表。
-            agentNames = remember(sessionAgents) { sessionAgents.associate { it.id to it.name } },
+            // 群聊里靠它把 agentId 翻成名字；只有一个助手时不显示标签（那是噪音）。
+            agentNames = remember(sessionAgents) {
+                if (sessionAgents.size > 1) sessionAgents.associate { it.id to it.name }
+                else emptyMap<String, String>()
+            },
             bottomOverlayPadding = innerPadding.calculateBottomPadding(),
             listState = messageListState,
             modifier = Modifier

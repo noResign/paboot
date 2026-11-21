@@ -719,6 +719,15 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
     messages = next.messages;
     todos = next.todos;
     contextUsage = next.contextUsage;
+
+    // Room frames name the agent that produced them; stamp it on the answer so
+    // a live card is labelled without waiting for a reload.
+    if (frame.agentId) {
+      const last = messages[messages.length - 1];
+      if (last?.kind === 'assistant' && !last.agentId) {
+        messages = [...messages.slice(0, -1), { ...last, agentId: frame.agentId }];
+      }
+    }
   }
 
   // A fresh send's user message has no run id until the stream tells us; stamp
@@ -774,12 +783,14 @@ async function rebuildHistory(
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.
-      messages.push(newAssistant(nextId('a')));
+      messages.push({ ...newAssistant(nextId('a')), agentId: run.agentId ?? null });
       return;
     }
     const events = response.ok ? response.data.events : [];
     const rebuilt = buildAssistantFromEvents(events, () => nextId('a'));
-    messages.push(rebuilt.assistant);
+    // The speaker is a property of the run, not of its frames: keep it when
+    // folding the replay so the room timeline can label the answer.
+    messages.push({ ...rebuilt.assistant, agentId: run.agentId ?? null });
     if (rebuilt.contextUsage) contextUsage = rebuilt.contextUsage;
     if (rebuilt.todos.length) todos = rebuilt.todos;
   });
@@ -788,7 +799,12 @@ async function rebuildHistory(
   // These are raw snake_case DB rows — the one place the contract lies.
   if (messages.length === 0) {
     for (const raw of rawMessages) {
-      const row = raw as { role?: unknown; content?: unknown; created_at?: unknown };
+      const row = raw as {
+        role?: unknown;
+        content?: unknown;
+        created_at?: unknown;
+        agent_id?: unknown;
+      };
       if (typeof row?.content !== 'string') continue;
       const at = typeof row.created_at === 'number' ? row.created_at : undefined;
       if (row.role === 'user') {
@@ -801,6 +817,7 @@ async function rebuildHistory(
           usage: null,
           error: null,
           done: true,
+          agentId: typeof row.agent_id === 'string' ? row.agent_id : null,
         });
       }
     }

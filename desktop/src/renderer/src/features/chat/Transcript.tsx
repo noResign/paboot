@@ -35,12 +35,15 @@ export function Transcript({
   messages,
   scrollRef,
   runs,
+  agentNames,
   onRollback,
 }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
   /** The session's runs, to gate the per-message rollback action by checkpoint. */
   runs: RunDto[];
+  /** agentId → name. Absent for a single-assistant session (no label needed). */
+  agentNames?: Map<string, string>;
   onRollback(runId: string): void;
 }) {
   const [limit, setLimit] = useState(VISIBLE);
@@ -104,7 +107,7 @@ export function Transcript({
             onRollback={onRollback}
           />
         ) : (
-          <AssistantRow key={message.id} message={message} />
+          <AssistantRow key={message.id} message={message} agentNames={agentNames} />
         ),
       )}
     </div>
@@ -182,7 +185,13 @@ function UserRow({
   );
 }
 
-function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assistant' }> }) {
+function AssistantRow({
+  message,
+  agentNames,
+}: {
+  message: Extract<ChatMessage, { kind: 'assistant' }>;
+  agentNames?: Map<string, string>;
+}) {
   const id = message.id;
   const segments = segmentBlocks(message.blocks);
   const text = message.blocks
@@ -193,15 +202,20 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
   return (
     <div className="msg assistant" data-msg-id={id}>
       {/* 发言人是群聊里唯一需要的区分：名字 + 稳定色点。单聊不显示。 */}
-      {message.agentName && (
-        <div className="msg-speaker">
-          <span
-            className="msg-speaker-dot"
-            style={{ background: agentColor(message.agentId ?? message.agentName) }}
-          />
-          {message.agentName}
-        </div>
-      )}
+      {(() => {
+        const speaker =
+          message.agentName ?? (message.agentId ? agentNames?.get(message.agentId) : undefined);
+        if (!speaker) return null;
+        return (
+          <div className="msg-speaker">
+            <span
+              className="msg-speaker-dot"
+              style={{ background: agentColor(message.agentId ?? speaker) }}
+            />
+            {speaker}
+          </div>
+        );
+      })()}
       {text && (
         <div className="msg-actions">
           <CopyButton text={text} />

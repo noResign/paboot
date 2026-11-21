@@ -50,6 +50,10 @@ data class MessageDto(
     val role: String = "",
     val content: String = "",
     @SerialName("created_at") val createdAt: Long = 0,
+    /** 谁说的；null = 用户消息或老 daemon 的数据。 */
+    @SerialName("agent_id") val agentId: String? = null,
+    /** 时间线位置（提交时刻），与 `id`（插入顺序）不同。 */
+    @SerialName("committed_seq") val committedSeq: Long? = null,
 )
 
 @Serializable
@@ -72,6 +76,8 @@ data class RunDto(
     /** `user` | `scheduled` | `run_now` */
     val trigger: String? = null,
     val permissionMode: String? = null,
+    /** 产生这次 run 的 agent；老 daemon 没有这个字段。 */
+    val agentId: String? = null,
     /** 命令任务的聚合输出（尾部截断）。 */
     val output: String? = null,
 )

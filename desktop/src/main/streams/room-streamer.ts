@@ -107,10 +107,18 @@ export class RoomStreamer {
   }> {
     this.abort = new AbortController();
     const query = this.cursor === null ? {} : { after: String(this.cursor) };
-    const response = await this.deps.client.open(
-      { method: 'GET', path: ROUTES.sessionStream(spec.sessionId), query },
-      this.abort.signal,
-    );
+    let response: Awaited<ReturnType<DaemonClient['open']>>;
+    try {
+      response = await this.deps.client.open(
+        { method: 'GET', path: ROUTES.sessionStream(spec.sessionId), query },
+        this.abort.signal,
+      );
+    } catch {
+      // A network failure is a drop, not a verdict. Retrying is the loop's job;
+      // letting it escape would leave `ready` unresolved on the first attempt
+      // and hang the caller forever.
+      return { headersOk: false, httpCode: -1, finished: this.stopped };
+    }
     if (!response.ok) {
       return { headersOk: false, httpCode: response.status, finished: true };
     }
