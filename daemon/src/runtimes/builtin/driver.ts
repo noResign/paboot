@@ -271,6 +271,29 @@ async function runBuiltin(
         };
       },
     };
+    // A read-only member gets no write capability at all — not a tool that only
+    // fails at call time (03-room §5.2). Bash goes with it: it can write.
+    const writeTools = agent.readOnly
+      ? []
+      : [
+          createWriteTool({
+            maxFileBytes: builtinConfig.tools.write.maxFileBytes,
+            wasRead: (path) => readFiles.has(path),
+            recordWrite: (path) => readFiles.add(path),
+          }),
+          createEditTool({
+            maxFileBytes: builtinConfig.tools.edit.maxFileBytes,
+            wasRead: (path) => readFiles.has(path),
+            recordWrite: (path) => readFiles.add(path),
+          }),
+          createBashTool({
+            defaultTimeoutMs: builtinConfig.tools.bash.defaultTimeoutMs,
+            maxTimeoutMs: builtinConfig.tools.bash.maxTimeoutMs,
+            maxOutputBytes: builtinConfig.tools.bash.maxOutputBytes,
+            envAllow: builtinConfig.tools.bash.envAllow,
+            ...(ctx.spill ? { spill: ctx.spill } : {}),
+          }),
+        ];
     const nativeTools = [
       createReadTool({
         maxFileBytes: builtinConfig.tools.read.maxFileBytes,
@@ -281,23 +304,7 @@ async function runBuiltin(
         measure,
         recordRead: (path) => readFiles.add(path),
       }),
-      createWriteTool({
-        maxFileBytes: builtinConfig.tools.write.maxFileBytes,
-        wasRead: (path) => readFiles.has(path),
-        recordWrite: (path) => readFiles.add(path),
-      }),
-      createEditTool({
-        maxFileBytes: builtinConfig.tools.edit.maxFileBytes,
-        wasRead: (path) => readFiles.has(path),
-        recordWrite: (path) => readFiles.add(path),
-      }),
-      createBashTool({
-        defaultTimeoutMs: builtinConfig.tools.bash.defaultTimeoutMs,
-        maxTimeoutMs: builtinConfig.tools.bash.maxTimeoutMs,
-        maxOutputBytes: builtinConfig.tools.bash.maxOutputBytes,
-        envAllow: builtinConfig.tools.bash.envAllow,
-        ...(ctx.spill ? { spill: ctx.spill } : {}),
-      }),
+      ...writeTools,
       createGrepTool({
         maxResults: builtinConfig.tools.grep.maxResults,
         maxFileBytes: builtinConfig.tools.grep.maxFileBytes,
@@ -558,7 +565,7 @@ function makeAgentContext(input: {
   return {
     runId: input.req.runId,
     sessionId: input.session.id,
-    actor: { id: 'builtin', name: 'Builtin', role: 'assistant' },
+    actor: { id: input.req.agentId ?? 'builtin', name: 'Builtin', role: 'assistant' },
     workspace: {
       id: input.workspace.id,
       name: input.workspace.name,
@@ -569,6 +576,7 @@ function makeAgentContext(input: {
     extraDirs: input.req.extraDirs ?? [],
     pathPolicy,
     permissionMode: input.req.permissionMode,
+    readOnly: input.req.readOnly === true,
     signal: input.signal,
     budget: {
       maxSteps: input.budget.maxSteps,

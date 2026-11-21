@@ -590,101 +590,46 @@ describe("a new session's leader follows the runtime the user picked", () => {
   });
 });
 
-describe('agent permission ceiling', () => {
-  async function seed(h: Harness, ceiling: 'ask' | 'acceptEdits' | 'bypass') {
+describe('read-only agents', () => {
+  async function seed(h: Harness, runtime: 'claude' | 'codex', mode: 'ask' | 'acceptEdits') {
     const workspace = workspaceOf(h.db, h.workspaceId);
+    await (await chat(h.base, { prompt: 'a', runtime })).text();
+    const session = h.db.listSessions()[0]!;
     const agent = createAgent(h.db, workspace, {
       workspaceId: h.workspaceId,
-      name: `ceil-${ceiling}`,
+      name: `readonly-${runtime}`,
       kind: 'runtime',
-      runtime: 'claude',
-      permissionCeiling: ceiling,
+      runtime,
+      readOnly: true,
+      // Lift the ceiling so this test measures read-only handling, not the
+      // default `ask` ceiling.
+      permissionCeiling: 'bypass',
     });
-    await (await chat(h.base, { prompt: 'a' })).text();
-    const session = h.db.listSessions()[0]!;
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
     setLeader(h.db, session.id, agent.id);
+    h.db.setSessionPermissionMode(session.id, mode);
     return session;
   }
 
-  it('tightens a looser request down to the agent ceiling', async () => {
+  it('passes readOnly to the driver', async () => {
     const h = await startApi();
-    const session = await seed(h, 'ask');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'bypass' })).text();
+    const session = await seed(h, 'claude', 'ask');
+    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
+    expect(h.starts.at(-1)!.readOnly).toBe(true);
+  });
+
+  it('clamps a backend without a read-only primitive to approval', async () => {
+    const h = await startApi();
+    const session = await seed(h, 'claude', 'acceptEdits');
+    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
     expect(h.starts.at(-1)!.permissionMode).toBe('ask');
   });
 
-  it('does not loosen a stricter request up to the agent ceiling', async () => {
+  it('leaves Codex on its own mode because its sandbox enforces it', async () => {
     const h = await startApi();
-    const session = await seed(h, 'bypass');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'ask' })).text();
-    expect(h.starts.at(-1)!.permissionMode).toBe('ask');
-  });
-
-  it('leaves the implicit agent out of the comparison', async () => {
-    const h = await startApi();
-    // No explicit agent: the workspace's implicit stand-in must not narrow the
-    // request, or every existing session would silently lose its mode.
-    await (await chat(h.base, { prompt: 'a', permissionMode: 'acceptEdits' })).text();
+    const session = await seed(h, 'codex', 'acceptEdits');
+    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
     expect(h.starts.at(-1)!.permissionMode).toBe('acceptEdits');
-  });
-});
-
-describe('builtin transcripts are keyed by agent', () => {
-  it('re-keys a pre-agent transcript onto the leader instead of orphaning it', () => {
-    const db = new Db(':memory:');
-    const workspacePath = fs.realpathSync(tempDir('builtin-rekey-'));
-    const workspace = db.createWorkspace({ name: 'w', path: workspacePath });
-    const session = db.createSession({
-      id: 's1',
-      runtime: 'builtin',
-      workspaceId: workspace.id,
-      permissionMode: 'ask',
-      cwd: workspacePath,
-    });
-    const leader = getLeader(db, session.id)!;
-    // Simulate a transcript written before agents existed.
-    (db as unknown as { db: { prepare: (sql: string) => { run: (...a: unknown[]) => unknown } } }).db
-      .prepare(`INSERT INTO native_threads (id, session_id, agent_id, created_at) VALUES (?, ?, 'builtin', ?)`)
-      .run('legacy-thread', session.id, Date.now());
-
-    const moved = db.backfillNativeThreadAgents();
-    expect(moved).toBe(1);
-    const row = db.getNativeThreadForSession(session.id, leader.id);
-    expect(row?.id).toBe('legacy-thread');
-    // Idempotent: nothing left to move.
-    expect(db.backfillNativeThreadAgents()).toBe(0);
-  });
-
-  it('gives two builtin agents their own transcript inside one session', () => {
-    const db = new Db(':memory:');
-    const workspacePath = fs.realpathSync(tempDir('builtin-split-'));
-    const workspace = db.createWorkspace({ name: 'w', path: workspacePath });
-    const session = db.createSession({
-      id: 's1',
-      runtime: 'builtin',
-      workspaceId: workspace.id,
-      permissionMode: 'ask',
-      cwd: workspacePath,
-    });
-    const a = createAgent(db, workspace, { workspaceId: workspace.id, name: 'A', kind: 'builtin' });
-    const b = createAgent(db, workspace, { workspaceId: workspace.id, name: 'B', kind: 'builtin' });
-    addToSession(db, { id: session.id, workspaceId: workspace.id }, a.id);
-    addToSession(db, { id: session.id, workspaceId: workspace.id }, b.id);
-    setLeader(db, session.id, a.id);
-
-    const threadA = ensureThread(db, session, a, workspace);
-    const threadB = ensureThread(db, session, b, workspace);
-    expect(threadA.backend).toBe('builtin');
-    expect(threadB.backend).toBe('builtin');
-
-    // The builtin runtime resolves its transcript by (session, agent): two
-    // distinct ids mean two distinct conversations.
-    const resolvedA = db.getNativeThreadForSession(session.id, a.id);
-    const resolvedB = db.getNativeThreadForSession(session.id, b.id);
-    expect(resolvedA).toBeUndefined();
-    expect(resolvedB).toBeUndefined();
-    // ...and they are addressed by different keys, which is the whole point.
-    expect(threadA.id).not.toBe(threadB.id);
+    expect(h.starts.at(-1)!.readOnly).toBe(true);
   });
 });

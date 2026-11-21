@@ -111,6 +111,7 @@ function createCodexDriver(ctx: AppContext): RuntimeDriver {
         images: req.images,
         onNativeSessionId: req.onNativeSessionId,
         permissionMode: req.permissionMode,
+        readOnly: req.readOnly,
         env: process.env,
         extraArgs: codexToolServerArgs(req.toolServers ?? []),
         idleTimeoutMs: ctx.config.runIdleTimeoutMs,

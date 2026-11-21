@@ -182,6 +182,12 @@ export interface AgentRunContext {
   pathPolicy: ResolvedPathPolicy;
   /** Approval behavior; independent from tool visibility and path policy. */
   permissionMode: ProductPermissionMode;
+  /**
+   * Read-only member: write tools are not registered and the approval policy
+   * denies anything with a write/execute side effect. Set by the run service
+   * from the agent definition; absent means writable.
+   */
+  readOnly?: boolean;
   signal: AbortSignal;
   /** Effective limits for this run, not accumulated usage. */
   budget: AgentBudget;

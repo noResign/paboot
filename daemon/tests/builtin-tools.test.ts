@@ -38,6 +38,7 @@ function makeAgent(options: {
   policyMode?: 'local' | 'server-strict' | 'bypass';
   broker?: (name: string) => Promise<ToolPermissionDecision>;
   events?: AgentEvent[];
+  readOnly?: boolean;
 }): AgentRunContext {
   const events = options.events ?? [];
   return {
@@ -53,6 +54,7 @@ function makeAgent(options: {
       denyRoots: [],
     },
     permissionMode: options.permissionMode ?? 'ask',
+    readOnly: options.readOnly,
     signal: new AbortController().signal,
     budget: { maxSteps: 10, maxToolCalls: 20 },
     eventSink: {
@@ -450,5 +452,30 @@ describe('default approval policy', () => {
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: ask })).toBe('ask');
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: accept })).toBe('ask');
     expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: bypass })).toBe('allow');
+  });
+
+  it('never lets a read-only agent mutate, even under bypass', () => {
+    const descriptor = (sideEffect: ToolDescriptor['sideEffect']): ToolDescriptor => ({
+      name: 'x',
+      title: 'x',
+      description: 'x',
+      inputSchema: {},
+      source: { kind: 'native', id: 'builtin' },
+      sideEffect,
+      concurrencySafe: true,
+    });
+    const readOnly = makeAgent({
+      root: tempDir(),
+      permissionMode: 'bypass',
+      policyMode: 'bypass',
+      readOnly: true,
+    });
+
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('read'), input: {}, agent: readOnly })).toBe('allow');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('control'), input: {}, agent: readOnly })).toBe('allow');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('network'), input: {}, agent: readOnly })).toBe('allow');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('write'), input: {}, agent: readOnly })).toBe('deny');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('execute'), input: {}, agent: readOnly })).toBe('deny');
+    expect(defaultToolApprovalPolicy.decide({ descriptor: descriptor('mcp'), input: {}, agent: readOnly })).toBe('deny');
   });
 });

@@ -97,12 +97,26 @@ export interface RunHandle {
  * system-prompt runtimes get it every run; prelude runtimes get it on the first
  * message (the same rule the other stable context follows).
  */
-function agentPrelude(agent: Agent | undefined): ContextPrelude | null {
+function agentPrelude(
+  agent: Agent | undefined,
+  backend: string,
+  readOnlyEnforced: boolean,
+): ContextPrelude | null {
+  const sections: string[] = [];
   const text = agent?.instructions.trim() ?? '';
-  if (!text) return null;
+  if (text) sections.push(`## 你的角色\n${text}`);
+  // Weak backends get an instruction where they cannot get a guardrail; saying
+  // it on a hard backend would be redundant with the missing tools.
+  if (agent?.readOnly && !readOnlyEnforced) {
+    sections.push(
+      `## 只读模式\n你在会话 ${backend} 中只是只读成员：不要修改文件，也不要执行会改变系统状态的命令。`,
+    );
+  }
+  if (sections.length === 0) return null;
+  const body = sections.join('\n\n');
   return {
-    prefix: `${MEMORY_CONTEXT_OPEN}\n## 你的角色\n${text}\n${MEMORY_CONTEXT_CLOSE}`,
-    used: text.length,
+    prefix: `${MEMORY_CONTEXT_OPEN}\n${body}\n${MEMORY_CONTEXT_CLOSE}`,
+    used: body.length,
     overBudget: false,
     omitted: 0,
   };
@@ -177,8 +191,16 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   //   - peer agents approve on the other machine under their contract, so a
   //     local ceiling would describe a decision this daemon does not make.
   const ceilingApplies = agent !== undefined && !agent.isImplicit && agent.kind !== 'peer';
+  // A read-only agent on a backend with no read-only primitive cannot be
+  // enforced; tighten it to approval so every write is at least a decision the
+  // user can refuse. builtin and Codex enforce it themselves (01 §3.3).
+  const readOnlyEnforced = runtime === 'builtin' || runtime === 'codex' || agent?.kind === 'peer';
   const permissionMode =
-    agent && ceilingApplies ? stricterPermissionMode(resolvedMode, agent.permissionCeiling) : resolvedMode;
+    agent?.readOnly && !readOnlyEnforced
+      ? 'ask'
+      : agent && ceilingApplies
+        ? stricterPermissionMode(resolvedMode, agent.permissionCeiling)
+        : resolvedMode;
   const runId = randomUUID();
 
   ctx.db.touchWorkspace(workspace.id);
@@ -317,7 +339,12 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // and putting it in the system block would invalidate the whole prefix.
     // The agent's own persona belongs with the other stable context: it is the
     // same every turn for this agent, so it stays cacheable.
-    const injected = mergePreludes(knowledge, ends, memory, agentPrelude(agent));
+    const injected = mergePreludes(
+      knowledge,
+      ends,
+      memory,
+      agentPrelude(agent, runtime, readOnlyEnforced),
+    );
     const promptWithRecall = recall ? `${recall.prefix}\n\n${prompt}` : prompt;
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(runtime)?.capabilities.nativeSystemPrompt === true;
@@ -420,7 +447,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         sessionId,
         // The in-process runtime keys its transcripts by agent; other drivers
         // ignore this. Passing it here keeps `runtimes/` free of agent imports.
-        ...(agent ? { agentId: agent.id } : {}),
+        ...(agent ? { agentId: agent.id, readOnly: agent.readOnly } : {}),
         prompt: promptSent,
         cwd: runCwd,
         model: effectiveModel ?? undefined,

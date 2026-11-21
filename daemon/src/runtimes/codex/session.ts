@@ -60,6 +60,8 @@ export interface CodexRunRequest {
    */
   onNativeSessionId?: (threadId: string) => void;
   permissionMode: ProductPermissionMode;
+  /** Room read-only member: force the sandbox to `read-only` for every turn. */
+  readOnly?: boolean;
   env?: NodeJS.ProcessEnv;
   /** Extra `codex app-server` args (e.g. `-c mcp_servers.*` overrides). */
   extraArgs?: string[];
@@ -96,9 +98,22 @@ function codexApprovalPolicy(mode: ProductPermissionMode): string {
   }
 }
 
-/** Product mode → Codex `SandboxMode`. */
-function codexSandbox(mode: ProductPermissionMode): string {
+/** Product mode → Codex `SandboxMode`. Read-only wins over bypass. */
+export function codexSandbox(mode: ProductPermissionMode, readOnly: boolean): string {
+  if (readOnly) return 'read-only';
   return mode === 'bypass' ? 'danger-full-access' : 'workspace-write';
+}
+
+/** Product mode → the per-turn `sandboxPolicy` object. */
+export function codexTurnSandbox(
+  mode: ProductPermissionMode,
+  readOnly: boolean,
+  writableRoots: readonly string[],
+): Record<string, unknown> {
+  if (readOnly) return { type: 'readOnly' };
+  return mode === 'bypass'
+    ? { type: 'dangerFullAccess' }
+    : { type: 'workspaceWrite', writableRoots: [...writableRoots], networkAccess: false };
 }
 
 function readThreadId(result: unknown): string | null {
@@ -285,7 +300,7 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
   const openThread = async (conn: CodexAppServerConnection): Promise<string> => {
     const params: Record<string, unknown> = {
       cwd: req.cwd,
-      sandbox: codexSandbox(req.permissionMode),
+      sandbox: codexSandbox(req.permissionMode, req.readOnly === true),
       approvalPolicy: codexApprovalPolicy(req.permissionMode),
       ...(req.model ? { model: req.model } : {}),
       // Passing the current block on resume refreshes context after a doc edit;
@@ -355,9 +370,11 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
         ],
         // Override on every turn, including resume, so removed workspace grants
         // cannot survive in the thread's previous sandbox configuration.
-        sandboxPolicy: req.permissionMode === 'bypass'
-          ? { type: 'dangerFullAccess' }
-          : { type: 'workspaceWrite', writableRoots: [...new Set([req.cwd, ...(req.extraDirs ?? [])])], networkAccess: false },
+        sandboxPolicy: codexTurnSandbox(
+          req.permissionMode,
+          req.readOnly === true,
+          [...new Set([req.cwd, ...(req.extraDirs ?? [])])],
+        ),
         ...(req.model ? { model: req.model } : {}),
         ...(req.modelParameters?.['reasoningEffort']
           ? { effort: req.modelParameters['reasoningEffort'] }

@@ -21,6 +21,15 @@ export interface RuntimeDriverRequest {
    * and a fourth runtime should not have to learn what an agent is.
    */
   agentId?: string;
+  /**
+   * The agent is a read-only member of its room.
+   *
+   * Runtimes that can enforce it must remove write capabilities entirely
+   * (builtin: no Write/Edit/Bash; Codex: `sandboxPolicy: readOnly`). Runtimes
+   * that cannot enforce it should treat this as advice — the caller also
+   * tightens them to approval mode.
+   */
+  readOnly?: boolean;
   prompt: string;
   cwd: string;
   model?: string;
