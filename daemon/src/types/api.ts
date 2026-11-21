@@ -1088,6 +1088,8 @@ export interface SessionAgentDto extends AgentProfileDto {
   role: 'leader' | 'member';
   /** 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。 */
   hasContext: boolean;
+  /** Live work in this room, if any. `null` = idle. */
+  taskStatus?: 'queued' | 'running' | null;
 }
 
 export interface SessionAgentsResponse {

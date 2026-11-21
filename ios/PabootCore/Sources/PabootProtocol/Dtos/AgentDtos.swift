@@ -257,6 +257,8 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
     public let role: String
     /// 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。
     public let hasContext: Bool
+    /// queued | running; nil = idle.
+    public let taskStatus: String?
 
     public var isLeader: Bool { role == "leader" }
 
@@ -274,11 +276,12 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
         available = try c.decodeIfPresent(Bool.self, forKey: .available) ?? true
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? "member"
         hasContext = try c.decodeIfPresent(Bool.self, forKey: .hasContext) ?? false
+        taskStatus = try c.decodeIfPresent(String.self, forKey: .taskStatus)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, summary, avatar, kind, backend, heavy, enabled, online, available
-        case role, hasContext
+        case role, hasContext, taskStatus
     }
 }
 

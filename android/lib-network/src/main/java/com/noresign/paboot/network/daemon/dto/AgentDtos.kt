@@ -146,6 +146,8 @@ data class SessionAgentDto(
     val role: String = "member",
     /** 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。 */
     val hasContext: Boolean = false,
+    /** queued | running；null = 空闲。 */
+    val taskStatus: String? = null,
 )
 
 @Serializable

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentTaskRow, Db, SessionRow, TurnRow, WorkspaceRow } from '../db/db.js';
-import { AgentValidationError } from './service.js';
-import { getLeader, listSessionAgents } from './store.js';
+import { addToSession, AgentValidationError } from './service.js';
+import { getAgent, getLeader, listSessionAgents } from './store.js';
 import { parseMentionNames, mentionsAll, routeMentions, type MentionTarget } from './mentions.js';
 import type { Agent } from './types.js';
 
@@ -49,7 +49,7 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
   if (!leader) {
     throw new AgentValidationError('no_leader', 'this session has no agent to answer it');
   }
-  const members = listSessionAgents(db, input.session.id).map((row) => row.agent);
+  let members = listSessionAgents(db, input.session.id).map((row) => row.agent);
 
   // Structured mentions win; free-text `@name` is the fallback for clients that
   // send plain text (or for someone typing in a raw field).
@@ -61,13 +61,60 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
           (name) => members.find((member) => member.name === name)?.id ?? name,
         );
 
+  // `@` is a workspace-level picker: addressing an agent that is not in this
+  // room yet is how a single-assistant session becomes a group. Admit it first,
+  // under the same rules the roster endpoint enforces (same workspace, enabled,
+  // and at most one writable member).
+  const admission: { id: string; reason: string }[] = [];
+  if (input.mentionIds.length > 0) {
+    for (const id of input.mentionIds) {
+      if (members.some((member) => member.id === id)) continue;
+      const candidate = getAgent(db, id);
+      if (!candidate) continue; // routeMentions reports it as unknown
+      if (candidate.workspaceId !== input.session.workspace_id) {
+        admission.push({ id, reason: 'cross_workspace' });
+        continue;
+      }
+      if (!candidate.enabled) {
+        admission.push({ id, reason: 'disabled' });
+        continue;
+      }
+      if (candidate.kind === 'peer') {
+        admission.push({ id, reason: 'unavailable' });
+        continue;
+      }
+      try {
+        assertWritableSlotFree(db, input.session.id, candidate);
+        addToSession(
+          db,
+          { id: input.session.id, workspaceId: input.session.workspace_id },
+          candidate.id,
+        );
+        members = listSessionAgents(db, input.session.id).map((row) => row.agent);
+      } catch (error) {
+        if (error instanceof AgentValidationError) admission.push({ id, reason: error.code });
+        else throw error;
+      }
+    }
+  }
+
   const routed = routeMentions({ mentionIds, all, leader, members });
   if (routed.targets.length === 0) {
+    if (admission.some((entry) => entry.reason === 'writable_agent_exists')) {
+      throw new AgentValidationError(
+        'writable_agent_exists',
+        'the addressed agent is writable and this room already has a writer',
+      );
+    }
     throw new AgentValidationError(
       'no_available_agent',
       routed.dropped.length > 0 ? 'the addressed agent is not available' : 'there is nobody to answer',
     );
   }
+  const dropped = [
+    ...admission,
+    ...routed.dropped.filter((entry) => !admission.some((admitted) => admitted.id === entry.id)),
+  ];
 
   // Messages committed *before* this turn are what a task may see. The snapshot
   // is taken before the user's message gets its position on purpose: that
@@ -129,7 +176,7 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
       name: routed.targets[index]?.agent.name ?? '',
       source: task.source,
     })),
-    dropped: routed.dropped,
+    dropped,
   };
 }
 

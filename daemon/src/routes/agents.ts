@@ -250,6 +250,14 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     }
     const roster = sessionRoster(ctx.db, session.id);
     const threads = new Map(listThreads(ctx.db, session.id).map((thread) => [thread.agentId, thread]));
+    // Live work per member, so the roster can say "正在回答" instead of only
+    // whether the definition exists.
+    const taskStatus = new Map<string, 'queued' | 'running'>();
+    for (const task of ctx.db.listOpenTasks(session.id)) {
+      if (task.status === 'running' || taskStatus.get(task.agent_id) !== 'running') {
+        taskStatus.set(task.agent_id, task.status === 'running' ? 'running' : 'queued');
+      }
+    }
     // Probe the members too: the roster is where the user decides who to @, so
     // "available" must mean the same thing it does in the workspace list.
     const availability = await Promise.all(roster.map((row) => availabilityOf(ctx, row.agent)));
@@ -261,6 +269,7 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         // Whether this agent already has its own conversation here — what the
         // "reset conversation" action operates on.
         hasContext: threadCount(threads.get(row.agent.id)),
+        taskStatus: taskStatus.get(row.agent.id) ?? null,
       })),
     });
   });

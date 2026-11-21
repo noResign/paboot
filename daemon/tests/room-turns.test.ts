@@ -208,6 +208,54 @@ describe('POST /api/sessions/:id/turns', () => {
     expect(committed[0]!.agent_id).toBeNull();
   });
 
+  it('admits a workspace agent the user @s, upgrading the session to a room', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const recorder = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '记录',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: true,
+    });
+    expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === recorder.id)).toBe(false);
+
+    const response = await turns(h, sessionId, { prompt: '记一下', mentions: [recorder.id] });
+    expect(response.status).toBe(202);
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    // The picker is workspace-level: addressing someone outside the room joins
+    // them first, then routes the task to them.
+    expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === recorder.id)).toBe(
+      true,
+    );
+    const tasks = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.agent_id).toBe(recorder.id);
+    expect(tasks[0]!.source).toBe('mention');
+  });
+
+  it('refuses to admit a second writable agent', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const writer = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '另一个写者',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: false,
+    });
+
+    const response = await turns(h, sessionId, { prompt: '你来写', mentions: [writer.id] });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('writable_agent_exists');
+    expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === writer.id)).toBe(
+      false,
+    );
+  });
+
   it('refuses a message that addresses nobody usable', async () => {
     const h = await startApi();
     const sessionId = seedRoom(h, []);
