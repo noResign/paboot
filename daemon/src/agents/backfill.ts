@@ -92,6 +92,28 @@ export const DEFAULT_IMPLICIT_RUNTIME = 'builtin';
  */
 export const NATIVE_THREAD_AGENTS_KEY = 'multi_agent_native_thread_agents_v1';
 
+/**
+ * Attribute pre-agent runs to their session's leader.
+ *
+ * Those runs happened before a run could name an agent, but a single-agent
+ * session's leader is exactly who ran them. Without this, every historical
+ * answer in a room falls back to "unknown speaker" even though the room knows
+ * who the only member was.
+ */
+export const RUN_ATTRIBUTION_KEY = 'multi_agent_run_attribution_v1';
+
+export function backfillRunAttribution(db: Db, log: BackfillLogger): number {
+  if (db.getSetting(RUN_ATTRIBUTION_KEY)) return 0;
+  try {
+    const updated = db.backfillRunAttribution();
+    db.setSetting(RUN_ATTRIBUTION_KEY, '1');
+    return updated;
+  } catch (error) {
+    log.warn('multi-agent backfill: run attribution failed', error);
+    return 0;
+  }
+}
+
 export function backfillNativeThreadAgents(db: Db, log: BackfillLogger): number {
   if (db.getSetting(NATIVE_THREAD_AGENTS_KEY)) return 0;
   try {

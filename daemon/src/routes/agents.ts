@@ -128,12 +128,15 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/workspaces/:id/agents', async (req, res) => {
     const workspace = workspaceOr404(ctx, req.params.id!, res);
     if (!workspace) return;
-    const agents = listAgents(ctx.db, workspace.id);
-    const availability = await Promise.all(agents.map((agent) => availabilityOf(ctx, agent)));
+    // Filter *before* probing: indexing availability by the unfiltered list
+    // would hand every agent the previous one's online state as soon as a
+    // disabled agent is skipped.
+    const visible = listAgents(ctx.db, workspace.id).filter(
+      (agent) => agent.enabled || req.query.includeDisabled === '1',
+    );
+    const availability = await Promise.all(visible.map((agent) => availabilityOf(ctx, agent)));
     res.json({
-      agents: agents
-        .filter((agent) => agent.enabled || req.query.includeDisabled === '1')
-        .map((agent, index) => agentSummaryDto(agent, availability[index]!)),
+      agents: visible.map((agent, index) => agentSummaryDto(agent, availability[index]!)),
     });
   });
 
@@ -209,6 +212,16 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         ...(Array.isArray(body.toolsAllow) ? { toolsAllow: body.toolsAllow.map(String) } : {}),
         ...(Array.isArray(body.toolsDeny) ? { toolsDeny: body.toolsDeny.map(String) } : {}),
         ...(Array.isArray(body.skills) ? { skills: body.skills.map(String) } : {}),
+        ...(body.modelParameters === null
+          ? { modelParameters: null }
+          : body.modelParameters && typeof body.modelParameters === 'object'
+            ? { modelParameters: body.modelParameters as Record<string, string> }
+            : {}),
+        ...(body.budget === null
+          ? { budget: null }
+          : body.budget && typeof body.budget === 'object'
+            ? { budget: body.budget as { maxSteps?: number; maxToolCalls?: number } }
+            : {}),
         ...(typeof body.heavy === 'boolean' ? { heavy: body.heavy } : {}),
         ...(typeof body.enabled === 'boolean' ? { enabled: body.enabled } : {}),
       });
@@ -229,7 +242,7 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
 
   // ── room membership ──────────────────────────────────────────────
 
-  app.get('/api/sessions/:id/agents', (req, res) => {
+  app.get('/api/sessions/:id/agents', async (req, res) => {
     const session = ctx.db.getSession(req.params.id!);
     if (!session) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
@@ -237,10 +250,13 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     }
     const roster = sessionRoster(ctx.db, session.id);
     const threads = new Map(listThreads(ctx.db, session.id).map((thread) => [thread.agentId, thread]));
+    // Probe the members too: the roster is where the user decides who to @, so
+    // "available" must mean the same thing it does in the workspace list.
+    const availability = await Promise.all(roster.map((row) => availabilityOf(ctx, row.agent)));
     res.json({
       leaderId: roster.find((row) => row.role === 'leader')?.agent.id ?? null,
-      agents: roster.map((row) => ({
-        ...agentSummaryDto(row.agent, { enabled: row.agent.enabled, online: true, available: row.agent.enabled }),
+      agents: roster.map((row, index) => ({
+        ...agentSummaryDto(row.agent, availability[index]!),
         role: row.role,
         // Whether this agent already has its own conversation here — what the
         // "reset conversation" action operates on.

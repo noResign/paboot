@@ -286,6 +286,8 @@ export interface RunDto {
   trigger?: 'user' | 'scheduled' | 'run_now';
   /** Permission mode actually used for this run (bypass for scheduled runs). */
   permissionMode?: string | null;
+  /** The agent that produced this run; omitted by pre-agent daemons. */
+  agentId?: string | null;
   /** Command tasks: aggregated stdout/stderr (tail-capped) for the detail view. */
   output?: string | null;
   /** Present when the run's repo could be snapshotted; lets clients diff/roll back. */

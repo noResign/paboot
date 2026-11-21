@@ -18,7 +18,12 @@ import { ensureKnowledgeRoot } from '../knowledge/paths.js';
 import { captureRunMessages } from '../memory/ingest.js';
 import { captureRunObservation } from '../memory/observe.js';
 import { resolveRunMemoryScope } from '../memory/scope-resolver.js';
-import { mergePreludes } from '../context/prelude.js';
+import {
+  mergePreludes,
+  MEMORY_CONTEXT_CLOSE,
+  MEMORY_CONTEXT_OPEN,
+  type ContextPrelude,
+} from '../context/prelude.js';
 import { perRunToolServers } from '../mcp/injection.js';
 import { sessionRunBrief } from '../db/dto.js';
 import { endsContext } from './end-context.js';
@@ -52,7 +57,18 @@ export interface StartSessionRunInput {
   /** Image attachment ids admitted with this run. */
   attachmentIds?: string[];
   trigger: 'user' | 'scheduled' | 'run_now';
+  /** Scheduled-task id (`runs.task_id`); unrelated to an agent task. */
   taskId?: string | null;
+  /** The room turn this run answers, when it came from `POST /turns`. */
+  turnId?: string | null;
+  /** The `agent_tasks` row driving this run, when it came from a turn. */
+  agentTaskId?: string | null;
+  /**
+   * The caller already committed the user's message (the turn path does it
+   * before any task starts). Writing it again would show the question once per
+   * answering agent.
+   */
+  skipUserMessage?: boolean;
   commandId?: string | null;
   sink: RunSink;
   /**
@@ -74,6 +90,25 @@ export interface RunHandle {
 }
 
 /**
+ * The agent's persona as a stable context block.
+ *
+ * It rides the same prelude marker as memory/knowledge so memory capture strips
+ * it, and it is identical every turn so prompt caching stays warm. Native
+ * system-prompt runtimes get it every run; prelude runtimes get it on the first
+ * message (the same rule the other stable context follows).
+ */
+function agentPrelude(agent: Agent | undefined): ContextPrelude | null {
+  const text = agent?.instructions.trim() ?? '';
+  if (!text) return null;
+  return {
+    prefix: `${MEMORY_CONTEXT_OPEN}\n## 你的角色\n${text}\n${MEMORY_CONTEXT_CLOSE}`,
+    used: text.length,
+    overBudget: false,
+    omitted: 0,
+  };
+}
+
+/**
  * Extra directories for one run: workspace roots plus the dev knowledge root.
  * The knowledge root behaves like any attached directory for runtimes with
  * add-dir support; DeepSeek reaches it through escalation approvals instead.
@@ -84,8 +119,12 @@ export function extraDirsForRun(
   workspace: WorkspaceRow,
   /** The directory this run actually starts in (an agent may work in a subdir). */
   runCwd: string,
+  /** Directories the agent declared it may also touch (validated at write time). */
+  agentExtraDirs: readonly string[] = [],
 ): string[] {
-  const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== runCwd);
+  const wanted = [...workspaceRoots(ctx.db, workspace), ...agentExtraDirs].filter(
+    (root) => root !== runCwd,
+  );
   if (workspace.family === 'dev') {
     try {
       wanted.push(ensureKnowledgeRoot(ctx.knowledge.root(workspace.id)));
@@ -93,9 +132,9 @@ export function extraDirsForRun(
       log.warn(`run ${session.id}: could not prepare knowledge root`, err);
     }
   }
-  const extraDirs = existingDirs(wanted);
-  if (extraDirs.length < wanted.length) {
-    const dropped = wanted.filter((root) => !extraDirs.includes(root));
+  const extraDirs = existingDirs([...new Set(wanted)]);
+  if (extraDirs.length < new Set(wanted).size) {
+    const dropped = [...new Set(wanted)].filter((root) => !extraDirs.includes(root));
     log.warn(`run ${session.id}: ignoring missing extra dir(s): ${dropped.join(', ')}`);
   }
   return extraDirs;
@@ -143,7 +182,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   const runId = randomUUID();
 
   ctx.db.touchWorkspace(workspace.id);
-  ctx.db.addMessage(session.id, 'user', prompt);
+  if (!input.skipUserMessage) ctx.db.addMessage(session.id, 'user', prompt);
   // Bump recency when the run starts, not only when it ends: the session list
   // is ordered by last_active_at, so waiting for a long run to finish would
   // leave the session buried mid-list while it is clearly the active one.
@@ -173,6 +212,9 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     taskId: input.taskId ?? null,
     trigger: input.trigger,
     permissionMode,
+    agentId: agent?.id ?? null,
+    threadId: thread?.id ?? null,
+    turnId: input.turnId ?? null,
   });
   // Tell anyone watching this session (another device, another window) that
   // its transcript is about to grow. The run's own event stream stays the
@@ -202,6 +244,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   const done = (async (): Promise<RunOutcome> => {
     let seq = 0;
     let assistantText = '';
+    /** The committed message for this run's answer, when it produced text. */
+    let messageId: number | null = null;
     // 运行期间会话可能被删（删会话 / 删工作区级联）。run 行一没，再写事件和消息就只是
     // 往不存在的东西上挂孤儿行，所以置位后 send 直接静默。
     let runDeleted = false;
@@ -256,7 +300,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
     // the primary to be granted explicitly). The engine also exports the same
     // set to the hook as its spawn-time allowlist.
-    const extraDirs = extraDirsForRun(ctx, session, workspace, runCwd);
+    const extraDirs = extraDirsForRun(ctx, session, workspace, runCwd, agent?.extraDirs ?? []);
 
     // Knowledge goes to the runtime only: the user message and `runs.prompt`
     // stay raw so replay/capture see what the user actually typed.
@@ -271,7 +315,9 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     // Only stable context goes into the (cacheable) system prompt. Per-turn
     // recall is appended to *this user message* instead: it changes every turn,
     // and putting it in the system block would invalidate the whole prefix.
-    const injected = mergePreludes(knowledge, ends, memory);
+    // The agent's own persona belongs with the other stable context: it is the
+    // same every turn for this agent, so it stays cacheable.
+    const injected = mergePreludes(knowledge, ends, memory, agentPrelude(agent));
     const promptWithRecall = recall ? `${recall.prefix}\n\n${prompt}` : prompt;
     const nativeSystemPrompt =
       injected !== null && ctx.registry.detection(runtime)?.capabilities.nativeSystemPrompt === true;
@@ -428,8 +474,17 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         // Persist the assistant's aggregated visible text as a message so the
         // transcript is complete without replaying every event. Tool / thinking
         // detail stays in the events table.
+        //
+        // Attribution is written here, at the moment the text becomes final, so
+        // two agents answering one turn can never swap answers: there is no
+        // later "adopt the last unattributed row" step to race on.
         if (assistantText.trim()) {
-          ctx.db.addMessage(sessionId, 'assistant', assistantText.trim());
+          messageId = ctx.db.addMessage(sessionId, 'assistant', assistantText.trim(), {
+            agentId: agent?.id ?? null,
+            turnId: input.turnId ?? null,
+            taskId: input.agentTaskId ?? null,
+            commit: input.agentTaskId !== undefined && input.agentTaskId !== null,
+          });
         }
         // Memory capture is post-run and best-effort: the SSE stream and the
         // terminal frame must never wait for memory.db or an extraction call.
@@ -465,7 +520,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         send({ type: 'error', code: 'run_failed', message: finalOutcome.error, terminal: true });
       }
       send({ type: 'status', label: finalOutcome.status, terminal: true });
-      return finalOutcome;
+      return { ...finalOutcome, messageId };
     } catch (err) {
       log.error('run failed unexpectedly', err);
       const message = err instanceof Error ? err.message : String(err);

@@ -11,11 +11,18 @@ export function sseHeaders(): Record<string, string> {
   };
 }
 
-/** Write one SSE frame, ignoring writes after the response has ended. */
+/**
+ * Write one SSE frame, ignoring writes after the response has ended.
+ *
+ * The `id:` is the cursor the client should resume from. On the room stream
+ * that is the session-wide `roomSeq`, not the per-run `seq` — a browser
+ * `EventSource` auto-reconnect would otherwise send a run position as
+ * `Last-Event-ID` and replay the wrong window.
+ */
 export function writeSseFrame(res: ServerResponse, frame: SseFrame): void {
   if (res.writableEnded) return;
   try {
-    res.write(`id: ${frame.seq}\n`);
+    res.write(`id: ${frame.roomSeq ?? frame.seq}\n`);
     res.write(`data: ${JSON.stringify(frame)}\n\n`);
   } catch {
     // connection already gone — nothing to do

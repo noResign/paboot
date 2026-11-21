@@ -47,6 +47,7 @@ export function runDto(
     taskId: r.task_id ?? null,
     trigger: (r.trigger as RunDto['trigger']) ?? 'user',
     permissionMode: r.permission_mode,
+    agentId: r.agent_id ?? null,
     output,
     checkpoint: checkpoint
       ? {

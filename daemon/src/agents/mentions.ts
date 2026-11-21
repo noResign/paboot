@@ -61,12 +61,20 @@ export function routeMentions(input: RouteInput): RouteResult {
       dropped.push({ id, reason: 'disabled' });
       return null;
     }
+    // Peer transport is not wired yet; routing to one would create a task that
+    // can only fail. An explicit @ is still the user's call, so say why.
+    if (agent.kind === 'peer') {
+      dropped.push({ id, reason: 'unavailable' });
+      return null;
+    }
     return agent;
   };
 
   if (input.all) {
+    // External CLIs are expensive and start a process each; `@all` is not the
+    // explicit request their `heavy` flag is gated on, so they sit it out.
     const targets = input.members
-      .filter((member) => member.enabled)
+      .filter((member) => member.enabled && !member.heavy && member.kind !== 'peer')
       .slice(0, MAX_MENTIONS)
       .map((agent) => ({ agent, source: 'mention' as const }));
     // The leader is a member too, so `@all` already includes it.

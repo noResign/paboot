@@ -7,6 +7,7 @@ import { sseHeaders, writeSseFrame } from '../http/sse.js';
 import { titleFromPrompt } from '../runs/session-title.js';
 import { activeRunIdForSession } from '../runs/session-runs.js';
 import { streamRunToResponse } from './runs.js';
+import { roomPublisher } from './room.js';
 import { getDefaultPermissionMode, isProductPermissionMode, type ProductPermissionMode } from '../permissions/permission-mode.js';
 import {
   resolveEffectivePermissionMode,
@@ -317,6 +318,20 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     }
 
     const sink = new ChatSseSink(res);
+    // The same frames also belong on the room stream: a client watching the
+    // session must see a `/api/chat` run too, not just one started through
+    // `/turns`. There is no task id on this path — the run is its own unit.
+    const publishRoom = roomPublisher(ctx);
+    const activeSession = session;
+    const roomAgentId = resolved?.agent.id ?? null;
+    const combinedSink: RunSink = {
+      begin: () => sink.begin?.(),
+      frame: (frame) => {
+        sink.frame(frame);
+        publishRoom(activeSession.id, null, roomAgentId, frame);
+      },
+      end: () => sink.end?.(),
+    };
     try {
       const handle = startSessionRun(ctx, {
         session,
@@ -329,7 +344,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         attachmentIds,
         trigger: 'user',
         commandId: commandId ?? null,
-        sink,
+        sink: combinedSink,
         ...(resolved ? { agent: resolved.agent, thread: resolved.thread } : {}),
       });
       await handle.done;

@@ -27,7 +27,7 @@ import type { NormalizedEvent, SseFrame } from '../types/api.js';
 
 export interface TaskRunnerDeps {
   /** Publish one room-multiplexed frame to every subscriber of the session. */
-  publish(sessionId: string, taskId: string, agentId: string, frame: SseFrame): void;
+  publish(sessionId: string, taskId: string | null, agentId: string | null, frame: SseFrame): void;
 }
 
 export interface TaskOutcome {
@@ -51,7 +51,41 @@ export async function runTurn(
   );
 }
 
-export async function runTask(
+/**
+ * Per-agent run queue.
+ *
+ * A turn may run several agents at once, but one agent must never have two runs
+ * alive: both would resume the same provider conversation and interleave their
+ * answers into one transcript. Two turns (double-send, two devices) must queue
+ * rather than race. Runs for *different* agents still start together.
+ */
+const agentQueues = new Map<string, Promise<unknown>>();
+
+function serializeByAgent<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = agentQueues.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  agentQueues.set(key, tail);
+  void tail.then(() => {
+    if (agentQueues.get(key) === tail) agentQueues.delete(key);
+  });
+  return run;
+}
+
+export function runTask(
+  ctx: AppContext,
+  deps: TaskRunnerDeps,
+  input: { session: SessionRow; workspace: WorkspaceRow; task: AgentTaskRow },
+): Promise<TaskOutcome> {
+  return serializeByAgent(`${input.session.id}:${input.task.agent_id}`, () =>
+    runTaskOnce(ctx, deps, input),
+  );
+}
+
+async function runTaskOnce(
   ctx: AppContext,
   deps: TaskRunnerDeps,
   input: { session: SessionRow; workspace: WorkspaceRow; task: AgentTaskRow },
@@ -92,17 +126,19 @@ export async function runTask(
       model: null,
       modelParameters: null,
       trigger: 'user',
+      // The turn already committed the user's message before any task started.
+      skipUserMessage: true,
+      turnId: task.turn_id,
+      agentTaskId: task.id,
       sink,
       agent,
       thread,
     });
     ctx.db.updateTask(task.id, { runId: handle.runId });
     const outcome = await handle.done;
+    const messageId = outcome.messageId ?? null;
 
     if (outcome.status === 'succeeded') {
-      // The run already appended the assistant text as a plain message; give it
-      // attribution and a timeline position now that it is final.
-      const messageId = commitAssistantMessage(ctx, session.id, task, agent.id);
       ctx.db.updateTask(task.id, { status: 'done', endedAt: Date.now(), messageId });
       return { taskId: task.id, agentId: agent.id, status: 'done', messageId, error: null };
     }
@@ -111,13 +147,14 @@ export async function runTask(
     ctx.db.updateTask(task.id, {
       status,
       endedAt: Date.now(),
+      messageId,
       error: outcome.error ?? status,
     });
     return {
       taskId: task.id,
       agentId: agent.id,
       status,
-      messageId: null,
+      messageId,
       error: outcome.error ?? status,
     };
   } catch (error) {
@@ -126,29 +163,6 @@ export async function runTask(
     ctx.db.updateTask(task.id, { status: 'failed', endedAt: Date.now(), error: message });
     return { taskId: task.id, agentId: agent.id, status: 'failed', messageId: null, error: message };
   }
-}
-
-/**
- * Attach the agent's final text to the timeline.
- *
- * `startSessionRun` wrote the assistant text as an unattributed message (it does
- * not know about tasks). Rather than duplicate it, this promotes that row: the
- * transcript stays one visible message per answer, while now carrying who said
- * it and where it sits on the timeline.
- */
-function commitAssistantMessage(
-  ctx: AppContext,
-  sessionId: string,
-  task: AgentTaskRow,
-  agentId: string,
-): number | null {
-  const promoted = ctx.db.promoteLastAssistantMessage({
-    sessionId,
-    agentId,
-    turnId: task.turn_id,
-    taskId: task.id,
-  });
-  return promoted;
 }
 
 /** Read a frame's payload back into the event the client expects. */

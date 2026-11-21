@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { backfillMultiAgent, DEFAULT_IMPLICIT_RUNTIME, resolveSessionAgent } from '../src/agents/index';
+import {
+  backfillMultiAgent,
+  backfillRunAttribution,
+  DEFAULT_IMPLICIT_RUNTIME,
+  resolveSessionAgent,
+} from '../src/agents/index';
 import { Db, MULTI_AGENT_BACKFILL_KEY, implicitAgentId } from '../src/db/db';
 
 /**
@@ -177,6 +182,34 @@ describe('multi-agent shadow backfill (P0)', () => {
     expect(db.getSessionLeader(sessionId)).toBeUndefined();
     expect(db.shadowTableCounts().orphanThreads).toBe(0);
     expect(db.listAgents('gone')).toHaveLength(0);
+  });
+});
+
+describe('run attribution backfill', () => {
+  it('attributes a pre-agent run to the session leader, exactly once', () => {
+    const db = new Db(tempDbPath());
+    const workspaceId = makeWorkspace(db);
+    const sessionId = makeSession(db, workspaceId);
+    const leader = db.getSessionLeader(sessionId)!;
+    // A run from before agents existed: it was created with no membership, so
+    // even the shadow attribution had nothing to point at.
+    db.deleteSessionAgent(sessionId, leader.agent_id);
+    db.createRun({
+      id: 'r_old',
+      sessionId,
+      runtime: 'claude',
+      model: null,
+      prompt: 'old',
+      status: 'succeeded',
+    });
+    expect(db.getRun('r_old')!.agent_id ?? null).toBeNull();
+
+    db.upsertSessionAgent({ ...leader, joined_at: Date.now() });
+    expect(backfillRunAttribution(db, silentLog)).toBe(1);
+    expect(db.getRun('r_old')!.agent_id).toBe(leader.agent_id);
+    expect(db.getRun('r_old')!.thread_id).toBeTruthy();
+    // Gated by its own marker: a second boot is a no-op.
+    expect(backfillRunAttribution(db, silentLog)).toBe(0);
   });
 });
 

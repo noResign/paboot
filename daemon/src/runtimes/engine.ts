@@ -24,6 +24,8 @@ export interface RunOutcome {
   status: RunStatus;
   exitCode: number | null;
   error: string | null;
+  /** The committed transcript message for the answer, when one was written. */
+  messageId?: number | null;
 }
 
 export interface RunRequest {

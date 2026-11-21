@@ -1,4 +1,4 @@
-import type { Express, Response } from 'express';
+import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { SseFrame } from '../types/api.js';
 import { AgentValidationError, createTurn, runTurn, type TaskRunnerDeps } from '../agents/index.js';
@@ -38,13 +38,22 @@ export interface RoomFrame extends SseFrame {
 /** In-process fan-out. Nothing here is persisted; `events` already is. */
 const subscribers = new Map<string, Set<Subscriber>>();
 
+/** Rows per replay query; the route loops until it catches up. */
+const REPLAY_PAGE = 500;
+
 function broadcast(ctx: AppContext, sessionId: string, frame: Omit<RoomFrame, 'roomSeq'>): void {
   const roomSeq = ctx.db.nextRoomSeq(sessionId);
   try {
-    ctx.db.appendEvent(frame.runId || `room:${sessionId}`, frame.seq, frame.event.type, frame.event, {
+    // The run already persisted this frame for per-run replay; tag that row
+    // instead of inserting a second copy (session notices have no row yet).
+    ctx.db.appendRoomEvent(
+      frame.runId || `room:${sessionId}`,
+      frame.seq,
+      frame.event.type,
+      frame.event,
       sessionId,
       roomSeq,
-    });
+    );
   } catch (err) {
     // A room frame that cannot be persisted still goes out live: replay is a
     // convenience, losing it must not stall the conversation.
@@ -54,7 +63,13 @@ function broadcast(ctx: AppContext, sessionId: string, frame: Omit<RoomFrame, 'r
   for (const subscriber of subscribers.get(sessionId) ?? []) subscriber.write(full);
 }
 
-/** Publish one task's run frame onto the room stream. */
+/**
+ * Publish one run frame onto the room stream.
+ *
+ * Used by turns (with a task id) and by `/api/chat` (task id `null`): both
+ * paths must be visible to a room subscriber, otherwise the same session would
+ * have two different live views depending on who sent the message.
+ */
 export function roomPublisher(ctx: AppContext): TaskRunnerDeps['publish'] {
   return (sessionId, taskId, agentId, frame) => {
     broadcast(ctx, sessionId, { ...frame, taskId, agentId });
@@ -87,17 +102,28 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
     };
 
     // Replay first, then subscribe: replaying after subscribing could deliver a
-    // live frame the client already sees in the backlog.
+    // live frame the client already sees in the backlog. The whole loop is
+    // synchronous, so no frame can slip into the gap between the last page and
+    // the subscription.
+    //
+    // Paging matters: a client that was away long enough to miss more than one
+    // page would otherwise go live with a silent hole in its transcript.
     if (after !== null) {
-      for (const row of ctx.db.listRoomEvents(session.id, after)) {
-        write({
-          runId: row.run_id,
-          seq: row.seq,
-          roomSeq: row.room_seq,
-          taskId: row.task_id,
-          agentId: row.agent_id,
-          event: JSON.parse(row.payload),
-        });
+      let cursor = after;
+      for (;;) {
+        const rows = ctx.db.listRoomEvents(session.id, cursor, REPLAY_PAGE);
+        for (const row of rows) {
+          cursor = row.room_seq;
+          write({
+            runId: row.run_id,
+            seq: row.seq,
+            roomSeq: row.room_seq,
+            taskId: row.task_id,
+            agentId: row.agent_id,
+            event: JSON.parse(row.payload),
+          });
+        }
+        if (rows.length < REPLAY_PAGE) break;
       }
     }
 

@@ -73,8 +73,10 @@ async function startApi(): Promise<Harness> {
     start(req) {
       starts.push(req);
       const fail = failures.has(id);
-      // Report a native id like Claude does, then finish.
+      // Report a native id like Claude does, then finish. A visible answer is
+      // emitted so the task→message attribution path is exercised.
       req.onNativeSessionId(`${id}-s${starts.length}`);
+      req.onEvent({ type: 'text_delta', delta: replies.get(id) ?? `${id} 回答` });
       return {
         id: req.runId,
         promise: Promise.resolve(
@@ -258,6 +260,37 @@ describe('a turn is a batch, not a barrier', () => {
     const threads = h.db.listAgentThreads(sessionId);
     expect(threads.length).toBeGreaterThanOrEqual(2);
     expect(new Set(threads.map((thread) => thread.agent_id)).size).toBe(threads.length);
+
+    // Exactly one user row (the turn committed it; the task runs must not add
+    // one each), and each answer belongs to the agent that produced it.
+    const messages = h.db.listMessages(sessionId);
+    expect(messages.filter((message) => message.role === 'user')).toHaveLength(1);
+    const answers = messages.filter((message) => message.role === 'assistant');
+    expect(answers).toHaveLength(2);
+    expect(new Set(answers.map((message) => message.agent_id))).toEqual(
+      new Set(tasks.map((task) => task.agent_id)),
+    );
+    for (const answer of answers) {
+      expect(answer.committed_seq).not.toBeNull();
+      expect(answer.task_id).not.toBeNull();
+    }
+  });
+
+  it('stores each run event once, not once per stream', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    await turns(h, sessionId, { prompt: '一次' });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const [task] = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(task!.run_id).toBeTruthy();
+    const events = h.db.listEvents(task!.run_id!);
+    expect(events.length).toBeGreaterThan(0);
+    // (run_id, seq) must be unique: the room path tags the per-run row rather
+    // than inserting a second copy of every frame.
+    expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
+    expect(events.every((event) => event.session_id === sessionId)).toBe(true);
+    expect(events.every((event) => event.room_seq !== null)).toBe(true);
   });
 
   it('does not cancel siblings when one agent fails', async () => {

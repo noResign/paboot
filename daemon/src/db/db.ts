@@ -233,6 +233,12 @@ export interface MessageRow {
   role: string;
   content: string;
   created_at: number;
+  /** Who said it; NULL for the user, legacy rows, and single-agent daemons. */
+  agent_id?: string | null;
+  turn_id?: string | null;
+  task_id?: string | null;
+  /** Timeline position; NULL until the message is final. */
+  committed_seq?: number | null;
 }
 
 export interface RunRow {
@@ -256,6 +262,10 @@ export interface RunRow {
   trigger: string;
   /** Permission mode actually used for this run. */
   permission_mode: string | null;
+  /** The agent that owned this run; NULL for legacy/scheduled runs. */
+  agent_id?: string | null;
+  thread_id?: string | null;
+  turn_id?: string | null;
 }
 
 export interface ScheduledTaskRow {
@@ -305,6 +315,9 @@ export interface EventRow {
   type: string;
   payload: string;
   created_at: number;
+  /** Room-stream coordinates; NULL for frames that never reached a room. */
+  session_id?: string | null;
+  room_seq?: number | null;
 }
 
 export interface DeployJobRow {
@@ -779,6 +792,7 @@ export class Db {
         ON agent_tasks (session_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks (session_id, status);
       CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent ON agent_tasks (agent_id, status);
+      CREATE INDEX IF NOT EXISTS idx_agent_tasks_run ON agent_tasks (run_id);
     `);
     // Only Claude existed when this column was named for it; Codex stores its
     // thread id in the same slot. Rename before any read so old daemons keep
@@ -1934,15 +1948,17 @@ export class Db {
     task_id: string | null;
     agent_id: string | null;
   }[] {
-    // Attribution is joined back from the task that owns the run: a replayed
-    // frame must carry the same speaker a live one did, otherwise a reconnecting
-    // client loses who said what for everything it missed.
+    // Attribution is joined back from the run (and its task, when it has one):
+    // a replayed frame must carry the same speaker a live one did, otherwise a
+    // reconnecting client loses who said what for everything it missed. A
+    // `/api/chat` run has no task row, so fall back to `runs.agent_id`.
     return this.db
       .prepare(
         `SELECT e.room_seq, e.run_id, e.seq, e.type, e.payload, e.created_at,
-                t.id AS task_id, t.agent_id AS agent_id
+                t.id AS task_id, COALESCE(t.agent_id, r.agent_id) AS agent_id
          FROM events e
          LEFT JOIN agent_tasks t ON t.run_id = e.run_id
+         LEFT JOIN runs r ON r.id = e.run_id
          WHERE e.session_id = ? AND e.room_seq > ? AND e.room_seq IS NOT NULL
          ORDER BY e.room_seq ASC LIMIT ?`,
       )
@@ -2005,39 +2021,6 @@ export class Db {
         Date.now(),
       );
     return Number(info.lastInsertRowid);
-  }
-
-  /**
-   * Give the most recent unattributed assistant message its agent and position.
-   *
-   * `startSessionRun` persists the final text as a plain message (it has no idea
-   * about tasks). Promoting that row rather than inserting another keeps one
-   * visible answer per run, so the timeline cannot show the same text twice.
-   * Only rows with a NULL `committed_seq` are eligible — an already-positioned
-   * message must never be moved.
-   */
-  promoteLastAssistantMessage(input: {
-    sessionId: string;
-    agentId: string;
-    turnId: string | null;
-    taskId: string | null;
-  }): number | null {
-    const row = this.db
-      .prepare(
-        `SELECT id FROM messages
-         WHERE session_id = ? AND role = 'assistant' AND committed_seq IS NULL
-         ORDER BY id DESC LIMIT 1`,
-      )
-      .get(input.sessionId) as unknown as { id: number } | undefined;
-    if (!row) return null;
-    const seq = this.maxCommittedSeq(input.sessionId) + 1;
-    this.db
-      .prepare(
-        `UPDATE messages SET agent_id = ?, turn_id = ?, task_id = ?, committed_seq = ?
-         WHERE id = ?`,
-      )
-      .run(input.agentId, input.turnId, input.taskId, seq, row.id);
-    return row.id;
   }
 
   /** Messages in timeline order; `afterSeq` resumes a client that reconnected. */
@@ -2407,6 +2390,29 @@ export class Db {
            JOIN workspaces w ON w.id = s.workspace_id
            JOIN session_agents sa ON sa.session_id = s.id AND sa.role = 'leader'
            WHERE s.kind IN ('chat', 'command')`,
+        )
+        .run().changes,
+    );
+  }
+
+  /** Backfill step: attribute runs created before agents to their session leader. */
+  backfillRunAttribution(): number {
+    return Number(
+      this.db
+        .prepare(
+          `UPDATE runs SET
+             agent_id = (
+               SELECT sa.agent_id FROM session_agents sa
+               WHERE sa.session_id = runs.session_id AND sa.role = 'leader'
+             ),
+             thread_id = (
+               SELECT t.id FROM agent_threads t
+               JOIN session_agents sa ON sa.session_id = t.session_id AND sa.agent_id = t.agent_id
+               WHERE t.session_id = runs.session_id AND sa.role = 'leader'
+               LIMIT 1
+             )
+           WHERE agent_id IS NULL
+             AND session_id IN (SELECT session_id FROM session_agents WHERE role = 'leader')`,
         )
         .run().changes,
     );
@@ -2862,12 +2868,46 @@ export class Db {
 
   // ---- messages ----
 
-  addMessage(sessionId: string, role: 'user' | 'assistant', content: string): void {
+  /**
+   * Append one final message to a session.
+   *
+   * `attribution` is what makes the room's timeline legible: who said it, which
+   * turn/task it answers, and — with `commit` — where it sits on the timeline.
+   * Without an attribution (scheduled runs, legacy callers) the row is exactly
+   * what it always was.
+   */
+  addMessage(
+    sessionId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    attribution?: {
+      agentId?: string | null;
+      turnId?: string | null;
+      taskId?: string | null;
+      /** Assign the next timeline position (a task answer is final on arrival). */
+      commit?: boolean;
+    },
+  ): number | null {
     // Guard against a run that finishes after its session was deleted.
-    if (!this.getSession(sessionId)) return;
-    this.db
-      .prepare(`INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)`)
-      .run(sessionId, role, content, Date.now());
+    if (!this.getSession(sessionId)) return null;
+    const committedSeq = attribution?.commit ? this.maxCommittedSeq(sessionId) + 1 : null;
+    const info = this.db
+      .prepare(
+        `INSERT INTO messages
+           (session_id, role, content, agent_id, turn_id, task_id, committed_seq, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        sessionId,
+        role,
+        content,
+        attribution?.agentId ?? null,
+        attribution?.turnId ?? null,
+        attribution?.taskId ?? null,
+        committedSeq,
+        Date.now(),
+      );
+    return Number(info.lastInsertRowid);
   }
 
   listMessages(sessionId: string): MessageRow[] {
@@ -2891,12 +2931,16 @@ export class Db {
     taskId?: string | null;
     trigger?: 'user' | 'scheduled' | 'run_now';
     permissionMode?: string | null;
+    /** The agent that owns this run; defaults to the session leader. */
+    agentId?: string | null;
+    threadId?: string | null;
+    turnId?: string | null;
   }): void {
     const shadow = this.shadowRunAttribution(input.sessionId);
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode, agent_id, thread_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode, turn_id, agent_id, thread_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -2912,8 +2956,9 @@ export class Db {
         input.taskId ?? null,
         input.trigger ?? 'user',
         input.permissionMode ?? null,
-        shadow.agentId,
-        shadow.threadId,
+        input.turnId ?? null,
+        input.agentId ?? shadow.agentId,
+        input.threadId ?? shadow.threadId,
       );
   }
 
@@ -3077,6 +3122,30 @@ export class Db {
         room?.roomSeq ?? null,
         Date.now(),
       );
+  }
+
+  /**
+   * Tag an already-persisted run frame with its room coordinates.
+   *
+   * `startSessionRun` writes every frame for the per-run replay; the room stream
+   * is the same event, so it must *move* that row into the room rather than
+   * insert a second copy — otherwise every frame is stored twice and a run
+   * replay doubles. Frames with no existing row (session-level notices) are
+   * inserted so replay still sees them.
+   */
+  appendRoomEvent(
+    runId: string,
+    seq: number,
+    type: string,
+    payload: unknown,
+    sessionId: string,
+    roomSeq: number,
+  ): void {
+    const updated = this.db
+      .prepare(`UPDATE events SET session_id = ?, room_seq = ? WHERE run_id = ? AND seq = ?`)
+      .run(sessionId, roomSeq, runId, seq);
+    if (Number(updated.changes) > 0) return;
+    this.appendEvent(runId, seq, type, payload, { sessionId, roomSeq });
   }
 
   listEvents(runId: string, afterSeq = 0): EventRow[] {
