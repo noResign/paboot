@@ -128,12 +128,17 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/workspaces/:id/agents', async (req, res) => {
     const workspace = workspaceOr404(ctx, req.params.id!, res);
     if (!workspace) return;
+    // The user's catalogue of assistants, not the daemon's inventory. Implicit
+    // agents are the internal stand-ins created for sessions that predate agent
+    // definitions; they are not user-authored, so they never appear here.
+    // `?includeImplicit=1` exists for diagnostics only.
+    //
     // Filter *before* probing: indexing availability by the unfiltered list
-    // would hand every agent the previous one's online state as soon as a
-    // disabled agent is skipped.
-    const visible = listAgents(ctx.db, workspace.id).filter(
-      (agent) => agent.enabled || req.query.includeDisabled === '1',
-    );
+    // would hand every agent the previous one's online state as soon as a row
+    // is skipped.
+    const visible = listAgents(ctx.db, workspace.id)
+      .filter((agent) => !agent.isImplicit || req.query.includeImplicit === '1')
+      .filter((agent) => agent.enabled || req.query.includeDisabled === '1');
     const availability = await Promise.all(visible.map((agent) => availabilityOf(ctx, agent)));
     res.json({
       agents: visible.map((agent, index) => agentSummaryDto(agent, availability[index]!)),

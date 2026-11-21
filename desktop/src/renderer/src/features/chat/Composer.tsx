@@ -105,12 +105,15 @@ export function Composer({
 
   /** Open/refresh the `@` picker from the caret's current token. */
   function syncMention(value: string, caret: number | null): void {
-    if (!mentionAgents || mentionAgents.length === 0) {
+    // `undefined` = this surface has no @ support at all (e.g. a new session
+    // before its workspace is known). An empty list still opens the picker so
+    // the user learns where assistants are created instead of getting silence.
+    if (!mentionAgents) {
       setMention(null);
       return;
     }
     const token = mentionTokenAt(value, caret ?? value.length);
-    if (!token || mentionOptions(mentionAgents, token.query).length === 0) {
+    if (!token) {
       setMention(null);
       return;
     }
@@ -253,8 +256,15 @@ export function Composer({
           </div>
         )}
         {attachError && <p className="composer-attach-error">{attachError}</p>}
-        {mention && mentionList.length > 0 && (
+        {mention && (
           <div className="composer-mentions" role="listbox" aria-label="提及助手">
+            {mentionList.length === 0 && (
+              <div className="composer-mention-empty">
+                {mention.query
+                  ? '没有匹配的助手'
+                  : '没有可 @ 的助手；在 设置 → 助手 里创建'}
+              </div>
+            )}
             {mentionList.map((agent, index) => (
               <button
                 key={agent.id}

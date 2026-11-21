@@ -1057,6 +1057,11 @@ button.end-chip {
   max-height: 220px;
   overflow-y: auto;
 }
+.composer-mention-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .composer-mention {
   display: flex;
   gap: 8px;

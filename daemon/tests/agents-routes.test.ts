@@ -178,6 +178,28 @@ describe('agent API', () => {
     expect(detail.agent.permissionCeiling).toBe('bypass');
   });
 
+  it('lists only user-authored agents, never the implicit stand-ins', async () => {
+    const h = await startApi();
+    // Creating a session seeds the runtime's implicit agent.
+    h.db.createSession({
+      id: 's_implicit',
+      runtime: 'claude',
+      workspaceId: h.workspaceId,
+      permissionMode: 'ask',
+      cwd: h.workspacePath,
+    });
+
+    const list = (await (await h.request('GET', `/api/workspaces/${h.workspaceId}/agents`)).json()) as {
+      agents: { name: string }[];
+    };
+    expect(list.agents).toHaveLength(0);
+
+    const all = (await (
+      await h.request('GET', `/api/workspaces/${h.workspaceId}/agents?includeImplicit=1`)
+    ).json()) as { agents: { name: string }[] };
+    expect(all.agents.map((agent) => agent.name)).toEqual(['默认']);
+  });
+
   it('falls back to the name when the summary is empty', async () => {
     const h = await startApi();
     await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
