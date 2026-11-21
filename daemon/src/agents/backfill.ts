@@ -114,6 +114,21 @@ export function backfillRunAttribution(db: Db, log: BackfillLogger): number {
   }
 }
 
+/** Runs executed for a turn before `runs.turn_id` was written. */
+export const RUN_TURN_IDS_KEY = 'multi_agent_run_turn_ids_v1';
+
+export function backfillRunTurnIds(db: Db, log: BackfillLogger): number {
+  if (db.getSetting(RUN_TURN_IDS_KEY)) return 0;
+  try {
+    const updated = db.backfillRunTurnIds();
+    db.setSetting(RUN_TURN_IDS_KEY, '1');
+    return updated;
+  } catch (error) {
+    log.warn('multi-agent backfill: run turn ids failed', error);
+    return 0;
+  }
+}
+
 export function backfillNativeThreadAgents(db: Db, log: BackfillLogger): number {
   if (db.getSetting(NATIVE_THREAD_AGENTS_KEY)) return 0;
   try {

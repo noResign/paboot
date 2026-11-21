@@ -2442,6 +2442,27 @@ export class Db {
     );
   }
 
+  /**
+   * Backfill step: give room runs the turn they already executed for.
+   *
+   * `agent_tasks` has known the pairing since turns were introduced; only the
+   * run row was missing it. Without this, a client cannot tell that two runs
+   * were answers to one question, and redraws the question per run.
+   */
+  backfillRunTurnIds(): number {
+    return Number(
+      this.db
+        .prepare(
+          `UPDATE runs SET turn_id = (
+             SELECT t.turn_id FROM agent_tasks t WHERE t.run_id = runs.id LIMIT 1
+           )
+           WHERE turn_id IS NULL
+             AND EXISTS (SELECT 1 FROM agent_tasks t WHERE t.run_id = runs.id)`,
+        )
+        .run().changes,
+    );
+  }
+
   /** Backfill step: attribute runs created before agents to their session leader. */
   backfillRunAttribution(): number {
     return Number(

@@ -145,9 +145,12 @@ async function main(): Promise<void> {
   // Multi-agent shadow tables: fill agents/session_agents/agent_threads so the
   // next phase has real data to read. Additive and failure-tolerant — a bug
   // here leaves the shadow tables incomplete, never a broken request.
-  const { backfillMultiAgent, backfillNativeThreadAgents, backfillRunAttribution } = await import(
-    './agents/index.js'
-  );
+  const {
+    backfillMultiAgent,
+    backfillNativeThreadAgents,
+    backfillRunAttribution,
+    backfillRunTurnIds,
+  } = await import('./agents/index.js');
   const backfill = backfillMultiAgent(db, log);
   if (backfill.ran && (backfill.implicitAgents || backfill.leadersAdded || backfill.threadsAdded)) {
     log.info(
@@ -163,6 +166,10 @@ async function main(): Promise<void> {
   // so historical answers can still show a speaker.
   const attributedRuns = backfillRunAttribution(db, log);
   if (attributedRuns > 0) log.info(`multi-agent backfill: ${attributedRuns} run(s) attributed`);
+  // Fourth stage: give room runs their turn id from the task that produced them,
+  // so clients can draw one user question per turn for existing conversations.
+  const turnedRuns = backfillRunTurnIds(db, log);
+  if (turnedRuns > 0) log.info(`multi-agent backfill: ${turnedRuns} run(s) linked to a turn`);
 
   // Older daemons disabled tasks when their session disappeared. Tidy those
   // dangling rows once at boot so the task list cannot show broken entries.

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   backfillMultiAgent,
   backfillRunAttribution,
+  backfillRunTurnIds,
   DEFAULT_IMPLICIT_RUNTIME,
   resolveSessionAgent,
 } from '../src/agents/index';
@@ -210,6 +211,41 @@ describe('run attribution backfill', () => {
     expect(db.getRun('r_old')!.thread_id).toBeTruthy();
     // Gated by its own marker: a second boot is a no-op.
     expect(backfillRunAttribution(db, silentLog)).toBe(0);
+  });
+});
+
+describe('run turn id backfill', () => {
+  it('links a pre-turn-id run to the task that produced it, exactly once', () => {
+    const db = new Db(tempDbPath());
+    const workspaceId = makeWorkspace(db);
+    const sessionId = makeSession(db, workspaceId);
+    const now = Date.now();
+    db.createTurn({ id: 'turn_1', sessionId, prompt: 'q', tokenLimit: 0, now });
+    db.createTask({
+      id: 'task_1',
+      sessionId,
+      turnId: 'turn_1',
+      agentId: 'agent_1',
+      source: 'leader_default',
+      prompt: 'q',
+      needsWrite: false,
+      snapshotSeq: 0,
+      now,
+    });
+    db.createRun({
+      id: 'r_room',
+      sessionId,
+      runtime: 'claude',
+      model: null,
+      prompt: 'q',
+      status: 'succeeded',
+    });
+    db.updateTask('task_1', { runId: 'r_room' });
+    expect(db.getRun('r_room')!.turn_id ?? null).toBeNull();
+
+    expect(backfillRunTurnIds(db, silentLog)).toBe(1);
+    expect(db.getRun('r_room')!.turn_id).toBe('turn_1');
+    expect(backfillRunTurnIds(db, silentLog)).toBe(0);
   });
 });
 

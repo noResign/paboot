@@ -16,6 +16,7 @@ export {
   backfillMultiAgent,
   backfillNativeThreadAgents,
   backfillRunAttribution,
+  backfillRunTurnIds,
   DEFAULT_IMPLICIT_RUNTIME,
   type BackfillLogger,
   type BackfillResult,
