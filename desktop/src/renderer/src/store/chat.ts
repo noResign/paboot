@@ -90,6 +90,8 @@ interface ChatStore {
   /** Open the room stream for the current multi-agent session (idempotent). */
   /** Open the multiplexed room stream; false when it could not be established. */
   ensureRoomStream(): Promise<boolean>;
+  /** The roster says who the main speaker is; leader answers stream live. */
+  setLeaderAgentId(agentId: string | null): void;
   /** Close it when the session drops back to a single assistant. */
   closeRoomStream(): void;
   /**
@@ -390,6 +392,28 @@ export const useChat = create<ChatStore>((set, get) => ({
       ),
     }));
     return false;
+  },
+
+  setLeaderAgentId(agentId) {
+    const key = get().activeKey;
+    if (!key) return;
+    set((state) => ({
+      byKey: patch(state, key, (current) => {
+        if (current.leaderAgentId === agentId) return current;
+        if (!agentId) return { ...current, leaderAgentId: null };
+        // A leader run may have started before the roster arrived. Promote what
+        // is already pending so its remaining frames stream in the transcript.
+        const live = current.pendingAnswers.filter((answer) => answer.agentId === agentId);
+        if (live.length === 0) return { ...current, leaderAgentId: agentId };
+        const liveIds = new Set(live.map((answer) => answer.runId));
+        return {
+          ...current,
+          leaderAgentId: agentId,
+          messages: [...current.messages, ...live.map((answer) => answer.message)],
+          pendingAnswers: current.pendingAnswers.filter((answer) => !liveIds.has(answer.runId)),
+        };
+      }),
+    }));
   },
 
   closeRoomStream() {
@@ -999,6 +1023,35 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     if (!runId) continue;
 
     type Assistant = Extract<ChatMessage, { kind: 'assistant' }>;
+
+    // The leader is the conversation's main speaker: its answer streams into
+    // the transcript as it arrives. Everyone else waits in the pending area
+    // and only becomes a bubble once it commits.
+    if (chat.leaderAgentId !== null && frame.agentId === chat.leaderAgentId) {
+      let index = messages.findIndex(
+        (message) => message.kind === 'assistant' && message.runId === runId,
+      );
+      if (index < 0) {
+        messages = [
+          ...messages,
+          { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
+        ];
+        index = messages.length - 1;
+      }
+      const target = messages[index] as Assistant;
+      const next = applyFrame(
+        { messages: [target], todos, contextUsage, terminal: false, terminalSucceeded: false },
+        frame,
+        () => nextId('a'),
+      );
+      let updated = next.messages[next.messages.length - 1] as Assistant;
+      if (next.terminal) updated = finalizeLast([updated])[0] as Assistant;
+      messages = messages.map((message, i) => (i === index ? updated : message));
+      todos = next.todos;
+      contextUsage = next.contextUsage;
+      continue;
+    }
+
     let index = pending.findIndex((answer) => answer.runId === runId);
     if (index < 0) {
       const created: PendingAnswer = {

@@ -57,6 +57,7 @@ export function ChatView({
   const sendTurn = useChat((state) => state.sendTurn);
   const ensureRoomStream = useChat((state) => state.ensureRoomStream);
   const closeRoomStream = useChat((state) => state.closeRoomStream);
+  const setLeaderAgentId = useChat((state) => state.setLeaderAgentId);
   const stop = useChat((state) => state.stop);
   const decide = useChat((state) => state.decide);
   const patchSessionTitle = useSessions((state) => state.patchTitle);
@@ -96,6 +97,7 @@ export function ChatView({
     const sessionId = chat?.sessionId;
     if (!sessionId) {
       setAgentsSupported(false);
+      setLeaderAgentId(null);
       return;
     }
     let live = true;
@@ -103,6 +105,7 @@ export function ChatView({
       if (!live) return;
       setAgentsSupported(res.ok);
       setSessionAgents(res.ok ? res.data.agents : []);
+      setLeaderAgentId(res.ok ? (res.data.leaderId ?? null) : null);
     });
     return () => {
       live = false;
@@ -115,6 +118,7 @@ export function ChatView({
     if (!sessionId) return;
     void api.sessionAgents(sessionId).then((res) => {
       setSessionAgents(res.ok ? res.data.agents : []);
+      setLeaderAgentId(res.ok ? (res.data.leaderId ?? null) : null);
     });
     refreshMentionAgents();
   }

@@ -124,6 +124,13 @@ export interface ChatSessionState {
   modelParameters: Record<string, string>;
   messages: ChatMessage[];
   /**
+   * Who answers as the room's main speaker.
+   *
+   * The leader's run streams straight into the transcript; every other agent's
+   * answer waits in the pending area above the composer until it commits.
+   */
+  leaderAgentId: string | null;
+  /**
    * Answers still being produced by a room run.
    *
    * They are deliberately **not** in `messages`: the timeline is commit-order
@@ -175,6 +182,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     model: null,
     modelParameters: {},
     messages: [],
+    leaderAgentId: null,
     pendingAnswers: [],
     runs: [],
     runId: null,

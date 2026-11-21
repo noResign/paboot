@@ -403,3 +403,54 @@ describe('double submit', () => {
     expect(useChat.getState().byKey[roomKey]!.messages).toHaveLength(1);
   });
 });
+
+describe('leader streaming', () => {
+  const frame = (runId: string, agentId: string | null, seq: number, event: unknown) =>
+    ({ runId, seq, agentId, event }) as never;
+
+  it('streams the leader in place and holds other agents until they commit', () => {
+    const base = { ...emptyChat('host::leader', 'host'), leaderAgentId: 'a1' };
+    const streaming = reduceRoomFrames(base, [
+      frame('r1', 'a1', 1, { type: 'status', label: 'starting' }),
+      frame('r2', 'a2', 1, { type: 'status', label: 'starting' }),
+      frame('r1', 'a1', 2, { type: 'text_delta', delta: '主答' }),
+      frame('r2', 'a2', 2, { type: 'text_delta', delta: '补充' }),
+    ]);
+
+    const live = streaming.messages.filter((message) => message.kind === 'assistant');
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ kind: 'assistant', runId: 'r1', done: false });
+    expect(streaming.pendingAnswers.map((answer) => answer.runId)).toEqual(['r2']);
+
+    const next = reduceRoomFrames(streaming, [
+      frame('r1', 'a1', 3, { type: 'status', label: 'succeeded', terminal: true }),
+      frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
+    ]);
+    expect(next.pendingAnswers).toHaveLength(0);
+    expect(
+      next.messages
+        .filter((message) => message.kind === 'assistant')
+        .map((message) => (message.kind === 'assistant' ? message.runId : null)),
+    ).toEqual(['r1', 'r2']);
+  });
+
+  it('moves a leader run into the transcript when the roster arrives late', () => {
+    const key = 'host::late';
+    const base = emptyChat(key, 'host');
+    const streaming = reduceRoomFrames(base, [
+      frame('r1', 'a1', 1, { type: 'status', label: 'starting' }),
+      frame('r1', 'a1', 2, { type: 'text_delta', delta: '主答' }),
+    ]);
+    expect(streaming.messages).toHaveLength(0);
+    expect(streaming.pendingAnswers).toHaveLength(1);
+
+    useChat.setState({ activeKey: key, byKey: { [key]: streaming } });
+    useChat.getState().setLeaderAgentId('a1');
+
+    const chat = useChat.getState().byKey[key]!;
+    expect(chat.leaderAgentId).toBe('a1');
+    expect(chat.pendingAnswers).toHaveLength(0);
+    expect(chat.messages).toHaveLength(1);
+    expect(chat.messages[0]).toMatchObject({ kind: 'assistant', runId: 'r1' });
+  });
+});
