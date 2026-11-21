@@ -53,6 +53,9 @@ export function ChatView({
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
   const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const send = useChat((state) => state.send);
+  const sendTurn = useChat((state) => state.sendTurn);
+  const ensureRoomStream = useChat((state) => state.ensureRoomStream);
+  const closeRoomStream = useChat((state) => state.closeRoomStream);
   const stop = useChat((state) => state.stop);
   const decide = useChat((state) => state.decide);
   const patchSessionTitle = useSessions((state) => state.patchTitle);
@@ -78,6 +81,8 @@ export function ChatView({
   const [models, setModels] = useState<ModelOptionDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  /** A room (not a plain chat): the roster is the switch, not a session kind. */
+  const isGroup = sessionAgents.length > 1;
 
   // Probe once per session: the assistant endpoints only exist on a daemon that
   // knows about agents. A 404 hides the entry rather than offering a menu item
@@ -107,6 +112,19 @@ export function ChatView({
       setSessionAgents(res.ok ? res.data.agents : []);
     });
   }
+
+  // A room's answers arrive on one multiplexed stream instead of a per-run one.
+  // Opening it is idempotent; adding the second member is what starts it.
+  useEffect(() => {
+    if (!chat?.sessionId) return;
+    if (isGroup) {
+      void ensureRoomStream();
+    } else {
+      // Back to one assistant: that path streams per run, so the room stream
+      // must not stay open feeding the same frames twice.
+      closeRoomStream();
+    }
+  }, [chat?.sessionId, isGroup, ensureRoomStream, closeRoomStream]);
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
   // per session is cheap after the first call. A session that has not been
@@ -486,8 +504,28 @@ export function ChatView({
           else next[parameterId] = valueId;
           void setSessionSelection(chat.model, next);
         }}
-        onSend={(text, attachmentIds) => void send(text, attachmentIds)}
+        onSend={(text, attachmentIds, mentionIds) => {
+          // A room sends a turn (202 + room stream). Anything else keeps the
+          // single-run `/api/chat` path, including a new session's first message.
+          if (isGroup && chat.sessionId && !attachmentIds?.length) {
+            void sendTurn(text, mentionIds ?? []);
+            return;
+          }
+          void send(text, attachmentIds);
+        }}
         onStop={stop}
+        mentionAgents={
+          isGroup
+            ? sessionAgents.map((agent) => ({
+                id: agent.id,
+                name: agent.name,
+                summary: agent.summary,
+                available: agent.available,
+                heavy: agent.heavy,
+              }))
+            : undefined
+        }
+        attachmentsEnabled={!isGroup}
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />

@@ -51,6 +51,8 @@ export type ChatMessage =
       usage: UsageInfo | null;
       error: string | null;
       done: boolean;
+      /** Which run produced this answer; room frames route by it. */
+      runId?: string | null;
       /**
        * 谁说的。null / undefined = 未知（老 daemon 历史，或单聊里唯一的那个）。
        *
@@ -117,6 +119,10 @@ export interface ChatSessionState {
   streamId: string | null;
   /** The session watch (`/api/sessions/:id/events`), independent of any run. */
   sessionStreamId: string | null;
+  /** The room stream (`/api/sessions/:id/stream`) for a multi-agent session. */
+  roomStreamId: string | null;
+  /** Last room position applied; a re-opened room resumes after it. */
+  roomCursor: number | null;
   phase: ChatPhase;
   error: string | null;
   historyLoading: boolean;
@@ -153,6 +159,8 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     runId: null,
     streamId: null,
     sessionStreamId: null,
+    roomStreamId: null,
+    roomCursor: null,
     phase: 'idle',
     error: null,
     historyLoading: false,

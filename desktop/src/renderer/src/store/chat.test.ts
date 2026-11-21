@@ -6,7 +6,7 @@ vi.mock('../ipc/client', () => ({
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
 vi.mock('../notify/notifier', () => ({ notifyRunFinished: vi.fn(), notifyPermission: vi.fn(), closePermissionNotification: vi.fn() }));
 import { api, connectionApi } from '../ipc/client';
-import { useChat } from './chat';
+import { reduceRoomFrames, useChat } from './chat';
 import { emptyChat } from './chat/types';
 import type { RunDto } from '../../../shared/contract';
 
@@ -263,5 +263,60 @@ describe('session watch hints for a run already on screen', () => {
     } as never);
 
     expect(useChat.getState().byKey[key]!.messages).toHaveLength(1);
+  });
+});
+
+describe('room stream reducer', () => {
+  const frame = (runId: string, agentId: string | null, seq: number, event: unknown) =>
+    ({ runId, seq, agentId, event }) as never;
+
+  it('keeps one card per run when several agents stream at once', () => {
+    const base = emptyChat('host::room', 'host');
+    const next = reduceRoomFrames(base, [
+      frame('r1', 'a1', 1, { type: 'status', label: 'starting' }),
+      frame('r2', 'a2', 1, { type: 'status', label: 'starting' }),
+      frame('r1', 'a1', 2, { type: 'text_delta', delta: '审阅说' }),
+      frame('r2', 'a2', 2, { type: 'text_delta', delta: '性能说' }),
+      frame('r1', 'a1', 3, { type: 'text_delta', delta: '完了' }),
+      frame('r1', 'a1', 4, { type: 'status', label: 'succeeded', terminal: true }),
+      frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
+    ]);
+
+    const answers = next.messages.filter((message) => message.kind === 'assistant');
+    expect(answers).toHaveLength(2);
+
+    const first = answers.find((message) => message.kind === 'assistant' && message.runId === 'r1')!;
+    const second = answers.find((message) => message.kind === 'assistant' && message.runId === 'r2')!;
+    expect(first.kind === 'assistant' && first.agentId).toBe('a1');
+    expect(second.kind === 'assistant' && second.agentId).toBe('a2');
+    const text = (message: typeof first): string =>
+      message.kind === 'assistant'
+        ? message.blocks
+            .filter((block) => block.kind === 'text')
+            .map((block) => (block.kind === 'text' ? block.text : ''))
+            .join('')
+        : '';
+    expect(text(first)).toBe('审阅说完了');
+    expect(text(second)).toBe('性能说');
+    expect(first.kind === 'assistant' && first.done).toBe(true);
+    expect(second.kind === 'assistant' && second.done).toBe(true);
+  });
+
+  it('enqueues permission requests without inventing an answer card', () => {
+    const base = emptyChat('host::room', 'host');
+    const next = reduceRoomFrames(base, [
+      frame('r1', 'a1', 1, {
+        type: 'permission_request',
+        permissionId: 'p1',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+        status: 'pending',
+      }),
+    ]);
+
+    expect(next.messages).toHaveLength(0);
+    const pending = [next.permissions.active, ...next.permissions.queue].filter(Boolean);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.runId).toBe('r1');
   });
 });

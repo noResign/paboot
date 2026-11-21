@@ -9,6 +9,7 @@ import {
   isImageFile,
   prepareImage,
 } from './imageDraft';
+import { mentionOptions, mentionTokenAt, mentionedAgentIds, type MentionAgent } from './mentions';
 import type { ModelOptionDto, ModelParameterDto } from '../../../../shared/contract';
 
 interface Props {
@@ -27,8 +28,12 @@ interface Props {
   modelParameters: Record<string, string>;
   onModelChange(model: string | null): void;
   onParameterChange(parameterId: string, valueId: string | null): void;
-  onSend(text: string, attachmentIds?: string[]): void;
+  onSend(text: string, attachmentIds?: string[], mentionIds?: string[]): void;
   onStop(): void;
+  /** Roster for the `@` picker; absent on a single-agent session. */
+  mentionAgents?: MentionAgent[];
+  /** Group turns have no attachment channel yet, so hide the image affordance. */
+  attachmentsEnabled?: boolean;
 }
 
 interface DraftImage {
@@ -57,8 +62,14 @@ export function Composer({
   onParameterChange,
   onSend,
   onStop,
+  mentionAgents,
+  attachmentsEnabled = true,
 }: Props) {
   const [text, setText] = useState('');
+  const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(
+    null,
+  );
+  const mentionList = mention ? mentionOptions(mentionAgents ?? [], mention.query) : [];
   const [images, setImages] = useState<DraftImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -89,7 +100,37 @@ export function Composer({
     });
   }
 
+  /** Open/refresh the `@` picker from the caret's current token. */
+  function syncMention(value: string, caret: number | null): void {
+    if (!mentionAgents || mentionAgents.length === 0) {
+      setMention(null);
+      return;
+    }
+    const token = mentionTokenAt(value, caret ?? value.length);
+    if (!token || mentionOptions(mentionAgents, token.query).length === 0) {
+      setMention(null);
+      return;
+    }
+    setMention({ start: token.start, query: token.query, index: 0 });
+  }
+
+  function insertMention(agent: MentionAgent): void {
+    if (!mention) return;
+    const caret = ref.current?.selectionStart ?? text.length;
+    const next = `${text.slice(0, mention.start)}@${agent.name} ${text.slice(caret)}`;
+    const position = mention.start + agent.name.length + 2;
+    setText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const element = ref.current;
+      if (!element) return;
+      element.focus();
+      element.setSelectionRange(position, position);
+    });
+  }
+
   async function addFiles(files: readonly File[]): Promise<void> {
+    if (!attachmentsEnabled) return;
     const list = files.filter(isImageFile);
     if (list.length === 0) return;
     const room = MAX_IMAGES - images.length;
@@ -137,11 +178,17 @@ export function Composer({
     if (disabled || uploading) return;
     if (!value && images.length === 0) return;
     const ids = images.map((image) => image.id);
+    const mentionIds = mentionedAgentIds(value, mentionAgents ?? []);
     for (const image of images) URL.revokeObjectURL(image.previewUrl);
     setText('');
+    setMention(null);
     setImages([]);
     setAttachError(null);
-    onSend(value, ids.length > 0 ? ids : undefined);
+    onSend(
+      value,
+      ids.length > 0 ? ids : undefined,
+      mentionIds.length > 0 ? mentionIds : undefined,
+    );
   }
 
   return (
@@ -198,13 +245,38 @@ export function Composer({
           </div>
         )}
         {attachError && <p className="composer-attach-error">{attachError}</p>}
+        {mention && mentionList.length > 0 && (
+          <div className="composer-mentions" role="listbox" aria-label="提及助手">
+            {mentionList.map((agent, index) => (
+              <button
+                key={agent.id}
+                type="button"
+                role="option"
+                aria-selected={index === mention.index}
+                className={`composer-mention${index === mention.index ? ' active' : ''}`}
+                disabled={agent.available === false}
+                // Prevent the textarea from losing focus before the click lands.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMention(agent)}
+              >
+                <span className="composer-mention-name">{agent.name}</span>
+                <span className="composer-mention-summary">
+                  {agent.available === false ? '当前不可用' : agent.summary || ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           ref={ref}
           rows={2}
           value={text}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            syncMention(event.target.value, event.target.selectionStart);
+          }}
           onPaste={(event) => {
             const files = [...event.clipboardData.files].filter(isImageFile);
             if (files.length === 0) return;
@@ -212,6 +284,28 @@ export function Composer({
             void addFiles(files);
           }}
           onKeyDown={(event) => {
+            if (mention && mentionList.length > 0) {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                const delta = event.key === 'ArrowDown' ? 1 : -1;
+                setMention({
+                  ...mention,
+                  index: (mention.index + delta + mentionList.length) % mentionList.length,
+                });
+                return;
+              }
+              if (event.key === 'Enter' || event.key === 'Tab') {
+                event.preventDefault();
+                const agent = mentionList[mention.index] ?? mentionList[0];
+                if (agent) insertMention(agent);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setMention(null);
+                return;
+              }
+            }
             // Enter sends, Shift+Enter breaks the line — the desktop convention.
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
@@ -224,9 +318,19 @@ export function Composer({
             type="button"
             className="icon-btn composer-attach"
             title={
-              imagesSupported ? '添加图片（也可以直接粘贴或拖入）' : '当前模型不支持图片输入'
+              !attachmentsEnabled
+                ? '群聊暂不支持图片附件'
+                : imagesSupported
+                  ? '添加图片（也可以直接粘贴或拖入）'
+                  : '当前模型不支持图片输入'
             }
-            disabled={disabled || uploading || !imagesSupported || images.length >= MAX_IMAGES}
+            disabled={
+              disabled ||
+              uploading ||
+              !attachmentsEnabled ||
+              !imagesSupported ||
+              images.length >= MAX_IMAGES
+            }
             onClick={() => fileRef.current?.click()}
           >
             <Icon name="plus" size={15} />
@@ -270,9 +374,11 @@ export function Composer({
               ? '正在上传图片…'
               : busy
                 ? `${comboLabel('stop-run', IS_MAC)} 停止运行`
-                : imagesSupported
-                  ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
-                  : '当前模型不支持图片输入'}
+                : !attachmentsEnabled
+                  ? '群聊：输入 @ 指定谁来回答'
+                  : imagesSupported
+                    ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
+                    : '当前模型不支持图片输入'}
           </span>
           {busy ? (
             <button

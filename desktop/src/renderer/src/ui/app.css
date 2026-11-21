@@ -1043,6 +1043,51 @@ button.end-chip {
   padding: 0;
   outline: none;
 }
+/* The @ picker sits inside the card, above the textarea (not a floating layer):
+   it belongs to the draft, and a popover would leave the card on scroll. */
+.composer-mentions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--elevation-1);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.composer-mention {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.composer-mention:hover:not(:disabled),
+.composer-mention.active {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.composer-mention:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.composer-mention-name {
+  font-weight: 600;
+}
+.composer-mention-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 .composer-foot {
   display: flex;
   align-items: center;

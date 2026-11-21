@@ -8,7 +8,14 @@ import type { PendingPermission } from './chat/types';
 import type { ChatMessage, ChatSessionState, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
 import type { RunDto, SessionEvent, SessionRunBrief, SseFrame } from '../../../shared/contract';
-import type { AttachStreamSpec, ChatStreamSpec, SessionStreamSpec, StreamEvent, StreamSpec } from '../../../shared/ipc';
+import type {
+  AttachStreamSpec,
+  ChatStreamSpec,
+  RoomStreamSpec,
+  SessionStreamSpec,
+  StreamEvent,
+  StreamSpec,
+} from '../../../shared/ipc';
 import { useSessions } from './sessions';
 import { closePermissionNotification, notifyPermission, notifyRunFinished } from '../notify/notifier';
 
@@ -66,6 +73,15 @@ interface ChatStore {
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   startNew(connectionId: string, options: NewSessionOptions): void;
   send(text: string, attachmentIds?: string[]): Promise<void>;
+  /**
+   * One input addressed to several agents (`POST /turns`). The answers arrive
+   * on the room stream, not on this promise.
+   */
+  sendTurn(text: string, mentionIds: string[]): Promise<void>;
+  /** Open the room stream for the current multi-agent session (idempotent). */
+  ensureRoomStream(): Promise<void>;
+  /** Close it when the session drops back to a single assistant. */
+  closeRoomStream(): void;
   /**
    * Answer an `AskUserQuestion` card. Blocking questions (builtin / Codex) send
    * the structured `answers` through the permission endpoint; the Claude path
@@ -249,6 +265,97 @@ export const useChat = create<ChatStore>((set, get) => ({
     await startStream(set, key, spec);
   },
 
+  async sendTurn(text, mentionIds) {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    const prompt = text.trim();
+    if (!key || !chat?.sessionId || !prompt) return;
+
+    set((state) => ({
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        error: null,
+        messages: [
+          ...current.messages,
+          { kind: 'user', id: nextId('u'), text: prompt, at: Date.now() },
+        ],
+      })),
+    }));
+
+    // The daemon broadcasts answers on the room stream; make sure it is open
+    // before the first task can produce a frame.
+    await get().ensureRoomStream();
+
+    const res = await api.sendTurn(chat.sessionId, prompt, mentionIds);
+    if (res.ok) return;
+    const { apiCode, message } = apiErrorOf(res.data);
+    set((state) => ({
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        error: friendlyMessage(apiCode, res.status, message, '发送失败'),
+      })),
+    }));
+  },
+
+  async ensureRoomStream() {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    if (!key || !chat?.sessionId || chat.roomStreamId) return;
+
+    // The room stream already carries every run's frames. A per-run stream left
+    // from `/api/chat` would feed the same answer a second time (and to a card
+    // the room reducer cannot match), so hand the session over to the room.
+    const runStreamId = chat.streamId;
+    if (runStreamId) void connectionApi.streamCancel({ streamId: runStreamId, abortRun: false });
+
+    const streamId = newStreamId();
+    set((state) => ({
+      streamKeys: {
+        ...(runStreamId ? withoutKey(state.streamKeys, runStreamId) : state.streamKeys),
+        [streamId]: key,
+      },
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        roomStreamId: streamId,
+        streamId: null,
+        runId: null,
+        phase: current.phase === 'settled' || current.phase === 'gaveup' ? current.phase : 'idle',
+      })),
+    }));
+    const spec: Omit<RoomStreamSpec, 'streamId'> = {
+      kind: 'room',
+      connectionId: chat.connectionId,
+      sessionId: chat.sessionId,
+      // Resume where this chat stopped applying frames. A first open passes
+      // null (live only): the committed past is already in the transcript, and
+      // replaying the session's whole event log would be worse than missing a
+      // partial answer that will be committed in full at the end.
+      after: chat.roomCursor,
+    };
+    const result = await connectionApi.streamStart({ ...spec, streamId });
+    if (result.ok) return;
+    set((state) => ({
+      streamKeys: withoutKey(state.streamKeys, streamId),
+      byKey: patch(state, key, (current) =>
+        current.roomStreamId === streamId ? { ...current, roomStreamId: null } : current,
+      ),
+    }));
+  },
+
+  closeRoomStream() {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    const streamId = chat?.roomStreamId;
+    if (!key || !streamId) return;
+    void connectionApi.streamCancel({ streamId, abortRun: false });
+    set((state) => ({
+      byKey: patch(state, key, (current) =>
+        current.roomStreamId === streamId ? { ...current, roomStreamId: null } : current,
+      ),
+      streamKeys: withoutKey(state.streamKeys, streamId),
+    }));
+  },
+
   syncSession() {
     const key = get().activeKey;
     if (!key) return;
@@ -328,21 +435,25 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (!key || !chat) return;
     const streamId = chat.streamId;
     const sessionStreamId = chat.sessionStreamId;
+    const roomStreamId = chat.roomStreamId;
 
     // Detaching must not kill the run: the daemon keeps it, and re-entering the
     // session re-attaches with `?after=`.
     if (streamId) void connectionApi.streamCancel({ streamId, abortRun: false });
     if (sessionStreamId) void connectionApi.streamCancel({ streamId: sessionStreamId, abortRun: false });
+    if (roomStreamId) void connectionApi.streamCancel({ streamId: roomStreamId, abortRun: false });
 
     set((state) => {
       const streamKeys = { ...state.streamKeys };
       if (streamId) delete streamKeys[streamId];
       if (sessionStreamId) delete streamKeys[sessionStreamId];
+      if (roomStreamId) delete streamKeys[roomStreamId];
       return {
         byKey: patch(state, key, (current) => ({
           ...current,
           streamId: null,
           sessionStreamId: null,
+          roomStreamId: null,
           runId: null,
           phase: 'idle',
           messages: streamId ? finalizeLast(current.messages) : current.messages,
@@ -502,6 +613,7 @@ export const useChat = create<ChatStore>((set, get) => ({
 
     const ownerChat = get().byKey[key];
     const isSessionStream = ownerChat?.sessionStreamId === event.streamId;
+    const isRoomStream = ownerChat?.roomStreamId === event.streamId;
 
     if (event.kind === 'session') {
       if (isSessionStream) applySessionEvent(set, get, key, event.event);
@@ -522,6 +634,29 @@ export const useChat = create<ChatStore>((set, get) => ({
 
     if (isSessionStream) return;
 
+    // The room stream multiplexes several runs. Its phase/reconnect state is
+    // not the composer's busy state (a room stays usable while supplements
+    // run), so only `done` needs to clear the handle.
+    if (isRoomStream) {
+      if (event.kind === 'phase') return;
+      if (event.kind === 'done') {
+        set((state) => ({
+          byKey: patch(state, key, (current) => {
+            if (current.roomStreamId !== event.streamId) return current;
+            return {
+              ...current,
+              roomStreamId: null,
+              ...(event.outcome === 'giveup'
+                ? { error: friendlyMessage(event.apiCode, event.httpCode, event.message ?? '房间流已断开') }
+                : {}),
+            };
+          }),
+          streamKeys: withoutKey(state.streamKeys, event.streamId),
+        }));
+        return;
+      }
+    }
+
     if (event.kind === 'phase') {
       set((state) => ({
         byKey: patch(state, key, (chat) => ({ ...chat, phase: phaseOf(event.phase), error: null })),
@@ -532,7 +667,15 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (event.kind === 'frames') {
       const before = get().byKey[key]?.permissions.seenIds.length ?? 0;
       set((state) => ({
-        byKey: patch(state, key, (chat) => reduceFrames(chat, event.frames)),
+        byKey: patch(state, key, (chat) => {
+          if (!isRoomStream) return reduceFrames(chat, event.frames);
+          const next = reduceRoomFrames(chat, event.frames);
+          const positions = event.frames
+            .map((frame) => frame.roomSeq)
+            .filter((seq): seq is number => typeof seq === 'number');
+          if (positions.length === 0) return next;
+          return { ...next, roomCursor: Math.max(chat.roomCursor ?? 0, ...positions) };
+        }),
       }));
 
       // `seenIds` only grows for genuinely new *pending* requests, so the tail
@@ -746,6 +889,72 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
   return { ...chat, messages, todos, contextUsage, permissions, runId, sessionId, runtime, pendingNew, title };
 }
 
+/**
+ * Fold a room batch into the chat.
+ *
+ * A single-run stream has exactly one assistant card, so the reducer can always
+ * append to "the last one". A room multiplexes several runs whose deltas
+ * interleave, so each run owns its own card, matched by `runId`; a terminal
+ * status closes only that card and leaves its siblings running.
+ */
+export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionState {
+  let messages = chat.messages;
+  let todos = chat.todos;
+  let contextUsage = chat.contextUsage;
+  let permissions = chat.permissions;
+  let runtime = chat.runtime;
+  let sessionId = chat.sessionId;
+
+  for (const frame of frames) {
+    const event = frame.event;
+
+    if (event.type === 'permission_request') {
+      permissions = enqueuePermission(permissions, {
+        permissionId: event.permissionId,
+        runId: frame.runId,
+        toolName: event.toolName,
+        toolInput: event.toolInput,
+        status: event.status,
+      });
+      continue;
+    }
+
+    if (event.type === 'status') {
+      if (event.runtime) runtime = event.runtime;
+      if (event.sessionId && !sessionId) sessionId = event.sessionId;
+    }
+
+    const runId = frame.runId;
+    if (!runId) continue;
+
+    type Assistant = Extract<ChatMessage, { kind: 'assistant' }>;
+    let index = messages.findIndex(
+      (message) => message.kind === 'assistant' && message.runId === runId,
+    );
+    if (index < 0) {
+      messages = [
+        ...messages,
+        { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
+      ];
+      index = messages.length - 1;
+    }
+
+    const target = messages[index] as Assistant;
+    const next = applyFrame(
+      { messages: [target], todos, contextUsage, terminal: false, terminalSucceeded: false },
+      frame,
+      () => nextId('a'),
+    );
+    let updated = next.messages[next.messages.length - 1] as Assistant;
+    if (next.terminal) updated = finalizeLast([updated])[0] as Assistant;
+    messages = messages.map((message, i) => (i === index ? updated : message));
+    todos = next.todos;
+    contextUsage = next.contextUsage;
+  }
+
+  return { ...chat, messages, todos, contextUsage, permissions, runtime, sessionId };
+}
+
 interface RebuiltHistory {
   messages: ChatMessage[];
   todos: TodoItem[];
@@ -783,14 +992,18 @@ async function rebuildHistory(
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.
-      messages.push({ ...newAssistant(nextId('a')), agentId: run.agentId ?? null });
+      messages.push({
+        ...newAssistant(nextId('a')),
+        runId: run.id,
+        agentId: run.agentId ?? null,
+      });
       return;
     }
     const events = response.ok ? response.data.events : [];
     const rebuilt = buildAssistantFromEvents(events, () => nextId('a'));
     // The speaker is a property of the run, not of its frames: keep it when
     // folding the replay so the room timeline can label the answer.
-    messages.push({ ...rebuilt.assistant, agentId: run.agentId ?? null });
+    messages.push({ ...rebuilt.assistant, runId: run.id, agentId: run.agentId ?? null });
     if (rebuilt.contextUsage) contextUsage = rebuilt.contextUsage;
     if (rebuilt.todos.length) todos = rebuilt.todos;
   });
@@ -865,8 +1078,9 @@ function applySessionEvent(
   if (event.type === 'state') {
     if (event.session.id !== chat.sessionId) return;
     patchSessionTitle(set, get, key, event.session.title);
-    // A run of our own is already streaming the truth; hints would duplicate it.
-    if (chat.streamId) return;
+    // A run (or a room) of our own is already streaming the truth; hints would
+    // duplicate it.
+    if (chat.streamId || chat.roomStreamId) return;
     const running = event.session.runningRunId;
     const stale = chat.lastActiveAt === null || event.session.lastActiveAt > chat.lastActiveAt;
     if (running !== null || stale) {
@@ -896,6 +1110,9 @@ function applySessionEvent(
   if (chat.streamId || chat.historyLoading) return;
   // The rail shows `running`, which just changed on the server.
   void useSessions.getState().refreshCurrent(chat.connectionId, { silent: true });
+  // In a room, every run arrives on the multiplexed stream. Attaching a
+  // per-run stream here would append a second user bubble and a second card.
+  if (chat.roomStreamId) return;
   if (isRunRendered(chat, event.run.id)) return;
   appendExternalRun(set, key, chat.connectionId, event.run);
 }
@@ -954,16 +1171,26 @@ function appendExternalRun(
 /** Re-read a session after a reconnect, or when it changed while we were away. */
 async function syncSessionFromDaemon(set: SetState, get: GetState, key: string): Promise<void> {
   const before = get().byKey[key];
-  if (!before?.sessionId || before.streamId) return;
+  // A live stream owns the transcript; rebuilding underneath it would replace
+  // cards the user is watching (a room does the same for all its runs).
+  if (!before?.sessionId || before.streamId || before.roomStreamId) return;
   const sessionId = before.sessionId;
   const detail = await api.session(sessionId);
   const current = get().byKey[key];
-  if (!detail.ok || !current || current.sessionId !== sessionId || current.streamId) return;
+  if (
+    !detail.ok ||
+    !current ||
+    current.sessionId !== sessionId ||
+    current.streamId ||
+    current.roomStreamId
+  ) {
+    return;
+  }
 
   const { session, runs, messages } = detail.data;
   const rebuilt = await rebuildHistory(runs, session.runningRunId, messages);
   const latest = get().byKey[key];
-  if (!latest || latest.sessionId !== sessionId || latest.streamId) return;
+  if (!latest || latest.sessionId !== sessionId || latest.streamId || latest.roomStreamId) return;
 
   set((state) => ({
     byKey: patch(state, key, (chat) => ({
