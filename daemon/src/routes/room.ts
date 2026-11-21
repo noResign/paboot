@@ -94,8 +94,8 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
           runId: row.run_id,
           seq: row.seq,
           roomSeq: row.room_seq,
-          taskId: null,
-          agentId: null,
+          taskId: row.task_id,
+          agentId: row.agent_id,
           event: JSON.parse(row.payload),
         });
       }

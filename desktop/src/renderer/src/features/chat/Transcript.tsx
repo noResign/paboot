@@ -192,6 +192,16 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
 
   return (
     <div className="msg assistant" data-msg-id={id}>
+      {/* 发言人是群聊里唯一需要的区分：名字 + 稳定色点。单聊不显示。 */}
+      {message.agentName && (
+        <div className="msg-speaker">
+          <span
+            className="msg-speaker-dot"
+            style={{ background: agentColor(message.agentId ?? message.agentName) }}
+          />
+          {message.agentName}
+        </div>
+      )}
       {text && (
         <div className="msg-actions">
           <CopyButton text={text} />
@@ -375,3 +385,17 @@ const STATE_LABEL: Record<string, string> = {
   interrupted: '已中断',
   done: '完成',
 };
+
+/**
+ * 稳定散布色：同一个助手在任何界面都是同一个颜色。
+ *
+ * 按 id 散列而不是名字 —— 改名不该换颜色，否则用户会以为是另一个人。
+ * 与 Android / iOS 用同一套调色板与算法，三端颜色一致。
+ */
+const AGENT_PALETTE = ['#5B8DEF', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#10B981'];
+
+function agentColor(id: string): string {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.codePointAt(0)!) & 0x7fffffff;
+  return AGENT_PALETTE[hash % AGENT_PALETTE.length]!;
+}

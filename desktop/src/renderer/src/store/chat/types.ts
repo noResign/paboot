@@ -51,6 +51,15 @@ export type ChatMessage =
       usage: UsageInfo | null;
       error: string | null;
       done: boolean;
+      /**
+       * 谁说的。null / undefined = 未知（老 daemon 历史，或单聊里唯一的那个）。
+       *
+       * 群聊里靠它区分发言人 —— 一条时间线，不分栏也不分标签页：切开会打断
+       * 「A 说完 B 接话」的因果。
+       */
+      agentId?: string | null;
+      /** 显示名；由成员名册解析，避免每条消息各带一份。 */
+      agentName?: string | null;
     };
 
 export interface TodoItem {

@@ -19,6 +19,12 @@ struct ChatUiMessage: Equatable, Identifiable {
     var usage: UsageInfo?
     var error: String?
     var done: Bool = true
+    /// 谁说的。nil = 未知（老 daemon 的历史，或单聊里唯一的那个）。
+    ///
+    /// 群聊里靠它区分发言人 —— 一条时间线，不分栏也不分标签页。
+    var agentId: String?
+    /// 显示名；由会话成员列表解析，避免每条消息各带一份。
+    var agentName: String?
 }
 
 /// One image picked in the composer, before or after upload.

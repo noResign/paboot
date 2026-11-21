@@ -29,6 +29,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.foundation.lazy.LazyColumn
+import com.noresign.paboot.network.daemon.dto.AgentProfileDto
+import com.noresign.paboot.network.daemon.dto.SessionAgentDto
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -51,7 +58,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.noresign.paboot.audio.PcmWavRecorder
-import com.noresign.paboot.ui.chat.AssistantSheet
 import com.noresign.paboot.ui.chat.ChatImagePrep
 import com.noresign.paboot.ui.identity.permissionModeLabel
 import com.noresign.paboot.ui.identity.permissionModeOptions
@@ -68,6 +74,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -129,7 +136,7 @@ fun ChatScreen(
     val agentsSupported by viewModel.agentsSupported.collectAsState()
     val workspaceAgents by viewModel.workspaceAgents.collectAsState()
     val agentError by viewModel.agentError.collectAsState()
-    var showAssistants by remember { mutableStateOf(false) }
+    var chatTab by remember { mutableStateOf(ChatTab.Conversation) }
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val sessionPermissionMode by viewModel.sessionPermissionMode.collectAsState()
@@ -327,6 +334,7 @@ fun ChatScreen(
 
     if (selectedTab == MainTab.Sessions) Scaffold(
         topBar = {
+            Column {
             TopAppBar(
                 title = {
                     Column {
@@ -367,10 +375,10 @@ fun ChatScreen(
                                     },
                                     onClick = {
                                         showSessionMenu = false
-                                        // 打开面板时顺手刷新候选池：用户可能刚在别处
-                                        // 建过新 agent，别让他看到过期的列表。
+                                        // 切到助手 tab；顺手刷新候选池，用户可能刚在
+                                        // 别处建过新 agent，别让他看到过期的列表。
                                         viewModel.refreshWorkspaceAgents()
-                                        showAssistants = true
+                                        chatTab = ChatTab.Assistants
                                     },
                                 )
                                 HorizontalDivider()
@@ -445,6 +453,38 @@ fun ChatScreen(
                     }
                 },
             )
+            // 群聊才有 tab 行：单聊里「对话 / 助手」没有区别，加一个永远只有一个
+            // 选项的 tab 栏只是噪音（07-client §3.1）。
+            if (sessionAgents.size > 1) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ChatTab.entries.forEach { tab ->
+                        val selected = chatTab == tab
+                        Text(
+                            text = if (tab == ChatTab.Assistants) {
+                                "助手 · ${sessionAgents.size}"
+                            } else {
+                                "对话"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { chatTab = tab }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
@@ -517,11 +557,24 @@ fun ChatScreen(
             }
         },
     ) { innerPadding ->
-        MessageList(
+        if (chatTab == ChatTab.Assistants) {
+            AssistantTabContent(
+                agents = sessionAgents,
+                workspaceAgents = workspaceAgents,
+                onResetContext = viewModel::resetAgentContext,
+                onAddAgent = viewModel::addSessionAgent,
+                onRemoveAgent = viewModel::removeSessionAgent,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding()),
+            )
+        } else MessageList(
             messages = messages,
             streaming = streaming,
             loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
+            // 群聊里靠它把 agentId 翻成名字；单聊没有任何成员时是空表。
+            agentNames = remember(sessionAgents) { sessionAgents.associate { it.id to it.name } },
             bottomOverlayPadding = innerPadding.calculateBottomPadding(),
             listState = messageListState,
             modifier = Modifier
@@ -572,17 +625,6 @@ fun ChatScreen(
     // 会话里已有助手时，提前把工作区候选拉好：面板打开时才不会空一下。
     LaunchedEffect(currentSessionId, agentsSupported) {
         if (currentSessionId != null && agentsSupported) viewModel.refreshWorkspaceAgents()
-    }
-
-    if (showAssistants && currentSessionId != null) {
-        AssistantSheet(
-            agents = sessionAgents,
-            workspaceAgents = workspaceAgents,
-            onDismiss = { showAssistants = false },
-            onResetContext = viewModel::resetAgentContext,
-            onAddAgent = viewModel::addSessionAgent,
-            onRemoveAgent = viewModel::removeSessionAgent,
-        )
     }
 
     agentError?.let { message ->
@@ -877,6 +919,102 @@ private fun ContextIndicator(usage: ContextUsage) {
                 text = { Text("上下文 ${usage.display}") },
                 onClick = { expanded = false },
             )
+        }
+    }
+}
+
+/** 会话内的两个视图。群聊才有 tab 栏，单聊永远停在 Conversation。 */
+private enum class ChatTab { Conversation, Assistants }
+
+/**
+ * 「助手」tab 的内容（不是 sheet）。
+ *
+ * 群聊里这是一等公民：用户要知道房间里有谁、谁现在能用。放在 tab 里而不是
+ * 弹层里，是因为它需要能停留（切回来还在），并且和对话平级。
+ */
+@Composable
+private fun AssistantTabContent(
+    agents: List<SessionAgentDto>,
+    workspaceAgents: List<AgentProfileDto>,
+    onResetContext: (String) -> Unit,
+    onAddAgent: (String) -> Unit,
+    onRemoveAgent: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(modifier = modifier.padding(horizontal = 16.dp)) {
+        item {
+            Text(
+                "${agents.size} 个助手",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        }
+        items(agents, key = { it.id }) { agent ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (agent.available) agentColor(agent.id) else MaterialTheme.colorScheme.outline,
+                            ),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(agent.name, style = MaterialTheme.typography.bodyLarge)
+                            if (agent.heavy) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "外部 CLI",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        Text(
+                            // 不可用要说清原因，否则用户只会看到「它不说话」。
+                            if (!agent.available) {
+                                if (agent.enabled) "当前离线" else "已停用"
+                            } else {
+                                agent.summary.ifBlank { agent.backend }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (agent.available) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                }
+                Row(Modifier.padding(start = 20.dp)) {
+                    if (agent.hasContext) {
+                        TextButton(onClick = { onResetContext(agent.id) }) { Text("重置对话") }
+                    }
+                    TextButton(onClick = { onRemoveAgent(agent.id) }) { Text("移出") }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+        val addable = workspaceAgents.filter { candidate -> agents.none { it.id == candidate.id } }
+        if (addable.isNotEmpty()) {
+            item {
+                Text(
+                    "可添加：${addable.joinToString("、") { it.name }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
+                addable.forEach { candidate ->
+                    TextButton(
+                        onClick = { onAddAgent(candidate.id) },
+                        enabled = candidate.available,
+                    ) { Text("添加 ${candidate.name}") }
+                }
+            }
         }
     }
 }

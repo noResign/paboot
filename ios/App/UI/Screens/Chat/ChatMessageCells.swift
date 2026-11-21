@@ -115,6 +115,9 @@ final class AssistantMessageCell: UITableViewCell {
     static let reuseIdentifier = "AssistantMessageCell"
 
     private let stack = UIStackView()
+    private let speakerRow = UIStackView()
+    private let speakerDot = UIView()
+    private let speakerLabel = UILabel()
     private let blockStack = UIStackView()
     private let loadingLabel = UILabel()
     private let loadingSpinner = UIActivityIndicatorView(style: .medium)
@@ -156,6 +159,20 @@ final class AssistantMessageCell: UITableViewCell {
         stack.axis = .vertical
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
+        // 发言人：群聊里唯一需要的区分（名字 + 稳定色点）。单聊时整行隐藏。
+        speakerDot.translatesAutoresizingMaskIntoConstraints = false
+        speakerDot.widthAnchor.constraint(equalToConstant: 7).isActive = true
+        speakerDot.heightAnchor.constraint(equalToConstant: 7).isActive = true
+        speakerDot.layer.cornerRadius = 3.5
+        speakerLabel.font = Typography.caption
+        speakerLabel.textColor = Theme.Colors.textSecondary
+        speakerRow.axis = .horizontal
+        speakerRow.spacing = 6
+        speakerRow.alignment = .center
+        speakerRow.addArrangedSubview(speakerDot)
+        speakerRow.addArrangedSubview(speakerLabel)
+        speakerRow.isHidden = true
+        stack.addArrangedSubview(speakerRow)
         stack.addArrangedSubview(blockStack)
         stack.addArrangedSubview(loadingRow)
         stack.addArrangedSubview(footerLabel)
@@ -184,12 +201,34 @@ final class AssistantMessageCell: UITableViewCell {
         footerLabel.isHidden = true
     }
 
+    /// 稳定散布色：同一个助手在任何界面都是同一个颜色。
+    /// 按 id 散列而不是名字 —— 改名不该换颜色，否则用户会以为是另一个人。
+    static func agentColor(_ id: String) -> UIColor {
+        let palette: [UIColor] = [
+            UIColor(red: 0.36, green: 0.55, blue: 0.94, alpha: 1),
+            UIColor(red: 0.08, green: 0.72, blue: 0.65, alpha: 1),
+            UIColor(red: 0.96, green: 0.62, blue: 0.04, alpha: 1),
+            UIColor(red: 0.93, green: 0.28, blue: 0.59, alpha: 1),
+            UIColor(red: 0.55, green: 0.36, blue: 0.96, alpha: 1),
+        ]
+        let hash = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
+        return palette[hash % palette.count]
+    }
+
     func configure(
         message: ChatUiMessage,
         streaming: Bool,
         onAnswer: @escaping (String, String, [String: [String]]) -> Void
     ) {
         self.onAnswer = onAnswer
+
+        if let name = message.agentName {
+            speakerRow.isHidden = false
+            speakerLabel.text = name
+            speakerDot.backgroundColor = Self.agentColor(message.agentId ?? name)
+        } else {
+            speakerRow.isHidden = true
+        }
 
         let items = Self.renderItems(message.blocks)
         let kinds = items.map(Self.kind)

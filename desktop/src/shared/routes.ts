@@ -84,6 +84,10 @@ export const ROUTES = {
   sessions: '/api/sessions',
   session: (id: string) => `/api/sessions/${encodeURIComponent(id)}`,
   sessionEvents: (id: string) => `/api/sessions/${encodeURIComponent(id)}/events`,
+  /** 房间流：一个会话里所有 agent 的帧，一个游标。 */
+  sessionStream: (id: string) => `/api/sessions/${encodeURIComponent(id)}/stream`,
+  /** 发一次输入：202 + 任务列表，答案是走房间流的。 */
+  sessionTurns: (id: string) => `/api/sessions/${encodeURIComponent(id)}/turns`,
   sessionModel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/model`,
   runs: '/api/runs',
   run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,

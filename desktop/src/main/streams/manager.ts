@@ -1,11 +1,12 @@
 import { RunStreamer } from './run-streamer';
+import { RoomStreamer } from './room-streamer';
 import { SessionStreamer } from './session-streamer';
 import { ROUTES } from '../../shared/routes';
 import type { DaemonClient } from '../daemon/client';
 import type { SseFrame } from '../../shared/contract';
 import type { StartStreamResult, StreamCancelInput, StreamEvent, StreamSpec } from '../../shared/ipc';
 
-type Streamer = RunStreamer | SessionStreamer;
+type Streamer = RunStreamer | SessionStreamer | RoomStreamer;
 
 /**
  * Owns every live stream in the main process: run transcripts and the lighter
@@ -33,6 +34,26 @@ export class StreamManager {
     }
     // Chosen by the renderer so it can register the id before any event lands.
     const streamId = spec.streamId;
+    if (spec.kind === 'room') {
+      const streamer = new RoomStreamer(streamId, {
+        client,
+        emit: (event) => this.send(event),
+        now: this.now,
+        sleep: this.sleep,
+        finished: () => {
+          this.streams.delete(streamId);
+          this.owners.delete(streamId);
+        },
+      });
+      this.streams.set(streamId, streamer);
+      this.owners.set(streamId, spec.connectionId);
+      const result = await streamer.start(spec);
+      if (!result.ok) {
+        this.streams.delete(streamId);
+        this.owners.delete(streamId);
+      }
+      return result;
+    }
     if (spec.kind === 'session') {
       const streamer = new SessionStreamer(streamId, {
         client,

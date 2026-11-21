@@ -213,7 +213,9 @@ final class ChatViewModel {
                         id: "m-\(index)",
                         role: .assistant,
                         blocks: message.content.isEmpty ? [] : [.text(message.content)],
-                        done: true
+                        done: true,
+                        agentId: message.agentId,
+                        agentName: nameFor(message.agentId)
                     )
                 }
             }
@@ -1064,6 +1066,17 @@ final class ChatViewModel {
 }    // MARK: - 会话里的助手（agent）
     //
     // 404 一律当成「这台 daemon 还没有这个功能」：静默关掉入口，不弹错误。
+
+    /// agentId → 显示名。群聊里用来标注发言人；单聊 / 老数据返回 nil（不显示）。
+    ///
+    /// 在消息构建时解析一次而不是每个 cell 查一次：名册很小，但 cell 是复用且
+    /// 频繁重配的，放进去会让滚动时反复做同一件事。
+    private func nameFor(_ agentId: String?) -> String? {
+        guard let agentId else { return nil }
+        // 只有一个成员时不需要标签：那是单聊，标签只是噪音。
+        guard state.sessionAgents.count > 1 else { return nil }
+        return state.sessionAgents.first { $0.id == agentId }?.name
+    }
 
     func loadSessionAgents() {
         guard let id = state.sessionId else { return }

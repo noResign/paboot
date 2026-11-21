@@ -336,7 +336,23 @@ export interface SessionStreamSpec {
   sessionId: string;
 }
 
-export type StreamSpec = ChatStreamSpec | AttachStreamSpec | SessionStreamSpec;
+/**
+ * The room stream: every agent's frames for one session, behind a single cursor.
+ *
+ * Deliberately separate from `session` (which carries only "something changed"
+ * notices): this one carries the transcript frames themselves, tagged with the
+ * agent that produced them, so one connection labels every card.
+ */
+export interface RoomStreamSpec {
+  kind: 'room';
+  streamId: string;
+  connectionId: string;
+  sessionId: string;
+  /** Room cursor to resume from; null = live only. */
+  after: number | null;
+}
+
+export type StreamSpec = ChatStreamSpec | AttachStreamSpec | SessionStreamSpec | RoomStreamSpec;
 
 export type StreamPhase = 'connecting' | 'live' | 'reconnecting';
 

@@ -334,6 +334,16 @@ export interface SseFrame {
   runId: string;
   seq: number;
   event: NormalizedEvent;
+  /**
+   * Room-stream coordinates. Absent on a per-run stream (`/api/runs/:id/stream`),
+   * present on the multiplexed one (`/api/sessions/:id/stream`), where they are
+   * what lets a client resume with a single number.
+   */
+  roomSeq?: number;
+  /** Which task produced this frame; room stream only. */
+  taskId?: string | null;
+  /** Which agent produced it; room stream only. */
+  agentId?: string | null;
 }
 
 /**

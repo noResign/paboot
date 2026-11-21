@@ -70,11 +70,17 @@ public struct MessageDto: Decodable, Equatable, Sendable {
     public let role: String
     public let content: String
     public let createdAt: Int64
+    /// 谁说的；nil = 用户消息，或老 daemon 的助手消息。
+    public let agentId: String?
+    /// 时间线位置（提交时刻），与 `id`（插入顺序）不同。
+    public let committedSeq: Int64?
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(Int64.self, forKey: .id) ?? 0
         sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId) ?? ""
+        agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+        committedSeq = try container.decodeIfPresent(Int64.self, forKey: .committedSeq)
         role = try container.decodeIfPresent(String.self, forKey: .role) ?? ""
         content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
         createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
@@ -85,6 +91,8 @@ public struct MessageDto: Decodable, Equatable, Sendable {
         case sessionId = "session_id"
         case role, content
         case createdAt = "created_at"
+        case agentId = "agent_id"
+        case committedSeq = "committed_seq"
     }
 }
 

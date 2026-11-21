@@ -1924,12 +1924,27 @@ export class Db {
     sessionId: string,
     afterRoomSeq = 0,
     limit = 500,
-  ): { room_seq: number; run_id: string; seq: number; type: string; payload: string; created_at: number }[] {
+  ): {
+    room_seq: number;
+    run_id: string;
+    seq: number;
+    type: string;
+    payload: string;
+    created_at: number;
+    task_id: string | null;
+    agent_id: string | null;
+  }[] {
+    // Attribution is joined back from the task that owns the run: a replayed
+    // frame must carry the same speaker a live one did, otherwise a reconnecting
+    // client loses who said what for everything it missed.
     return this.db
       .prepare(
-        `SELECT room_seq, run_id, seq, type, payload, created_at FROM events
-         WHERE session_id = ? AND room_seq > ? AND room_seq IS NOT NULL
-         ORDER BY room_seq ASC LIMIT ?`,
+        `SELECT e.room_seq, e.run_id, e.seq, e.type, e.payload, e.created_at,
+                t.id AS task_id, t.agent_id AS agent_id
+         FROM events e
+         LEFT JOIN agent_tasks t ON t.run_id = e.run_id
+         WHERE e.session_id = ? AND e.room_seq > ? AND e.room_seq IS NOT NULL
+         ORDER BY e.room_seq ASC LIMIT ?`,
       )
       .all(sessionId, afterRoomSeq, limit) as unknown as {
       room_seq: number;
@@ -1938,6 +1953,8 @@ export class Db {
       type: string;
       payload: string;
       created_at: number;
+      task_id: string | null;
+      agent_id: string | null;
     }[];
   }
 

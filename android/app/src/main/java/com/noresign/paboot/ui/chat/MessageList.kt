@@ -3,6 +3,7 @@ package com.noresign.paboot.ui.chat
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -37,6 +40,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import com.noresign.paboot.model.chat.AssistantSegment
 import com.noresign.paboot.model.chat.ChatUiMessage
 import com.noresign.paboot.model.chat.ContentBlock
@@ -50,6 +55,8 @@ internal fun MessageList(
     streaming: Boolean,
     loading: Boolean,
     onAnswer: (String, String, Map<String, List<String>>) -> Unit,
+    /** agentId → 显示名；群聊里标注发言人用，单聊可为空。 */
+    agentNames: Map<String, String> = emptyMap(),
     bottomOverlayPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
     /**
@@ -141,7 +148,8 @@ internal fun MessageList(
                 ) { index ->
                     when (val message = messages[index]) {
                         is ChatUiMessage.User -> UserBubble(message)
-                        is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
+                        is ChatUiMessage.Assistant ->
+                            AssistantBlock(message, streaming, onAnswer, agentNames)
                     }
                 }
                 item(key = "bottom-spacer") {
@@ -210,8 +218,29 @@ internal fun AssistantBlock(
     message: ChatUiMessage.Assistant,
     streaming: Boolean,
     onAnswer: (String, String, Map<String, List<String>>) -> Unit,
+    /** agentId → 显示名；群聊里用来标注发言人，单聊传空即可。 */
+    agentNames: Map<String, String> = emptyMap(),
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 发言人才是群聊里唯一需要的区分：名字 + 稳定色点。单聊没有名字时整行不出现。
+        val speaker = message.agentName
+            ?: message.agentId?.let { agentNames[it] }
+        speaker?.let { name ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(agentColor(message.agentId ?: name)),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         val segments = remember(message.blocks) { segmentBlocks(message.blocks) }
         segments.forEach { segment ->
             when (segment) {
@@ -259,4 +288,19 @@ private fun NoticeLine(text: String) {
             .fillMaxWidth()
             .padding(vertical = 4.dp),
     )
+}
+
+/**
+ * 稳定散布色：同一个助手在任何界面都是同一个颜色。
+ *
+ * 按 id 散列而不是名字：改名不该换颜色，否则用户会以为是另一个助手。
+ * 与助手面板（AssistantSheet）用的是同一套调色板与算法。
+ */
+internal fun agentColor(id: String): Color {
+    val palette = listOf(
+        Color(0xFF5B8DEF), Color(0xFF14B8A6), Color(0xFFF59E0B),
+        Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFF10B981),
+    )
+    val hash = id.fold(0) { acc, ch -> (acc * 31 + ch.code) and 0x7FFFFFFF }
+    return palette[hash % palette.size]
 }
