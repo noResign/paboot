@@ -4,13 +4,14 @@ import UIKit
 
 /// 会话的「助手」面板。
 ///
-/// 三件事，都围绕「这个房间里谁在干活」：
-///   1. 谁是主答（leader）—— 顶栏的品牌、默认发言人、汇总执行者都由它决定；
-///   2. 每个成员现在能不能用、有没有自己的对话；
-///   3. 把主答交给别人、重置某个成员的对话、拉人进来 / 移出去。
+/// 房间里有哪些助手、谁现在能用、谁已经有自己的对话，以及拉人进来 / 移出去 /
+/// 重置某个人的对话。
 ///
-/// 机制字段（权限上限 / 只读 / 工具白名单）**不在这里显示** —— 那是 agent 编辑页的事，
-/// 混进成员列表只会让人以为是房间级设置。
+/// 两样东西刻意不显示：
+///   - **谁是主答**：对用户不可感知。新建会话时选的那个就是它，不需要一个标签，
+///     也不需要在这里换；
+///   - 机制字段（权限上限 / 只读 / 工具白名单）：那是 agent 编辑页的事，混进成员
+///     列表只会让人以为是房间级设置。
 final class AssistantSheetViewController: UIViewController {
     private let viewModel: ChatViewModel
     private var cancellables = Set<AnyCancellable>()
@@ -101,15 +102,14 @@ final class AssistantSheetViewController: UIViewController {
 
     private func render() {
         let state = viewModel.state
-        let leaderName = state.sessionAgents.first { $0.id == state.leaderId }?.name ?? "—"
-        headerLabel.text = "\(state.sessionAgents.count) 个成员 · 主答是「\(leaderName)」"
+        headerLabel.text = "\(state.sessionAgents.count) 个助手"
 
         membersStack.arrangedSubviews.forEach { view in
             membersStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
         for agent in state.sessionAgents {
-            membersStack.addArrangedSubview(makeMemberRow(agent, leaderId: state.leaderId))
+            membersStack.addArrangedSubview(makeMemberRow(agent))
         }
 
         // 只在有可选成员时显示添加按钮：一个点了没反应的动作比没有更糟。
@@ -132,14 +132,13 @@ final class AssistantSheetViewController: UIViewController {
         )
     }
 
-    private func makeMemberRow(_ agent: SessionAgentDto, leaderId: String?) -> UIView {
-        let isLeader = agent.id == leaderId
+    private func makeMemberRow(_ agent: SessionAgentDto) -> UIView {
         let card = UIView()
         card.backgroundColor = Theme.Colors.surface
         card.layer.cornerRadius = Radius.card
 
         let dot = UIView()
-        dot.backgroundColor = dotColor(for: agent, isLeader: isLeader)
+        dot.backgroundColor = dotColor(for: agent)
         dot.layer.cornerRadius = 5
         dot.translatesAutoresizingMaskIntoConstraints = false
         dot.widthAnchor.constraint(equalToConstant: 10).isActive = true
@@ -148,10 +147,7 @@ final class AssistantSheetViewController: UIViewController {
         let nameLabel = UILabel()
         nameLabel.font = Typography.body
         nameLabel.textColor = Theme.Colors.textPrimary
-        var name = agent.name
-        if isLeader { name += " · 主答" }
-        if agent.heavy { name += " · 外部 CLI" }
-        nameLabel.text = name
+        nameLabel.text = agent.heavy ? "\(agent.name) · 外部 CLI" : agent.name
 
         let summaryLabel = UILabel()
         summaryLabel.font = Typography.caption
@@ -177,21 +173,16 @@ final class AssistantSheetViewController: UIViewController {
         let actions = UIStackView()
         actions.axis = .horizontal
         actions.spacing = Spacing.sm
-        if !isLeader && agent.available {
-            actions.addArrangedSubview(actionButton("让它主答") { [weak self] in
-                self?.viewModel.setLeader(agent.id)
-            })
-        }
         if agent.hasContext {
             actions.addArrangedSubview(actionButton("重置对话") { [weak self] in
                 self?.confirmReset(agent)
             })
         }
-        if !isLeader {
-            actions.addArrangedSubview(actionButton("移出") { [weak self] in
-                self?.viewModel.removeSessionAgent(agent.id)
-            })
-        }
+        // 主答移不掉（daemon 会 409）：它是这个会话的归属者，而 UI 没有「换主答」的
+        // 入口 —— 那是刻意的，对用户不可感知。
+        actions.addArrangedSubview(actionButton("移出") { [weak self] in
+            self?.viewModel.removeSessionAgent(agent.id)
+        })
 
         let stack = UIStackView(arrangedSubviews: [header, actions])
         stack.axis = .vertical
@@ -233,9 +224,8 @@ final class AssistantSheetViewController: UIViewController {
 
     /// 稳定散布色：同一个 agent 在任何界面都是同一个颜色。用 id 而不是名字，
     /// 改名不该换颜色，否则用户会以为那是另一个助手。
-    private func dotColor(for agent: SessionAgentDto, isLeader: Bool) -> UIColor {
+    private func dotColor(for agent: SessionAgentDto) -> UIColor {
         if !agent.available { return Theme.Colors.textSecondary }
-        if isLeader { return Theme.Colors.primary }
         let palette: [UIColor] = [
             UIColor(red: 0.36, green: 0.55, blue: 0.94, alpha: 1),
             UIColor(red: 0.08, green: 0.72, blue: 0.65, alpha: 1),

@@ -326,9 +326,6 @@ export class RunStreamer {
           prompt: spec.prompt,
           runtime: spec.runtime,
           workspaceId: spec.workspaceId,
-          // Only a new session carries an agent profile; existing sessions take
-          // their leader from membership on the daemon side.
-          ...(spec.agentId ? { agentId: spec.agentId } : {}),
           permissionMode: spec.permissionMode,
           ...(spec.model ? { model: spec.model } : {}),
           ...(spec.modelParameters && Object.keys(spec.modelParameters).length

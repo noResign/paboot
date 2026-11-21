@@ -123,19 +123,12 @@ class ChatViewModel(
     private val _sessionAgents = MutableStateFlow<List<SessionAgentDto>>(emptyList())
     val sessionAgents = _sessionAgents.asStateFlow()
 
-    private val _leaderId = MutableStateFlow<String?>(null)
-    val leaderId = _leaderId.asStateFlow()
-
     private val _agentsSupported = MutableStateFlow(false)
     val agentsSupported = _agentsSupported.asStateFlow()
 
     /** 工作区里可被拉进会话的 agent（新建会话选人 / 添加成员时用）。 */
     private val _workspaceAgents = MutableStateFlow<List<AgentProfileDto>>(emptyList())
     val workspaceAgents = _workspaceAgents.asStateFlow()
-
-    /** 新建会话时选定的 agent；null = 用工作区默认。 */
-    private val _pendingAgentId = MutableStateFlow<String?>(null)
-    val pendingAgentId = _pendingAgentId.asStateFlow()
 
     private val _agentError = MutableStateFlow<String?>(null)
     val agentError = _agentError.asStateFlow()
@@ -568,8 +561,6 @@ class ChatViewModel(
         // 一次性新会话选项在下面清零；重发要用同样的 body，先捕获到局部量。
         val sessionIdAtSend = sessionId
         val runtime = initialRuntime
-        // 只有新会话才带 agentId：已有会话由成员关系决定主答。
-        val agentIdForNewSession = if (sessionIdAtSend == null) _pendingAgentId.value else null
         val workspaceId = initialWorkspaceId
         val permissionMode = initialPermissionMode
         val model = if (sessionIdAtSend == null) _sessionModel.value else null
@@ -582,7 +573,6 @@ class ChatViewModel(
                 sessionId = sessionIdAtSend,
                 prompt = prompt,
                 runtime = runtime,
-                agentId = agentIdForNewSession,
                 workspaceId = workspaceId,
                 permissionMode = permissionMode,
                 model = model,
@@ -600,7 +590,6 @@ class ChatViewModel(
         )
         _attachments.value = emptyList()
         initialRuntime = null
-        _pendingAgentId.value = null
         initialWorkspaceId = null
         initialPermissionMode = null
     }
@@ -1244,14 +1233,12 @@ class ChatViewModel(
                 is NetworkResult.Success -> {
                     _agentsSupported.value = true
                     _sessionAgents.value = r.data.agents
-                    _leaderId.value = r.data.leaderId
                     _agentError.value = null
                 }
                 is NetworkResult.Error -> {
                     if (r.code == 404) {
                         _agentsSupported.value = false
                         _sessionAgents.value = emptyList()
-                        _leaderId.value = null
                     } else {
                         _agentError.value = r.message
                     }
@@ -1271,10 +1258,6 @@ class ChatViewModel(
                 is NetworkResult.Error -> if (r.code != 404) _agentError.value = r.message
             }
         }
-    }
-
-    fun selectPendingAgent(agentId: String?) {
-        _pendingAgentId.value = agentId
     }
 
     /**
@@ -1308,23 +1291,6 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = agentRepository.removeFromSession(id, agentId)) {
                 is NetworkResult.Success -> loadSessionAgents(id)
-                is NetworkResult.Error -> _agentError.value = r.message
-            }
-        }
-    }
-
-    /** 把「主答」交给另一个成员；会话的 runtime 会跟着它变。 */
-    fun setLeader(agentId: String) {
-        val id = sessionId ?: return
-        viewModelScope.launch {
-            when (val r = agentRepository.setLeader(id, agentId)) {
-                is NetworkResult.Success -> {
-                    loadSessionAgents(id)
-                    val detail = repository.sessionDetail(id)
-                    if (detail is NetworkResult.Success) {
-                        _sessionRuntime.value = detail.data.session.runtime
-                    }
-                }
                 is NetworkResult.Error -> _agentError.value = r.message
             }
         }

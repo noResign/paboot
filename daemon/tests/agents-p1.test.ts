@@ -553,77 +553,138 @@ describe('builtin transcripts are keyed by agent', () => {
   });
 });
 
-describe('choosing the agent when creating a session', () => {
-  it('binds the chosen agent as leader and runs on its backend', async () => {
+describe("a new session's leader follows the runtime the user picked", () => {
+  it('binds the workspace agent for that runtime as leader', async () => {
     const h = await startApi();
     const workspace = workspaceOf(h.db, h.workspaceId);
-    const agent = createAgent(h.db, workspace, {
+    // A custom agent exists, but the picker chose a runtime — that must win.
+    createAgent(h.db, workspace, {
       workspaceId: h.workspaceId,
-      name: 'chosen',
-      kind: 'runtime',
-      runtime: 'codex',
-    });
-
-    const response = await chat(h.base, { prompt: 'hi', agentId: agent.id });
-    expect(response.status).toBe(200);
-    await response.text();
-
-    const session = h.db.listSessions()[0]!;
-    expect(h.db.getSessionLeader(session.id)?.agent_id).toBe(agent.id);
-    expect(session.runtime).toBe('codex');
-    expect(h.starts.at(-1)!.cwd).toBe(h.workspacePath);
-  });
-
-  it('rejects an unknown or foreign agent instead of falling back silently', async () => {
-    const h = await startApi();
-    const missing = await chat(h.base, { prompt: 'hi', agentId: 'ag_nope' });
-    expect(missing.status).toBe(400);
-    expect(((await missing.json()) as { code: string }).code).toBe('unknown_agent');
-
-    const other = new Db(':memory:');
-    const otherWorkspacePath = fs.realpathSync(tempDir('agent-other-ws-'));
-    const otherWorkspace = other.createWorkspace({ name: 'other', path: otherWorkspacePath });
-    const foreign = createAgent(other, otherWorkspace, {
-      workspaceId: otherWorkspace.id,
-      name: 'foreign',
-      kind: 'builtin',
-    });
-    const cross = await chat(h.base, { prompt: 'hi', agentId: foreign.id });
-    expect(cross.status).toBe(400);
-    expect(((await cross.json()) as { code: string }).code).toBe('unknown_agent');
-  });
-
-  it('refuses a disabled agent', async () => {
-    const h = await startApi();
-    const workspace = workspaceOf(h.db, h.workspaceId);
-    const agent = createAgent(h.db, workspace, {
-      workspaceId: h.workspaceId,
-      name: 'off',
+      name: 'unrelated',
       kind: 'runtime',
       runtime: 'claude',
-      enabled: false,
     });
-    const response = await chat(h.base, { prompt: 'hi', agentId: agent.id });
-    expect(response.status).toBe(400);
-    expect(((await response.json()) as { code: string }).code).toBe('agent_disabled');
+
+    await (await chat(h.base, { prompt: 'hi', runtime: 'codex' })).text();
+
+    const session = h.db.listSessions()[0]!;
+    const leader = getLeader(h.db, session.id)!;
+    expect(leader.isImplicit).toBe(true);
+    expect(leader.runtime).toBe('codex');
+    expect(session.runtime).toBe('codex');
+    // The custom claude agent did not hijack the room.
+    expect(leader.name).not.toBe('unrelated');
   });
 
-  it('ignores agentId on an existing session rather than failing the send', async () => {
+  it('is the single leader even when the workspace has several runtimes', async () => {
     const h = await startApi();
+    await (await chat(h.base, { prompt: 'a', runtime: 'claude' })).text();
+    await (await chat(h.base, { prompt: 'b', runtime: 'codex' })).text();
+
+    const sessions = h.db.listSessions();
+    expect(sessions).toHaveLength(2);
+    for (const session of sessions) {
+      const leader = getLeader(h.db, session.id)!;
+      expect(leader.runtime).toBe(session.runtime);
+    }
+  });
+});
+
+describe('agent permission ceiling', () => {
+  async function seed(h: Harness, ceiling: 'ask' | 'acceptEdits' | 'bypass') {
     const workspace = workspaceOf(h.db, h.workspaceId);
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: `ceil-${ceiling}`,
+      kind: 'runtime',
+      runtime: 'claude',
+      permissionCeiling: ceiling,
+    });
     await (await chat(h.base, { prompt: 'a' })).text();
     const session = h.db.listSessions()[0]!;
-    const stray = createAgent(h.db, workspace, {
-      workspaceId: h.workspaceId,
-      name: 'stray',
-      kind: 'runtime',
-      runtime: 'codex',
-    });
+    addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
+    setLeader(h.db, session.id, agent.id);
+    return session;
+  }
 
-    // A retry that echoes the agent it picked must not 400 — membership decides.
-    const response = await chat(h.base, { prompt: 'b', sessionId: session.id, agentId: stray.id });
-    expect(response.status).toBe(200);
-    await response.text();
-    expect(h.db.getSessionLeader(session.id)?.agent_id).not.toBe(stray.id);
+  it('tightens a looser request down to the agent ceiling', async () => {
+    const h = await startApi();
+    const session = await seed(h, 'ask');
+    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'bypass' })).text();
+    expect(h.starts.at(-1)!.permissionMode).toBe('ask');
+  });
+
+  it('does not loosen a stricter request up to the agent ceiling', async () => {
+    const h = await startApi();
+    const session = await seed(h, 'bypass');
+    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'ask' })).text();
+    expect(h.starts.at(-1)!.permissionMode).toBe('ask');
+  });
+
+  it('leaves the implicit agent out of the comparison', async () => {
+    const h = await startApi();
+    // No explicit agent: the workspace's implicit stand-in must not narrow the
+    // request, or every existing session would silently lose its mode.
+    await (await chat(h.base, { prompt: 'a', permissionMode: 'acceptEdits' })).text();
+    expect(h.starts.at(-1)!.permissionMode).toBe('acceptEdits');
+  });
+});
+
+describe('builtin transcripts are keyed by agent', () => {
+  it('re-keys a pre-agent transcript onto the leader instead of orphaning it', () => {
+    const db = new Db(':memory:');
+    const workspacePath = fs.realpathSync(tempDir('builtin-rekey-'));
+    const workspace = db.createWorkspace({ name: 'w', path: workspacePath });
+    const session = db.createSession({
+      id: 's1',
+      runtime: 'builtin',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: workspacePath,
+    });
+    const leader = getLeader(db, session.id)!;
+    // Simulate a transcript written before agents existed.
+    (db as unknown as { db: { prepare: (sql: string) => { run: (...a: unknown[]) => unknown } } }).db
+      .prepare(`INSERT INTO native_threads (id, session_id, agent_id, created_at) VALUES (?, ?, 'builtin', ?)`)
+      .run('legacy-thread', session.id, Date.now());
+
+    const moved = db.backfillNativeThreadAgents();
+    expect(moved).toBe(1);
+    const row = db.getNativeThreadForSession(session.id, leader.id);
+    expect(row?.id).toBe('legacy-thread');
+    // Idempotent: nothing left to move.
+    expect(db.backfillNativeThreadAgents()).toBe(0);
+  });
+
+  it('gives two builtin agents their own transcript inside one session', () => {
+    const db = new Db(':memory:');
+    const workspacePath = fs.realpathSync(tempDir('builtin-split-'));
+    const workspace = db.createWorkspace({ name: 'w', path: workspacePath });
+    const session = db.createSession({
+      id: 's1',
+      runtime: 'builtin',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: workspacePath,
+    });
+    const a = createAgent(db, workspace, { workspaceId: workspace.id, name: 'A', kind: 'builtin' });
+    const b = createAgent(db, workspace, { workspaceId: workspace.id, name: 'B', kind: 'builtin' });
+    addToSession(db, { id: session.id, workspaceId: workspace.id }, a.id);
+    addToSession(db, { id: session.id, workspaceId: workspace.id }, b.id);
+    setLeader(db, session.id, a.id);
+
+    const threadA = ensureThread(db, session, a, workspace);
+    const threadB = ensureThread(db, session, b, workspace);
+    expect(threadA.backend).toBe('builtin');
+    expect(threadB.backend).toBe('builtin');
+
+    // The builtin runtime resolves its transcript by (session, agent): two
+    // distinct ids mean two distinct conversations.
+    const resolvedA = db.getNativeThreadForSession(session.id, a.id);
+    const resolvedB = db.getNativeThreadForSession(session.id, b.id);
+    expect(resolvedA).toBeUndefined();
+    expect(resolvedB).toBeUndefined();
+    // ...and they are addressed by different keys, which is the whole point.
+    expect(threadA.id).not.toBe(threadB.id);
   });
 });

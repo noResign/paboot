@@ -18,7 +18,6 @@ protocol AgentRepositoryProtocol {
     func sessionAgents(sessionId: String) async throws -> SessionAgentsResponse
     func addToSession(sessionId: String, agentId: String) async throws
     func removeFromSession(sessionId: String, agentId: String) async throws
-    func setLeader(sessionId: String, agentId: String) async throws
     /// 重置某个 agent 在本会话的对话。只清 paboot 侧的 thread 绑定，
     /// runtime 自己存的记忆不在范围内。
     func resetContext(sessionId: String, agentId: String) async throws
@@ -74,10 +73,6 @@ final class AgentRepository: AgentRepositoryProtocol {
 
     func removeFromSession(sessionId: String, agentId: String) async throws {
         try await api().removeSessionAgent(sessionId: sessionId, agentId: agentId)
-    }
-
-    func setLeader(sessionId: String, agentId: String) async throws {
-        try await api().setSessionLeader(sessionId: sessionId, agentId: agentId)
     }
 
     func resetContext(sessionId: String, agentId: String) async throws {

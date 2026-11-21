@@ -314,12 +314,6 @@ export const api = {
     }),
   removeSessionAgent: (sessionId: string, agentId: string) =>
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.sessionAgent(sessionId, agentId) }),
-  setSessionLeader: (sessionId: string, agentId: string) =>
-    request<{ ok: boolean }>({
-      method: 'PATCH',
-      path: ROUTES.sessionLeader(sessionId),
-      body: { agentId },
-    }),
   resetAgentContext: (sessionId: string, agentId: string) =>
     request<{ ok: boolean }>({
       method: 'POST',

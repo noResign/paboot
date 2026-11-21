@@ -9,15 +9,10 @@ import {
   PERMISSION_MODE_LABEL,
 } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
-import type {
-  AgentDto,
-  AgentProfileDto,
-  ProductPermissionMode,
-} from '../../../../shared/contract';
+import type { AgentDto, ProductPermissionMode } from '../../../../shared/contract';
 import type { NewSessionOptions } from '../../store/chat';
 
 interface Props {
-  workspaceId: string | null;
   workspaceName: string | null;
   workspacePath: string | null;
   /** Workspace-level new-session defaults; null = follow global / claude. */
@@ -33,7 +28,6 @@ interface Props {
  * Codex and DeepSeek Harness side by side from one client.
  */
 export function NewSessionDialog({
-  workspaceId,
   workspaceName,
   workspacePath,
   defaultRuntime,
@@ -42,12 +36,6 @@ export function NewSessionDialog({
   onCreate,
 }: Props) {
   const [agents, setAgents] = useState<AgentDto[] | null>(null);
-  /**
-   * 工作区里的助手（主答候选）。老 daemon 上这个端点是 404 —— 那时整块选择器隐藏，
-   * 而不是显示一个空列表让人以为没有助手。
-   */
-  const [profiles, setProfiles] = useState<AgentProfileDto[]>([]);
-  const [profileId, setProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<string | null>(null);
   const [mode, setMode] = useState<ProductPermissionMode>('ask');
@@ -98,22 +86,6 @@ export function NewSessionDialog({
   }, [defaultRuntime, defaultPermissionMode]);
 
   useEffect(() => {
-    if (!workspaceId) return;
-    let live = true;
-    void api.workspaceAgents(workspaceId).then((res) => {
-      // 404 = 这台 daemon 还没有这个功能，静默当作「没有助手」。
-      if (!live || !res.ok) return;
-      setProfiles(res.data.agents);
-      setProfileId((current) =>
-        current && res.data.agents.some((agent) => agent.id === current) ? current : null,
-      );
-    });
-    return () => {
-      live = false;
-    };
-  }, [workspaceId]);
-
-  useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onCancel();
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
@@ -127,7 +99,7 @@ export function NewSessionDialog({
 
   function submit(): void {
     if (!runtime) return;
-    onCreate({ runtime, workspaceId: null, permissionMode: mode, agentProfileId: profileId });
+    onCreate({ runtime, workspaceId: null, permissionMode: mode });
   }
 
   const modes = permissionModeOptions(runtime, bypassAllowed);
@@ -181,38 +153,6 @@ export function NewSessionDialog({
           )}
           <div className="hint">模型与推理强度用电脑端 Agent 的默认配置；建立会话后可在会话页切换模型。</div>
         </div>
-
-        {profiles.length > 0 && (
-          <div className="field">
-            <label>谁来主答</label>
-            <div className="agent-picker">
-              <button
-                className={`agent-option${profileId === null ? ' active' : ''}`}
-                onClick={() => setProfileId(null)}
-              >
-                <span>工作区默认</span>
-              </button>
-              {profiles.map((profile) => (
-                <button
-                  key={profile.id}
-                  className={`agent-option${profile.id === profileId ? ' active' : ''}`}
-                  // 不可用的仍列出来但置灰：直接不显示会让人以为它被删了。
-                  disabled={!profile.available}
-                  title={profile.summary || profile.backend}
-                  onClick={() => setProfileId(profile.id)}
-                >
-                  <span>{profile.name}</span>
-                  {!profile.available && (
-                    <span className="badge">{profile.enabled ? '离线' : '已停用'}</span>
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="hint">
-              它决定这个会话的主答（默认发言人、汇总执行者）。建好后可在会话菜单的「助手」里更换。
-            </div>
-          </div>
-        )}
 
         <div className="field">
           <label>权限模式</label>

@@ -57,7 +57,6 @@ export function ChatView({
   const clearError = useChat((state) => state.clearError);
   const setMemoryMode = useChat((state) => state.setMemoryMode);
   const setSessionSelection = useChat((state) => state.setSessionSelection);
-  const syncSession = useChat((state) => state.syncSession);
 
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
@@ -475,7 +474,6 @@ export function ChatView({
         <AssistantDialog
           sessionId={chat.sessionId}
           onClose={() => setShowAssistants(false)}
-          onLeaderChanged={syncSession}
         />
       )}
 

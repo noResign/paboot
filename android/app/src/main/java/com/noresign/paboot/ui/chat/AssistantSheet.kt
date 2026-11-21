@@ -40,22 +40,21 @@ import com.noresign.paboot.network.daemon.dto.SessionAgentDto
 /**
  * 会话的「助手」面板。
  *
- * 三件事，都围绕「这个房间里谁在干活」：
- *   1. 谁是主答（leader）—— 顶栏的品牌、默认发言人、汇总执行者都由它决定；
- *   2. 每个成员现在能不能用、有没有自己的对话；
- *   3. 把主答交给别人、重置某个成员的对话、拉人进来 / 移出去。
+ * 房间里有哪些助手、谁现在能用、谁已经有自己的对话，以及拉人进来 / 移出去 /
+ * 重置某个人的对话。
  *
- * 机制字段（权限上限 / 只读 / 工具白名单）**不在这里显示** —— 那是 agent 编辑页的事，
- * 混进成员列表只会让人以为是房间级设置。
+ * 两样东西刻意不显示：
+ *   - **谁是主答**：对用户不可感知。新建会话时选的那个就是它，不需要一个标签，
+ *     也不需要在这里换；
+ *   - 机制字段（权限上限 / 只读 / 工具白名单）：那是 agent 编辑页的事，混进成员
+ *     列表只会让人以为是房间级设置。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssistantSheet(
     agents: List<SessionAgentDto>,
-    leaderId: String?,
     workspaceAgents: List<AgentProfileDto>,
     onDismiss: () -> Unit,
-    onSetLeader: (String) -> Unit,
     onResetContext: (String) -> Unit,
     onAddAgent: (String) -> Unit,
     onRemoveAgent: (String) -> Unit,
@@ -69,7 +68,7 @@ fun AssistantSheet(
             Text("助手", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(2.dp))
             Text(
-                "${agents.size} 个成员 · 主答是「${agents.firstOrNull { it.id == leaderId }?.name ?: "—"}」",
+                "${agents.size} 个助手",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -77,10 +76,9 @@ fun AssistantSheet(
 
             LazyColumn(Modifier.fillMaxWidth()) {
                 items(agents, key = { it.id }) { agent ->
-                    val isLeader = agent.id == leaderId
                     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            AgentDot(agent, isLeader)
+                            AgentDot(agent)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -90,10 +88,6 @@ fun AssistantSheet(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
-                                    if (isLeader) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Badge("主答")
-                                    }
                                     if (agent.heavy) {
                                         Spacer(Modifier.width(6.dp))
                                         Badge("外部 CLI")
@@ -117,15 +111,12 @@ fun AssistantSheet(
                             )
                         }
                         Row(Modifier.padding(start = 22.dp, top = 4.dp)) {
-                            if (!isLeader && agent.available) {
-                                TextButton(onClick = { onSetLeader(agent.id) }) { Text("让它主答") }
-                            }
                             if (agent.hasContext) {
                                 TextButton(onClick = { resetTarget = agent }) { Text("重置对话") }
                             }
-                            if (!isLeader) {
-                                TextButton(onClick = { onRemoveAgent(agent.id) }) { Text("移出") }
-                            }
+                            // 主答移不掉（daemon 会 409）：它是这个会话的归属者，
+                            // 而 UI 没有「换主答」的入口 —— 那是刻意的，对用户不可感知。
+                            TextButton(onClick = { onRemoveAgent(agent.id) }) { Text("移出") }
                         }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
@@ -199,14 +190,10 @@ fun AssistantSheet(
     }
 }
 
-/** 状态点：主答用主色，离线用灰，其余按名字散列取色（与时间线上的色点一致）。 */
+/** 状态点：离线用灰，其余按 id 散列取色（同一个助手在任何界面都是同一个颜色）。 */
 @Composable
-private fun AgentDot(agent: SessionAgentDto, isLeader: Boolean) {
-    val color = when {
-        !agent.available -> MaterialTheme.colorScheme.outline
-        isLeader -> MaterialTheme.colorScheme.primary
-        else -> colorForAgent(agent.id)
-    }
+private fun AgentDot(agent: SessionAgentDto) {
+    val color = if (agent.available) colorForAgent(agent.id) else MaterialTheme.colorScheme.outline
     Box(Modifier.size(12.dp).clip(CircleShape).background(color))
 }
 

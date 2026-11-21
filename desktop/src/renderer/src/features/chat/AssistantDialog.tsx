@@ -5,24 +5,22 @@ import type { AgentProfileDto, SessionAgentDto } from '../../../../shared/contra
 interface Props {
   sessionId: string;
   onClose(): void;
-  /** 主答变了之后刷新一次会话（顶栏品牌跟着 leader 走）。 */
-  onLeaderChanged?(): void;
 }
 
 /**
  * 会话的「助手」面板。
  *
- * 三件事，都围绕「这个房间里谁在干活」：
- *   1. 谁是主答（leader）—— 顶栏的品牌、默认发言人、汇总执行者都由它决定；
- *   2. 每个成员现在能不能用、有没有自己的对话；
- *   3. 把主答交给别人、重置某个成员的对话、拉人进来 / 移出去。
+ * 房间里有哪些助手、谁现在能用、谁已经有自己的对话，以及拉人进来 / 移出去 /
+ * 重置某个人的对话。
  *
- * 机制字段（权限上限 / 只读 / 工具白名单）**不在这里显示** —— 那是 agent 编辑页的事，
- * 混进成员列表只会让人以为是房间级设置。
+ * 两样东西刻意不显示：
+ *   - **谁是主答**：对用户不可感知。新建会话时选的那个就是它，不需要一个标签，
+ *     也不需要在这里换；
+ *   - 机制字段（权限上限 / 只读 / 工具白名单）：那是 agent 编辑页的事，混进成员
+ *     列表只会让人以为是房间级设置。
  */
-export function AssistantDialog({ sessionId, onClose, onLeaderChanged }: Props) {
+export function AssistantDialog({ sessionId, onClose }: Props) {
   const [agents, setAgents] = useState<SessionAgentDto[] | null>(null);
-  const [leaderId, setLeaderId] = useState<string | null>(null);
   const [workspaceAgents, setWorkspaceAgents] = useState<AgentProfileDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<SessionAgentDto | null>(null);
@@ -35,7 +33,6 @@ export function AssistantDialog({ sessionId, onClose, onLeaderChanged }: Props) 
       return;
     }
     setAgents(res.data.agents);
-    setLeaderId(res.data.leaderId);
     setError(null);
   }
 
@@ -86,14 +83,10 @@ export function AssistantDialog({ sessionId, onClose, onLeaderChanged }: Props) 
           <div className="hint">正在读取助手列表…</div>
         ) : (
           <>
-            <div className="hint">
-              {agents.length} 个成员 · 主答是「
-              {agents.find((agent) => agent.id === leaderId)?.name ?? '—'}」
-            </div>
+            <div className="hint">{agents.length} 个助手</div>
 
             <div className="field" style={{ display: 'grid', gap: 8 }}>
               {agents.map((agent) => {
-                const isLeader = agent.id === leaderId;
                 return (
                   <div
                     key={agent.id}
@@ -108,7 +101,6 @@ export function AssistantDialog({ sessionId, onClose, onLeaderChanged }: Props) 
                   >
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
                       <b>{agent.name}</b>
-                      {isLeader && <span className="badge">主答</span>}
                       {agent.heavy && <span className="badge">外部 CLI</span>}
                     </div>
                     <div className="hint">
@@ -120,31 +112,19 @@ export function AssistantDialog({ sessionId, onClose, onLeaderChanged }: Props) 
                         : agent.summary || agent.backend}
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {!isLeader && agent.available && (
-                        <button
-                          className="btn"
-                          onClick={() =>
-                            void run(() => api.setSessionLeader(sessionId, agent.id)).then(() =>
-                              onLeaderChanged?.(),
-                            )
-                          }
-                        >
-                          让它主答
-                        </button>
-                      )}
                       {agent.hasContext && (
                         <button className="btn" onClick={() => setConfirmReset(agent)}>
                           重置对话
                         </button>
                       )}
-                      {!isLeader && (
-                        <button
-                          className="btn"
-                          onClick={() => void run(() => api.removeSessionAgent(sessionId, agent.id))}
-                        >
-                          移出
-                        </button>
-                      )}
+                      {/* 主答移不掉（daemon 会 409）：它是这个会话的归属者，
+                          而 UI 没有「换主答」的入口 —— 那是刻意的，对用户不可感知。 */}
+                      <button
+                        className="btn"
+                        onClick={() => void run(() => api.removeSessionAgent(sessionId, agent.id))}
+                      >
+                        移出
+                      </button>
                     </div>
                   </div>
                 );

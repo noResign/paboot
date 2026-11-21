@@ -61,60 +61,6 @@ describe('model selection before the session exists', () => {
   });
 });
 
-describe('agent profile before the session exists', () => {
-  const newKey = 'host::new';
-
-  beforeEach(() => {
-    useChat.setState({
-      activeKey: newKey,
-      streamKeys: {},
-      byKey: {
-        [newKey]: {
-          ...emptyChat(newKey, 'host'),
-          runtime: 'builtin',
-          pendingNew: {
-            runtime: 'builtin',
-            workspaceId: 'w',
-            permissionMode: 'ask',
-            agentProfileId: 'ag_1',
-          },
-        },
-      },
-    });
-  });
-
-  it('sends the chosen agent with the first chat request', async () => {
-    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
-    await useChat.getState().send('hi');
-
-    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
-    expect(spec).toMatchObject({ kind: 'chat', sessionId: null, agentId: 'ag_1' });
-  });
-
-  it('does not send it for an existing session', async () => {
-    // An existing session takes its leader from membership on the daemon side,
-    // so the client must not keep echoing a creation-time choice.
-    useChat.setState({
-      activeKey: newKey,
-      streamKeys: {},
-      byKey: {
-        [newKey]: {
-          ...emptyChat(newKey, 'host'),
-          runtime: 'builtin',
-          sessionId: 's_created',
-          pendingNew: null,
-        },
-      },
-    });
-    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
-    await useChat.getState().send('again');
-
-    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
-    // `StreamSpec` is a union; only the chat variant can carry an agent.
-    expect(spec).not.toHaveProperty('agentId');
-  });
-});
-
 describe('permission mode before the session exists', () => {
   const newKey = 'host::new';
 

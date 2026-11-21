@@ -249,7 +249,7 @@ final class SessionsViewController: UIViewController {
 
     private func presentNewSession() {
         let sheet = NewSessionViewController()
-        sheet.onStart = { [weak self] workspace, agent, mode, agentProfileId in
+        sheet.onStart = { [weak self] workspace, agent, mode in
             guard let self else { return }
             self.dismiss(animated: true) {
                 WorkspaceSelection.shared.select(id: workspace.id, path: workspace.path)
@@ -257,8 +257,7 @@ final class SessionsViewController: UIViewController {
                     sessionId: nil,
                     workspaceId: workspace.id,
                     runtime: agent.id,
-                    permissionMode: mode,
-                    agentProfileId: agentProfileId
+                    permissionMode: mode
                 )
                 let chat = ChatViewController(viewModel: viewModel)
                 self.navigationController?.pushViewController(chat, animated: true)

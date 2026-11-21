@@ -5,8 +5,7 @@ import UIKit
 /// Sheet for starting a new conversation. The daemon creates the session on the first
 /// `/api/chat` request, so this only chooses workspace / runtime / permission mode.
 final class NewSessionViewController: UIViewController {
-    /// `agentProfileId` 是新会话的主答助手；nil = 用工作区默认。
-    var onStart: ((WorkspaceDto, AgentDto, String, String?) -> Void)?
+    var onStart: ((WorkspaceDto, AgentDto, String) -> Void)?
 
     private let workspaceButton = UIButton(type: .system)
     private let workspaceHintLabel = UILabel()
@@ -19,10 +18,6 @@ final class NewSessionViewController: UIViewController {
     private var agents: [AgentDto] = []
     private var selectedWorkspace: WorkspaceDto?
     private var selectedAgent: AgentDto?
-    /// 工作区里可用的助手（主答候选）。老 daemon 上为空，picker 不显示。
-    private var agentProfiles: [AgentProfileDto] = []
-    private var selectedProfileId: String?
-    private let profileButton = UIButton(type: .system)
     private var bypassAllowed = true
     private var permissionOptions = PermissionModeOptions.options(runtime: nil)
 
@@ -46,8 +41,6 @@ final class NewSessionViewController: UIViewController {
     private func configureViews() {
         stylePicker(workspaceButton, placeholder: "工作区")
         stylePicker(agentButton, placeholder: "选择 Agent")
-        stylePicker(profileButton, placeholder: "主答：工作区默认")
-        profileButton.showsMenuAsPrimaryAction = true
         // The workspace comes from the current selection; it is not switchable
         // from this sheet (s0_plan §4), so the button is a read-only display.
         workspaceButton.isUserInteractionEnabled = false
@@ -90,8 +83,6 @@ final class NewSessionViewController: UIViewController {
             workspaceHintLabel,
             fieldLabel("Agent"),
             agentButton,
-            fieldLabel("谁来主答"),
-            profileButton,
             fieldLabel("权限模式"),
             permissionControl,
             startButton,
@@ -101,7 +92,6 @@ final class NewSessionViewController: UIViewController {
         fields.spacing = Spacing.sm
         fields.setCustomSpacing(Spacing.md, after: workspaceButton)
         fields.setCustomSpacing(Spacing.md, after: agentButton)
-        fields.setCustomSpacing(Spacing.md, after: profileButton)
 
         let scrollView = UIScrollView()
         scrollView.alwaysBounceVertical = true
@@ -187,12 +177,6 @@ final class NewSessionViewController: UIViewController {
                     selectedAgent = agents.first(where: { $0.available })
                 }
 
-                // 助手列表是可选增强：老 daemon 上这个端点会 404，那时主答就用
-                // 工作区默认，piker 隐藏 —— 不影响新建会话本身。
-                if let workspaceId = selectedWorkspace?.id {
-                    agentProfiles = (try? await client.api.workspaceAgents(workspaceId: workspaceId).agents) ?? []
-                }
-
                 bypassAllowed = config.bypassAllowed
                 let requested = selectedWorkspace?.defaultPermissionMode ?? config.defaultPermissionMode
                 rebuildPermissionControl(
@@ -230,17 +214,6 @@ final class NewSessionViewController: UIViewController {
         }
         agentButton.menu = makeAgentMenu()
 
-        // 只在工作区里有助手时才显示这一项：老 daemon / 空工作区上，一个点了没反应的
-        // 选择器比不显示更糟。
-        profileButton.isHidden = agentProfiles.isEmpty
-        let chosen = agentProfiles.first { $0.id == selectedProfileId }
-        profileButton.setTitle(
-            chosen.map { "主答：\($0.name)" } ?? "主答：工作区默认",
-            for: .normal
-        )
-        profileButton.setTitleColor(Theme.Colors.textPrimary, for: .normal)
-        profileButton.menu = makeProfileMenu()
-
         startButton.isEnabled = selectedWorkspace != nil && selectedAgent != nil
         startButton.alpha = startButton.isEnabled ? 1 : 0.5
     }
@@ -268,28 +241,6 @@ final class NewSessionViewController: UIViewController {
                 ? [UIAction(title: "暂无可用 Agent", attributes: .disabled) { _ in }]
                 : actions
         )
-    }
-
-    private func makeProfileMenu() -> UIMenu {
-        let defaultAction = UIAction(
-            title: "工作区默认",
-            state: selectedProfileId == nil ? .on : .off
-        ) { [weak self] _ in
-            self?.selectedProfileId = nil
-            self?.updateButtons()
-        }
-        let actions = agentProfiles.map { profile in
-            UIAction(
-                title: profile.name,
-                // 不可用的仍列出来但置灰：直接不显示会让人以为它被删了。
-                attributes: profile.available ? [] : .disabled,
-                state: profile.id == selectedProfileId ? .on : .off
-            ) { [weak self] _ in
-                self?.selectedProfileId = profile.id
-                self?.updateButtons()
-            }
-        }
-        return UIMenu(title: "谁来主答", children: [defaultAction] + actions)
     }
 
     @objc private func permissionChanged() {
@@ -326,7 +277,7 @@ final class NewSessionViewController: UIViewController {
 
     private func start() {
         guard let workspace = selectedWorkspace, let agent = selectedAgent else { return }
-        onStart?(workspace, agent, currentPermissionMode, selectedProfileId)
+        onStart?(workspace, agent, currentPermissionMode)
     }
 }
 

@@ -51,11 +51,6 @@ export interface NewSessionOptions {
   runtime: string | null;
   workspaceId: string | null;
   permissionMode: string;
-  /**
-   * 新会话的主答助手（agent profile）。`null` = 用工作区默认。
-   * 与 `runtime` 区分：runtime 是「用哪个 CLI」，agent 是「房间里干活的哪个人」。
-   */
-  agentProfileId?: string | null;
 }
 
 interface ChatStore {
@@ -238,10 +233,6 @@ export const useChat = create<ChatStore>((set, get) => ({
       ...(attachmentIds.length ? { attachmentIds } : {}),
       runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
       workspaceId: chat.pendingNew?.workspaceId ?? undefined,
-      // Only a new session carries an agent: an existing one takes its leader
-      // from membership. Omitted entirely (not `undefined`) so the request body
-      // stays exactly what it was for callers that never pick an agent.
-      ...(chat.pendingNew?.agentProfileId ? { agentId: chat.pendingNew.agentProfileId } : {}),
       permissionMode: chat.pendingNew?.permissionMode,
       // The chat page exposes the model picker before the session exists; the
       // choice only has somewhere to live once the daemon creates it.

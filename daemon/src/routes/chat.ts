@@ -16,7 +16,7 @@ import {
   resolveNewSessionPermissionMode,
   resolveNewSessionRuntime,
 } from '../workspaces/workspace-defaults.js';
-import { addToSession, backendFor, getAgent, resolveSessionAgent, setLeader } from '../agents/index.js';
+import { resolveSessionAgent } from '../agents/index.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
 import {
   isValidModelParameters,
@@ -35,13 +35,6 @@ interface ChatBody {
   /** Image attachments previously uploaded through POST /api/attachments. */
   attachmentIds?: string[];
   runtime?: string;
-  /**
-   * Agent that answers a *new* session. Existing sessions resolve their agent
-   * from membership instead, so this is ignored (rather than rejected) when
-   * `sessionId` is present — a client retrying a send must not fail just because
-   * it echoes the agent it picked.
-   */
-  agentId?: string;
   /** Product permission mode: ask | acceptEdits | bypass. Only used for new sessions. */
   permissionMode?: string;
   /**
@@ -106,7 +99,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const body = (req.body ?? {}) as ChatBody;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const requestedRuntime = typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
-    const requestedAgentId = typeof body.agentId === 'string' && body.agentId ? body.agentId : undefined;
     const model = normalizeModel(body.model) ?? undefined;
     const attachmentIds = normalizeAttachmentIds(body.attachmentIds);
     if (attachmentIds === null) {
@@ -184,23 +176,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    // A new session may name the agent that should answer it. The agent owns the
-    // backend, so it has to be read before the driver is picked — before the
-    // session exists, too, since `sessions.runtime` is seeded from it.
-    const chosenAgent = !session && requestedAgentId ? getAgent(ctx.db, requestedAgentId) : null;
-    if (!session && requestedAgentId && !chosenAgent) {
-      res.status(400).json({ error: `unknown agent: ${requestedAgentId}`, code: 'unknown_agent' });
-      return;
-    }
-    if (chosenAgent && chosenAgent.workspaceId !== workspace.id) {
-      res.status(400).json({ error: 'the agent belongs to another workspace', code: 'cross_workspace' });
-      return;
-    }
-    if (chosenAgent && !chosenAgent.enabled) {
-      res.status(400).json({ error: `agent disabled: ${chosenAgent.id}`, code: 'agent_disabled' });
-      return;
-    }
-
     // Who answers, and on which backend, is decided before the driver is looked
     // up: the agent owns the runtime, and `sessions.runtime` is only a mirror of
     // its leader. Resolving first is what lets one session host agents on
@@ -211,9 +186,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'runtime does not match session', code: 'runtime_mismatch' });
       return;
     }
-    const runtime =
-      sessionBackend ??
-      (chosenAgent ? backendFor(chosenAgent) : resolveNewSessionRuntime(workspace, requestedRuntime));
+    // A new session's leader is the workspace's agent for the runtime the user
+    // picked here — the picker *is* the leader choice, so there is no second one.
+    const runtime = sessionBackend ?? resolveNewSessionRuntime(workspace, requestedRuntime);
 
     // The execution seam is the registered driver; argv (Claude) and RPC
     // (Codex) runtimes both provide one. The route never branches on the
@@ -328,14 +303,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
 
     for (const id of attachmentIds) {
       ctx.attachments.bind(id, { sessionId: session.id, workspaceId: workspace.id });
-    }
-
-    // Pin the chosen agent into the new session as its leader. Without this the
-    // session would fall back to the workspace default on the next message and
-    // silently forget who the user picked.
-    if (chosenAgent) {
-      addToSession(ctx.db, { id: session.id, workspaceId: workspace.id }, chosenAgent.id);
-      setLeader(ctx.db, session.id, chosenAgent.id);
     }
 
     // A brand-new session has no membership rows yet, so resolve again now that

@@ -35,12 +35,9 @@ final class ChatViewModel {
         /// 会话成员（助手）。空 + `agentsSupported == false` 表示老 daemon：
         /// UI 不显示任何 agent 入口，而不是显示一个空面板。
         var sessionAgents: [SessionAgentDto] = []
-        var leaderId: String?
         var agentsSupported = false
-        /// 工作区里可被拉进会话的助手（新建时选人 / 添加成员）。
+        /// 工作区里可被拉进会话的助手（添加成员时用）。
         var workspaceAgents: [AgentProfileDto] = []
-        /// 新建会话时选定的主答；nil = 工作区默认。
-        var pendingAgentId: String?
     }
 
     @Published private(set) var state = State()
@@ -79,7 +76,6 @@ final class ChatViewModel {
         runtime: String? = nil,
         permissionMode: String? = nil,
         title: String? = nil,
-        agentProfileId: String? = nil,
         repository: any ChatRepositoryProtocol = ChatRepository(),
         asrRepository: any AsrRepositoryProtocol = AsrRepository(),
         agentRepository: any AgentRepositoryProtocol = AgentRepository()
@@ -95,7 +91,6 @@ final class ChatViewModel {
         state.runtime = runtime ?? ""
         state.permissionMode = permissionMode ?? "ask"
         state.title = title ?? (sessionId == nil ? "新会话" : "会话")
-        state.pendingAgentId = agentProfileId
     }
 
     var modelLabel: String {
@@ -347,8 +342,6 @@ final class ChatViewModel {
             model: isNewSession ? state.model : nil,
             modelParameters: isNewSession && !state.modelParameters.isEmpty ? state.modelParameters : nil,
             runtime: isNewSession ? runtime : nil,
-            // 只有新会话才带 agentId：已有会话由成员关系决定主答，重发带上也不报错。
-            agentId: isNewSession ? state.pendingAgentId : nil,
             permissionMode: isNewSession ? state.permissionMode : nil,
             attachmentIds: uploaded.isEmpty ? nil : uploaded,
             commandId: UUID().uuidString
@@ -1079,12 +1072,10 @@ final class ChatViewModel {
                 let roster = try await agentRepository.sessionAgents(sessionId: id)
                 state.agentsSupported = true
                 state.sessionAgents = roster.agents
-                state.leaderId = roster.leaderId
             } catch let error as PabootError {
                 if case .http(let status, _) = error, status == 404 {
                     state.agentsSupported = false
                     state.sessionAgents = []
-                    state.leaderId = nil
                 } else {
                     state.error = error.localizedDescription
                 }
@@ -1107,10 +1098,6 @@ final class ChatViewModel {
         }
     }
 
-    func selectPendingAgent(_ agentId: String?) {
-        state.pendingAgentId = agentId
-    }
-
     func addSessionAgent(_ agentId: String) {
         guard let id = state.sessionId else { return }
         Task {
@@ -1129,22 +1116,6 @@ final class ChatViewModel {
             do {
                 try await agentRepository.removeFromSession(sessionId: id, agentId: agentId)
                 loadSessionAgents()
-            } catch {
-                state.error = error.localizedDescription
-            }
-        }
-    }
-
-    /// 把「主答」交给另一个成员；会话的 runtime 会跟着它变。
-    func setLeader(_ agentId: String) {
-        guard let id = state.sessionId else { return }
-        Task {
-            do {
-                try await agentRepository.setLeader(sessionId: id, agentId: agentId)
-                loadSessionAgents()
-                if let detail = try? await repository.sessionDetail(id: id) {
-                    state.runtime = detail.session.runtime
-                }
             } catch {
                 state.error = error.localizedDescription
             }

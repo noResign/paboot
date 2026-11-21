@@ -526,19 +526,6 @@ public final class PabootAPI {
         )
     }
 
-    /// 把「主答」交给另一个成员；会话的 runtime 会跟着它变。
-    public func setSessionLeader(sessionId: String, agentId: String) async throws {
-        _ = try await http.send(
-            try makeRequest(
-                method: "PATCH",
-                path: "api/sessions/\(sessionId)/leader",
-                query: [],
-                body: try JSONSerialization.data(withJSONObject: ["agentId": agentId]),
-                authenticated: true
-            )
-        )
-    }
-
     /// 重置某个 agent 在本会话的对话。
     ///
     /// 只清 paboot 侧的 thread 绑定；runtime 自己存的记忆清不掉 —— 文案要说清。

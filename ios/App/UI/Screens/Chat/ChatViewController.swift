@@ -820,9 +820,8 @@ final class ChatViewController: UIViewController {
         // 菜单项比不显示更糟。
         var assistantSection: [UIMenu] = []
         if state.agentsSupported, state.sessionId != nil {
-            let leaderName = state.sessionAgents.first { $0.id == state.leaderId }?.name ?? "—"
             let assistantsAction = UIAction(
-                title: "助手：\(state.sessionAgents.count) 个成员 · 主答「\(leaderName)」"
+                title: "助手：\(state.sessionAgents.count) 个"
             ) { [weak self] _ in
                 self?.presentAssistants()
             }

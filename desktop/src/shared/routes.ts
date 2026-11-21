@@ -21,7 +21,6 @@ export const ROUTES = {
     `/api/sessions/${encodeURIComponent(id)}/agents/${encodeURIComponent(agentId)}`,
   sessionAgentReset: (id: string, agentId: string) =>
     `/api/sessions/${encodeURIComponent(id)}/agents/${encodeURIComponent(agentId)}/reset-context`,
-  sessionLeader: (id: string) => `/api/sessions/${encodeURIComponent(id)}/leader`,
   workspaces: '/api/workspaces',
   workspace: (id: string) => `/api/workspaces/${encodeURIComponent(id)}`,
   workspaceDirs: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/dirs`,

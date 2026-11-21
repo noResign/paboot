@@ -147,9 +147,6 @@ interface PabootApi {
         @Path("agentId") agentId: String,
     ): OkResponse
 
-    @PATCH("api/sessions/{id}/leader")
-    suspend fun setSessionLeader(@Path("id") id: String, @Body body: JsonObject): OkResponse
-
     @POST("api/sessions/{id}/agents/{agentId}/reset-context")
     suspend fun resetAgentContext(
         @Path("id") id: String,

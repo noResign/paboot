@@ -120,8 +120,6 @@ export interface ChatSessionState {
     runtime: string | null;
     workspaceId: string | null;
     permissionMode: string;
-    /** 主答助手；null = 工作区默认。 */
-    agentProfileId?: string | null;
   } | null;
 }
 

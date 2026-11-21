@@ -94,15 +94,6 @@ class AgentRepository(
         }
     }
 
-    suspend fun setLeader(sessionId: String, agentId: String): NetworkResult<Unit> {
-        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        val body = JsonObject(mapOf("agentId" to JsonPrimitive(agentId)))
-        return when (val r = safeApiCall { api.setSessionLeader(sessionId, body) }) {
-            is NetworkResult.Success -> NetworkResult.Success(Unit)
-            is NetworkResult.Error -> r
-        }
-    }
-
     /**
      * 重置某个 agent 在本会话的对话。
      *

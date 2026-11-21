@@ -51,7 +51,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.noresign.paboot.audio.PcmWavRecorder
-import com.noresign.paboot.ui.chat.AgentPickerDialog
 import com.noresign.paboot.ui.chat.AssistantSheet
 import com.noresign.paboot.ui.chat.ChatImagePrep
 import com.noresign.paboot.ui.identity.permissionModeLabel
@@ -127,15 +126,10 @@ fun ChatScreen(
     val permissionSubmitting by viewModel.permissionSubmitting.collectAsState()
     val permissionInputError by viewModel.permissionInputError.collectAsState()
     val sessionAgents by viewModel.sessionAgents.collectAsState()
-    val leaderId by viewModel.leaderId.collectAsState()
     val agentsSupported by viewModel.agentsSupported.collectAsState()
     val workspaceAgents by viewModel.workspaceAgents.collectAsState()
     val agentError by viewModel.agentError.collectAsState()
     var showAssistants by remember { mutableStateOf(false) }
-    var showAgentPicker by remember { mutableStateOf(false) }
-    val pendingAgentId by viewModel.pendingAgentId.collectAsState()
-    // 新会话才选主答：已有会话的主答由成员关系决定，改它要进「助手」面板换 leader。
-    val canPickAgent = currentSessionId == null
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val sessionPermissionMode by viewModel.sessionPermissionMode.collectAsState()
@@ -337,32 +331,14 @@ fun ChatScreen(
                 title = {
                     Column {
                         Text(title ?: "新会话", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        // 副标题：新会话时是「谁来主答」，可点换人；已有会话显示主答的名字，
-                        // 换人要进助手面板 —— 同一个决定不给两个入口。
-                        val chosenAgent = workspaceAgents.firstOrNull { it.id == pendingAgentId }
-                        val subtitle = when {
-                            canPickAgent && agentsSupported ->
-                                "主答：${chosenAgent?.name ?: "工作区默认"} ›"
-                            !canPickAgent && agentsSupported && sessionAgents.size > 1 ->
-                                "主答：${sessionAgents.firstOrNull { it.id == leaderId }?.name ?: runtime ?: ""}"
-                            else -> runtime
-                        }
-                        subtitle?.let { text ->
+                        // 顶栏只留 runtime：谁是主答对用户不可感知，不需要一个标签。
+                        runtime?.let { runtimeName ->
                             Text(
-                                text = text,
+                                text = runtimeName,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (canPickAgent && agentsSupported) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = if (canPickAgent && agentsSupported) {
-                                    Modifier.clickable { showAgentPicker = true }
-                                } else {
-                                    Modifier
-                                },
                             )
                         }
                     }
@@ -387,10 +363,7 @@ fun ChatScreen(
                             if (agentsSupported && currentSessionId != null) {
                                 DropdownMenuItem(
                                     text = {
-                                        Text(
-                                            "助手：${sessionAgents.size} 个成员" +
-                                                " · 主答「${sessionAgents.firstOrNull { it.id == leaderId }?.name ?: "—"}」",
-                                        )
+                                        Text("助手：${sessionAgents.size} 个")
                                     },
                                     onClick = {
                                         showSessionMenu = false
@@ -596,26 +569,16 @@ fun ChatScreen(
         }
     }
 
+    // 会话里已有助手时，提前把工作区候选拉好：面板打开时才不会空一下。
     LaunchedEffect(currentSessionId, agentsSupported) {
-        if (currentSessionId == null) viewModel.refreshWorkspaceAgents()
-    }
-
-    if (showAgentPicker) {
-        AgentPickerDialog(
-            agents = workspaceAgents,
-            selectedId = pendingAgentId,
-            onSelect = viewModel::selectPendingAgent,
-            onDismiss = { showAgentPicker = false },
-        )
+        if (currentSessionId != null && agentsSupported) viewModel.refreshWorkspaceAgents()
     }
 
     if (showAssistants && currentSessionId != null) {
         AssistantSheet(
             agents = sessionAgents,
-            leaderId = leaderId,
             workspaceAgents = workspaceAgents,
             onDismiss = { showAssistants = false },
-            onSetLeader = viewModel::setLeader,
             onResetContext = viewModel::resetAgentContext,
             onAddAgent = viewModel::addSessionAgent,
             onRemoveAgent = viewModel::removeSessionAgent,

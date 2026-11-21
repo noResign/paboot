@@ -297,12 +297,6 @@ export interface ChatStreamSpec {
   attachmentIds?: string[];
   runtime?: string;
   workspaceId?: string;
-  /**
-   * Creation-time agent profile ("who answers this room"). Only meaningful on a
-   * new session: an existing session resolves its leader from membership, so the
-   * daemon ignores this rather than rejecting a retry that echoes it.
-   */
-  agentId?: string;
   permissionMode?: string;
   /**
    * Creation-time model selection. Only meaningful on a new session (`sessionId
