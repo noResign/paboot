@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { api, connectionApi } from '../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
-import { applyFrame, buildAssistantFromEvents, finalizeLast, newAssistant } from './chat/applyEvent';
+import {
+  applyFrame,
+  buildAssistantFromEvents,
+  finalizeAssistant,
+  finalizeLast,
+  newAssistant,
+} from './chat/applyEvent';
 import { dismissPermission, enqueuePermission, setInputError, setSubmitting } from './chat/permissions';
 import { emptyChat, emptyPermissions } from './chat/types';
 import type { PendingAnswer, PendingPermission } from './chat/types';
@@ -349,8 +355,28 @@ export const useChat = create<ChatStore>((set, get) => ({
 
   async ensureRoomStream(): Promise<boolean> {
     const key = get().activeKey;
-    const chat = key ? get().byKey[key] : undefined;
+    let chat = key ? get().byKey[key] : undefined;
     if (!key || !chat?.sessionId) return false;
+
+    // The leader's answer only streams live when we know who the leader is.
+    // Learn it before opening the stream (or before sending a turn), instead of
+    // depending on the roster's timing; a previous failed refresh may have left
+    // it null, which made the leader sit in the pending area until it finished.
+    if (!chat.leaderAgentId) {
+      const sessionId = chat.sessionId;
+      const roster = await api.sessionAgents(sessionId);
+      if (roster?.ok) {
+        set((state) => ({
+          byKey: patch(state, key, (current) =>
+            current.sessionId === sessionId
+              ? withLeaderAgent(current, roster.data.leaderId ?? null)
+              : current,
+          ),
+        }));
+      }
+      chat = get().byKey[key];
+      if (!chat?.sessionId) return false;
+    }
     if (chat.roomStreamId) return true;
 
     // The room stream already carries every run's frames. A per-run stream left
@@ -398,21 +424,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     const key = get().activeKey;
     if (!key) return;
     set((state) => ({
-      byKey: patch(state, key, (current) => {
-        if (current.leaderAgentId === agentId) return current;
-        if (!agentId) return { ...current, leaderAgentId: null };
-        // A leader run may have started before the roster arrived. Promote what
-        // is already pending so its remaining frames stream in the transcript.
-        const live = current.pendingAnswers.filter((answer) => answer.agentId === agentId);
-        if (live.length === 0) return { ...current, leaderAgentId: agentId };
-        const liveIds = new Set(live.map((answer) => answer.runId));
-        return {
-          ...current,
-          leaderAgentId: agentId,
-          messages: [...current.messages, ...live.map((answer) => answer.message)],
-          pendingAnswers: current.pendingAnswers.filter((answer) => !liveIds.has(answer.runId)),
-        };
-      }),
+      byKey: patch(state, key, (current) => withLeaderAgent(current, agentId)),
     }));
   },
 
@@ -434,7 +446,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         return {
           ...current,
           roomStreamId: null,
-          messages: flushed.length > 0 ? [...current.messages, ...flushed] : current.messages,
+          messages: finalizeAll([...current.messages, ...flushed]),
           pendingAnswers: [],
         };
       }),
@@ -738,7 +750,9 @@ export const useChat = create<ChatStore>((set, get) => ({
             return {
               ...current,
               roomStreamId: null,
-              messages: flushed.length > 0 ? [...current.messages, ...flushed] : current.messages,
+              // Anything still running will never get a terminal frame now;
+              // leaving it unfinished keeps a spinner on screen forever.
+              messages: finalizeAll([...current.messages, ...flushed]),
               pendingAnswers: [],
               ...(event.outcome === 'giveup'
                 ? { error: friendlyMessage(event.apiCode, event.httpCode, event.message ?? '房间流已断开') }
@@ -861,6 +875,38 @@ function findPending(chat: ChatSessionState, permissionId: string): PendingPermi
 
 function phaseOf(phase: string): ChatPhaseValue {
   return phase === 'live' ? 'live' : phase === 'reconnecting' ? 'reconnecting' : 'connecting';
+}
+
+/**
+ * Close every assistant card still marked running.
+ *
+ * Used when the room stream ends: no further terminal frame can arrive, so an
+ * unfinished card would spin forever. `finalizeLast` is not enough — several
+ * runs can be live at once.
+ */
+function finalizeAll(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) =>
+    message.kind === 'assistant' ? finalizeAssistant(message) : message,
+  );
+}
+
+/**
+ * Apply the roster's leader id, promoting any leader run that already started
+ * while the roster was unknown. Shared by the roster fetch and the stream open,
+ * so the two cannot diverge.
+ */
+function withLeaderAgent(chat: ChatSessionState, agentId: string | null): ChatSessionState {
+  if (chat.leaderAgentId === agentId) return chat;
+  if (!agentId) return { ...chat, leaderAgentId: null };
+  const live = chat.pendingAnswers.filter((answer) => answer.agentId === agentId);
+  if (live.length === 0) return { ...chat, leaderAgentId: agentId };
+  const liveIds = new Set(live.map((answer) => answer.runId));
+  return {
+    ...chat,
+    leaderAgentId: agentId,
+    messages: [...chat.messages, ...live.map((answer) => answer.message)],
+    pendingAnswers: chat.pendingAnswers.filter((answer) => !liveIds.has(answer.runId)),
+  };
 }
 type ChatPhaseValue = ChatSessionState['phase'];
 

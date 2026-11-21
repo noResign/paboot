@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../ipc/client', () => ({
-  api: { session: vi.fn(), updateSessionModel: vi.fn(), sendTurn: vi.fn() },
+  api: { session: vi.fn(), updateSessionModel: vi.fn(), sendTurn: vi.fn(), sessionAgents: vi.fn() },
   connectionApi: { streamStart: vi.fn() },
 }));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
@@ -452,5 +452,123 @@ describe('leader streaming', () => {
     expect(chat.pendingAnswers).toHaveLength(0);
     expect(chat.messages).toHaveLength(1);
     expect(chat.messages[0]).toMatchObject({ kind: 'assistant', runId: 'r1' });
+  });
+});
+
+describe('room stream teardown', () => {
+  const roomKey = 'host::teardown';
+  beforeEach(() => {
+    vi.mocked(connectionApi.streamStart).mockReset();
+    useChat.setState({
+      activeKey: roomKey,
+      streamKeys: { room: roomKey },
+      failedIds: [],
+      byKey: {
+        [roomKey]: {
+          ...emptyChat(roomKey, 'host'),
+          sessionId: 's-teardown',
+          leaderAgentId: 'a1',
+          roomStreamId: 'room',
+          messages: [
+            { kind: 'user', id: 'u1', text: 'hi' },
+            {
+              kind: 'assistant',
+              id: 'a1msg',
+              blocks: [{ kind: 'text', text: '主答中' }],
+              usage: null,
+              error: null,
+              done: false,
+              runId: 'r1',
+              agentId: 'a1',
+            },
+          ],
+          pendingAnswers: [
+            {
+              runId: 'r2',
+              agentId: 'a2',
+              message: {
+                kind: 'assistant',
+                id: 'a2msg',
+                blocks: [{ kind: 'text', text: '补充中' }],
+                usage: null,
+                error: null,
+                done: false,
+                runId: 'r2',
+                agentId: 'a2',
+              },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('finalizes the leader card and flushes pending when the room stream dies', () => {
+    useChat.getState().applyStreamEvent({
+      streamId: 'room',
+      kind: 'done',
+      outcome: 'giveup',
+      httpCode: 401,
+      apiCode: 'unauthorized',
+      message: 'nope',
+    } as never);
+
+    const chat = useChat.getState().byKey[roomKey]!;
+    expect(chat.roomStreamId).toBeNull();
+    expect(chat.pendingAnswers).toHaveLength(0);
+    expect(chat.messages.filter((message) => message.kind === 'assistant').every((message) =>
+      message.kind === 'assistant' ? message.done : true,
+    )).toBe(true);
+  });
+});
+
+describe('leader discovery', () => {
+  const roomKey = 'host::discover';
+  beforeEach(() => {
+    vi.mocked(connectionApi.streamStart).mockReset();
+    vi.mocked(api.sessionAgents).mockReset();
+    useChat.setState({
+      activeKey: roomKey,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [roomKey]: {
+          ...emptyChat(roomKey, 'host'),
+          sessionId: 's-discover',
+          pendingAnswers: [
+            {
+              runId: 'r1',
+              agentId: 'a1',
+              message: {
+                kind: 'assistant',
+                id: 'm1',
+                blocks: [{ kind: 'text', text: '主答' }],
+                usage: null,
+                error: null,
+                done: false,
+                runId: 'r1',
+                agentId: 'a1',
+              },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('learns the leader before opening the stream and promotes its pending card', async () => {
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+
+    await expect(useChat.getState().ensureRoomStream()).resolves.toBe(true);
+
+    const chat = useChat.getState().byKey[roomKey]!;
+    expect(chat.leaderAgentId).toBe('a1');
+    expect(chat.pendingAnswers).toHaveLength(0);
+    expect(chat.messages.filter((message) => message.kind === 'assistant')).toHaveLength(1);
   });
 });
