@@ -99,6 +99,8 @@ export interface ChatSessionState {
   /** Which daemon this chat belongs to — half of the state key. */
   connectionId: string;
   sessionId: string | null;
+  /** The workspace the session belongs to; `@` candidates come from here. */
+  workspaceId: string | null;
   title: string | null;
   /** Server-side recency, used to notice runs finished while disconnected. */
   lastActiveAt: number | null;
@@ -147,6 +149,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     key,
     connectionId,
     sessionId: null,
+    workspaceId: null,
     title: null,
     lastActiveAt: null,
     cwd: null,

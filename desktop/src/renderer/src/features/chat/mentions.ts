@@ -14,6 +14,8 @@ export interface MentionAgent {
   /** Disabled/offline members are listed but cannot be picked. */
   available?: boolean;
   heavy?: boolean;
+  /** False for a workspace agent that is not in this room yet. */
+  member?: boolean;
 }
 
 const WORD_CHAR = /[\p{L}\p{N}_]/u;

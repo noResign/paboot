@@ -164,6 +164,7 @@ export const useChat = create<ChatStore>((set, get) => ({
       byKey: patch(state, key, (chat) => ({
         ...chat,
         title: session.title,
+        workspaceId: session.workspaceId ?? null,
         lastActiveAt: session.lastActiveAt,
         cwd: session.cwd,
         runtime: session.runtime,
@@ -207,6 +208,7 @@ export const useChat = create<ChatStore>((set, get) => ({
           ...emptyChat(key, connectionId),
           runtime: options.runtime,
           permissionMode: options.permissionMode,
+          workspaceId: options.workspaceId,
           pendingNew: options,
         },
       },
@@ -1196,6 +1198,7 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
     byKey: patch(state, key, (chat) => ({
       ...chat,
       title: session.title,
+      workspaceId: session.workspaceId ?? null,
       lastActiveAt: session.lastActiveAt,
       cwd: session.cwd,
       runtime: session.runtime,

@@ -26,6 +26,7 @@ import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
 import type {
+  AgentProfileDto,
   ModelOptionDto,
   ProductPermissionMode,
   SessionAgentDto,
@@ -73,6 +74,8 @@ export function ChatView({
   const [agentsSupported, setAgentsSupported] = useState(false);
   /** 名册用来把消息上的 agentId 翻成显示名；只有一个成员时不标注。 */
   const [sessionAgents, setSessionAgents] = useState<SessionAgentDto[]>([]);
+  /** 工作区里的 agent：@ 的候选池；点名一个非成员会把会话升级成群聊。 */
+  const [workspaceAgents, setWorkspaceAgents] = useState<AgentProfileDto[]>([]);
   // Rollback is destructive: two-step confirm, and a second step when it would
   // also discard later runs.
   const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
@@ -83,6 +86,8 @@ export function ChatView({
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
   /** A room (not a plain chat): the roster is the switch, not a session kind. */
   const isGroup = sessionAgents.length > 1;
+  /** Once a room stream exists, every send must go through `/turns`. */
+  const roomMode = isGroup || Boolean(chat?.roomStreamId);
 
   // Probe once per session: the assistant endpoints only exist on a daemon that
   // knows about agents. A 404 hides the entry rather than offering a menu item
@@ -111,7 +116,22 @@ export function ChatView({
     void api.sessionAgents(sessionId).then((res) => {
       setSessionAgents(res.ok ? res.data.agents : []);
     });
+    refreshMentionAgents();
   }
+
+  /** `@` candidates are workspace-level, not room members. */
+  const mentionWorkspaceId = chat?.workspaceId ?? workspaceId;
+
+  async function refreshMentionAgents(): Promise<void> {
+    if (!mentionWorkspaceId) return;
+    const res = await api.workspaceAgents(mentionWorkspaceId);
+    if (res.ok) setWorkspaceAgents(res.data.agents);
+  }
+
+  useEffect(() => {
+    void refreshMentionAgents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mentionWorkspaceId]);
 
   // A room's answers arrive on one multiplexed stream instead of a per-run one.
   // Opening it is idempotent; adding the second member is what starts it.
@@ -509,27 +529,27 @@ export function ChatView({
           void setSessionSelection(chat.model, next);
         }}
         onSend={(text, attachmentIds, mentionIds) => {
-          // A room sends a turn (202 + room stream). Anything else keeps the
-          // single-run `/api/chat` path, including a new session's first message.
-          if (isGroup && chat.sessionId && !attachmentIds?.length) {
-            void sendTurn(text, mentionIds ?? []);
+          // `@` is workspace-level: mentioning someone outside the room makes
+          // this send a turn, and the daemon admits them before routing. A room
+          // (or a send that already opened its stream) always takes this path.
+          const mentions = mentionIds ?? [];
+          if (chat.sessionId && !attachmentIds?.length && (roomMode || mentions.length > 0)) {
+            void sendTurn(text, mentions).then(() => refreshAgents());
             return;
           }
+          // A new session's first message, or a single-agent send with images.
           void send(text, attachmentIds);
         }}
         onStop={stop}
-        mentionAgents={
-          isGroup
-            ? sessionAgents.map((agent) => ({
-                id: agent.id,
-                name: agent.name,
-                summary: agent.summary,
-                available: agent.available,
-                heavy: agent.heavy,
-              }))
-            : undefined
-        }
-        attachmentsEnabled={!isGroup}
+        mentionAgents={workspaceAgents.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          summary: agent.summary,
+          available: agent.available,
+          heavy: agent.heavy,
+          member: sessionAgents.some((member) => member.id === agent.id),
+        }))}
+        attachmentsEnabled={!roomMode}
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />

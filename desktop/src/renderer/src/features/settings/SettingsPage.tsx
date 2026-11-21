@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
+import { AgentSection } from './AgentSection';
 import { PreferencesSection } from './PreferencesSection';
 import { ProviderSection } from './ProviderSection';
 import { SKINS } from '../../ui/skins';
@@ -34,6 +35,7 @@ export type SettingsSection =
   | 'connection'
   | 'daemon'
   | 'workspaces'
+  | 'agents'
   | 'providers'
   | 'preferences'
   | 'notifications'
@@ -44,6 +46,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'connection', label: '连接' },
   { id: 'daemon', label: '本机 daemon' },
   { id: 'workspaces', label: '工作区' },
+  { id: 'agents', label: '助手' },
   { id: 'providers', label: '模型 Provider' },
   { id: 'preferences', label: '默认偏好' },
   { id: 'notifications', label: '通知' },
@@ -462,6 +465,7 @@ export function SettingsPage({
             )}
 
             {section === 'workspaces' && <WorkspaceSection />}
+            {section === 'agents' && <AgentSection />}
 
             {section === 'providers' && <ProviderSection />}
             {section === 'preferences' && <PreferencesSection />}

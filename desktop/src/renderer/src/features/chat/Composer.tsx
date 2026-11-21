@@ -70,6 +70,9 @@ export function Composer({
     null,
   );
   const mentionList = mention ? mentionOptions(mentionAgents ?? [], mention.query) : [];
+  /** Mentions derived from the draft; also drives the image limitation below. */
+  const mentionedIds = mentionedAgentIds(text, mentionAgents ?? []);
+  const hasMentions = mentionedIds.length > 0;
   const [images, setImages] = useState<DraftImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -177,8 +180,13 @@ export function Composer({
     const value = text.trim();
     if (disabled || uploading) return;
     if (!value && images.length === 0) return;
+    // A turn carries the mention ids; it has no attachment channel yet. Say so
+    // instead of dropping the images on the way to the room.
+    if (hasMentions && images.length > 0) {
+      setAttachError('带 @ 提及的消息暂不支持图片，请先移除图片');
+      return;
+    }
     const ids = images.map((image) => image.id);
-    const mentionIds = mentionedAgentIds(value, mentionAgents ?? []);
     for (const image of images) URL.revokeObjectURL(image.previewUrl);
     setText('');
     setMention(null);
@@ -187,7 +195,7 @@ export function Composer({
     onSend(
       value,
       ids.length > 0 ? ids : undefined,
-      mentionIds.length > 0 ? mentionIds : undefined,
+      hasMentions ? mentionedIds : undefined,
     );
   }
 
@@ -261,7 +269,11 @@ export function Composer({
               >
                 <span className="composer-mention-name">{agent.name}</span>
                 <span className="composer-mention-summary">
-                  {agent.available === false ? '当前不可用' : agent.summary || ''}
+                  {agent.available === false
+                    ? '当前不可用'
+                    : agent.member === false
+                      ? `未加入 · ${agent.summary || ''}`
+                      : agent.summary || ''}
                 </span>
               </button>
             ))}
@@ -318,15 +330,18 @@ export function Composer({
             type="button"
             className="icon-btn composer-attach"
             title={
-              !attachmentsEnabled
-                ? '群聊暂不支持图片附件'
-                : imagesSupported
-                  ? '添加图片（也可以直接粘贴或拖入）'
-                  : '当前模型不支持图片输入'
+              hasMentions
+                ? '带 @ 提及的消息暂不支持图片'
+                : !attachmentsEnabled
+                  ? '群聊暂不支持图片附件'
+                  : imagesSupported
+                    ? '添加图片（也可以直接粘贴或拖入）'
+                    : '当前模型不支持图片输入'
             }
             disabled={
               disabled ||
               uploading ||
+              hasMentions ||
               !attachmentsEnabled ||
               !imagesSupported ||
               images.length >= MAX_IMAGES
@@ -374,11 +389,13 @@ export function Composer({
               ? '正在上传图片…'
               : busy
                 ? `${comboLabel('stop-run', IS_MAC)} 停止运行`
-                : !attachmentsEnabled
-                  ? '群聊：输入 @ 指定谁来回答'
-                  : imagesSupported
-                    ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
-                    : '当前模型不支持图片输入'}
+                : hasMentions
+                  ? '将点名助手回答（暂不支持图片）'
+                  : !attachmentsEnabled
+                    ? '群聊：输入 @ 指定谁来回答'
+                    : imagesSupported
+                      ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
+                      : '当前模型不支持图片输入'}
           </span>
           {busy ? (
             <button
