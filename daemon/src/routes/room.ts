@@ -193,7 +193,10 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       created = createTurn(ctx.db, { session, workspace, prompt, mentionIds, commandId });
     } catch (err) {
       if (err instanceof AgentValidationError) {
-        res.status(400).json({ error: err.message, code: err.code });
+        res.status(err.code === 'command_id_conflict' ? 409 : 400).json({
+          error: err.message,
+          code: err.code,
+        });
         return;
       }
       throw err;

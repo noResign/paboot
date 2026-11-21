@@ -144,14 +144,40 @@ export function parseMentionNames(text: string, members: readonly Agent[]): stri
 }
 
 /**
- * Members addressed in `text`, in the order the text mentions them.
+ * Agents a leader summoned in its final answer.
  *
- * Same whole-word / longest-name rules as `parseMentionNames`, but returns the
- * agents and preserves textual order so "the first three" means what the
- * reader thinks it means. Used for leader summons, where order decides who
- * fits under the cap.
+ * Only a line that *starts* with `@name` (after optional whitespace) counts.
+ * Code fences, inline code and blockquotes are removed first, because a leader
+ * explaining "I could write @someone here" must not actually start that agent —
+ * that exact false positive happened once and ran a full task.
+ *
+ * Within a qualifying line the same whole-word / longest-name rules as
+ * `parseMentionNames` apply, and the order is textual so the first three are
+ * the ones the reader sees first.
  */
-export function findMentionedAgents(text: string, members: readonly Agent[]): Agent[] {
+export function findSummonMentions(text: string, members: readonly Agent[]): Agent[] {
+  const stripped = text
+    .replace(/```[\s\S]*?(?:```|$)/g, '')
+    .replace(/`[^`\n]*`/g, '')
+    .split('\n')
+    .filter((line) => !/^\s*>/.test(line))
+    .join('\n');
+
+  const seen = new Set<string>();
+  const out: Agent[] = [];
+  for (const line of stripped.split('\n')) {
+    if (!line.trimStart().startsWith('@')) continue;
+    for (const agent of mentionsInText(line, members)) {
+      if (seen.has(agent.id)) continue;
+      seen.add(agent.id);
+      out.push(agent);
+    }
+  }
+  return out;
+}
+
+/** Whole-word `@name` hits inside one line, in textual order. */
+function mentionsInText(text: string, members: readonly Agent[]): Agent[] {
   const hits: { agent: Agent; at: number; end: number }[] = [];
   const consumed = new Set<number>();
   const byLength = [...members].sort((a, b) => b.name.length - a.name.length);

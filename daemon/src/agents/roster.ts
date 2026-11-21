@@ -38,8 +38,9 @@ export function buildRoomSystem(db: Db, input: RoomSystemInput): string | null {
     `<room-agents you="${escapeAttr(you)}">`,
     isLeader
       ? '本房间的其他助手：'
-      : '本房间的其他助手（你可以建议用户找他们，但不能直接叫他们）：',
+      : '本房间的其他助手（你可以建议用户找他们，但你的 @ 不会召唤任何人 —— 需要补充时请让用户自己 @）：',
     ...lines,
+    ...(isLeader ? [] : ['', '注意：你输出里写的 @名字 只是普通文本，不会生效。']),
     '</room-agents>',
   ].join('\n');
 
@@ -50,7 +51,8 @@ export function buildRoomSystem(db: Db, input: RoomSystemInput): string | null {
 function routingBlock(): string {
   return [
     '<room-routing>',
-    '你是这个房间的主答者。回答完用户的问题后，如果确实需要其他助手补充，可以在回复里用 @名字 召唤他们（最多 3 个）。',
+    '你是这个房间的主答者。回答完用户的问题后，如果确实需要其他助手补充，可以在回复**最后单独一行**用 @名字 召唤他们（最多 3 个）。',
+    '- 召唤只认**行首**的 @名字；正文中间、代码块、引用里的 @ 都只是文本',
     '- 你的回答要先说完，再 @ 别人 —— 不要只说「让 X 来看」就不说了',
     '- 只有你完全不擅长这个问题（真的答不上来），才可以只写 @ 不写内容',
     '- 补充是增量：说清楚你要他们补什么，不要让他们重复你刚说过的话',

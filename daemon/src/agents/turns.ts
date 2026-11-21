@@ -53,8 +53,17 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
   // turn, not a second question. The lookup and the insert are synchronous, so
   // there is no window for two requests to both miss.
   if (input.commandId) {
-    const existing = db.getTurnByCommandId(input.session.id, input.commandId);
+    const existing = db.getTurnByCommandId(input.commandId);
     if (existing) {
+      if (existing.session_id !== input.session.id) {
+        // Same key, different room: refuse before writing anything, or the
+        // insert below would violate the unique index after the user message
+        // has already been committed.
+        throw new AgentValidationError(
+          'command_id_conflict',
+          'this commandId was already used by another session',
+        );
+      }
       const tasks = db.listTasksByTurn(existing.id);
       return {
         turn: existing,

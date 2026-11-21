@@ -46,7 +46,7 @@ export {
 } from './resolve.js';
 
 export {
-  findMentionedAgents,
+  findSummonMentions,
   mentionsAll,
   parseMentionNames,
   routeMentions,

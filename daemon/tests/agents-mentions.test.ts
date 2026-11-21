@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mentionsAll, parseMentionNames, routeMentions } from '../src/agents/mentions';
+import { findSummonMentions, mentionsAll, parseMentionNames, routeMentions } from '../src/agents/mentions';
 import type { Agent } from '../src/agents/types';
 
 /**
@@ -131,5 +131,25 @@ describe('mentionsAll', () => {
     expect(mentionsAll('@all 看一下')).toBe(true);
     expect(mentionsAll('@全体成员 看一下')).toBe(true);
     expect(mentionsAll('@alice 看一下')).toBe(false);
+  });
+});
+
+describe('findSummonMentions', () => {
+  it('only counts a mention that starts a line', () => {
+    expect(findSummonMentions('我建议 @审阅 看一下', members)).toEqual([]);
+    expect(findSummonMentions('结论如下。\n@审阅 看一下这段', members).map((a) => a.name)).toEqual([
+      '审阅',
+    ]);
+  });
+
+  it('ignores code, inline code and quotes', () => {
+    expect(findSummonMentions('```\n@审阅 看\n```', members)).toEqual([]);
+    expect(findSummonMentions('先写 `@审阅` 这样', members)).toEqual([]);
+    expect(findSummonMentions('> @审阅 看', members)).toEqual([]);
+  });
+
+  it('preserves order across lines and dedupes', () => {
+    const text = '@实现 写文档\n@审阅 看代码\n@审阅 再看一眼';
+    expect(findSummonMentions(text, members).map((a) => a.name)).toEqual(['实现', '审阅']);
   });
 });

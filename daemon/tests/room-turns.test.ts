@@ -276,6 +276,21 @@ describe('POST /api/sessions/:id/turns', () => {
   });
 });
 
+describe('summon parsing', () => {
+  it('ignores an @ that only appears in prose', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    h.replies.set('claude', '我建议以后可以用 @审阅 来复核这类改动。');
+
+    await turns(h, sessionId, { prompt: '随便说说' });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const tasks = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks.some((task) => task.source === 'summon')).toBe(false);
+  });
+});
+
 describe('turn idempotency', () => {
   it('re-attaches a retried commandId instead of asking twice', async () => {
     const h = await startApi();
@@ -297,6 +312,27 @@ describe('turn idempotency', () => {
     // The retry must not start the same tasks a second time.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.starts.length).toBe(startsAfterFirst);
+  });
+
+  it('refuses a commandId that another session already used, before writing', async () => {
+    const h = await startApi();
+    const first = seedRoom(h, []);
+    const other = h.db.createSession({
+      id: 's2',
+      runtime: 'claude',
+      workspaceId: h.workspaceId,
+      permissionMode: 'ask',
+      cwd: h.workspacePath,
+    });
+
+    expect((await turns(h, first, { prompt: 'a', commandId: 'shared' })).status).toBe(202);
+    const second = await turns(h, other.id, { prompt: 'b', commandId: 'shared' });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { code: string }).code).toBe('command_id_conflict');
+
+    // Nothing was written for the refused session: no orphan question, no turn.
+    expect(h.db.listTurns(other.id, null, 10)).toHaveLength(0);
+    expect(h.db.listMessages(other.id)).toHaveLength(0);
   });
 });
 
@@ -466,7 +502,7 @@ describe('leader summon', () => {
     const sessionId = seedRoom(h, ['审阅']);
     const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
     const leader = getLeader(h.db, sessionId)!;
-    h.replies.set('claude', '我怀疑是连接池太小。@审阅 补充一下');
+    h.replies.set('claude', '我怀疑是连接池太小。\n@审阅 补充一下');
 
     await turns(h, sessionId, { prompt: '并发有问题吗' });
     await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');

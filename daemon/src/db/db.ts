@@ -2124,11 +2124,17 @@ export class Db {
       | undefined;
   }
 
-  /** A retry of the same send: the turn it already created, if any. */
-  getTurnByCommandId(sessionId: string, commandId: string): TurnRow | undefined {
+  /**
+   * A retry of the same send: the turn it already created, if any.
+   *
+   * Global, not per session: `command_id` has one unique index, so a lookup
+   * scoped to the session would let another session's key reach INSERT and
+   * fail the constraint after the user message was already written.
+   */
+  getTurnByCommandId(commandId: string): TurnRow | undefined {
     return this.db
-      .prepare(`SELECT * FROM session_turns WHERE session_id = ? AND command_id = ? LIMIT 1`)
-      .get(sessionId, commandId) as unknown as TurnRow | undefined;
+      .prepare(`SELECT * FROM session_turns WHERE command_id = ? LIMIT 1`)
+      .get(commandId) as unknown as TurnRow | undefined;
   }
 
   listTurns(sessionId: string, before: string | null, limit: number): TurnRow[] {

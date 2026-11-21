@@ -5,7 +5,7 @@ import {
   buildRoomProjection,
   buildRoomSystem,
   ensureThread,
-  findMentionedAgents,
+  findSummonMentions,
   getAgent,
   getLeader,
   listSessionAgents,
@@ -241,7 +241,7 @@ function summonSupplements(
       (member) =>
         member.id !== input.agent.id && !already.has(member.id) && canRunAgent(ctx, member),
     );
-  const chosen = findMentionedAgents(text, members).slice(0, MAX_SUMMONS);
+  const chosen = findSummonMentions(text, members).slice(0, MAX_SUMMONS);
   if (chosen.length === 0) return;
 
   // Created after the leader's answer is committed, so the supplement's
