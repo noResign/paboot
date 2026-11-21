@@ -123,6 +123,8 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let permissionMode: String?
     /// 产生这次 run 的 agent；老 daemon 没有这个字段。
     public let agentId: String?
+    /// 群聊任务所属的 turn；同一 turn 的多个 run 共享一条用户消息。
+    public let turnId: String?
     public let output: String?
 
     public init(from decoder: Decoder) throws {
@@ -144,13 +146,14 @@ public struct RunDto: Decodable, Equatable, Sendable {
         trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
         permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
         agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+        turnId = try container.decodeIfPresent(String.self, forKey: .turnId)
         output = try container.decodeIfPresent(String.self, forKey: .output)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, runtime, model, modelParameters, status, prompt, attachmentIds
         case startedAt, endedAt, exitCode, error, checkpoint
-        case taskId, trigger, permissionMode, agentId, output
+        case taskId, trigger, permissionMode, agentId, turnId, output
     }
 }
 

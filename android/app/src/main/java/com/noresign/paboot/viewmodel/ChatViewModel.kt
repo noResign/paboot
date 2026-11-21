@@ -432,8 +432,13 @@ class ChatViewModel(
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         var latestTodos = emptyList<TodoItem>()
+        // 群聊：同一个 turn 的多个 run 共用一条用户消息，只有第一个 run 负责画它。
+        val seenTurns = mutableSetOf<String>()
         for (run in runs) {
-            list += ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds)
+            val turnId = run.turnId
+            if (turnId == null || seenTurns.add(turnId)) {
+                list += ChatUiMessage.User(run.prompt, run.startedAt, run.attachmentIds)
+            }
             // 群聊的发言人归属挂在 run 上：重建历史时把它带到气泡上，
             // 名字由会话成员表在渲染层解析。
             val speaker = run.agentId

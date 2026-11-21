@@ -288,6 +288,13 @@ export interface RunDto {
   permissionMode?: string | null;
   /** The agent that produced this run; omitted by pre-agent daemons. */
   agentId?: string | null;
+  /**
+   * The turn this run belongs to, when it was a room task.
+   *
+   * Several runs share one turn (one per answering agent); clients use this to
+   * draw the user's question once instead of once per answer.
+   */
+  turnId?: string | null;
   /** Command tasks: aggregated stdout/stderr (tail-capped) for the detail view. */
   output?: string | null;
   /** Present when the run's repo could be snapshotted; lets clients diff/roll back. */

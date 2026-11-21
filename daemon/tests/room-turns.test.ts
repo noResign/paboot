@@ -322,6 +322,14 @@ describe('a turn is a batch, not a barrier', () => {
       expect(answer.committed_seq).not.toBeNull();
       expect(answer.task_id).not.toBeNull();
     }
+
+    // Clients draw the user question once per turn, so every task run must
+    // carry the turn id it belongs to.
+    const turnId = h.db.listTurns(sessionId, null, 1)[0]!.id;
+    for (const task of tasks) {
+      expect(task.run_id).toBeTruthy();
+      expect(h.db.getRun(task.run_id!)!.turn_id).toBe(turnId);
+    }
   });
 
   it('stores each run event once, not once per stream', async () => {

@@ -981,16 +981,24 @@ async function rebuildHistory(
   const messages: ChatMessage[] = [];
   let contextUsage: ContextUsage | null = null;
   let todos: TodoItem[] = [];
+  // Room tasks: one user question, several runs (one per answering agent).
+  // Draw the question on the first run of each turn only.
+  const seenTurns = new Set<string>();
 
   runs.forEach((run, index) => {
-    messages.push({
-      kind: 'user',
-      id: nextId('u'),
-      text: run.prompt,
-      runId: run.id,
-      at: run.startedAt,
-      ...(run.attachmentIds?.length ? { attachmentIds: run.attachmentIds } : {}),
-    });
+    const turnId = run.turnId ?? null;
+    const questionDrawn = turnId !== null && seenTurns.has(turnId);
+    if (turnId !== null) seenTurns.add(turnId);
+    if (!questionDrawn) {
+      messages.push({
+        kind: 'user',
+        id: nextId('u'),
+        text: run.prompt,
+        runId: run.id,
+        at: run.startedAt,
+        ...(run.attachmentIds?.length ? { attachmentIds: run.attachmentIds } : {}),
+      });
+    }
     const response = fetched[index];
     if (!response) {
       // Still running: attach() will fill and continue this one.

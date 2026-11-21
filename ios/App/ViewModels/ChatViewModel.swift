@@ -156,17 +156,22 @@ final class ChatViewModel {
             var todos: [TodoItem] = []
             var context: ContextUsage?
             var runningRunId: String?
+            // Room tasks: every run of one turn shares the same user question.
+            var seenTurns = Set<String>()
 
             for run in detail.runs {
-                messages.append(
-                    ChatUiMessage(
-                        id: "u-\(run.id)",
-                        role: .user,
-                        text: run.prompt,
-                        sentAt: run.startedAt,
-                        attachmentIds: run.attachmentIds
+                let alreadyDrawn = run.turnId.map { !seenTurns.insert($0).inserted } ?? false
+                if !alreadyDrawn {
+                    messages.append(
+                        ChatUiMessage(
+                            id: "u-\(run.id)",
+                            role: .user,
+                            text: run.prompt,
+                            sentAt: run.startedAt,
+                            attachmentIds: run.attachmentIds
+                        )
                     )
-                )
+                }
 
                 if run.id == session.runningRunId {
                     messages.append(
