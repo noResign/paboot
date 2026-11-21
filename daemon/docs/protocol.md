@@ -260,8 +260,9 @@ daemon 侧更换（`PATCH /api/sessions/:id/leader`），客户端不暴露这�
   - `GET|PATCH|DELETE /api/agent-profiles/:id`
   - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
     `PATCH /api/sessions/:id/leader`、`POST /api/sessions/:id/agents/:agentId/reset-context`
-  - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[]}`）→ 202
+  - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], commandId?}`）→ 202
     `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
+    同一个 `commandId` 重试会**重连到已建好的 turn** 并跳过启动任务，不会变成第二个提问。
   - `GET /api/sessions/:id/stream?after=<roomSeq>`：一个会话一条流，承载所有 agent 的帧
     （会话级通知也在内）。帧额外带 `roomSeq` / `taskId` / `agentId`；SSE 的 `id:` 是
     `roomSeq`，省略 `after` 只收直播，给了则回放并分页（500 行/页）直到追平。

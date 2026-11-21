@@ -305,11 +305,12 @@ export const api = {
   deleteAgentProfile: (id: string) =>
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.agentProfiles(id) }),
   /** 发一次输入：202 + 任务列表，答案是走房间流的。 */
-  sendTurn: (sessionId: string, prompt: string, mentions: string[]) =>
+  sendTurn: (sessionId: string, prompt: string, mentions: string[], commandId: string) =>
     request<{ turnId: string; tasks: { id: string; agentId: string }[] }>({
       method: 'POST',
       path: ROUTES.sessionTurns(sessionId),
-      body: { prompt, mentions },
+      // A retry carrying the same commandId re-attaches to the same turn.
+      body: { prompt, mentions, commandId },
     }),
   sessionAgents: (sessionId: string) =>
     request<SessionAgentsResponse>({ method: 'GET', path: ROUTES.sessionAgents(sessionId) }),

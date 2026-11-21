@@ -276,6 +276,30 @@ describe('POST /api/sessions/:id/turns', () => {
   });
 });
 
+describe('turn idempotency', () => {
+  it('re-attaches a retried commandId instead of asking twice', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+
+    const first = await turns(h, sessionId, { prompt: '一次', commandId: 'cmd-1' });
+    expect(first.status).toBe(202);
+    const firstBody = (await first.json()) as { turnId: string };
+    // The runner is fire-and-forget; let the first attempt actually start.
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+    const startsAfterFirst = h.starts.length;
+
+    const second = await turns(h, sessionId, { prompt: '一次', commandId: 'cmd-1' });
+    expect(second.status).toBe(202);
+    expect(((await second.json()) as { turnId: string }).turnId).toBe(firstBody.turnId);
+
+    expect(h.db.listTurns(sessionId, null, 10)).toHaveLength(1);
+    expect(h.db.listMessages(sessionId).filter((row) => row.role === 'user')).toHaveLength(1);
+    // The retry must not start the same tasks a second time.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(h.starts.length).toBe(startsAfterFirst);
+  });
+});
+
 describe('a turn is a batch, not a barrier', () => {
   it('gives every task the same snapshot so siblings cannot see each other', async () => {
     const h = await startApi();

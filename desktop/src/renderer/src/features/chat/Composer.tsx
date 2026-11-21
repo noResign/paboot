@@ -306,6 +306,9 @@ export function Composer({
             void addFiles(files);
           }}
           onKeyDown={(event) => {
+            // Enter that confirms an IME candidate (Chinese/Japanese input) is
+            // not a send; without this, composing a word can submit the draft.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (mention && mentionList.length > 0) {
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();

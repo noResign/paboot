@@ -176,7 +176,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    const body = (req.body ?? {}) as { prompt?: unknown; mentions?: unknown };
+    const body = (req.body ?? {}) as { prompt?: unknown; mentions?: unknown; commandId?: unknown };
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (!prompt) {
       res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
@@ -185,10 +185,12 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
     const mentionIds = Array.isArray(body.mentions)
       ? body.mentions.filter((id): id is string => typeof id === 'string')
       : [];
+    const commandId =
+      typeof body.commandId === 'string' && body.commandId ? body.commandId : null;
 
     let created;
     try {
-      created = createTurn(ctx.db, { session, workspace, prompt, mentionIds });
+      created = createTurn(ctx.db, { session, workspace, prompt, mentionIds, commandId });
     } catch (err) {
       if (err instanceof AgentValidationError) {
         res.status(400).json({ error: err.message, code: err.code });
@@ -209,6 +211,10 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
         status: task.status,
       })),
     });
+
+    // A retry re-attaches to the turn it already created; starting its tasks a
+    // second time would run the same agent twice.
+    if (created.replayed) return;
 
     // Fire and forget: the response is the acknowledgement, not the answer. A
     // failure here is per-task and reported on the room stream.

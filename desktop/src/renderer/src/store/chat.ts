@@ -314,7 +314,9 @@ export const useChat = create<ChatStore>((set, get) => ({
         })),
       }));
 
-      const res = await api.sendTurn(chat.sessionId, prompt, mentionIds);
+      // Stable id: a retry (lost response, double submit) re-attaches instead of
+      // creating a second question.
+      const res = await api.sendTurn(chat.sessionId, prompt, mentionIds, crypto.randomUUID());
       if (res.ok) {
         // Stamp the turn onto the question: session hints for any run of this
         // turn then see it as already rendered instead of appending a copy.

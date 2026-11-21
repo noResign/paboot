@@ -26,6 +26,8 @@ export interface CreateTurnInput {
   mentionIds: readonly string[];
   /** Per-turn input-token ceiling; 0 = unlimited. */
   tokenLimit?: number;
+  /** Idempotency key: a retry with the same key returns the existing turn. */
+  commandId?: string | null;
 }
 
 export interface CreatedTurn {
@@ -35,6 +37,8 @@ export interface CreatedTurn {
   addressed: { agentId: string; name: string; source: string }[];
   /** Addressed agents that could not be used, with the reason. */
   dropped: { id: string; reason: string }[];
+  /** True when this is a retry of an already-created turn; do not start it again. */
+  replayed?: boolean;
 }
 
 /**
@@ -45,6 +49,27 @@ export interface CreatedTurn {
  * pretending the message was accepted.
  */
 export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
+  // A resend (dropped response, double Enter, two devices) must be the same
+  // turn, not a second question. The lookup and the insert are synchronous, so
+  // there is no window for two requests to both miss.
+  if (input.commandId) {
+    const existing = db.getTurnByCommandId(input.session.id, input.commandId);
+    if (existing) {
+      const tasks = db.listTasksByTurn(existing.id);
+      return {
+        turn: existing,
+        tasks,
+        addressed: tasks.map((task) => ({
+          agentId: task.agent_id,
+          name: getAgent(db, task.agent_id)?.name ?? task.agent_id,
+          source: task.source,
+        })),
+        dropped: [],
+        replayed: true,
+      };
+    }
+  }
+
   const leader = getLeader(db, input.session.id);
   if (!leader) {
     throw new AgentValidationError('no_leader', 'this session has no agent to answer it');
@@ -148,6 +173,7 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     prompt: input.prompt,
     tokenLimit: input.tokenLimit ?? 0,
     now,
+    commandId: input.commandId ?? null,
   });
 
   const tasks: AgentTaskRow[] = [];

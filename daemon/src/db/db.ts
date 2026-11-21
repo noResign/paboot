@@ -83,6 +83,8 @@ export interface TurnRow {
   token_limit: number;
   created_at: number;
   ended_at: number | null;
+  /** Client-supplied idempotency key; a retry with the same key reuses the turn. */
+  command_id?: string | null;
 }
 
 export interface AgentTaskRow {
@@ -845,6 +847,12 @@ export class Db {
     );
     this.db.exec(
       `CREATE INDEX IF NOT EXISTS idx_messages_committed ON messages (session_id, committed_seq);`,
+    );
+    // A turn retry (dropped response, double Enter, flaky link) must not become
+    // a second question. NULL is allowed for turns sent by older clients.
+    this.ensureColumn('session_turns', 'command_id', 'TEXT');
+    this.db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_session_turns_command ON session_turns (command_id);`,
     );
 
     this.ensureColumn('workspaces', 'is_builtin', 'INTEGER NOT NULL DEFAULT 0');
@@ -2092,19 +2100,35 @@ export class Db {
     prompt: string;
     tokenLimit: number;
     now: number;
+    commandId?: string | null;
   }): void {
     this.db
       .prepare(
-        `INSERT INTO session_turns (id, session_id, prompt, status, input_tokens, token_limit, created_at)
-         VALUES (?, ?, ?, 'running', 0, ?, ?)`,
+        `INSERT INTO session_turns
+           (id, session_id, prompt, status, input_tokens, token_limit, created_at, command_id)
+         VALUES (?, ?, ?, 'running', 0, ?, ?, ?)`,
       )
-      .run(input.id, input.sessionId, input.prompt, input.tokenLimit, input.now);
+      .run(
+        input.id,
+        input.sessionId,
+        input.prompt,
+        input.tokenLimit,
+        input.now,
+        input.commandId ?? null,
+      );
   }
 
   getTurn(id: string): TurnRow | undefined {
     return this.db.prepare(`SELECT * FROM session_turns WHERE id = ?`).get(id) as unknown as
       | TurnRow
       | undefined;
+  }
+
+  /** A retry of the same send: the turn it already created, if any. */
+  getTurnByCommandId(sessionId: string, commandId: string): TurnRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM session_turns WHERE session_id = ? AND command_id = ? LIMIT 1`)
+      .get(sessionId, commandId) as unknown as TurnRow | undefined;
   }
 
   listTurns(sessionId: string, before: string | null, limit: number): TurnRow[] {
