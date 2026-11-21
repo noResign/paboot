@@ -20,6 +20,8 @@ describe('composer mentions', () => {
     expect(mentionTokenAt('@', 1)).toEqual({ start: 0, query: '' });
     expect(mentionTokenAt('@审 阅', 5)).toBeNull();
     expect(mentionTokenAt('foo@bar', 7)).toBeNull();
+    // Chinese prose has no space before `@`; the picker must still open.
+    expect(mentionTokenAt('你好@审', 4)).toEqual({ start: 2, query: '审' });
   });
 
   it('filters by name or summary and lists available members first', () => {

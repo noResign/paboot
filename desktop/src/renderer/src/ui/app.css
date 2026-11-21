@@ -5834,6 +5834,12 @@ a.btn {
   color: var(--text-primary);
   font: inherit;
 }
+.field input[type='checkbox'] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .end-impact-modal {
   width: min(460px, 92vw);
   padding: 14px 16px;

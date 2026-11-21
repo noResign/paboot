@@ -59,8 +59,10 @@ export function mentionTokenAt(
   if (at < 0) return null;
   const query = before.slice(at + 1);
   if (query.length > 40 || /\s/.test(query)) return null;
-  // `foo@bar` is an email, not a mention; require start-of-text or whitespace.
-  if (at > 0 && !/\s/.test(before[at - 1]!)) return null;
+  // `foo@bar` is an email, not a mention. Only ASCII word characters and dots
+  // count as an email local part — Chinese prose is usually typed without a
+  // space before `@`, and blocking that made the picker feel broken.
+  if (at > 0 && /[A-Za-z0-9_.]/.test(before[at - 1]!)) return null;
   return { start: at, query };
 }
 

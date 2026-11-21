@@ -204,7 +204,11 @@ export function ChatView({
     }
     if (current.sessionId) {
       if (agentsSupported) {
-        items.push({ id: 'assistants', label: '助手…', run: () => setShowAssistants(true) });
+        items.push({
+          id: 'assistants',
+          label: '助手 / 群聊…',
+          run: () => setShowAssistants(true),
+        });
       }
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
       const memoryMode = current.memoryMode ?? 'normal';
@@ -533,6 +537,7 @@ export function ChatView({
       {showAssistants && chat.sessionId && (
         <AssistantDialog
           sessionId={chat.sessionId}
+          onChanged={refreshAgents}
           onClose={() => {
             setShowAssistants(false);
             refreshAgents();

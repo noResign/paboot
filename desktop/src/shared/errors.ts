@@ -73,6 +73,19 @@ export function friendlyMessage(
       return 'daemon 内部错误，请查看 daemon 日志';
     case 'session_busy':
       return '该会话正在运行，请稍后再发';
+    // agents: the room's invariants, said in product language
+    case 'writable_agent_exists':
+      return '这个会话已经有可写助手了；新助手只能以只读身份加入';
+    case 'leader_required':
+      return '他是这个会话的主答者，不能移出';
+    case 'name_taken':
+      return '已经有同名助手了，换一个名字';
+    case 'invalid_name':
+      return '助手名字不能为空';
+    case 'no_available_agent':
+      return '没有可用的助手能回答这条消息';
+    case 'agent_disabled':
+      return '该助手已停用，先启用再试';
 
     // permissions
     case 'bad_response':
