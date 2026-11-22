@@ -216,19 +216,6 @@ export function addToSession(db: Db, session: { id: string; workspaceId: string 
   });
 }
 
-/** Hand the leader role to an existing member. */
-export function setLeader(db: Db, sessionId: string, agentId: string): void {
-  const members = db.listSessionAgents(sessionId);
-  const target = members.find((row) => row.agent_id === agentId);
-  if (!target) throw new AgentValidationError('not_a_member', 'the agent is not in this session');
-  const current = members.find((row) => row.role === 'leader');
-  if (current?.agent_id === agentId) return;
-  if (current) {
-    db.upsertSessionAgent({ ...current, role: 'member' });
-  }
-  db.upsertSessionAgent({ ...target, role: 'leader' });
-}
-
 /**
  * The thread an agent runs in for a session, created on first use.
  *

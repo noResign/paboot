@@ -8,6 +8,7 @@ import type { AppContext } from '../src/app/context';
 import {
   AgentValidationError,
   addToSession,
+  backendFor,
   createAgent,
   ensureThread,
   getLeader,
@@ -15,12 +16,13 @@ import {
   removeAgent,
   resolveSessionAgent,
   sessionRoster,
-  setLeader,
   updateAgent,
+  type Agent,
 } from '../src/agents/index';
-import { Db } from '../src/db/db';
+import { Db, type SessionRow } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerChatRoutes } from '../src/routes/chat';
+import { startSessionRun } from '../src/runs/run-service';
 import { RunNotifier } from '../src/runs/run-notifier';
 import { SessionNotifier } from '../src/runs/session-notifier';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
@@ -58,6 +60,7 @@ afterEach(async () => {
 
 interface Harness {
   db: Db;
+  ctx: AppContext;
   starts: RuntimeDriverRequest[];
   workspaceId: string;
   workspacePath: string;
@@ -123,6 +126,7 @@ async function startApi(): Promise<Harness> {
   await new Promise<void>((resolve) => server.once('listening', resolve));
   return {
     db,
+    ctx,
     starts,
     workspaceId: workspace.id,
     workspacePath,
@@ -140,6 +144,42 @@ async function chat(base: string, body: Record<string, unknown>): Promise<Respon
 
 function workspaceOf(db: Db, id: string) {
   return db.getWorkspace(id)!;
+}
+
+/**
+ * Run one agent the way a turn task does, without the HTTP surface.
+ *
+ * A session's leader is fixed when it is created, so a non-leader agent can only
+ * speak through a room turn. This calls the same `startSessionRun` seam that
+ * path uses, which is what keeps the per-agent behaviour under test.
+ */
+async function runAgent(
+  h: Harness,
+  session: SessionRow,
+  agent: Agent,
+  prompt: string,
+  options: { permissionMode?: 'ask' | 'acceptEdits' | 'bypass'; model?: string | null } = {},
+): Promise<void> {
+  const workspace = workspaceOf(h.db, h.workspaceId);
+  const thread = ensureThread(h.db, session, agent, workspace);
+  const driver = h.ctx.registry.driver(backendFor(agent));
+  if (!driver) throw new Error(`no driver for ${agent.id}`);
+  const current = h.db.getSession(session.id) ?? session;
+  const handle = startSessionRun(h.ctx, {
+    session: current,
+    workspace,
+    prompt,
+    driver,
+    permissionMode:
+      options.permissionMode ?? (current.permission_mode as 'ask' | 'acceptEdits' | 'bypass'),
+    model: options.model ?? null,
+    modelParameters: null,
+    trigger: 'user',
+    sink: { frame() {} },
+    agent,
+    thread,
+  });
+  await handle.done;
 }
 
 describe('agent definitions', () => {
@@ -224,11 +264,10 @@ describe('agent definitions', () => {
     expect(listThreads(db, session.id)[0]!.cwd).toBe(path.join(workspacePath, 'docs'));
   });
 
-  it('rejects a leader removal until the room is handed over', () => {
+  it('rejects removing the fixed leader but lets a member leave', () => {
     const db = new Db(':memory:');
     const workspacePath = fs.realpathSync(tempDir('agent-remove-'));
     const workspace = db.createWorkspace({ name: 'w', path: workspacePath });
-    const leader = createAgent(db, workspace, { workspaceId: workspace.id, name: 'lead', kind: 'builtin' });
     const member = createAgent(db, workspace, { workspaceId: workspace.id, name: 'mate', kind: 'builtin' });
     const session = db.createSession({
       id: 's1',
@@ -237,22 +276,17 @@ describe('agent definitions', () => {
       permissionMode: 'ask',
       cwd: workspacePath,
     });
-    addToSession(db, { id: session.id, workspaceId: workspace.id }, leader.id);
     addToSession(db, { id: session.id, workspaceId: workspace.id }, member.id);
-    // A session starts out owned by the workspace's implicit agent; handing it
-    // over is what makes `leader` the one that cannot be removed.
-    setLeader(db, session.id, leader.id);
+    // The session was created with this runtime, so its implicit agent owns it.
+    const leader = getLeader(db, session.id)!;
 
-    expect(getLeader(db, session.id)?.id).toBe(leader.id);
+    expect(leader.isImplicit).toBe(true);
     expect(() => removeAgent(db, leader.id)).toThrowError(/leader/);
 
-    setLeader(db, session.id, member.id);
-    expect(getLeader(db, session.id)?.id).toBe(member.id);
-    removeAgent(db, leader.id);
+    removeAgent(db, member.id);
     const roster = sessionRoster(db, session.id).map((row) => row.agent.id);
-    expect(roster).toContain(member.id);
-    expect(roster).not.toContain(leader.id);
-    expect(getLeader(db, session.id)?.id).toBe(member.id);
+    expect(roster).not.toContain(member.id);
+    expect(getLeader(db, session.id)?.id).toBe(leader.id);
   });
 
   it('requires wiring that matches the kind', () => {
@@ -289,11 +323,9 @@ describe('one session, several agents, separate conversations', () => {
     const session = h.db.listSessions()[0]!;
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, reader.id);
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, writer.id);
-    setLeader(h.db, session.id, reader.id);
 
-    await (await chat(h.base, { prompt: 'ask the reader', sessionId: session.id })).text();
-    setLeader(h.db, session.id, writer.id);
-    await (await chat(h.base, { prompt: 'ask the writer', sessionId: session.id })).text();
+    await runAgent(h, session, reader, 'ask the reader');
+    await runAgent(h, session, writer, 'ask the writer');
 
     const threads = listThreads(h.db, session.id);
     const readerThread = threads.find((thread) => thread.agentId === reader.id)!;
@@ -327,20 +359,18 @@ describe('one session, several agents, separate conversations', () => {
     const session = h.db.listSessions()[0]!;
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, first.id);
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, second.id);
-    setLeader(h.db, session.id, first.id);
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
-    const firstNative = h.starts.at(-1)!.resumeNativeSessionId;
-    expect(firstNative).toBeUndefined(); // first run for this thread
 
-    setLeader(h.db, session.id, second.id);
-    await (await chat(h.base, { prompt: 'c', sessionId: session.id })).text();
-    // The switch asks a thread that has never spoken: it must not resume the
-    // other agent's conversation.
+    await runAgent(h, session, first, 'b');
+    expect(h.starts.at(-1)!.resumeNativeSessionId).toBeUndefined(); // first run for this thread
+
+    await runAgent(h, session, second, 'c');
+    // The other thread has never spoken: it must not resume the first agent's
+    // conversation.
     expect(h.starts.at(-1)!.resumeNativeSessionId).toBeUndefined();
 
     const writerBefore = listThreads(h.db, session.id).find((thread) => thread.agentId === second.id)!;
     expect(writerBefore.nativeSessionId).not.toBeNull();
-    await (await chat(h.base, { prompt: 'd', sessionId: session.id })).text();
+    await runAgent(h, session, second, 'd');
     expect(h.starts.at(-1)!.resumeNativeSessionId).toBe(writerBefore.nativeSessionId);
   });
 
@@ -367,12 +397,10 @@ describe('one session, several agents, separate conversations', () => {
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, reader.id);
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, writer.id);
 
-    setLeader(h.db, session.id, reader.id);
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
+    await runAgent(h, session, reader, 'b');
     expect(h.starts.at(-1)!.cwd).toBe(path.join(h.workspacePath, 'docs'));
 
-    setLeader(h.db, session.id, writer.id);
-    await (await chat(h.base, { prompt: 'c', sessionId: session.id })).text();
+    await runAgent(h, session, writer, 'c');
     expect(h.starts.at(-1)!.cwd).toBe(h.workspacePath);
   });
 
@@ -390,32 +418,24 @@ describe('one session, several agents, separate conversations', () => {
     await (await chat(h.base, { prompt: 'a', model: 'session-model' })).text();
     const session = h.db.listSessions()[0]!;
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
-    setLeader(h.db, session.id, agent.id);
 
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
-    // A request-level model still wins; absent one, the agent decides.
+    await runAgent(h, session, agent, 'b');
+    // No request-level model here, so the agent's own choice beats the session's.
     expect(h.starts.at(-1)!.model).toBe('claude-sonnet-test');
   });
 
   it('keeps the legacy session columns pointing at the leader', async () => {
     const h = await startApi();
-    const workspace = workspaceOf(h.db, h.workspaceId);
-    const agent = createAgent(h.db, workspace, {
-      workspaceId: h.workspaceId,
-      name: 'legacy',
-      kind: 'runtime',
-      runtime: 'codex',
-    });
-    await (await chat(h.base, { prompt: 'a', runtime: 'claude' })).text();
+    await (await chat(h.base, { prompt: 'a', runtime: 'codex' })).text();
     const session = h.db.listSessions()[0]!;
-    addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
-    setLeader(h.db, session.id, agent.id);
+    const leader = getLeader(h.db, session.id)!;
 
     await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
     const after = h.db.getSession(session.id)!;
     // Old clients read these two columns; they must describe the leader.
     expect(after.runtime).toBe('codex');
-    expect(after.native_session_id).toBe(listThreads(h.db, session.id)[0]!.nativeSessionId);
+    const leaderThread = listThreads(h.db, session.id).find((thread) => thread.agentId === leader.id)!;
+    expect(after.native_session_id).toBe(leaderThread.nativeSessionId);
   });
 });
 
@@ -467,21 +487,20 @@ describe('agent permission ceiling', () => {
     await (await chat(h.base, { prompt: 'a' })).text();
     const session = h.db.listSessions()[0]!;
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
-    setLeader(h.db, session.id, agent.id);
-    return session;
+    return { session, agent };
   }
 
   it('tightens a looser request down to the agent ceiling', async () => {
     const h = await startApi();
-    const session = await seed(h, 'ask');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'bypass' })).text();
+    const { session, agent } = await seed(h, 'ask');
+    await runAgent(h, session, agent, 'b', { permissionMode: 'bypass' });
     expect(h.starts.at(-1)!.permissionMode).toBe('ask');
   });
 
   it('does not loosen a stricter request up to the agent ceiling', async () => {
     const h = await startApi();
-    const session = await seed(h, 'bypass');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id, permissionMode: 'ask' })).text();
+    const { session, agent } = await seed(h, 'bypass');
+    await runAgent(h, session, agent, 'b', { permissionMode: 'ask' });
     expect(h.starts.at(-1)!.permissionMode).toBe('ask');
   });
 
@@ -535,7 +554,6 @@ describe('builtin transcripts are keyed by agent', () => {
     const b = createAgent(db, workspace, { workspaceId: workspace.id, name: 'B', kind: 'builtin' });
     addToSession(db, { id: session.id, workspaceId: workspace.id }, a.id);
     addToSession(db, { id: session.id, workspaceId: workspace.id }, b.id);
-    setLeader(db, session.id, a.id);
 
     const threadA = ensureThread(db, session, a, workspace);
     const threadB = ensureThread(db, session, b, workspace);
@@ -606,29 +624,28 @@ describe('read-only agents', () => {
       permissionCeiling: 'bypass',
     });
     addToSession(h.db, { id: session.id, workspaceId: h.workspaceId }, agent.id);
-    setLeader(h.db, session.id, agent.id);
     h.db.setSessionPermissionMode(session.id, mode);
-    return session;
+    return { session, agent };
   }
 
   it('passes readOnly to the driver', async () => {
     const h = await startApi();
-    const session = await seed(h, 'claude', 'ask');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
+    const { session, agent } = await seed(h, 'claude', 'ask');
+    await runAgent(h, session, agent, 'b');
     expect(h.starts.at(-1)!.readOnly).toBe(true);
   });
 
   it('clamps a backend without a read-only primitive to approval', async () => {
     const h = await startApi();
-    const session = await seed(h, 'claude', 'acceptEdits');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
+    const { session, agent } = await seed(h, 'claude', 'acceptEdits');
+    await runAgent(h, session, agent, 'b');
     expect(h.starts.at(-1)!.permissionMode).toBe('ask');
   });
 
   it('leaves Codex on its own mode because its sandbox enforces it', async () => {
     const h = await startApi();
-    const session = await seed(h, 'codex', 'acceptEdits');
-    await (await chat(h.base, { prompt: 'b', sessionId: session.id })).text();
+    const { session, agent } = await seed(h, 'codex', 'acceptEdits');
+    await runAgent(h, session, agent, 'b');
     expect(h.starts.at(-1)!.permissionMode).toBe('acceptEdits');
     expect(h.starts.at(-1)!.readOnly).toBe(true);
   });

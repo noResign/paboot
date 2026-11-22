@@ -11,9 +11,7 @@ import {
   listThreads,
   MAX_SUMMARY_CHARS,
   removeAgent,
-  resolveSessionAgent,
   sessionRoster,
-  setLeader,
   updateAgent,
 } from '../agents/index.js';
 import type { Agent, AgentAvailability } from '../agents/index.js';
@@ -306,34 +304,18 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
+    // The leader is fixed when the session is created (choosing the runtime is
+    // choosing its agent). There is deliberately no "hand over" API, so the
+    // original agent cannot be removed from its own session — start a new one.
     if (ctx.db.getSessionLeader(session.id)?.agent_id === req.params.agentId) {
       res.status(409).json({
-        error: 'this agent is the room leader; hand the room over first',
+        error: 'this agent is the room leader and cannot be removed; start a new session instead',
         code: 'leader_required',
       });
       return;
     }
     ctx.db.deleteSessionAgent(session.id, req.params.agentId!);
     res.status(204).end();
-  });
-
-  app.patch('/api/sessions/:id/leader', (req, res) => {
-    const session = ctx.db.getSession(req.params.id!);
-    if (!session) {
-      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
-      return;
-    }
-    const body = (req.body ?? {}) as { agentId?: unknown };
-    const agentId = typeof body.agentId === 'string' ? body.agentId : '';
-    try {
-      setLeader(ctx.db, session.id, agentId);
-      // `sessions.runtime` mirrors the leader so pre-agent clients stay correct.
-      const resolved = resolveSessionAgent(ctx.db, session, ctx.db.getWorkspace(session.workspace_id ?? '') ?? null);
-      if (resolved) ctx.db.setSessionRuntime(session.id, resolved.thread.backend);
-      res.status(204).end();
-    } catch (err) {
-      sendAgentError(res, err);
-    }
   });
 
   /**

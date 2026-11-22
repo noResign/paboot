@@ -33,7 +33,6 @@ export {
   MAX_SUMMARY_CHARS,
   removeAgent,
   sessionRoster,
-  setLeader,
   syncSessionRuntime,
   updateAgent,
 } from './service.js';

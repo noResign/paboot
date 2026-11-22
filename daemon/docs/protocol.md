@@ -242,8 +242,8 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 ## 多 agent 群聊（room）
 
 一个 Session 是一个房间：多个 agent 各自拥有 runtime / 工作目录 / 模型 / provider 会话
-（`agent_threads`），共用一条时间线。房间的 leader 是「用户建会话时选中的那个人」，API 可在
-daemon 侧更换（`PATCH /api/sessions/:id/leader`），客户端不暴露这个概念。
+（`agent_threads`），共用一条时间线。房间的 leader 是「用户建会话时选择的 runtime 所对应的
+agent」，**创建后不可更换**，也没有换 leader 的端点；要换主答就新建会话。
 
 - **归属**：`/api/chat` 与 turn 的答案在定稿时就把 `agent_id` / `turn_id` / `task_id` /
   `committed_seq` 一起写入 `messages`，不存在「先写后认领」的竞态；`runs.agent_id` 记录实际
@@ -259,7 +259,7 @@ daemon 侧更换（`PATCH /api/sessions/:id/leader`），客户端不暴露这�
   - `GET /api/workspaces/:id/agents`、`POST /api/workspaces/:id/agents`
   - `GET|PATCH|DELETE /api/agent-profiles/:id`
   - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
-    `PATCH /api/sessions/:id/leader`、`POST /api/sessions/:id/agents/:agentId/reset-context`
+    `POST /api/sessions/:id/agents/:agentId/reset-context`
   - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], commandId?}`）→ 202
     `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
     同一个 `commandId` 重试会**重连到已建好的 turn** 并跳过启动任务，不会变成第二个提问；

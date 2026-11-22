@@ -63,7 +63,7 @@ class AgentRepository(
         }
     }
 
-    /** 删除 agent。是 leader 的会拿到 409 `leader_required`，要先换 leader。 */
+    /** 删除 agent。是 leader 的会拿到 409 `leader_required`：主答固定，不能移除。 */
     suspend fun delete(agentId: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.deleteAgentProfile(agentId) }) {

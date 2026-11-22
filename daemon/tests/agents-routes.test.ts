@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ensureThread, getAgent } from '../src/agents';
 import type { AppContext } from '../src/app/context';
 import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
@@ -221,7 +222,7 @@ describe('room membership API', () => {
     return h.db.listSessions()[0]!.id;
   }
 
-  it('adds a member, switches the leader, and refuses to drop the leader', async () => {
+  it('adds a member but never lets the fixed leader be removed', async () => {
     const h = await startApi();
     const sessionId = await seedSession(h);
     const created = (await (
@@ -237,13 +238,12 @@ describe('room membership API', () => {
 
     expect((await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId })).status).toBe(204);
 
-    const leader = await h.request('PATCH', `/api/sessions/${sessionId}/leader`, { agentId });
-    expect(leader.status).toBe(204);
-    expect(h.db.getSessionLeader(sessionId)?.agent_id).toBe(agentId);
-    // The legacy mirror follows the leader.
-    expect(h.db.getSession(sessionId)!.runtime).toBe('codex');
-
-    expect((await h.request('DELETE', `/api/sessions/${sessionId}/agents/${agentId}`)).status).toBe(409);
+    // The leader is whatever the session was created with; there is no API to
+    // hand the room over, so it can never be removed.
+    const leaderId = h.db.getSessionLeader(sessionId)!.agent_id;
+    expect((await h.request('DELETE', `/api/sessions/${sessionId}/agents/${leaderId}`)).status).toBe(409);
+    // A non-leader member can still leave.
+    expect((await h.request('DELETE', `/api/sessions/${sessionId}/agents/${agentId}`)).status).toBe(204);
   });
 
   it('reports whether each member already has a conversation', async () => {
@@ -272,9 +272,12 @@ describe('room membership API', () => {
       })
     ).json()) as { agent: { id: string } };
     await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId: created.agent.id });
-    await h.request('PATCH', `/api/sessions/${sessionId}/leader`, { agentId: created.agent.id });
-    // Give both agents a conversation handle.
-    const implicit = h.db.getSession(sessionId)!.native_session_id;
+    // A non-leader agent gets a conversation the first time it answers a turn;
+    // create that row directly so the reset can be checked against a room with
+    // two independent threads. The leader is fixed at session creation.
+    const session = h.db.getSession(sessionId)!;
+    ensureThread(h.db, session, getAgent(h.db, created.agent.id)!, h.db.getWorkspace(h.workspaceId)!);
+
     await h.request('POST', `/api/chat`, { prompt: 'again', sessionId });
     const before = h.db.listAgentThreads(sessionId);
     expect(before.length).toBeGreaterThanOrEqual(2);
@@ -288,6 +291,5 @@ describe('room membership API', () => {
     for (const thread of h.db.listAgentThreads(sessionId)) {
       if (thread.agent_id !== target) expect(thread.status).not.toBe('broken');
     }
-    expect(implicit).toBeDefined();
   });
 });

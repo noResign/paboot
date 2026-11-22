@@ -77,7 +77,7 @@ export function friendlyMessage(
     case 'writable_agent_exists':
       return '这个会话已经有可写助手了；新助手只能以只读身份加入';
     case 'leader_required':
-      return '他是这个会话的主答者，不能移出';
+      return '他是这个会话的主答者，不能移出；要换主答请新建会话';
     case 'name_taken':
       return '已经有同名助手了，换一个名字';
     case 'invalid_name':
