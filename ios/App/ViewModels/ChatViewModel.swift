@@ -1082,7 +1082,7 @@ final class ChatViewModel {
             }
         }
     }
-}    // MARK: - 会话里的助手（agent）
+    // MARK: - 会话里的助手（agent）
     //
     // 404 一律当成「这台 daemon 还没有这个功能」：静默关掉入口，不弹错误。
 
@@ -1174,3 +1174,4 @@ final class ChatViewModel {
     }
 
     // MARK: - Streaming
+}
