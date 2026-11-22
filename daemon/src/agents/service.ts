@@ -44,6 +44,8 @@ export class AgentValidationError extends Error {
 
 export const MAX_SUMMARY_CHARS = 40;
 const MAX_INSTRUCTIONS_CHARS = 20_000;
+/** `@all` / `@全体` are routing keywords, so they cannot also be agent names. */
+const RESERVED_MENTION_NAMES = new Set(['all', '全体']);
 
 export function createAgent(
   db: Db,
@@ -53,6 +55,9 @@ export function createAgent(
   const kind = input.kind;
   const name = normalizeName(input.name);
   if (!name) throw new AgentValidationError('invalid_name', 'name must not be empty');
+  if (RESERVED_MENTION_NAMES.has(name.toLowerCase())) {
+    throw new AgentValidationError('reserved_name', `"${name}" is reserved for room-wide mentions`);
+  }
   if (db.agentNameConflict(workspace.id, name, null)) {
     throw new AgentValidationError('name_taken', `an agent named "${name}" already exists`);
   }
@@ -99,10 +104,22 @@ export function updateAgent(db: Db, workspace: WorkspaceRow, id: string, patch: 
   const current = getAgent(db, id);
   if (!current) throw new AgentValidationError('not_found', `no agent ${id}`);
 
+  // Turning an existing read-only member into a writer changes room
+  // membership semantics, not just this agent definition. Re-check the same
+  // invariant the add-member endpoint enforces.
+  if (current.readOnly && patch.readOnly === false) {
+    for (const sessionId of db.listSessionsForAgent(id)) {
+      assertWritableSlotFree(db, sessionId, { ...current, readOnly: false });
+    }
+  }
+
   let name = current.name;
   if (patch.name !== undefined) {
     name = normalizeName(patch.name);
     if (!name) throw new AgentValidationError('invalid_name', 'name must not be empty');
+    if (RESERVED_MENTION_NAMES.has(name.toLowerCase())) {
+      throw new AgentValidationError('reserved_name', `"${name}" is reserved for room-wide mentions`);
+    }
     if (db.agentNameConflict(workspace.id, name, id)) {
       throw new AgentValidationError('name_taken', `an agent named "${name}" already exists`);
     }
@@ -342,6 +359,25 @@ function normalizeWiring(
   }
   // builtin runs in-process; any runtime id would be a lie.
   return { runtime: null, peerId: null, remoteAgentId: null };
+}
+
+/**
+ * The single-writable rule (03-room.md §5.2).
+ *
+ * Enforced whenever membership semantics change, not when a run starts:
+ * telling someone "this room already has a writer" while they are editing is a
+ * save-time answer, whereas failing a run they just triggered is a surprise.
+ */
+export function assertWritableSlotFree(db: Db, sessionId: string, agent: Agent): void {
+  if (agent.readOnly) return;
+  const members = listSessionAgents(db, sessionId).map((row) => row.agent);
+  const otherWriter = members.find((member) => member.id !== agent.id && !member.readOnly);
+  if (otherWriter) {
+    throw new AgentValidationError(
+      'writable_agent_exists',
+      `this session already has a writable agent: ${otherWriter.name}`,
+    );
+  }
 }
 
 export { getAgent, listAgents, listThreads, toAgent, toThread };

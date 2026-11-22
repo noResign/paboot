@@ -996,7 +996,7 @@ private fun AssistantTabContent(
                 }
                 Row(Modifier.padding(start = 20.dp)) {
                     if (agent.hasContext) {
-                        TextButton(onClick = { onResetContext(agent.id) }) { Text("重置对话") }
+                        TextButton(onClick = { onResetContext(agent.id) }) { Text("重置上下文") }
                     }
                     TextButton(onClick = { onRemoveAgent(agent.id) }) { Text("移出") }
                 }

@@ -8,6 +8,7 @@ import {
   createAgent,
   getLeader,
   ROOM_CONTEXT_MAX_CHARS,
+  ROOM_CONTEXT_RECENT,
 } from '../src/agents/index';
 import { Db } from '../src/db/db';
 
@@ -109,25 +110,27 @@ describe('room projection', () => {
     expect(own).not.toContain('[审阅] 第二条');
   });
 
-  it('keeps the newest six and says how many it dropped', () => {
+  it('keeps the newest entries and says how many it dropped', () => {
     const room = makeRoom();
+    const totalAnswers = ROOM_CONTEXT_RECENT + 4;
     say(room, 'user', '最早的提问');
-    for (let i = 1; i <= 10; i += 1) {
+    for (let i = 1; i <= totalAnswers; i += 1) {
       say(room, 'assistant', `第 ${i} 条回答`, room.other);
     }
 
-    const text = project(room, 11)!;
-    expect(text).toContain('omitted="5"');
-    expect(text).toContain('（更早的 5 条已省略，未逐条列出）');
-    expect(text).toContain('[审阅] 第 10 条回答');
-    expect(text).toContain('[审阅] 第 5 条回答');
-    expect(text).not.toContain('[审阅] 第 4 条回答');
+    const text = project(room, totalAnswers + 1)!;
+    const omitted = totalAnswers + 1 - ROOM_CONTEXT_RECENT;
+    expect(text).toContain(`omitted="${omitted}"`);
+    expect(text).toContain(`（更早的 ${omitted} 条已省略，未逐条列出）`);
+    expect(text).toContain(`[审阅] 第 ${totalAnswers} 条回答`);
+    const firstChosen = totalAnswers - ROOM_CONTEXT_RECENT + 1;
+    expect(text).toContain(`[审阅] 第 ${firstChosen} 条回答`);
+    expect(text).not.toContain(`[审阅] 第 ${firstChosen - 1} 条回答`);
     expect(text).not.toContain('最早的提问');
-    // Six verbatim entries at most.
-    expect(text.match(/\[审阅\]/g)).toHaveLength(6);
+    expect(text.match(/\[审阅\]/g)).toHaveLength(ROOM_CONTEXT_RECENT);
   });
 
-  it('clips one oversized answer instead of dropping it, and stays under the cap', () => {
+  it('keeps a multi-thousand-character review intact when it fits the budget', () => {
     const room = makeRoom();
     for (let i = 1; i <= 5; i += 1) {
       say(room, 'assistant', `E${i}:` + 'x'.repeat(3000), room.other);
@@ -135,9 +138,31 @@ describe('room projection', () => {
 
     const text = project(room, 5)!;
     expect(text.length).toBeLessThanOrEqual(ROOM_CONTEXT_MAX_CHARS);
+    expect(text).toContain('E1:');
     expect(text).toContain('E5:');
+    expect(text).not.toContain('（已截断）');
+    expect(text).toContain('omitted="0"');
+  });
+
+  it('drops older entries before clipping an oversized newest answer', () => {
+    const room = makeRoom();
+    for (let i = 1; i <= ROOM_CONTEXT_RECENT; i += 1) {
+      say(room, 'assistant', `E${i}:` + 'x'.repeat(3000), room.other);
+    }
+    const text = project(room, ROOM_CONTEXT_RECENT)!;
+    expect(text.length).toBeLessThanOrEqual(ROOM_CONTEXT_MAX_CHARS);
+    expect(text).toContain(`E${ROOM_CONTEXT_RECENT}:`);
+    expect(text).not.toContain('（已截断）');
+    expect(text).toContain('omitted="');
+  });
+
+  it('clips a single answer that exceeds the whole budget', () => {
+    const room = makeRoom();
+    say(room, 'assistant', 'HUGE:' + 'x'.repeat(ROOM_CONTEXT_MAX_CHARS + 5000), room.other);
+    const text = project(room, 1)!;
+    expect(text.length).toBeLessThanOrEqual(ROOM_CONTEXT_MAX_CHARS);
+    expect(text).toContain('HUGE:');
     expect(text).toContain('（已截断）');
-    expect(text).toContain('omitted="4"');
   });
 
   it('is null when there is nothing to show', () => {

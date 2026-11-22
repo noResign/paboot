@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentTaskRow, Db, SessionRow, TurnRow, WorkspaceRow } from '../db/db.js';
-import { addToSession, AgentValidationError } from './service.js';
+import { addToSession, AgentValidationError, assertWritableSlotFree } from './service.js';
 import { getAgent, getLeader, listSessionAgents } from './store.js';
-import { parseMentionNames, mentionsAll, routeMentions, type MentionTarget } from './mentions.js';
+import {
+  MAX_MENTIONS,
+  parseMentionNames,
+  mentionsAll,
+  routeMentions,
+  type MentionTarget,
+} from './mentions.js';
 import type { Agent } from './types.js';
 
 /**
@@ -28,6 +34,14 @@ export interface CreateTurnInput {
   tokenLimit?: number;
   /** Idempotency key: a retry with the same key returns the existing turn. */
   commandId?: string | null;
+  /** Image ids shared by every task that answers this turn. */
+  attachmentIds?: readonly string[];
+  /**
+   * Called after routing and before anything is written. The route owns image
+   * capability probing (it is async and runtime-specific), but refusing here is
+   * what keeps a doomed attachment turn from committing its question.
+   */
+  validateAttachmentTargets?: (agents: readonly Agent[]) => void;
 }
 
 export interface CreatedTurn {
@@ -101,7 +115,9 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
   // and at most one writable member).
   const admission: { id: string; reason: string }[] = [];
   if (input.mentionIds.length > 0) {
-    for (const id of input.mentionIds) {
+    // routeMentions caps tasks at MAX_MENTIONS; admission must use the same
+    // bound or one request could grow the roster far past what it addresses.
+    for (const id of input.mentionIds.slice(0, MAX_MENTIONS)) {
       if (members.some((member) => member.id === id)) continue;
       const candidate = getAgent(db, id);
       if (!candidate) continue; // routeMentions reports it as unknown
@@ -150,6 +166,13 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     ...routed.dropped.filter((entry) => !admission.some((admitted) => admitted.id === entry.id)),
   ];
 
+  // Check before committing the question: a turn whose images cannot reach one
+  // of its explicitly addressed agents should fail as a whole, not write a user
+  // message and then fail one task.
+  if ((input.attachmentIds?.length ?? 0) > 0) {
+    input.validateAttachmentTargets?.(routed.targets.map((target) => target.agent));
+  }
+
   // Messages committed *before* this turn are what a task may see. The snapshot
   // is taken before the user's message gets its position on purpose: that
   // message travels as the task's prompt, so putting it in the room projection
@@ -183,6 +206,7 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     tokenLimit: input.tokenLimit ?? 0,
     now,
     commandId: input.commandId ?? null,
+    attachmentIds: [...(input.attachmentIds ?? [])],
   });
 
   const tasks: AgentTaskRow[] = [];
@@ -213,25 +237,6 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
     })),
     dropped,
   };
-}
-
-/**
- * The single-writable rule (03-room.md §5.2).
- *
- * Enforced when membership changes, not when a run starts: telling someone
- * "this room already has a writer" while they are editing is a save-time
- * answer, whereas failing a run they just triggered is a surprise.
- */
-export function assertWritableSlotFree(db: Db, sessionId: string, agent: Agent): void {
-  if (agent.readOnly) return;
-  const members = listSessionAgents(db, sessionId).map((row) => row.agent);
-  const otherWriter = members.find((member) => member.id !== agent.id && !member.readOnly);
-  if (otherWriter) {
-    throw new AgentValidationError(
-      'writable_agent_exists',
-      `this session already has a writable agent: ${otherWriter.name}`,
-    );
-  }
 }
 
 export type { MentionTarget };

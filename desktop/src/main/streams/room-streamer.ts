@@ -55,6 +55,7 @@ export class RoomStreamer {
 
   private async loop(spec: RoomStreamSpec, ready: Deferred<StartStreamResult>): Promise<void> {
     let first = true;
+    let readySettled = false;
     let attempt = 0;
 
     while (!this.stopped) {
@@ -65,12 +66,18 @@ export class RoomStreamer {
         attempt,
       });
 
-      const outcome = await this.attempt(spec);
+      // Resolve on headers, not on stream end. A room stream is long-lived; the
+      // caller must be able to POST the turn while the read loop keeps running.
+      const outcome = await this.attempt(spec, () => {
+        if (readySettled) return;
+        readySettled = true;
+        ready.resolve({ ok: true, streamId: this.streamId });
+      });
       if (this.stopped) return;
 
       if (first) {
         first = false;
-        if (!outcome.headersOk) {
+        if (!readySettled) {
           // A 404 means the session is gone for good: retrying cannot help.
           ready.resolve({
             ok: false,
@@ -80,7 +87,6 @@ export class RoomStreamer {
           });
           return;
         }
-        ready.resolve({ ok: true, streamId: this.streamId });
       }
 
       if (outcome.finished) break;
@@ -100,7 +106,10 @@ export class RoomStreamer {
     });
   }
 
-  private async attempt(spec: RoomStreamSpec): Promise<{
+  private async attempt(
+    spec: RoomStreamSpec,
+    onHeaders: () => void,
+  ): Promise<{
     headersOk: boolean;
     httpCode: number | null;
     finished: boolean;
@@ -124,7 +133,8 @@ export class RoomStreamer {
     }
 
     const reader = response.body?.getReader();
-    if (!reader) return { headersOk: true, httpCode: response.status, finished: true };
+    if (!reader) return { headersOk: false, httpCode: response.status, finished: true };
+    onHeaders();
 
     const decoder = new TextDecoder();
     const splitter = new LineSplitter();

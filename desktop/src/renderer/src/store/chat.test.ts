@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../ipc/client', () => ({
-  api: { session: vi.fn(), updateSessionModel: vi.fn(), sendTurn: vi.fn(), sessionAgents: vi.fn() },
+  api: {
+    session: vi.fn(),
+    createSession: vi.fn(),
+    updateSessionModel: vi.fn(),
+    sendTurn: vi.fn(),
+    sessionAgents: vi.fn(),
+    cancelSessionRuns: vi.fn(),
+    decidePermission: vi.fn(),
+  },
   connectionApi: { streamStart: vi.fn() },
 }));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
@@ -47,18 +55,61 @@ describe('model selection before the session exists', () => {
     expect(api.updateSessionModel).not.toHaveBeenCalled();
   });
 
-  it('sends the choice with the first chat request, which creates the session', async () => {
+  it('creates the session, then sends the first message as a normal turn', async () => {
+    vi.mocked(api.createSession).mockResolvedValue({
+      ok: true,
+      status: 201,
+      data: {
+        session: {
+          id: 's-new',
+          runtime: 'builtin',
+          workspaceId: 'w',
+          permissionMode: 'ask',
+          model: 'p:m',
+          modelParameters: { reasoningEffort: 'high' },
+          cwd: '/w',
+          title: 'hi',
+          createdAt: 1,
+          lastActiveAt: 1,
+          running: false,
+          runningRunId: null,
+        },
+      },
+    } as never);
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
     vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
     await useChat.getState().setSessionSelection('p:m', { reasoningEffort: 'high' });
     await useChat.getState().send('hi');
 
-    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
-    expect(spec).toMatchObject({
-      kind: 'chat',
-      sessionId: null,
+    expect(api.createSession).toHaveBeenCalledWith({
+      workspaceId: 'w',
+      runtime: 'builtin',
+      permissionMode: 'ask',
       model: 'p:m',
       modelParameters: { reasoningEffort: 'high' },
+      title: 'hi',
     });
+    expect(vi.mocked(connectionApi.streamStart).mock.calls[0]![0]).toMatchObject({
+      kind: 'room',
+      sessionId: 's-new',
+    });
+    expect(api.sendTurn).toHaveBeenCalledWith(
+      's-new',
+      'hi',
+      [],
+      expect.any(String),
+      [],
+    );
   });
 });
 
@@ -89,13 +140,49 @@ describe('permission mode before the session exists', () => {
     expect(chat.pendingNew?.permissionMode).toBe('acceptEdits');
   });
 
-  it('carries the mode on the first chat request', async () => {
+  it('carries the mode into session creation and the subsequent room turn', async () => {
+    vi.mocked(api.createSession).mockResolvedValue({
+      ok: true,
+      status: 201,
+      data: {
+        session: {
+          id: 's-new',
+          runtime: 'builtin',
+          workspaceId: 'w',
+          permissionMode: 'bypass',
+          model: null,
+          modelParameters: null,
+          cwd: '/w',
+          title: 'hi',
+          createdAt: 1,
+          lastActiveAt: 1,
+          running: false,
+          runningRunId: null,
+        },
+      },
+    } as never);
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
     vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
     useChat.getState().setPermissionMode('bypass');
     await useChat.getState().send('hi');
 
-    const spec = vi.mocked(connectionApi.streamStart).mock.calls[0]![0];
-    expect(spec).toMatchObject({ sessionId: null, permissionMode: 'bypass' });
+    expect(api.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: 'bypass' }),
+    );
+    expect(vi.mocked(connectionApi.streamStart).mock.calls[0]![0]).toMatchObject({
+      kind: 'room',
+      sessionId: 's-new',
+    });
   });
 
   it('leaves an existing session without creation parameters', () => {
@@ -267,6 +354,214 @@ describe('session watch hints for a run already on screen', () => {
   });
 });
 
+describe('question answers', () => {
+  it('finds questions in live/queued answers and marks every copy answered', async () => {
+    vi.mocked(api.decidePermission).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ok: true },
+    } as never);
+    const question = {
+      kind: 'question' as const,
+      toolUseId: 'q1',
+      questions: [],
+      answered: false,
+      permissionId: 'p1',
+    };
+    const message = (id: string) => ({
+      kind: 'assistant' as const,
+      id,
+      runId: 'run-q',
+      agentId: 'a1',
+      done: false,
+      error: null,
+      usage: null,
+      blocks: [question],
+    });
+    const key = 'host::question';
+    useChat.setState({
+      activeKey: key,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-question',
+          pendingAnswers: [{ runId: 'run-q', agentId: 'a1', message: message('live') }],
+          displayQueue: [{ runId: 'run-q-2', agentId: 'a1', message: message('queued') }],
+        },
+      },
+    });
+
+    useChat.getState().answerQuestion('q1', '答案', { q: ['A'] });
+
+    const chat = useChat.getState().byKey[key]!;
+    expect(chat.pendingAnswers[0]!.message.blocks[0]).toMatchObject({ answered: true });
+    expect(chat.displayQueue[0]!.message.blocks[0]).toMatchObject({ answered: true });
+    await vi.waitFor(() =>
+      expect(api.decidePermission).toHaveBeenCalledWith(
+        'p1',
+        'allow',
+        undefined,
+        { answers: { q: { answers: ['A'] } } },
+      ),
+    );
+  });
+
+  it('routes a non-leader non-blocking answer back to the agent that asked', async () => {
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't2', tasks: [] },
+    } as never);
+    const key = 'host::nonblocking';
+    useChat.setState({
+      activeKey: key,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-nonblocking',
+          leaderAgentId: 'leader',
+          roomStreamId: 'room',
+          messages: [
+            { kind: 'user', id: 'u', text: '请回答', turnId: 't1' },
+            {
+              kind: 'assistant',
+              id: 'a',
+              runId: 'r',
+              agentId: 'member',
+              done: true,
+              error: null,
+              usage: null,
+              blocks: [{ kind: 'question', toolUseId: 'q-nb', questions: [], answered: false }],
+            },
+          ],
+        },
+      },
+    });
+
+    useChat.getState().answerQuestion('q-nb', '答案', {});
+
+    await vi.waitFor(() => expect(api.sendTurn).toHaveBeenCalled());
+    const call = vi.mocked(api.sendTurn).mock.calls[0]!;
+    expect(call[0]).toBe('s-nonblocking');
+    expect(call[1]).toBe('答案');
+    expect(call[2]).toEqual(['member']);
+  });
+
+  it('routes to the asker even before the roster names a leader', async () => {
+    vi.mocked(api.sessionAgents).mockResolvedValue(undefined as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't3', tasks: [] },
+    } as never);
+    const key = 'host::nonblocking-no-leader';
+    useChat.setState({
+      activeKey: key,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-no-leader',
+          roomStreamId: 'room',
+          messages: [
+            { kind: 'user', id: 'u', text: '请回答', turnId: 't1' },
+            {
+              kind: 'assistant',
+              id: 'a',
+              runId: 'r',
+              agentId: 'member',
+              done: true,
+              error: null,
+              usage: null,
+              blocks: [{ kind: 'question', toolUseId: 'q-nb-2', questions: [], answered: false }],
+            },
+          ],
+        },
+      },
+    });
+
+    useChat.getState().answerQuestion('q-nb-2', '答案', {});
+
+    await vi.waitFor(() => expect(api.sendTurn).toHaveBeenCalled());
+    expect(vi.mocked(api.sendTurn).mock.calls[0]![2]).toEqual(['member']);
+  });
+
+  it('does not send a non-blocking question that was already answered', () => {
+    const key = 'host::answered-question';
+    useChat.setState({
+      activeKey: key,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-answered',
+          leaderAgentId: 'leader',
+          roomStreamId: 'room',
+          messages: [
+            {
+              kind: 'assistant',
+              id: 'a',
+              runId: 'r',
+              agentId: 'leader',
+              done: true,
+              error: null,
+              usage: null,
+              blocks: [{ kind: 'question', toolUseId: 'q-done', questions: [], answered: true }],
+            },
+          ],
+        },
+      },
+    });
+
+    useChat.getState().answerQuestion('q-done', '答案', {});
+    expect(api.sendTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not call the permission endpoint for a blocking question whose run ended', () => {
+    const key = 'host::closed-question';
+    useChat.setState({
+      activeKey: key,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-closed',
+          messages: [
+            {
+              kind: 'assistant',
+              id: 'a',
+              runId: 'r',
+              agentId: 'a1',
+              done: true,
+              error: null,
+              usage: null,
+              blocks: [
+                {
+                  kind: 'question',
+                  toolUseId: 'q-closed',
+                  questions: [],
+                  answered: false,
+                  permissionId: 'p-closed',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    useChat.getState().answerQuestion('q-closed', '答案', {});
+    expect(api.decidePermission).not.toHaveBeenCalled();
+  });
+});
+
 describe('room stream reducer', () => {
   const frame = (runId: string, agentId: string | null, seq: number, event: unknown) =>
     ({ runId, seq, agentId, event }) as never;
@@ -298,11 +593,10 @@ describe('room stream reducer', () => {
       frame('r1', 'a1', 4, { type: 'status', label: 'succeeded', terminal: true }),
     ]);
     expect(next.pendingAnswers).toHaveLength(0);
-    const answers = next.messages.filter((message) => message.kind === 'assistant');
-    expect(
-      answers.map((message) => (message.kind === 'assistant' ? message.runId : null)),
-    ).toEqual(['r2', 'r1']);
-    expect(answers.map(text)).toEqual(['性能说', '审阅说完了']);
+    // Both are complete, but presentation is serialized: they wait in the
+    // display queue until the scheduler reveals them one by one.
+    expect(next.displayQueue.map((answer) => answer.runId)).toEqual(['r2', 'r1']);
+    expect(next.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
   });
 
   it('enqueues permission requests without inventing an answer card', () => {
@@ -350,7 +644,58 @@ describe('room turns', () => {
     expect(api.sendTurn).not.toHaveBeenCalled();
     const chat = useChat.getState().byKey[roomKey]!;
     expect(chat.error).toContain('房间流');
-    expect(chat.messages).toHaveLength(0);
+    // The optimistic bubble stays visible even though the handshake failed.
+    expect(chat.messages).toHaveLength(1);
+    expect(chat.messages[0]).toMatchObject({ kind: 'user', text: 'hi' });
+    expect(chat.turnSending).toBe(false);
+  });
+
+  it('shows the user bubble before the room stream handshake completes', async () => {
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
+    let release!: (value: unknown) => void;
+    vi.mocked(connectionApi.streamStart).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }) as never,
+    );
+
+    const sending = useChat.getState().sendTurn('hi', []);
+    await vi.waitFor(() => {
+      expect(useChat.getState().byKey[roomKey]!.messages).toHaveLength(1);
+    });
+    expect(useChat.getState().byKey[roomKey]!.turnSending).toBe(true);
+
+    release({ ok: false, httpCode: 500, apiCode: null, message: 'boom' });
+    await sending;
+    expect(useChat.getState().byKey[roomKey]!.turnSending).toBe(false);
+  });
+
+  it('shows acknowledged tasks until their first run frame arrives', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: {
+        turnId: 't1',
+        tasks: [{ id: 'task-1', agentId: 'a1' }],
+      },
+    } as never);
+
+    await useChat.getState().sendTurn('hi', []);
+    expect(useChat.getState().byKey[roomKey]!.dispatchedTasks).toEqual([
+      { taskId: 'task-1', agentId: 'a1' },
+    ]);
+
+    useChat.getState().applyStreamEvent({
+      streamId: useChat.getState().byKey[roomKey]!.roomStreamId,
+      kind: 'frames',
+      frames: [{ runId: 'r1', seq: 1, taskId: 'task-1', agentId: 'a1', event: { type: 'status', label: 'starting' } }],
+    } as never);
+    expect(useChat.getState().byKey[roomKey]!.dispatchedTasks).toHaveLength(0);
   });
 
   it('stamps the turn onto the question so hints cannot duplicate it', async () => {
@@ -368,6 +713,108 @@ describe('room turns', () => {
     expect(chat.messages).toHaveLength(1);
     expect(chat.messages[0]).toMatchObject({ kind: 'user', text: 'hi', turnId: 't1' });
     expect(chat.roomStreamId).toBeTruthy();
+  });
+
+  it('sends attachments with an @ mention and keeps them on the question', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
+    await useChat.getState().sendTurn('看这张图', ['a1'], ['img-1']);
+
+    expect(api.sendTurn).toHaveBeenCalledWith(
+      's-turn',
+      '看这张图',
+      ['a1'],
+      expect.any(String),
+      ['img-1'],
+    );
+    expect(useChat.getState().byKey[roomKey]!.messages[0]).toMatchObject({
+      kind: 'user',
+      text: '看这张图',
+      attachmentIds: ['img-1'],
+    });
+  });
+
+  it('lets an image-only room send reuse the single-chat fallback prompt', async () => {
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
+    await useChat.getState().sendTurn('', [], ['img-1']);
+
+    expect(api.sendTurn).toHaveBeenCalledWith(
+      's-turn',
+      '请查看这些图片。',
+      [],
+      expect.any(String),
+      ['img-1'],
+    );
+  });
+});
+
+describe('stopping a room', () => {
+  it('cancels every run on the daemon and finalizes what is on screen', async () => {
+    const roomKey = 'host::stop-room';
+    vi.mocked(api.cancelSessionRuns).mockResolvedValue({ ok: true, cancelled: 2 } as never);
+    useChat.setState({
+      activeKey: roomKey,
+      streamKeys: { room: roomKey },
+      failedIds: [],
+      byKey: {
+        [roomKey]: {
+          ...emptyChat(roomKey, 'host'),
+          sessionId: 's-stop',
+          roomStreamId: 'room',
+          leaderAgentId: 'a1',
+          messages: [
+            { kind: 'user', id: 'u1', text: 'hi' },
+            {
+              kind: 'assistant',
+              id: 'a1msg',
+              runId: 'r1',
+              agentId: 'a1',
+              done: false,
+              error: null,
+              usage: null,
+              blocks: [{ kind: 'text', text: '主答中' }],
+            },
+          ],
+          pendingAnswers: [
+            {
+              runId: 'r2',
+              agentId: 'a2',
+              message: {
+                kind: 'assistant',
+                id: 'a2msg',
+                runId: 'r2',
+                agentId: 'a2',
+                done: false,
+                error: null,
+                usage: null,
+                blocks: [{ kind: 'text', text: '补充中' }],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    useChat.getState().stop();
+    await vi.waitFor(() => expect(api.cancelSessionRuns).toHaveBeenCalledWith('s-stop'));
+
+    const chat = useChat.getState().byKey[roomKey]!;
+    expect(chat.roomStreamId).toBe('room');
+    expect(chat.pendingAnswers).toHaveLength(0);
+    expect(chat.messages.filter((message) => message.kind === 'assistant').every((message) =>
+      message.kind === 'assistant' ? message.done : true,
+    )).toBe(true);
   });
 });
 
@@ -408,7 +855,7 @@ describe('leader streaming', () => {
   const frame = (runId: string, agentId: string | null, seq: number, event: unknown) =>
     ({ runId, seq, agentId, event }) as never;
 
-  it('streams the leader in place and holds other agents until they commit', () => {
+  it('keeps every streaming agent in the live area until it commits', () => {
     const base = { ...emptyChat('host::leader', 'host'), leaderAgentId: 'a1' };
     const streaming = reduceRoomFrames(base, [
       frame('r1', 'a1', 1, { type: 'status', label: 'starting' }),
@@ -417,24 +864,192 @@ describe('leader streaming', () => {
       frame('r2', 'a2', 2, { type: 'text_delta', delta: '补充' }),
     ]);
 
-    const live = streaming.messages.filter((message) => message.kind === 'assistant');
-    expect(live).toHaveLength(1);
-    expect(live[0]).toMatchObject({ kind: 'assistant', runId: 'r1', done: false });
-    expect(streaming.pendingAnswers.map((answer) => answer.runId)).toEqual(['r2']);
+    expect(streaming.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
+    expect(streaming.pendingAnswers.map((answer) => answer.runId)).toEqual(['r1', 'r2']);
 
     const next = reduceRoomFrames(streaming, [
       frame('r1', 'a1', 3, { type: 'status', label: 'succeeded', terminal: true }),
       frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
     ]);
     expect(next.pendingAnswers).toHaveLength(0);
-    expect(
-      next.messages
-        .filter((message) => message.kind === 'assistant')
-        .map((message) => (message.kind === 'assistant' ? message.runId : null)),
-    ).toEqual(['r1', 'r2']);
+    expect(next.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
+    expect(next.displayQueue.map((answer) => answer.runId)).toEqual(['r1', 'r2']);
   });
 
-  it('moves a leader run into the transcript when the roster arrives late', () => {
+  it('hydrates a partial history card instead of duplicating a non-leader answer', () => {
+    const base = {
+      ...emptyChat('host::hydrate', 'host'),
+      leaderAgentId: 'a1',
+      messages: [
+        { kind: 'user' as const, id: 'u1', text: '看图' },
+        {
+          kind: 'assistant' as const,
+          id: 'a2msg',
+          runId: 'r2',
+          agentId: 'a2',
+          done: false,
+          error: null,
+          usage: null,
+          blocks: [{ kind: 'text' as const, text: '前缀' }],
+        },
+      ],
+    };
+    const streaming = reduceRoomFrames(base, [
+      frame('r2', 'a2', 2, { type: 'text_delta', delta: '补充' }),
+    ]);
+    expect(streaming.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
+    expect(streaming.pendingAnswers).toHaveLength(1);
+    expect(streaming.pendingAnswers[0]!.message.blocks).toEqual([
+      { kind: 'text', text: '前缀补充' },
+    ]);
+
+    const done = reduceRoomFrames(streaming, [
+      frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
+    ]);
+    expect(done.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
+    expect(done.displayQueue).toHaveLength(1);
+    expect(done.displayQueue[0]!.message).toMatchObject({ runId: 'r2', done: true });
+  });
+
+  it('reveals completed answers one at a time after the live speaker stops', () => {
+    vi.useFakeTimers();
+    try {
+      const key = 'host::display-queue';
+      const base = {
+        ...emptyChat(key, 'host'),
+        sessionId: 's-display',
+        roomStreamId: 'room-display',
+        leaderAgentId: 'a1',
+        displayQueue: [
+          {
+            runId: 'r2',
+            agentId: 'a2',
+            message: {
+              kind: 'assistant' as const,
+              id: 'a2m',
+              blocks: [{ kind: 'text' as const, text: 'B' }],
+              usage: null,
+              error: null,
+              done: true,
+              runId: 'r2',
+              agentId: 'a2',
+            },
+          },
+          {
+            runId: 'r3',
+            agentId: 'a3',
+            message: {
+              kind: 'assistant' as const,
+              id: 'a3m',
+              blocks: [{ kind: 'text' as const, text: 'C' }],
+              usage: null,
+              error: null,
+              done: true,
+              runId: 'r3',
+              agentId: 'a3',
+            },
+          },
+        ],
+      };
+      useChat.setState({
+        activeKey: key,
+        streamKeys: { 'room-display': key },
+        failedIds: [],
+        byKey: { [key]: base },
+      });
+
+      useChat.getState().applyStreamEvent({
+        streamId: 'room-display',
+        kind: 'frames',
+        frames: [],
+      } as never);
+      let chat = useChat.getState().byKey[key]!;
+      expect(
+        chat.messages
+          .filter((message) => message.kind === 'assistant')
+          .map((message) => (message.kind === 'assistant' ? message.runId : null)),
+      ).toEqual(['r2']);
+      expect(chat.displayQueue.map((answer) => answer.runId)).toEqual(['r3']);
+
+      vi.advanceTimersByTime(300);
+      chat = useChat.getState().byKey[key]!;
+      expect(
+        chat.messages
+          .filter((message) => message.kind === 'assistant')
+          .map((message) => (message.kind === 'assistant' ? message.runId : null)),
+      ).toEqual(['r2', 'r3']);
+      expect(chat.displayQueue).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds a completed non-leader until the live leader finishes, then shows it', () => {
+    const key = 'host::wait-leader';
+    const leaderMessage = {
+      kind: 'assistant' as const,
+      id: 'leader-msg',
+      runId: 'r1',
+      agentId: 'a1',
+      done: false,
+      error: null,
+      usage: null,
+      blocks: [{ kind: 'text' as const, text: '主答中' }],
+    };
+    const pendingMessage = {
+      kind: 'assistant' as const,
+      id: 'member-msg',
+      runId: 'r2',
+      agentId: 'a2',
+      done: false,
+      error: null,
+      usage: null,
+      blocks: [{ kind: 'text' as const, text: '补充完成' }],
+    };
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { room: key },
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-wait',
+          roomStreamId: 'room',
+          leaderAgentId: 'a1',
+          messages: [{ kind: 'user', id: 'u1', text: '开始' }, leaderMessage],
+          pendingAnswers: [{ runId: 'r2', agentId: 'a2', message: pendingMessage }],
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'room',
+      kind: 'frames',
+      frames: [
+        frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true }),
+      ],
+    } as never);
+    let chat = useChat.getState().byKey[key]!;
+    expect(chat.displayQueue.map((answer) => answer.runId)).toEqual(['r2']);
+    expect(chat.messages.some((message) => message.kind === 'assistant' && message.runId === 'r2')).toBe(false);
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'room',
+      kind: 'frames',
+      frames: [
+        frame('r1', 'a1', 4, { type: 'status', label: 'succeeded', terminal: true }),
+      ],
+    } as never);
+    chat = useChat.getState().byKey[key]!;
+    expect(
+      chat.messages
+        .filter((message) => message.kind === 'assistant')
+        .map((message) => (message.kind === 'assistant' ? message.runId : null)),
+    ).toEqual(['r2']);
+    expect(chat.displayQueue.map((answer) => answer.runId)).toEqual(['r1']);
+  });
+
+  it('does not move a live answer into the transcript when the roster arrives', () => {
     const key = 'host::late';
     const base = emptyChat(key, 'host');
     const streaming = reduceRoomFrames(base, [
@@ -449,9 +1064,8 @@ describe('leader streaming', () => {
 
     const chat = useChat.getState().byKey[key]!;
     expect(chat.leaderAgentId).toBe('a1');
-    expect(chat.pendingAnswers).toHaveLength(0);
-    expect(chat.messages).toHaveLength(1);
-    expect(chat.messages[0]).toMatchObject({ kind: 'assistant', runId: 'r1' });
+    expect(chat.pendingAnswers).toHaveLength(1);
+    expect(chat.messages).toHaveLength(0);
   });
 });
 
@@ -568,7 +1182,7 @@ describe('leader discovery', () => {
 
     const chat = useChat.getState().byKey[roomKey]!;
     expect(chat.leaderAgentId).toBe('a1');
-    expect(chat.pendingAnswers).toHaveLength(0);
-    expect(chat.messages.filter((message) => message.kind === 'assistant')).toHaveLength(1);
+    expect(chat.pendingAnswers).toHaveLength(1);
+    expect(chat.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
   });
 });

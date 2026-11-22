@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeToolGroup, segmentBlocks, toolGroupStatus, toolSummary } from './segments';
+import { conversationSegments, hasTraceSegments, questionInteractive } from './conversationSegments';
+import { splitSummonLines } from './summonLines';
 import { Markdown } from './Markdown';
 import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
@@ -36,15 +38,24 @@ export function Transcript({
   scrollRef,
   runs,
   agentNames,
+  showSpeakerName = true,
+  leaderAgentId = null,
   onRollback,
+  onOpenTrace,
 }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
   /** The session's runs, to gate the per-message rollback action by checkpoint. */
   runs: RunDto[];
-  /** agentId → name. Absent for a single-assistant session (no label needed). */
+  /** agentId → name, used for labels, avatars and summon parsing. */
   agentNames?: Map<string, string>;
+  /** Hide the speaker name in a single-assistant session. */
+  showSpeakerName?: boolean;
+  /** Only the leader's line-start @lines become summon bubbles. */
+  leaderAgentId?: string | null;
   onRollback(runId: string): void;
+  /** Open the full thinking/tool trace for a completed answer. */
+  onOpenTrace?(runId: string): void;
 }) {
   const [limit, setLimit] = useState(VISIBLE);
   const shown = messages.length > limit ? messages.slice(messages.length - limit) : messages;
@@ -88,6 +99,15 @@ export function Transcript({
     return () => scroller.removeEventListener('scroll', onScroll);
   }, [scrollRef, hidden]);
 
+  // A question card is answerable only while it answers the latest user turn.
+  const lastUserIndex = messages.reduce(
+    (last, message, index) => (message.kind === 'user' ? index : last),
+    -1,
+  );
+  const lastUser = lastUserIndex >= 0 ? messages[lastUserIndex] : undefined;
+  const lastUserTurnId = lastUser?.kind === 'user' ? (lastUser.turnId ?? null) : null;
+  const offset = messages.length - shown.length;
+
   return (
     <div className="transcript">
       {hidden > 0 && (
@@ -95,21 +115,39 @@ export function Transcript({
           显示更早的 {hidden} 条
         </button>
       )}
-      {shown.map((message) =>
-        message.kind === 'user' ? (
-          <UserRow
+      {shown.map((message, index) => {
+        if (message.kind === 'user') {
+          return (
+            <UserRow
+              key={message.id}
+              id={message.id}
+              text={message.text}
+              attachmentIds={message.attachmentIds}
+              at={message.at}
+              run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
+              onRollback={onRollback}
+            />
+          );
+        }
+        const run = message.runId ? runs.find((r) => r.id === message.runId) : undefined;
+        return (
+          <AssistantRow
             key={message.id}
-            id={message.id}
-            text={message.text}
-            attachmentIds={message.attachmentIds}
-            at={message.at}
-            run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
-            onRollback={onRollback}
+            message={message}
+            agentNames={agentNames}
+            showSpeakerName={showSpeakerName}
+            leaderAgentId={leaderAgentId}
+            textOnly
+            interactive={questionInteractive({
+              index: offset + index,
+              lastUserIndex,
+              runTurnId: run?.turnId ?? null,
+              lastUserTurnId,
+            })}
+            onOpenTrace={onOpenTrace}
           />
-        ) : (
-          <AssistantRow key={message.id} message={message} agentNames={agentNames} />
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }
@@ -185,12 +223,24 @@ function UserRow({
   );
 }
 
-function AssistantRow({
+export function AssistantRow({
   message,
   agentNames,
+  showSpeakerName = true,
+  leaderAgentId = null,
+  textOnly = false,
+  interactive = true,
+  onOpenTrace,
 }: {
   message: Extract<ChatMessage, { kind: 'assistant' }>;
   agentNames?: Map<string, string>;
+  showSpeakerName?: boolean;
+  leaderAgentId?: string | null;
+  /** Conversation view: final text only; tool/thinking detail lives in 助手. */
+  textOnly?: boolean;
+  /** False for a static trace/historical view where answering is not possible. */
+  interactive?: boolean;
+  onOpenTrace?(runId: string): void;
 }) {
   const id = message.id;
   const segments = segmentBlocks(message.blocks);
@@ -198,28 +248,129 @@ function AssistantRow({
     .filter((block): block is Extract<ContentBlock, { kind: 'text' }> => block.kind === 'text')
     .map((block) => block.text)
     .join('\n\n');
+  const visibleSegments = textOnly ? conversationSegments(message.blocks) : segments;
+  const hasTrace = hasTraceSegments(message.blocks);
+  const speaker =
+    message.agentName ?? (message.agentId ? agentNames?.get(message.agentId) : undefined);
+  const memberNames = agentNames ? [...agentNames.values()] : [];
+  const split =
+    textOnly && message.agentId === leaderAgentId
+      ? splitSummonLines(text, memberNames)
+      : { body: text, summons: [] as string[] };
+  const nonTextSegments = visibleSegments.filter((segment) => segment.kind !== 'text');
+  const hasVisibleContent =
+    split.body.trim() !== '' ||
+    nonTextSegments.length > 0 ||
+    Boolean(message.error);
+  const showMainRow =
+    hasVisibleContent ||
+    (textOnly &&
+      message.runId &&
+      (hasTrace || (message.done && split.summons.length === 0)));
+  /** A blocking permission cannot outlive its run, so a finalized ask is inert. */
+  const questionClosed = (segment: { permissionId?: string | null; answered: boolean }): boolean =>
+    Boolean(segment.permissionId) && message.done && !segment.answered;
+  const avatarText = (speaker ?? 'AI').trim().slice(0, 1).toUpperCase() || 'AI';
+  const avatarColor = agentColor(message.agentId ?? speaker ?? 'AI');
+
+  if (textOnly) {
+    return (
+      <>
+        {showMainRow && (
+          <div className="msg assistant chat-message" data-msg-id={id}>
+            <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
+              {avatarText}
+            </div>
+            <div className="assistant-body">
+              {showSpeakerName && speaker && (
+                <div className="msg-speaker">
+                  <span className="msg-speaker-dot" style={{ background: avatarColor }} />
+                  {speaker}
+                </div>
+              )}
+              <div className="assistant-bubble">
+                {split.body && <Markdown text={split.body} />}
+                {nonTextSegments.map((segment, index) => {
+                  switch (segment.kind) {
+                    case 'question':
+                      return (
+                        <QuestionBlock
+                          key={index}
+                          toolUseId={segment.toolUseId}
+                          questions={segment.questions}
+                          answered={segment.answered}
+                          permissionId={segment.permissionId}
+                          interactive={interactive}
+                          closed={questionClosed(segment)}
+                        />
+                      );
+                    case 'notice':
+                      return (
+                        <div key={index} className="chat-notice">
+                          {segment.text}
+                        </div>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
+                {message.error && <div className="msg-error">{message.error}</div>}
+                {!hasVisibleContent && (
+                  <div className="hint">
+                    {hasTrace
+                      ? '这条回答没有可见文本，点击「查看过程」查看工具调用。'
+                      : '这次回答没有可见输出。'}
+                  </div>
+                )}
+              </div>
+              <div className="msg-actions assistant-actions">
+                {split.body && <CopyButton text={split.body} />}
+                {message.runId && hasTrace && (
+                  <button
+                    className="btn ghost tiny"
+                    title="查看这次回答的思考和工具调用"
+                    onClick={() => onOpenTrace?.(message.runId!)}
+                  >
+                    查看过程
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {split.summons.map((line, index) => (
+          <div className="msg assistant chat-message summon-message" key={`${id}-summon-${index}`}>
+            <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
+              {avatarText}
+            </div>
+            <div className="assistant-body">
+              {showSpeakerName && speaker && (
+                <div className="msg-speaker">
+                  <span className="msg-speaker-dot" style={{ background: avatarColor }} />
+                  {speaker}
+                </div>
+              )}
+              <div className="assistant-bubble summon-bubble">
+                <Markdown text={line} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </>
+    );
+  }
 
   return (
     <div className="msg assistant" data-msg-id={id}>
-      {/* 发言人是群聊里唯一需要的区分：名字 + 稳定色点。单聊不显示。 */}
-      {(() => {
-        const speaker =
-          message.agentName ?? (message.agentId ? agentNames?.get(message.agentId) : undefined);
-        if (!speaker) return null;
-        return (
-          <div className="msg-speaker">
-            <span
-              className="msg-speaker-dot"
-              style={{ background: agentColor(message.agentId ?? speaker) }}
-            />
-            {speaker}
-          </div>
-        );
-      })()}
-      {text && (
-        <div className="msg-actions">
-          <CopyButton text={text} />
+      {speaker && (
+        <div className="msg-speaker">
+          <span className="msg-speaker-dot" style={{ background: avatarColor }} />
+          {speaker}
         </div>
+      )}
+      {hasVisibleContent && (
+        <div className="msg-actions">{text && <CopyButton text={text} />}</div>
       )}
 
       {segments.map((segment, index) => {
@@ -236,6 +387,8 @@ function AssistantRow({
                 questions={segment.questions}
                 answered={segment.answered}
                 permissionId={segment.permissionId}
+                interactive={interactive}
+                closed={questionClosed(segment)}
               />
             );
           case 'notice':
@@ -248,9 +401,9 @@ function AssistantRow({
             return <ToolGroup key={segment.key} tools={segment.tools} />;
         }
       })}
-
       {message.usage && <UsageRow usage={message.usage} />}
       {message.error && <div className="msg-error">{message.error}</div>}
+      {!hasVisibleContent && <div className="hint">这次运行没有可见输出。</div>}
     </div>
   );
 }

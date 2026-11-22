@@ -50,6 +50,7 @@ export function applyFrame(state: FrameState, frame: SseFrame, makeId: () => str
 export function buildAssistantFromEvents(
   frames: SseFrame[],
   makeId: () => string,
+  options: { finalize?: boolean } = {},
 ): { assistant: AssistantMessage; todos: TodoItem[]; contextUsage: ContextUsage | null } {
   let state: FrameState = {
     messages: [newAssistant(makeId())],
@@ -63,8 +64,12 @@ export function buildAssistantFromEvents(
     if (frame.event.type === 'permission_request') continue;
     state = applyFrame(state, frame, makeId);
   }
+  const assistant = lastAssistant(state.messages) ?? newAssistant(makeId());
   return {
-    assistant: finalizeAssistant(lastAssistant(state.messages) ?? newAssistant(makeId())),
+    // A still-running run must keep its spinner and in-flight tool cards: the
+    // caller will hydrate this partial card into the room reducer and continue
+    // it with live frames.
+    assistant: options.finalize === false ? assistant : finalizeAssistant(assistant),
     todos: state.todos,
     contextUsage: state.contextUsage,
   };

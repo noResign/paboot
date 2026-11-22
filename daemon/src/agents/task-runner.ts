@@ -104,17 +104,22 @@ async function runTaskOnce(
   const { session, workspace, task } = input;
   const agent = getAgent(ctx.db, task.agent_id);
   if (!agent) {
-    ctx.db.updateTask(task.id, { status: 'failed', error: 'agent not found', endedAt: Date.now() });
-    return { taskId: task.id, agentId: task.agent_id, status: 'failed', messageId: null, error: 'agent not found' };
+    return failTaskBeforeRun(ctx, deps, session, task, task.agent_id, 'agent not found');
   }
 
   const resolved = resolveSessionAgent(ctx.db, session, workspace);
   const thread = resolved?.agent.id === agent.id ? resolved.thread : ensureThread(ctx.db, session, agent, workspace);
   const driver = ctx.registry.driver(backendFor(agent));
   if (!driver || driver.internal) {
-    const error = `runtime not available: ${backendFor(agent)}`;
-    ctx.db.updateTask(task.id, { status: 'failed', error, endedAt: Date.now() });
-    return { taskId: task.id, agentId: agent.id, status: 'failed', messageId: null, error };
+    return failTaskBeforeRun(
+      ctx,
+      deps,
+      session,
+      task,
+      agent.id,
+      `runtime not available: ${backendFor(agent)}`,
+      thread.id,
+    );
   }
 
   ctx.db.updateTask(task.id, { status: 'running', startedAt: Date.now() });
@@ -127,6 +132,10 @@ async function runTaskOnce(
     },
   };
 
+  // The turn owns the user's images; every task it starts — including a
+  // supplement summoned from the leader's answer — sees the same set.
+  const attachmentIds = ctx.db.getTurnAttachmentIds(task.turn_id);
+
   // What the rest of the room said before this task's snapshot. Own messages
   // are excluded, so nothing here duplicates this agent's own thread.
   const roomContext = buildRoomProjection(ctx.db, {
@@ -137,7 +146,12 @@ async function runTaskOnce(
     sinceSeq: thread.lastSeenSeq,
   });
   // The stable half (who is here) goes with the other cacheable context.
-  const roomSystem = buildRoomSystem(ctx.db, { sessionId: session.id, selfAgentId: agent.id });
+  const roomSystem = buildRoomSystem(ctx.db, {
+    sessionId: session.id,
+    selfAgentId: agent.id,
+    canSummon: task.source === 'leader_default',
+    canReplyToLeader: task.source === 'summon',
+  });
 
   try {
     const handle = startSessionRun(ctx, {
@@ -147,12 +161,12 @@ async function runTaskOnce(
       driver,
       permissionMode: session.permission_mode as never,
       model: null,
-      modelParameters: null,
       trigger: 'user',
       // The turn already committed the user's message before any task started.
       skipUserMessage: true,
       turnId: task.turn_id,
       agentTaskId: task.id,
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
       roomContext: roomContext ?? undefined,
       roomSystem: roomSystem ?? undefined,
       sink,
@@ -200,19 +214,69 @@ async function runTaskOnce(
   }
 }
 
+/**
+ * Persist and publish a task that failed before a driver could start.
+ *
+ * Without a run row and a terminal room frame, the UI has no way to know the
+ * task existed at all: the user sees a sent question and silence. This creates
+ * the same failed-run record normal runs get, then publishes one terminal error
+ * frame so live clients render an answer card with the reason.
+ */
+function failTaskBeforeRun(
+  ctx: AppContext,
+  deps: TaskRunnerDeps,
+  session: SessionRow,
+  task: AgentTaskRow,
+  agentId: string,
+  error: string,
+  threadId: string | null = null,
+): TaskOutcome {
+  const now = Date.now();
+  const runId = randomUUID();
+  ctx.db.createRun({
+    id: runId,
+    sessionId: session.id,
+    runtime: session.runtime,
+    model: null,
+    prompt: task.prompt,
+    status: 'failed',
+    taskId: task.id,
+    trigger: 'user',
+    agentId,
+    threadId,
+    turnId: task.turn_id,
+  });
+  ctx.db.updateRun(runId, { status: 'failed', endedAt: now, error });
+  ctx.db.updateTask(task.id, {
+    status: 'failed',
+    runId,
+    startedAt: now,
+    endedAt: now,
+    error,
+  });
+  deps.publish(session.id, task.id, agentId, {
+    runId,
+    seq: 1,
+    event: { type: 'error', code: 'task_failed', message: error, terminal: true },
+  });
+  return { taskId: task.id, agentId, status: 'failed', messageId: null, error };
+}
+
 /** One leader turn may summon at most this many supplements (11-router §B4). */
 export const MAX_SUMMONS = 3;
 
+/** At most this many leader replies can be created under one turn. */
+export const MAX_LEADER_REPLIES = 3;
+
 /**
- * Turn the leader's `@name`s into supplement tasks.
+ * Create bounded follow-up tasks after an answer commits.
  *
- * Only the leader may summon, and only when it answered as the default speaker
- * (`leader_default`): a user who explicitly @'d someone chose the responders
- * themselves. A summoned agent's own `@`s never reach this function because its
- * task source is `summon`, which is what bounds the depth at one.
+ * Two edges are allowed:
+ *   user/leader_default → leader summons members (`summon`)
+ *   member (`summon`)   → member replies once to the leader (`reply`)
  *
- * The leader does not wait: these tasks start after its run has already
- * committed its answer, and their completion closes the turn.
+ * A `reply` task cannot create anything else. That source check is the loop
+ * breaker: leader→member→leader is the full chain, by construction.
  */
 function summonSupplements(
   ctx: AppContext,
@@ -226,7 +290,12 @@ function summonSupplements(
   },
 ): void {
   const text = input.replyText.trim();
-  if (!text || input.task.source !== 'leader_default') return;
+  if (!text) return;
+  if (input.task.source === 'summon') {
+    replyToLeader(ctx, deps, input, text);
+    return;
+  }
+  if (input.task.source !== 'leader_default') return;
   const leader = getLeader(ctx.db, input.session.id);
   if (!leader || leader.id !== input.agent.id) return;
   if (!ctx.db.getSession(input.session.id)) return;
@@ -245,7 +314,9 @@ function summonSupplements(
   if (chosen.length === 0) return;
 
   // Created after the leader's answer is committed, so the supplement's
-  // projection includes it (invariant I25).
+  // projection includes it (invariant I25). The task prompt must therefore be
+  // a small instruction, not the leader's whole answer: otherwise the same
+  // text arrives once as prompt and once inside <room-context>.
   const snapshotSeq = ctx.db.maxCommittedSeq(input.session.id);
   const now = Date.now();
   const summons: AgentTaskRow[] = [];
@@ -258,7 +329,7 @@ function summonSupplements(
       agentId: target.id,
       source: 'summon',
       parentTaskId: input.task.id,
-      prompt: text,
+      prompt: '请根据房间上下文中主答者的请求补充你负责的部分。',
       needsWrite: !target.readOnly,
       snapshotSeq,
       now,
@@ -281,6 +352,71 @@ function summonSupplements(
         ctx.db.finishTurnIfSettled(summon.turn_id, Date.now());
       });
   }
+}
+
+/**
+ * Let a summoned member notify the leader once.
+ *
+ * The leader is the only valid recipient. `reply` tasks are terminal in the
+ * follow-up graph, so even a leader answer that contains another `@` cannot
+ * start another task and oscillate forever.
+ */
+function replyToLeader(
+  ctx: AppContext,
+  deps: TaskRunnerDeps,
+  input: {
+    session: SessionRow;
+    workspace: WorkspaceRow;
+    task: AgentTaskRow;
+    agent: Agent;
+    replyText: string;
+  },
+  text: string,
+): void {
+  if (input.task.source !== 'summon') return;
+  const leader = getLeader(ctx.db, input.session.id);
+  if (!leader || leader.id === input.agent.id || !canRunAgent(ctx, leader)) return;
+  if (!ctx.db.getSession(input.session.id)) return;
+
+  const tasks = ctx.db.listTasksByTurn(input.task.turn_id);
+  if (tasks.some((task) => task.source === 'reply' && task.parent_task_id === input.task.id)) {
+    return;
+  }
+  if (tasks.filter((task) => task.source === 'reply').length >= MAX_LEADER_REPLIES) return;
+
+  // `@主答` is the UI alias for an implicit leader; accept the real configured
+  // leader name too. findSummonMentions keeps the same line-start/Markdown rules.
+  const alias: Agent = leader.name === '主答' ? leader : { ...leader, name: '主答' };
+  const mentioned = findSummonMentions(text, [leader, alias]);
+  if (!mentioned.some((agent) => agent.id === leader.id)) return;
+
+  const snapshotSeq = ctx.db.maxCommittedSeq(input.session.id);
+  const now = Date.now();
+  const id = `task_${randomUUID()}`;
+  ctx.db.createTask({
+    id,
+    sessionId: input.session.id,
+    turnId: input.task.turn_id,
+    agentId: leader.id,
+    source: 'reply',
+    parentTaskId: input.task.id,
+    prompt: '主答在房间上下文中回应了你的补充；请根据上下文给出最终答复。',
+    needsWrite: !leader.readOnly,
+    snapshotSeq,
+    now,
+  });
+  const created = ctx.db.getTask(id);
+  if (!created) return;
+  log.info(`turn ${input.task.turn_id}: ${input.agent.name} replied back to ${leader.name}`);
+
+  void runTask(ctx, deps, { session: input.session, workspace: input.workspace, task: created })
+    .then(() => {
+      ctx.db.finishTurnIfSettled(created.turn_id, Date.now());
+    })
+    .catch((error) => {
+      log.warn(`leader reply task ${created.id} crashed`, error);
+      ctx.db.finishTurnIfSettled(created.turn_id, Date.now());
+    });
 }
 
 /** Whether a member can actually take a run right now (same rule routing uses). */

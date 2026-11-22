@@ -45,7 +45,7 @@ export interface RouteResult {
   dropped: { id: string; reason: 'unknown' | 'disabled' | 'unavailable' }[];
 }
 
-const MAX_MENTIONS = 8;
+export const MAX_MENTIONS = 8;
 
 export function routeMentions(input: RouteInput): RouteResult {
   const byId = new Map(input.members.map((member) => [member.id, member]));
@@ -226,7 +226,19 @@ function mentionsInText(text: string, members: readonly Agent[]): Agent[] {
   return out;
 }
 
-/** True when the text addresses everyone. */
+/**
+ * True when the text addresses everyone.
+ *
+ * Code and blockquotes are stripped first: documentation/examples mentioning
+ * the token must not turn into a real broadcast. Ordinary prose may still say
+ * `@all` anywhere, which is the intended user-facing behaviour.
+ */
 export function mentionsAll(text: string): boolean {
-  return /@all\b/i.test(text) || text.includes('@全体');
+  const stripped = text
+    .replace(/```[\s\S]*?(?:```|$)/g, '')
+    .replace(/`[^`\n]*`/g, '')
+    .split('\n')
+    .filter((line) => !/^\s*>/.test(line))
+    .join('\n');
+  return /@all\b/i.test(stripped) || stripped.includes('@全体');
 }

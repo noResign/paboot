@@ -53,7 +53,8 @@ export interface StartSessionRunInput {
   driver: RuntimeDriver;
   permissionMode: ProductPermissionMode;
   model: string | null;
-  modelParameters: Record<string, string> | null;
+  /** Explicit request-level parameters; omitted = agent/session fallback. */
+  modelParameters?: Record<string, string> | null;
   /** Image attachment ids admitted with this run. */
   attachmentIds?: string[];
   trigger: 'user' | 'scheduled' | 'run_now';
@@ -198,6 +199,12 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   const runCwd = thread?.cwd ?? session.cwd;
   const resumeNativeSessionId = thread ? thread.nativeSessionId : session.native_session_id;
   const effectiveModel = model ?? agent?.model ?? session.model ?? null;
+  // Request wins, then the agent's own selection, then the session default.
+  // An explicit `null` still means "no parameters" and stops fallback.
+  const effectiveModelParameters =
+    modelParameters !== undefined
+      ? modelParameters
+      : agent?.modelParameters ?? parseStoredModelParameters(session.model_parameters);
   // Single security boundary for every runtime and every entry point (chat,
   // scheduled runs, run-now). A stored `bypass` is honored only when the
   // daemon-wide policy allows it.
@@ -239,7 +246,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       sessionId: session.id,
       runtime,
       model: effectiveModel,
-      modelParameters: modelParameters ?? null,
+      modelParameters: effectiveModelParameters,
       trigger: input.trigger,
       taskId: input.taskId ?? null,
       permissionMode,
@@ -250,7 +257,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     sessionId: session.id,
     runtime,
     model: effectiveModel,
-    modelParameters,
+    modelParameters: effectiveModelParameters,
     prompt,
     attachmentIds: input.attachmentIds ?? [],
     status: 'running',
@@ -419,7 +426,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       purpose: session.purpose,
       memoryMode: session.memory_mode,
       model: effectiveModel,
-      modelParameters: modelParameters ?? parseStoredModelParameters(session.model_parameters),
+      modelParameters: effectiveModelParameters,
       permissionMode,
       extraDirs,
       toolServers,
@@ -482,7 +489,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         prompt: promptSent,
         cwd: runCwd,
         model: effectiveModel ?? undefined,
-        modelParameters: modelParameters ?? undefined,
+        modelParameters: effectiveModelParameters ?? undefined,
         permissionMode,
         resumeNativeSessionId: resumeNativeSessionId ?? undefined,
         // The driver reports the native id once known: a host-picking runtime

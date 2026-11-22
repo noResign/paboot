@@ -15,6 +15,17 @@ interface Props {
   answered: boolean;
   /** Builtin blocking question: answer while the run is still live. */
   permissionId?: string | null;
+  /**
+   * False when this card belongs to a past turn. `answered` is client-only and
+   * resets on every history rebuild, so the only durable signal that a question
+   * is still live is that it sits after the latest user message.
+   */
+  interactive?: boolean;
+  /**
+   * A blocking question whose run has already ended: the permission id is dead,
+   * so the card is a historical record rather than an actionable ask.
+   */
+  closed?: boolean;
 }
 
 /**
@@ -23,7 +34,14 @@ interface Props {
  * instead (`permissionId`), so its answer is sent immediately and becomes the
  * tool result.
  */
-export function QuestionBlock({ toolUseId, questions, answered, permissionId }: Props) {
+export function QuestionBlock({
+  toolUseId,
+  questions,
+  answered,
+  permissionId,
+  interactive = true,
+  closed = false,
+}: Props) {
   const busy = useChat((state) => {
     const chat = state.activeKey ? state.byKey[state.activeKey] : undefined;
     return chat ? isBusy(chat.phase) : false;
@@ -42,12 +60,14 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
   const anyOther = Object.values(others).some((entry) => entry.active);
   const complete = isFullyAnswered(questions, selections, others);
   const blocking = Boolean(permissionId);
+  const readonly = closed || !interactive;
 
   useEffect(() => {
     // Builtin blocks the run, so a blocking question must be confirmed with the
     // button: the user may still be toggling options. Headless Claude can only
-    // answer after the turn ends, so that path keeps auto-sending.
-    if (answered || !complete || anyOther || blocking) return;
+    // answer after the turn ends, so that path keeps auto-sending — but only
+    // while the question still belongs to the current turn.
+    if (answered || readonly || !complete || anyOther || blocking) return;
     if (busy) return;
     answerQuestion(
       toolUseId,
@@ -57,7 +77,7 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
     // `selections` is read only through `complete`, which flips exactly when the
     // picks become sendable; depending on it directly would fire on every toggle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answered, busy, blocking, complete, anyOther, toolUseId]);
+  }, [answered, busy, blocking, complete, anyOther, readonly, toolUseId]);
 
   const toggleOther = (index: number, multiSelect: boolean | undefined): void => {
     setOthers((current) => {
@@ -97,7 +117,7 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
                   type="button"
                   className={`question-option${checked ? ' selected' : ''}`}
                   aria-pressed={checked}
-                  disabled={answered}
+                  disabled={answered || readonly}
                   onClick={() => {
                     setSelections((current) =>
                       toggleSelection(current, index, option.label, question.multiSelect),
@@ -124,7 +144,7 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
               type="button"
               className={`question-option${other?.active ? ' selected' : ''}`}
               aria-pressed={other?.active === true}
-              disabled={answered}
+              disabled={answered || readonly}
               onClick={() => toggleOther(index, question.multiSelect)}
             >
               <span className="question-mark">
@@ -141,7 +161,7 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
                 type="text"
                 value={other.text}
                 placeholder="输入你的答案"
-                disabled={answered}
+                disabled={answered || readonly}
                 onChange={(event) => setOtherText(index, event.target.value)}
               />
             )}
@@ -151,6 +171,12 @@ export function QuestionBlock({ toolUseId, questions, answered, permissionId }: 
       })}
       {answered ? (
         <div className="question-status">已发送答案</div>
+      ) : readonly ? (
+        <div className="question-status">
+          {closed
+            ? '这次提问已结束（运行结束或超时），无法再回答。'
+            : '这是历史提问，答案不会保留在对话里。'}
+        </div>
       ) : (
         <>
           {(anyOther || blocking) && (

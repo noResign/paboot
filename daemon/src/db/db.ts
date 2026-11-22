@@ -71,7 +71,7 @@ export interface SessionAgentRow {
 }
 
 /** Where a task came from. `relay`/`summon` arrive with the room features. */
-export type AgentTaskSource = 'mention' | 'leader_default' | 'summon' | 'steering' | 'summarize';
+export type AgentTaskSource = 'mention' | 'leader_default' | 'summon' | 'reply' | 'steering' | 'summarize';
 
 export interface TurnRow {
   id: string;
@@ -85,6 +85,8 @@ export interface TurnRow {
   ended_at: number | null;
   /** Client-supplied idempotency key; a retry with the same key reuses the turn. */
   command_id?: string | null;
+  /** JSON array of image attachment ids shared by every task in this turn. */
+  attachment_ids: string;
 }
 
 export interface AgentTaskRow {
@@ -762,6 +764,7 @@ export class Db {
         status TEXT NOT NULL,
         input_tokens INTEGER NOT NULL DEFAULT 0,
         token_limit INTEGER NOT NULL,
+        attachment_ids TEXT NOT NULL DEFAULT '[]',
         created_at INTEGER NOT NULL,
         ended_at INTEGER
       );
@@ -851,6 +854,8 @@ export class Db {
     // A turn retry (dropped response, double Enter, flaky link) must not become
     // a second question. NULL is allowed for turns sent by older clients.
     this.ensureColumn('session_turns', 'command_id', 'TEXT');
+    // Room turns share one attachment list across every task/run they start.
+    this.ensureColumn('session_turns', 'attachment_ids', "TEXT NOT NULL DEFAULT '[]'");
     this.db.exec(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_session_turns_command ON session_turns (command_id);`,
     );
@@ -1139,9 +1144,18 @@ export class Db {
     for (const run of runs) {
       this.deleteEventsForRun(run.id);
     }
+    // Room-only events use a synthetic run id (session notices), so clearing by
+    // event owner is not enough. session_id is the actual lifetime boundary.
+    this.db.prepare(`DELETE FROM events WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM session_permission_grants WHERE session_id = ?`).run(id);
+    // Multi-agent rows have no foreign keys. A deleted session must not leave
+    // turns/tasks/memberships/threads behind for roster and reconcile queries.
+    this.db.prepare(`DELETE FROM agent_tasks WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM session_turns WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM session_agents WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM agent_threads WHERE session_id = ?`).run(id);
     this.db
       .prepare(
         `DELETE FROM native_compactions WHERE thread_id IN
@@ -1710,6 +1724,12 @@ export class Db {
 
   deleteWorkspace(id: string): void {
     this.disableScheduledTasksForWorkspace(id, 'workspace_deleted');
+    // Workspace deletion is a full cascade. Routes normally delete sessions
+    // first, but callers such as migrations/tests may not; make the DB method
+    // safe on its own instead of relying on every call site remembering the
+    // multi-agent tables.
+    for (const session of this.listAllSessions(id)) this.deleteSession(session.id);
+    this.db.prepare(`DELETE FROM agents WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ?`).run(id);
     // Ends are workspace-owned rows (no FK); clean them up with the workspace.
@@ -2101,21 +2121,35 @@ export class Db {
     tokenLimit: number;
     now: number;
     commandId?: string | null;
+    attachmentIds?: string[];
   }): void {
     this.db
       .prepare(
         `INSERT INTO session_turns
-           (id, session_id, prompt, status, input_tokens, token_limit, created_at, command_id)
-         VALUES (?, ?, ?, 'running', 0, ?, ?, ?)`,
+           (id, session_id, prompt, status, input_tokens, token_limit, attachment_ids, created_at, command_id)
+         VALUES (?, ?, ?, 'running', 0, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
         input.sessionId,
         input.prompt,
         input.tokenLimit,
+        JSON.stringify(input.attachmentIds ?? []),
         input.now,
         input.commandId ?? null,
       );
+  }
+
+  /** Image ids attached to one turn (empty for text-only or malformed legacy rows). */
+  getTurnAttachmentIds(id: string): string[] {
+    const turn = this.getTurn(id);
+    if (!turn?.attachment_ids) return [];
+    try {
+      const parsed = JSON.parse(turn.attachment_ids) as unknown;
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
   }
 
   getTurn(id: string): TurnRow | undefined {
@@ -2382,6 +2416,28 @@ export class Db {
     }
   }
 
+  /**
+   * Whether the builtin runtime has a transcript for this agent in the session.
+   *
+   * Builtin conversations live in the native transcript tables, not behind a
+   * provider session id, so `agent_threads.native_session_id` is always null
+   * for them. This is the signal `hasContext` needs instead.
+   */
+  hasNativeTranscript(sessionId: string, agentId: string): boolean {
+    const thread = this.getNativeThreadForSession(sessionId, agentId);
+    if (!thread) return false;
+    const row = this.db
+      .prepare(`SELECT 1 AS present FROM native_messages WHERE thread_id = ? LIMIT 1`)
+      .get(thread.id);
+    return row !== undefined;
+  }
+
+  /** Drop the builtin transcript for one agent; the next run starts fresh. */
+  clearNativeTranscriptByOwner(sessionId: string, agentId: string): void {
+    const thread = this.getNativeThreadForSession(sessionId, agentId);
+    if (thread) this.deleteNativeThread(thread.id);
+  }
+
   /** Reset one agent's conversation in one session, keeping its history rows. */
   clearAgentThreadByOwner(sessionId: string, agentId: string): void {
     this.db
@@ -2390,6 +2446,14 @@ export class Db {
          WHERE session_id = ? AND agent_id = ?`,
       )
       .run(Date.now(), sessionId, agentId);
+    // `sessions.native_session_id` mirrors the leader's thread for readers that
+    // predate agents — notably the scheduler, whose runs carry no thread. If
+    // the leader is reset, leaving the mirror behind would resume the very
+    // conversation the user just discarded.
+    const leader = this.getSessionLeader(sessionId);
+    if (leader?.agent_id === agentId) {
+      this.db.prepare(`UPDATE sessions SET native_session_id = NULL WHERE id = ?`).run(sessionId);
+    }
   }
 
   /**
@@ -3113,9 +3177,26 @@ export class Db {
     const rows = this.db
       .prepare(`SELECT id FROM runs WHERE status = 'running'`)
       .all() as unknown as Array<{ id: string }>;
-    if (rows.length === 0) return 0;
 
     const now = Date.now();
+    // The process is gone, so every queued/running task is orphaned too. This
+    // must run even when no run row survived (a task can die before its driver
+    // starts and therefore has no run yet), otherwise roster `taskStatus` and
+    // session turns stay busy forever.
+    const openTasks = this.db
+      .prepare(`SELECT id FROM agent_tasks WHERE status IN ('queued','running')`)
+      .all() as unknown as Array<{ id: string }>;
+    if (openTasks.length > 0) {
+      const failTask = this.db.prepare(
+        `UPDATE agent_tasks SET status = 'failed', ended_at = ?, error = ? WHERE id = ?`,
+      );
+      for (const task of openTasks) failTask.run(now, reason, task.id);
+    }
+    this.db
+      .prepare(`UPDATE session_turns SET status = 'failed', ended_at = ? WHERE status = 'running'`)
+      .run(now);
+
+    if (rows.length === 0) return 0;
     const mark = this.db.prepare(
       `UPDATE runs SET status = 'interrupted', ended_at = ?, error = ? WHERE id = ?`,
     );
@@ -3131,6 +3212,16 @@ export class Db {
   /** Includes checkpoint preparation and finalization, not just live processes. */
   listRunningRuns(): RunRow[] {
     return this.db.prepare(`SELECT * FROM runs WHERE status = 'running'`).all() as unknown as RunRow[];
+  }
+
+  /** Running runs for one agent in one session (the reset-context busy check). */
+  listRunningRunsForAgent(sessionId: string, agentId: string): RunRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM runs
+         WHERE session_id = ? AND agent_id = ? AND status = 'running'`,
+      )
+      .all(sessionId, agentId) as unknown as RunRow[];
   }
 
   listRuns(sessionId: string): RunRow[] {
@@ -3273,7 +3364,7 @@ export class Db {
   listReplayEvents(runId: string, afterSeq = 0): EventRow[] {
     return this.db
       .prepare(
-        `SELECT id, run_id, seq, type, payload, created_at FROM events
+        `SELECT id, run_id, seq, type, payload, created_at, session_id, room_seq FROM events
          WHERE run_id = ? AND seq > ? AND type != 'thinking_delta'
          ORDER BY seq ASC`,
       )

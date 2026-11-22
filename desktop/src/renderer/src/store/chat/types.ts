@@ -137,7 +137,19 @@ export interface ChatSessionState {
    * only. A card moves in when its run reaches a terminal state, so it can
    * never be reshuffled by a slower sibling. Key = run id.
    */
+  /** A turn POST is in flight, or the room stream is being opened for it. */
+  turnSending: boolean;
+  /** Tasks acknowledged by `/turns` that have not emitted their first frame. */
+  dispatchedTasks: { taskId: string; agentId: string }[];
   pendingAnswers: PendingAnswer[];
+  /**
+   * Completed agent messages waiting for the current speaker to finish.
+   *
+   * Group-chat presentation is serialized even though execution is concurrent:
+   * a finished answer becomes a visible bubble only after any live answer has
+   * stopped streaming. User messages bypass this queue and appear immediately.
+   */
+  displayQueue: PendingAnswer[];
   /** The session's runs, newest last — each carries its checkpoint (or null). */
   runs: RunDto[];
   runId: string | null;
@@ -183,7 +195,10 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     modelParameters: {},
     messages: [],
     leaderAgentId: null,
+    turnSending: false,
+    dispatchedTasks: [],
     pendingAnswers: [],
+    displayQueue: [],
     runs: [],
     runId: null,
     streamId: null,

@@ -29,11 +29,11 @@ interface Props {
   onModelChange(model: string | null): void;
   onParameterChange(parameterId: string, valueId: string | null): void;
   onSend(text: string, attachmentIds?: string[], mentionIds?: string[]): void;
+  /** A room may have work running without a single blocking run stream. */
+  canStop?: boolean;
   onStop(): void;
   /** Roster for the `@` picker; absent on a single-agent session. */
   mentionAgents?: MentionAgent[];
-  /** Group turns have no attachment channel yet, so hide the image affordance. */
-  attachmentsEnabled?: boolean;
 }
 
 interface DraftImage {
@@ -61,16 +61,16 @@ export function Composer({
   onModelChange,
   onParameterChange,
   onSend,
+  canStop = false,
   onStop,
   mentionAgents,
-  attachmentsEnabled = true,
 }: Props) {
   const [text, setText] = useState('');
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(
     null,
   );
   const mentionList = mention ? mentionOptions(mentionAgents ?? [], mention.query) : [];
-  /** Mentions derived from the draft; also drives the image limitation below. */
+  /** Mentions derived from the draft; sent alongside any attachments. */
   const mentionedIds = mentionedAgentIds(text, mentionAgents ?? []);
   const hasMentions = mentionedIds.length > 0;
   const [images, setImages] = useState<DraftImage[]>([]);
@@ -136,7 +136,6 @@ export function Composer({
   }
 
   async function addFiles(files: readonly File[]): Promise<void> {
-    if (!attachmentsEnabled) return;
     const list = files.filter(isImageFile);
     if (list.length === 0) return;
     const room = MAX_IMAGES - images.length;
@@ -183,12 +182,6 @@ export function Composer({
     const value = text.trim();
     if (disabled || uploading) return;
     if (!value && images.length === 0) return;
-    // A turn carries the mention ids; it has no attachment channel yet. Say so
-    // instead of dropping the images on the way to the room.
-    if (hasMentions && images.length > 0) {
-      setAttachError('带 @ 提及的消息暂不支持图片，请先移除图片');
-      return;
-    }
     const ids = images.map((image) => image.id);
     for (const image of images) URL.revokeObjectURL(image.previewUrl);
     setText('');
@@ -343,22 +336,9 @@ export function Composer({
             type="button"
             className="icon-btn composer-attach"
             title={
-              hasMentions
-                ? '带 @ 提及的消息暂不支持图片'
-                : !attachmentsEnabled
-                  ? '群聊暂不支持图片附件'
-                  : imagesSupported
-                    ? '添加图片（也可以直接粘贴或拖入）'
-                    : '当前模型不支持图片输入'
+              imagesSupported ? '添加图片（也可以直接粘贴或拖入）' : '当前模型不支持图片输入'
             }
-            disabled={
-              disabled ||
-              uploading ||
-              hasMentions ||
-              !attachmentsEnabled ||
-              !imagesSupported ||
-              images.length >= MAX_IMAGES
-            }
+            disabled={disabled || uploading || !imagesSupported || images.length >= MAX_IMAGES}
             onClick={() => fileRef.current?.click()}
           >
             <Icon name="plus" size={15} />
@@ -402,19 +382,21 @@ export function Composer({
               ? '正在上传图片…'
               : busy
                 ? `${comboLabel('stop-run', IS_MAC)} 停止运行`
-                : hasMentions
-                  ? '将点名助手回答（暂不支持图片）'
-                  : !attachmentsEnabled
-                    ? '群聊：输入 @ 指定谁来回答'
-                    : imagesSupported
-                      ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
-                      : '当前模型不支持图片输入'}
+                : canStop
+                  ? '助手回答中 · 可继续发言，或停止全部'
+                  : hasMentions
+                  ? images.length > 0
+                    ? '将点名助手回答 · 图片会一起发送'
+                    : '将点名助手回答'
+                  : imagesSupported
+                    ? 'Enter 发送 · Shift+Enter 换行 · 可粘贴/拖入图片'
+                    : '当前模型不支持图片输入'}
           </span>
-          {busy ? (
+          {busy || canStop ? (
             <button
               className="btn primary send stop"
               onClick={onStop}
-              title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}
+              title={`${canStop ? '停止全部回答' : '停止当前运行'} ${comboLabel('stop-run', IS_MAC)}`}
             >
               <Icon name="stop" size={13} />
               停止

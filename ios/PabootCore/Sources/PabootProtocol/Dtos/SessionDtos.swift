@@ -15,7 +15,10 @@ public struct SessionDto: Decodable, Equatable, Sendable {
     public let createdAt: Int64
     public let lastActiveAt: Int64
     public let running: Bool
+    /// First active run, retained for older clients.
     public let runningRunId: String?
+    /// Every active run. A room may have several; empty on older daemons.
+    public let runningRunIds: [String]
     /// Scheduled tasks bound to this session (0 for older daemons).
     public let scheduledTaskCount: Int
     /// `task_config` marks the reusable AI authoring chat.
@@ -37,6 +40,7 @@ public struct SessionDto: Decodable, Equatable, Sendable {
         lastActiveAt = try container.decodeIfPresent(Int64.self, forKey: .lastActiveAt) ?? 0
         running = try container.decodeIfPresent(Bool.self, forKey: .running) ?? false
         runningRunId = try container.decodeIfPresent(String.self, forKey: .runningRunId)
+        runningRunIds = try container.decodeIfPresent([String].self, forKey: .runningRunIds) ?? []
         scheduledTaskCount = try container.decodeIfPresent(Int.self, forKey: .scheduledTaskCount) ?? 0
         purpose = try container.decodeIfPresent(String.self, forKey: .purpose)
         memoryMode = try container.decodeIfPresent(String.self, forKey: .memoryMode)
@@ -44,7 +48,7 @@ public struct SessionDto: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, runtime, workspaceId, permissionMode, model, modelParameters
-        case cwd, title, createdAt, lastActiveAt, running, runningRunId
+        case cwd, title, createdAt, lastActiveAt, running, runningRunId, runningRunIds
         case scheduledTaskCount, purpose, memoryMode
     }
 }
@@ -125,6 +129,8 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let agentId: String?
     /// 群聊任务所属的 turn；同一 turn 的多个 run 共享一条用户消息。
     public let turnId: String?
+    /// 回答在房间时间线上的提交位置；未完成/无可见文本时为 nil。
+    public let answerCommittedSeq: Int64?
     public let output: String?
 
     public init(from decoder: Decoder) throws {
@@ -147,13 +153,14 @@ public struct RunDto: Decodable, Equatable, Sendable {
         permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
         agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
         turnId = try container.decodeIfPresent(String.self, forKey: .turnId)
+        answerCommittedSeq = try container.decodeIfPresent(Int64.self, forKey: .answerCommittedSeq)
         output = try container.decodeIfPresent(String.self, forKey: .output)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, runtime, model, modelParameters, status, prompt, attachmentIds
         case startedAt, endedAt, exitCode, error, checkpoint
-        case taskId, trigger, permissionMode, agentId, turnId, output
+        case taskId, trigger, permissionMode, agentId, turnId, answerCommittedSeq, output
     }
 }
 

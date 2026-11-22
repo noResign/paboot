@@ -95,10 +95,10 @@ class AgentRepository(
     }
 
     /**
-     * 重置某个 agent 在本会话的对话。
+     * 重置某个 agent 在本会话的上下文。
      *
-     * 只清 paboot 侧的 thread 绑定。runtime 自己存的记忆（例如 Claude 的项目记忆）
-     * 不在我们控制范围内 —— 所以这里叫「重置对话」而不是「清空上下文」。
+     * 只清 paboot 侧的 thread / transcript 绑定。runtime 自己存的记忆（例如
+     * Claude 的项目记忆）不在我们控制范围内 —— 所以叫「重置上下文」。
      */
     suspend fun resetContext(sessionId: String, agentId: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")

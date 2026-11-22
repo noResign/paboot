@@ -174,7 +174,7 @@ final class AssistantSheetViewController: UIViewController {
         actions.axis = .horizontal
         actions.spacing = Spacing.sm
         if agent.hasContext {
-            actions.addArrangedSubview(actionButton("重置对话") { [weak self] in
+            actions.addArrangedSubview(actionButton("重置上下文") { [weak self] in
                 self?.confirmReset(agent)
             })
         }
@@ -210,8 +210,8 @@ final class AssistantSheetViewController: UIViewController {
     /// 重置对话框：文案必须说清清得掉什么、清不掉什么，否则就是假承诺。
     private func confirmReset(_ agent: SessionAgentDto) {
         let alert = UIAlertController(
-            title: "重置「\(agent.name)」的对话？",
-            message: "它的历史记录会保留，但下一次发言会从新对话开始。\n\n"
+            title: "重置「\(agent.name)」的上下文？",
+            message: "它的历史记录会保留，但下一次发言会从新的上下文开始。\n\n"
                 + "这不会清掉 runtime 自己保存的记忆（例如 Claude 的项目记忆）—— 那部分不归 paboot 管。",
             preferredStyle: .alert
         )

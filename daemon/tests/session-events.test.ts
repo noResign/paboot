@@ -39,9 +39,15 @@ async function setup(): Promise<Harness> {
   const notifier = new SessionNotifier();
   const ctx = {
     db,
+    registry: {
+      driver: () => ({ id: 'builtin', start: () => { throw new Error('not used'); } }),
+      detection: () => ({ available: true }),
+      detect: async () => ({ available: true }),
+    },
     notifier: new RunNotifier(),
     sessionNotifier: notifier,
     config: {},
+    builtinConfig: { securityProfile: 'local' },
     hookPath: '',
   } as unknown as AppContext;
 
@@ -89,6 +95,33 @@ async function openEvents(base: string, sessionId: string) {
   };
 }
 
+describe('session creation', () => {
+  it('creates a chat session without starting a run', async () => {
+    const h = await setup();
+    const response = await fetch(`${h.base}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspaceId: h.db.getSession(h.sessionId)!.workspace_id,
+        runtime: 'builtin',
+        permissionMode: 'ask',
+        title: '第一条消息',
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      session: { id: string; title: string | null; runtime: string; running: boolean };
+    };
+    expect(body.session).toMatchObject({
+      title: '第一条消息',
+      runtime: 'builtin',
+      running: false,
+    });
+    expect(h.db.getSession(body.session.id)).toBeTruthy();
+    expect(h.db.listRuns(body.session.id)).toHaveLength(0);
+  });
+});
+
 describe('session event stream', () => {
   it('starts with a state snapshot, then forwards run and title hints', async () => {
     const h = await setup();
@@ -122,6 +155,50 @@ describe('session event stream', () => {
     expect(renamed).toEqual({ type: 'session_updated', sessionId: h.sessionId, title: 'new title' });
 
     stream.close();
+  });
+
+  it('reports every active room run instead of collapsing to one', async () => {
+    const h = await setup();
+    for (const id of ['r1', 'r2']) {
+      h.db.createRun({
+        id,
+        sessionId: h.sessionId,
+        runtime: 'builtin',
+        model: null,
+        prompt: 'hi',
+        status: 'running',
+      });
+    }
+    const response = await fetch(`${h.base}/api/sessions/${h.sessionId}`);
+    const body = (await response.json()) as {
+      session: { running: boolean; runningRunId: string | null; runningRunIds?: string[] };
+    };
+    expect(body.session.running).toBe(true);
+    expect(body.session.runningRunId).toBe('r1');
+    expect(body.session.runningRunIds).toEqual(['r1', 'r2']);
+  });
+
+  it('exposes the answer commit position used to rebuild room order', async () => {
+    const h = await setup();
+    h.db.createRun({
+      id: 'r1',
+      sessionId: h.sessionId,
+      runtime: 'builtin',
+      model: null,
+      prompt: 'hi',
+      status: 'succeeded',
+      taskId: 'task-1',
+    });
+    h.db.addMessage(h.sessionId, 'assistant', '答案', {
+      agentId: 'a1',
+      taskId: 'task-1',
+      commit: true,
+    });
+    const response = await fetch(`${h.base}/api/sessions/${h.sessionId}`);
+    const body = (await response.json()) as {
+      runs: { answerCommittedSeq?: number | null }[];
+    };
+    expect(body.runs[0]!.answerCommittedSeq).toBe(1);
   });
 
   it('publishes a title change made through PATCH', async () => {

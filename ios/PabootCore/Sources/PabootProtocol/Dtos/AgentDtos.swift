@@ -255,7 +255,7 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
     public let available: Bool
     /// leader | member
     public let role: String
-    /// 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。
+    /// 这个 agent 在本会话是否已有自己的上下文（「重置上下文」作用的对象）。
     public let hasContext: Bool
     /// queued | running; nil = idle.
     public let taskStatus: String?

@@ -18,7 +18,13 @@ import type { Agent } from './types.js';
  *     the agent knows what it is missing instead of silently misremembering.
  */
 
-export const ROOM_CONTEXT_MAX_CHARS = 4000;
+/**
+ * Room context budget. This is deliberately much larger than a single chat
+ * message: a reviewer answer can be several thousand characters, and clipping
+ * it in the middle makes the leader act on an incomplete review. The cap is a
+ * safety bound, not a target.
+ */
+export const ROOM_CONTEXT_MAX_CHARS = 24_000;
 /** Newest committed entries kept verbatim. */
 export const ROOM_CONTEXT_RECENT = 6;
 const REMOTE_SUFFIX = '（远端）';
@@ -45,21 +51,14 @@ export function buildRoomProjection(db: Db, input: RoomProjectionInput): string 
   if (rows.length === 0) return null;
 
   const names = speakerLabels(db, input.sessionId, input.agentId, rows);
-  const halfBudget = Math.floor(ROOM_CONTEXT_MAX_CHARS / 2);
-  // One gigantic answer must not evict itself; clip it and keep the newest.
-  const entries = rows
-    .map((row) => clip(formatEntry(row, names), halfBudget))
-    .filter((entry) => entry !== '');
+  const entries = rows.map((row) => formatEntry(row, names)).filter((entry) => entry !== '');
   if (entries.length === 0) return null;
 
-  // Newest first, capped by both the entry count and half the character budget
-  // (the other half is reserved for a summary the caller may add later).
+  // Keep whole recent messages whenever they fit. A long review must not be
+  // clipped just because it is the newest, so the per-entry half-budget rule is
+  // gone; only the total envelope is bounded.
   let chosen = entries.slice(-ROOM_CONTEXT_RECENT);
   let omitted = entries.length - chosen.length;
-  while (chosen.length > 1 && chosen.join('\n').length > halfBudget) {
-    chosen.shift();
-    omitted += 1;
-  }
 
   const render = (): string =>
     [
@@ -69,12 +68,19 @@ export function buildRoomProjection(db: Db, input: RoomProjectionInput): string 
       CLOSE,
     ].join('\n');
 
-  // The hard cap wins over the "recent K" preference: drop oldest entries,
-  // but keep the omission note (and, in the extreme, just the note).
-  while (chosen.length > 0 && render().length > ROOM_CONTEXT_MAX_CHARS) {
+  // Prefer the newest entries: drop older ones until the envelope fits.
+  while (chosen.length > 1 && render().length > ROOM_CONTEXT_MAX_CHARS) {
     chosen.shift();
     omitted += 1;
   }
+
+  // A single message larger than the whole budget still has to be clipped, but
+  // it keeps the maximum useful prefix instead of an arbitrary half budget.
+  if (chosen.length === 1 && render().length > ROOM_CONTEXT_MAX_CHARS) {
+    const measuredEnvelope = render().length - chosen[0]!.length;
+    chosen[0] = clip(chosen[0]!, Math.max(1, ROOM_CONTEXT_MAX_CHARS - measuredEnvelope));
+  }
+
   return render();
 }
 

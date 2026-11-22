@@ -11,12 +11,17 @@ import {
 import { dismissPermission, enqueuePermission, setInputError, setSubmitting } from './chat/permissions';
 import { emptyChat, emptyPermissions } from './chat/types';
 import type { PendingAnswer, PendingPermission } from './chat/types';
-import type { ChatMessage, ChatSessionState, TodoItem } from './chat/types';
+import type { ChatMessage, ChatSessionState, ContentBlock, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
-import type { RunDto, SessionEvent, SessionRunBrief, SseFrame } from '../../../shared/contract';
+import type {
+  ProductPermissionMode,
+  RunDto,
+  SessionEvent,
+  SessionRunBrief,
+  SseFrame,
+} from '../../../shared/contract';
 import type {
   AttachStreamSpec,
-  ChatStreamSpec,
   RoomStreamSpec,
   SessionStreamSpec,
   StreamEvent,
@@ -61,6 +66,15 @@ let openSeq = 0;
  */
 const turnsInFlight = new Set<string>();
 
+/**
+ * Minimum gap between two completed room answers entering the transcript.
+ *
+ * Execution stays concurrent; only presentation is serialized so several
+ * agents finishing together read like successive group-chat messages.
+ */
+const DISPLAY_GAP_MS = 300;
+const displayTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 /** `Omit` over a union collapses its discriminant, so distribute it by hand. */
 type WithoutStreamId<T> = T extends unknown ? Omit<T, 'streamId'> : never;
 type StreamRequest = WithoutStreamId<StreamSpec>;
@@ -87,19 +101,17 @@ interface ChatStore {
   /** Rename in place: the rail and the open header read different stores. */
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   startNew(connectionId: string, options: NewSessionOptions): void;
-  send(text: string, attachmentIds?: string[]): Promise<void>;
+  send(text: string, attachmentIds?: string[], mentionIds?: string[]): Promise<void>;
   /**
    * One input addressed to several agents (`POST /turns`). The answers arrive
    * on the room stream, not on this promise.
    */
-  sendTurn(text: string, mentionIds: string[]): Promise<void>;
+  sendTurn(text: string, mentionIds: string[], attachmentIds?: string[]): Promise<void>;
   /** Open the room stream for the current multi-agent session (idempotent). */
   /** Open the multiplexed room stream; false when it could not be established. */
   ensureRoomStream(): Promise<boolean>;
   /** The roster says who the main speaker is; leader answers stream live. */
   setLeaderAgentId(agentId: string | null): void;
-  /** Close it when the session drops back to a single assistant. */
-  closeRoomStream(): void;
   /**
    * Answer an `AskUserQuestion` card. Blocking questions (builtin / Codex) send
    * the structured `answers` through the permission endpoint; the Claude path
@@ -175,7 +187,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     }
 
     const { session, runs, messages } = detail.data;
-    const rebuilt = await rebuildHistory(runs, session.runningRunId, messages);
+    const rebuilt = await rebuildHistory(runs, messages);
     // Rebuilding a long transcript is slow enough to be clicked through too.
     if (seq !== openSeq) return;
     set((state) => ({
@@ -191,9 +203,14 @@ export const useChat = create<ChatStore>((set, get) => ({
         model: session.model,
         modelParameters: session.modelParameters ?? {},
         messages: rebuilt.messages,
+        pendingAnswers: rebuilt.pendingAnswers,
         runs,
         todos: rebuilt.todos,
         contextUsage: rebuilt.contextUsage,
+        // The initial room stream resumes after everything already folded into
+        // history. Without this handoff, a live-only stream can drop the
+        // prefix of an answer that was in flight while the session opened.
+        roomCursor: rebuilt.roomCursor,
         historyLoading: false,
       })),
     }));
@@ -237,66 +254,89 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
   },
 
-  async send(text, attachmentIds = []) {
-    const key = get().activeKey;
-    if (!key) return;
-    const chat = get().byKey[key];
-    const prompt = text.trim() || (attachmentIds.length > 0 ? '请查看这些图片。' : '');
-    if (!chat || !prompt || isBusy(chat.phase)) return;
+  async send(text, attachmentIds = [], mentionIds = []) {
+    // Interactive chat has one send path whether the room currently has one
+    // agent or several. `sendTurn` creates the session lazily when needed.
+    await get().sendTurn(text, mentionIds, attachmentIds);
+  },
 
+  async sendTurn(text, mentionIds, attachmentIds = []) {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    // Match the single-chat composer: an image-only send still needs a prompt
+    // the model can act on. The wording is the same so both paths feel alike.
+    const prompt = text.trim() || (attachmentIds.length > 0 ? '请查看这些图片。' : '');
+    if (!key || !chat || !prompt || turnsInFlight.has(key)) return;
+
+    turnsInFlight.add(key);
+    const messageId = nextId('u');
+    // Put the user's bubble on screen before any await. Room-stream setup can
+    // involve a roster fetch and an SSE handshake; a slow/failed handshake must
+    // never make the message look like it vanished.
     set((state) => ({
-      // A fresh attempt clears the previous failure badge for this session.
-      failedIds: chat.sessionId ? state.failedIds.filter((id) => id !== chat.sessionId) : state.failedIds,
       byKey: patch(state, key, (current) => ({
         ...current,
         error: null,
+        turnSending: true,
+        dispatchedTasks: [],
         messages: [
           ...current.messages,
           {
             kind: 'user',
-            id: nextId('u'),
+            id: messageId,
             text: prompt,
             at: Date.now(),
-            ...(attachmentIds.length ? { attachmentIds } : {}),
+            ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
           },
-          newAssistant(nextId('a')),
         ],
       })),
     }));
-
-    // A new session's first prompt is what creates the session server-side.
-    const spec: Omit<ChatStreamSpec, 'streamId'> = {
-      kind: 'chat',
-      connectionId: chat.connectionId,
-      sessionId: chat.sessionId,
-      prompt,
-      ...(attachmentIds.length ? { attachmentIds } : {}),
-      runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
-      workspaceId: chat.pendingNew?.workspaceId ?? undefined,
-      permissionMode: chat.pendingNew?.permissionMode,
-      // The chat page exposes the model picker before the session exists; the
-      // choice only has somewhere to live once the daemon creates it.
-      ...(chat.pendingNew
-        ? {
-            model: chat.model,
-            modelParameters: Object.keys(chat.modelParameters).length ? chat.modelParameters : null,
-          }
-        : {}),
-      // One send = one run. A stable id lets a resend re-attach instead of
-      // starting a second run if the response was lost.
-      commandId: crypto.randomUUID(),
-    };
-    await startStream(set, key, spec);
-  },
-
-  async sendTurn(text, mentionIds) {
-    const key = get().activeKey;
-    const chat = key ? get().byKey[key] : undefined;
-    const prompt = text.trim();
-    if (!key || !chat?.sessionId || !prompt || turnsInFlight.has(key)) return;
-
-    turnsInFlight.add(key);
     try {
+      // There is no separate "first message creates the session" run anymore:
+      // create the session, then send the turn through the same room path used
+      // by every later message. The optimistic bubble is already on screen.
+      let current = get().byKey[key];
+      if (!current?.sessionId) {
+        const pending = current?.pendingNew;
+        const created = await api.createSession({
+          workspaceId: pending?.workspaceId ?? current?.workspaceId ?? undefined,
+          runtime: pending?.runtime ?? current?.runtime ?? undefined,
+          permissionMode: (pending?.permissionMode ?? current?.permissionMode ?? 'ask') as ProductPermissionMode,
+          model: current?.model ?? null,
+          modelParameters:
+            current && Object.keys(current.modelParameters).length > 0
+              ? current.modelParameters
+              : null,
+          title: prompt,
+        });
+        if (!created.ok) {
+          const { apiCode, message } = apiErrorOf(created.data);
+          set((state) => ({
+            byKey: patch(state, key, (chatState) => ({
+              ...chatState,
+              turnSending: false,
+              error: friendlyMessage(apiCode, created.status, message, '创建会话失败'),
+            })),
+          }));
+          return;
+        }
+        const session = created.data.session;
+        set((state) => ({
+          byKey: patch(state, key, (chatState) => ({
+            ...chatState,
+            sessionId: session.id,
+            title: session.title,
+            workspaceId: session.workspaceId ?? null,
+            runtime: session.runtime,
+            permissionMode: session.permissionMode,
+            model: session.model,
+            modelParameters: session.modelParameters ?? {},
+            pendingNew: null,
+          })),
+        }));
+        current = get().byKey[key];
+      }
+
       // The answers exist only on the room stream. Sending before it is open
       // leaves an invisible run behind and lets the session watcher attach a
       // per-run stream to it (a second user bubble and a blocked composer).
@@ -304,47 +344,51 @@ export const useChat = create<ChatStore>((set, get) => ({
         set((state) => ({
           byKey: patch(state, key, (current) => ({
             ...current,
-            error: '无法建立房间流，消息没有发送',
+            turnSending: false,
+            error: '无法建立房间流，消息没有发送；请重试',
           })),
         }));
         return;
       }
 
-      const messageId = nextId('u');
-      set((state) => ({
-        byKey: patch(state, key, (current) => ({
-          ...current,
-          error: null,
-          messages: [
-            ...current.messages,
-            { kind: 'user', id: messageId, text: prompt, at: Date.now() },
-          ],
-        })),
-      }));
-
       // Stable id: a retry (lost response, double submit) re-attaches instead of
       // creating a second question.
-      const res = await api.sendTurn(chat.sessionId, prompt, mentionIds, crypto.randomUUID());
+      const res = await api.sendTurn(
+        current!.sessionId!,
+        prompt,
+        mentionIds,
+        crypto.randomUUID(),
+        attachmentIds,
+      );
       if (res.ok) {
         // Stamp the turn onto the question: session hints for any run of this
         // turn then see it as already rendered instead of appending a copy.
         const turnId = res.data.turnId;
+        const dispatchedTasks = res.data.tasks.map((task) => ({
+          taskId: task.id,
+          agentId: task.agentId,
+        }));
         set((state) => ({
-          byKey: patch(state, key, (current) => ({
-            ...current,
-            messages: current.messages.map((message) =>
+          byKey: patch(state, key, (chatState) => ({
+            ...chatState,
+            turnSending: false,
+            dispatchedTasks,
+            messages: chatState.messages.map((message) =>
               message.kind === 'user' && message.id === messageId
                 ? { ...message, turnId }
                 : message,
             ),
           })),
         }));
+        void useSessions.getState().refreshCurrent(chat.connectionId);
         return;
       }
       const { apiCode, message } = apiErrorOf(res.data);
       set((state) => ({
         byKey: patch(state, key, (current) => ({
           ...current,
+          turnSending: false,
+          dispatchedTasks: [],
           error: friendlyMessage(apiCode, res.status, message, '发送失败'),
         })),
       }));
@@ -428,32 +472,6 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
   },
 
-  closeRoomStream() {
-    const key = get().activeKey;
-    const chat = key ? get().byKey[key] : undefined;
-    const streamId = chat?.roomStreamId;
-    if (!key || !streamId) return;
-    void connectionApi.streamCancel({ streamId, abortRun: false });
-    set((state) => ({
-      byKey: patch(state, key, (current) => {
-        if (current.roomStreamId !== streamId) return current;
-        // No stream means no more frames: keep whatever reached us rather than
-        // leaving it stuck in the pending area.
-        const flushed = current.pendingAnswers.map((answer) => ({
-          ...answer.message,
-          done: true,
-        }));
-        return {
-          ...current,
-          roomStreamId: null,
-          messages: finalizeAll([...current.messages, ...flushed]),
-          pendingAnswers: [],
-        };
-      }),
-      streamKeys: withoutKey(state.streamKeys, streamId),
-    }));
-  },
-
   syncSession() {
     const key = get().activeKey;
     if (!key) return;
@@ -465,13 +483,15 @@ export const useChat = create<ChatStore>((set, get) => ({
     const chat = key ? get().byKey[key] : undefined;
     const text = answerText.trim();
     if (!key || !chat || !text) return;
-    const question = findQuestion(chat.messages, toolUseId);
-    if (!question) return;
+    const found = findQuestion(chat, toolUseId);
+    if (!found) return;
+    const question = found.block;
 
     // Blocking questions (builtin / Codex): structured answers go through the
     // permission endpoint; the same run continues with the result.
     if (question.permissionId) {
-      if (question.answered) return;
+      // A done answer means the run already released the permission id.
+      if (question.answered || found.done) return;
       set(questionAnswered(key, toolUseId, true));
       const response = {
         answers: Object.fromEntries(
@@ -490,7 +510,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         set((state) => ({
           byKey: patch(state, key, (current) => ({
             ...current,
-            messages: markAnswered(current.messages, toolUseId, false),
+            ...markAnsweredChat(current, toolUseId, false),
             error: friendlyMessage(apiCode, res.status, message),
           })),
         }));
@@ -498,19 +518,55 @@ export const useChat = create<ChatStore>((set, get) => ({
       return;
     }
 
-    // The same gate as `send`, checked *before* marking the card answered: if the
-    // run were still busy, `send` would drop the text and the card would read
-    // "已发送答案" with nothing sent.
-    if (isBusy(chat.phase)) return;
-
+    // Claude's non-blocking question path continues as a normal turn. Address
+    // the agent that asked — a read-only member's question must not be answered
+    // by the leader — and let the per-agent queue serialize it behind that
+    // agent's live run.
+    if (question.answered) return;
     set(questionAnswered(key, toolUseId, true));
-    void get().send(text);
+    // Address the asker explicitly. If the roster has not loaded yet we cannot
+    // tell whether it is the leader; sending a member's answer to the leader is
+    // worse than a leader turn taking the `mention` source.
+    const mentionIds = found.agentId ? [found.agentId] : [];
+    void get().send(text, [], mentionIds);
   },
 
   stop() {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
-    if (!key || !chat?.streamId) return;
+    if (!key || !chat) return;
+
+    // A room has several runs and no single per-run stream to cancel. Stop the
+    // whole session at the daemon, keep the multiplexed stream open for the
+    // cancellation terminal frames, and finalize what is already on screen.
+    if (chat.roomStreamId && chat.sessionId) {
+      const sessionId = chat.sessionId;
+      void api.cancelSessionRuns(sessionId).then((res) => {
+        if (!res.ok) {
+          const { apiCode, message } = apiErrorOf(res.data);
+          set((state) => ({
+            byKey: patch(state, key, (current) => ({
+              ...current,
+              error: friendlyMessage(apiCode, res.status, message, '停止失败'),
+            })),
+          }));
+        }
+      });
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          messages: finalizeAll(current.messages),
+          pendingAnswers: [],
+          turnSending: false,
+          dispatchedTasks: [],
+          permissions: emptyPermissions(),
+        })),
+      }));
+      scheduleDisplayDrain(set, get, key);
+      return;
+    }
+
+    if (!chat.streamId) return;
     const streamId = chat.streamId;
     // `abortRun: true` is the stop button; merely navigating away uses detach().
     void connectionApi.streamCancel({ streamId, abortRun: true });
@@ -744,16 +800,19 @@ export const useChat = create<ChatStore>((set, get) => ({
             // The socket is gone; do not leave half-written cards in the
             // pending area forever. Their text is best-effort anyway.
             const flushed = current.pendingAnswers.map((answer) => ({
-              ...answer.message,
-              done: true,
+              ...answer,
+              message: { ...answer.message, done: true },
             }));
             return {
               ...current,
               roomStreamId: null,
               // Anything still running will never get a terminal frame now;
               // leaving it unfinished keeps a spinner on screen forever.
-              messages: finalizeAll([...current.messages, ...flushed]),
+              messages: finalizeAll(current.messages),
               pendingAnswers: [],
+              turnSending: false,
+              dispatchedTasks: [],
+              displayQueue: [...current.displayQueue, ...flushed],
               ...(event.outcome === 'giveup'
                 ? { error: friendlyMessage(event.apiCode, event.httpCode, event.message ?? '房间流已断开') }
                 : {}),
@@ -761,6 +820,7 @@ export const useChat = create<ChatStore>((set, get) => ({
           }),
           streamKeys: withoutKey(state.streamKeys, event.streamId),
         }));
+        scheduleDisplayDrain(set, get, key);
         return;
       }
     }
@@ -785,6 +845,8 @@ export const useChat = create<ChatStore>((set, get) => ({
           return { ...next, roomCursor: Math.max(chat.roomCursor ?? 0, ...positions) };
         }),
       }));
+
+      scheduleDisplayDrain(set, get, key);
 
       // `seenIds` only grows for genuinely new *pending* requests, so the tail
       // of it is exactly "what newly needs a human".
@@ -890,6 +952,45 @@ function finalizeAll(messages: ChatMessage[]): ChatMessage[] {
   );
 }
 
+
+/** A room has one visible speaker at a time; status-only frames do not count. */
+function hasLiveAnswer(chat: ChatSessionState): boolean {
+  return (
+    chat.pendingAnswers.length > 0 ||
+    chat.messages.some((message) => message.kind === 'assistant' && !message.done)
+  );
+}
+
+/**
+ * Append completed agent messages one at a time.
+ *
+ * This is deliberately a presentation queue, not an execution queue: the
+ * daemon has already persisted the answer and the room stream has delivered its
+ * terminal frame. We only wait while another agent is visibly streaming, then
+ * reveal one queued final bubble per short interval.
+ */
+function scheduleDisplayDrain(set: SetState, get: GetState, key: string): void {
+  if (displayTimers.has(key)) return;
+  const chat = get().byKey[key];
+  if (!chat || chat.displayQueue.length === 0 || hasLiveAnswer(chat)) return;
+
+  const [next, ...rest] = chat.displayQueue;
+  if (!next) return;
+  set((state) => ({
+    byKey: patch(state, key, (current) => ({
+      ...current,
+      messages: [...current.messages, next.message],
+      displayQueue: rest,
+    })),
+  }));
+
+  const timer = setTimeout(() => {
+    displayTimers.delete(key);
+    scheduleDisplayDrain(set, get, key);
+  }, DISPLAY_GAP_MS);
+  displayTimers.set(key, timer);
+}
+
 /**
  * Apply the roster's leader id, promoting any leader run that already started
  * while the roster was unknown. Shared by the roster fetch and the stream open,
@@ -897,16 +998,7 @@ function finalizeAll(messages: ChatMessage[]): ChatMessage[] {
  */
 function withLeaderAgent(chat: ChatSessionState, agentId: string | null): ChatSessionState {
   if (chat.leaderAgentId === agentId) return chat;
-  if (!agentId) return { ...chat, leaderAgentId: null };
-  const live = chat.pendingAnswers.filter((answer) => answer.agentId === agentId);
-  if (live.length === 0) return { ...chat, leaderAgentId: agentId };
-  const liveIds = new Set(live.map((answer) => answer.runId));
-  return {
-    ...chat,
-    leaderAgentId: agentId,
-    messages: [...chat.messages, ...live.map((answer) => answer.message)],
-    pendingAnswers: chat.pendingAnswers.filter((answer) => !liveIds.has(answer.runId)),
-  };
+  return { ...chat, leaderAgentId: agentId };
 }
 type ChatPhaseValue = ChatSessionState['phase'];
 
@@ -1040,6 +1132,8 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
 export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionState {
   let messages = chat.messages;
   let pending = chat.pendingAnswers;
+  let displayQueue = chat.displayQueue ?? [];
+  let dispatchedTasks = chat.dispatchedTasks;
   let todos = chat.todos;
   let contextUsage = chat.contextUsage;
   let permissions = chat.permissions;
@@ -1068,51 +1162,44 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     const runId = frame.runId;
     if (!runId) continue;
 
+    // The API ack says "these tasks were created"; the first real frame is the
+    // proof that their run actually started. Drop the waiting row then.
+    dispatchedTasks = dispatchedTasks.filter((task) =>
+      frame.taskId
+        ? task.taskId !== frame.taskId
+        : frame.agentId
+          ? task.agentId !== frame.agentId
+          : true,
+    );
+
     type Assistant = Extract<ChatMessage, { kind: 'assistant' }>;
-
-    // The leader is the conversation's main speaker: its answer streams into
-    // the transcript as it arrives. Everyone else waits in the pending area
-    // and only becomes a bubble once it commits.
-    if (chat.leaderAgentId !== null && frame.agentId === chat.leaderAgentId) {
-      let index = messages.findIndex(
-        (message) => message.kind === 'assistant' && message.runId === runId,
-      );
-      if (index < 0) {
-        messages = [
-          ...messages,
-          { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
-        ];
-        index = messages.length - 1;
-      }
-      const target = messages[index] as Assistant;
-      const next = applyFrame(
-        { messages: [target], todos, contextUsage, terminal: false, terminalSucceeded: false },
-        frame,
-        () => nextId('a'),
-      );
-      let updated = next.messages[next.messages.length - 1] as Assistant;
-      if (next.terminal) updated = finalizeLast([updated])[0] as Assistant;
-      messages = messages.map((message, i) => (i === index ? updated : message));
-      todos = next.todos;
-      contextUsage = next.contextUsage;
-      continue;
-    }
-
     let index = pending.findIndex((answer) => answer.runId === runId);
     if (index < 0) {
-      const created: PendingAnswer = {
-        runId,
-        agentId: frame.agentId ?? null,
-        message: { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
-      };
-      pending = [...pending, created];
+      // Legacy/history can already contain a partial card for this run. Move it
+      // into the live area instead of starting over and duplicating it later.
+      const existingIndex = messages.findIndex(
+        (message) => message.kind === 'assistant' && message.runId === runId,
+      );
+      const existing =
+        existingIndex >= 0
+          ? (messages[existingIndex] as Assistant)
+          : null;
+      if (existingIndex >= 0) messages = messages.filter((_, i) => i !== existingIndex);
+      pending = [
+        ...pending,
+        {
+          runId,
+          agentId: frame.agentId ?? existing?.agentId ?? null,
+          message:
+            existing ?? { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
+        },
+      ];
       index = pending.length - 1;
     }
 
     const entry = pending[index]!;
     const next = applyFrame(
-      // Feed the reducer a one-message transcript so only this run's card
-      // changes; other agents' in-flight answers are untouched.
+      // Only this run's card changes; every other live answer stays untouched.
       {
         messages: [entry.message],
         todos,
@@ -1128,10 +1215,13 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     contextUsage = next.contextUsage;
 
     if (next.terminal) {
-      // Commit now: the timeline only ever grows in completion order, so a
-      // slow sibling can never push a finished answer above a newer question.
+      // Nothing enters the transcript while another agent is visibly working.
+      // The final message joins the presentation queue and is appended later.
       updated = finalizeLast([updated])[0] as Assistant;
-      messages = [...messages, updated];
+      displayQueue = [
+        ...displayQueue.filter((answer) => answer.runId !== runId),
+        { runId, agentId: updated.agentId ?? frame.agentId ?? null, message: updated },
+      ];
       pending = pending.filter((answer) => answer.runId !== runId);
     } else {
       pending = pending.map((answer, i) =>
@@ -1144,6 +1234,8 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     ...chat,
     messages,
     pendingAnswers: pending,
+    displayQueue,
+    dispatchedTasks,
     todos,
     contextUsage,
     permissions,
@@ -1154,8 +1246,11 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
 
 interface RebuiltHistory {
   messages: ChatMessage[];
+  pendingAnswers: PendingAnswer[];
   todos: TodoItem[];
   contextUsage: ContextUsage | null;
+  /** Last room position represented by the fetched run events. */
+  roomCursor: number | null;
 }
 
 /**
@@ -1165,15 +1260,34 @@ interface RebuiltHistory {
  * and assembled in run order.
  */
 async function rebuildHistory(
-  runs: RunDto[],
-  runningRunId: string | null,
+  inputRuns: RunDto[],
   rawMessages: unknown[],
 ): Promise<RebuiltHistory> {
-  const fetched = await mapLimit(runs, 4, async (run) =>
-    run.id === runningRunId ? null : await api.runEvents(run.id),
-  );
+  // The live room appends answers in commit order, not run-start order. Sort by
+  // the assistant message's committed_seq so a reload does not move a slow
+  // answer across a newer user question. Active runs have no commit yet and go
+  // last, preserving their live placeholder position.
+  const runs = [...inputRuns].sort((a, b) => {
+    const ac = a.answerCommittedSeq ?? Number.POSITIVE_INFINITY;
+    const bc = b.answerCommittedSeq ?? Number.POSITIVE_INFINITY;
+    return ac !== bc ? ac - bc : a.startedAt - b.startedAt;
+  });
+  // Fetch every run, including active ones. A room may have several runs in
+  // flight at once; using the singular session.runningRunId would mark all but
+  // one as completed and render truncated cards.
+  const fetched = await mapLimit(runs, 4, async (run) => await api.runEvents(run.id));
+  let roomCursor: number | null = null;
+  for (const response of fetched) {
+    if (!response?.ok) continue;
+    for (const frame of response.data.events) {
+      if (typeof frame.roomSeq === 'number') {
+        roomCursor = Math.max(roomCursor ?? 0, frame.roomSeq);
+      }
+    }
+  }
 
   const messages: ChatMessage[] = [];
+  const pendingAnswers: PendingAnswer[] = [];
   let contextUsage: ContextUsage | null = null;
   let todos: TodoItem[] = [];
   // Room tasks: one user question, several runs (one per answering agent).
@@ -1196,20 +1310,29 @@ async function rebuildHistory(
       });
     }
     const response = fetched[index];
-    if (!response) {
-      // Still running: attach() will fill and continue this one.
-      messages.push({
-        ...newAssistant(nextId('a')),
-        runId: run.id,
-        agentId: run.agentId ?? null,
-      });
+    const active = run.status === 'running';
+    const fallback = {
+      ...newAssistant(nextId('a')),
+      done: !active,
+      runId: run.id,
+      agentId: run.agentId ?? null,
+    };
+    if (!response || !response.ok) {
+      if (active) pendingAnswers.push({ runId: run.id, agentId: run.agentId ?? null, message: fallback });
+      else messages.push(fallback);
       return;
     }
-    const events = response.ok ? response.data.events : [];
-    const rebuilt = buildAssistantFromEvents(events, () => nextId('a'));
-    // The speaker is a property of the run, not of its frames: keep it when
-    // folding the replay so the room timeline can label the answer.
-    messages.push({ ...rebuilt.assistant, runId: run.id, agentId: run.agentId ?? null });
+    const rebuilt = buildAssistantFromEvents(response.data.events, () => nextId('a'), {
+      finalize: !active,
+    });
+    const assistant = { ...rebuilt.assistant, runId: run.id, agentId: run.agentId ?? null };
+    if (active) {
+      pendingAnswers.push({ runId: run.id, agentId: run.agentId ?? null, message: assistant });
+    } else {
+      // The speaker is a property of the run, not of its frames: keep it when
+      // folding the replay so the room timeline can label the answer.
+      messages.push(assistant);
+    }
     if (rebuilt.contextUsage) contextUsage = rebuilt.contextUsage;
     if (rebuilt.todos.length) todos = rebuilt.todos;
   });
@@ -1242,7 +1365,7 @@ async function rebuildHistory(
     }
   }
 
-  return { messages, todos, contextUsage };
+  return { messages, pendingAnswers, todos, contextUsage, roomCursor };
 }
 
 type SetState = (updater: (state: ChatStore) => Partial<ChatStore>) => void;
@@ -1408,7 +1531,7 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
   }
 
   const { session, runs, messages } = detail.data;
-  const rebuilt = await rebuildHistory(runs, session.runningRunId, messages);
+  const rebuilt = await rebuildHistory(runs, messages);
   const latest = get().byKey[key];
   if (!latest || latest.sessionId !== sessionId || latest.streamId || latest.roomStreamId) return;
 
@@ -1423,9 +1546,14 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
       permissionMode: session.permissionMode,
       runId: session.runningRunId,
       messages: rebuilt.messages,
+      pendingAnswers: rebuilt.pendingAnswers,
       runs,
       todos: rebuilt.todos,
       contextUsage: rebuilt.contextUsage,
+      roomCursor: rebuilt.roomCursor,
+      displayQueue: [],
+      turnSending: false,
+      dispatchedTasks: [],
     })),
   }));
   const running = runs.find((run) => run.id === session.runningRunId);
@@ -1450,11 +1578,29 @@ function withoutKey(map: Record<string, string>, key: string): Record<string, st
   return next;
 }
 
-function findQuestion(messages: ChatMessage[], toolUseId: string) {
-  for (const message of messages) {
+interface FoundQuestion {
+  block: Extract<ContentBlock, { kind: 'question' }>;
+  /** The agent that asked. A non-leader's answer must be routed back to it. */
+  agentId: string | null;
+  /** The answer is final, so a blocking permission cannot still be pending. */
+  done: boolean;
+}
+
+function findQuestion(chat: ChatSessionState, toolUseId: string): FoundQuestion | null {
+  const candidates: { message: ChatMessage; agentId: string | null }[] = [
+    ...chat.messages.map((message) => ({
+      message,
+      agentId: message.kind === 'assistant' ? (message.agentId ?? null) : null,
+    })),
+    ...chat.pendingAnswers.map((answer) => ({ message: answer.message, agentId: answer.agentId })),
+    ...chat.displayQueue.map((answer) => ({ message: answer.message, agentId: answer.agentId })),
+  ];
+  for (const { message, agentId } of candidates) {
     if (message.kind !== 'assistant') continue;
     for (const block of message.blocks) {
-      if (block.kind === 'question' && block.toolUseId === toolUseId) return block;
+      if (block.kind === 'question' && block.toolUseId === toolUseId) {
+        return { block, agentId, done: message.done };
+      }
     }
   }
   return null;
@@ -1475,11 +1621,31 @@ function markAnswered(messages: ChatMessage[], toolUseId: string, answered: bool
   );
 }
 
+function markAnsweredAnswer(
+  answer: PendingAnswer,
+  toolUseId: string,
+  answered: boolean,
+): PendingAnswer {
+  return { ...answer, message: markAnswered([answer.message], toolUseId, answered)[0] as PendingAnswer['message'] };
+}
+
+function markAnsweredChat(
+  chat: ChatSessionState,
+  toolUseId: string,
+  answered: boolean,
+): Pick<ChatSessionState, 'messages' | 'pendingAnswers' | 'displayQueue'> {
+  return {
+    messages: markAnswered(chat.messages, toolUseId, answered),
+    pendingAnswers: chat.pendingAnswers.map((answer) => markAnsweredAnswer(answer, toolUseId, answered)),
+    displayQueue: chat.displayQueue.map((answer) => markAnsweredAnswer(answer, toolUseId, answered)),
+  };
+}
+
 function questionAnswered(key: string, toolUseId: string, answered: boolean) {
   return (state: ChatStore): Partial<ChatStore> => ({
     byKey: patch(state, key, (chat) => ({
       ...chat,
-      messages: markAnswered(chat.messages, toolUseId, answered),
+      ...markAnsweredChat(chat, toolUseId, answered),
     })),
   });
 }

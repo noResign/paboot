@@ -21,7 +21,10 @@ data class SessionDto(
     val createdAt: Long = 0,
     val lastActiveAt: Long = 0,
     val running: Boolean = false,
+    /** 兼容旧客户端的第一个 active run。 */
     val runningRunId: String? = null,
+    /** 房间可能同时有多个 active run；旧 daemon 不发则为空。 */
+    val runningRunIds: List<String> = emptyList(),
     /** 绑定在该会话上的定时任务数量（旧 daemon 不发则为 0）。 */
     val scheduledTaskCount: Int = 0,
     /** `task_config` 表示每 workspace 复用的 AI 任务配置会话。 */
@@ -80,6 +83,8 @@ data class RunDto(
     val agentId: String? = null,
     /** 群聊任务所属的 turn；同一 turn 的多个 run 共享一条用户消息。 */
     val turnId: String? = null,
+    /** 回答在房间时间线上的提交位置；未完成/无可见文本时为 null。 */
+    val answerCommittedSeq: Long? = null,
     /** 命令任务的聚合输出（尾部截断）。 */
     val output: String? = null,
 )
@@ -138,4 +143,10 @@ data class SessionRunBriefDto(
     val attachmentIds: List<String> = emptyList(),
     val startedAt: Long = 0,
     val status: String = "",
+    /** 群聊任务所属的 turn；单聊/旧 daemon 为 null。 */
+    val turnId: String? = null,
+    /** 产生该 run 的 agent；旧 daemon 为 null。 */
+    val agentId: String? = null,
+    /** 群聊 task id；单聊/旧 daemon 为 null。 */
+    val taskId: String? = null,
 )

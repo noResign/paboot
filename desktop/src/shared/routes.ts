@@ -88,6 +88,8 @@ export const ROUTES = {
   sessionStream: (id: string) => `/api/sessions/${encodeURIComponent(id)}/stream`,
   /** 发一次输入：202 + 任务列表，答案是走房间流的。 */
   sessionTurns: (id: string) => `/api/sessions/${encodeURIComponent(id)}/turns`,
+  /** 停止该会话当前所有 room 任务。 */
+  sessionCancel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/cancel`,
   sessionModel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/model`,
   runs: '/api/runs',
   run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,

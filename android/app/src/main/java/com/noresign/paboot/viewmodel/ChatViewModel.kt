@@ -1313,17 +1313,20 @@ class ChatViewModel(
     }
 
     /**
-     * 重置某个 agent 在本会话的对话。
+     * 重置某个 agent 在本会话的上下文。
      *
-     * 只清 paboot 侧的 thread 绑定。runtime 自己存的记忆（例如 Claude 的项目记忆）
-     * 清不掉，所以文案说的是「重置对话」，不是「清空上下文」。
+     * 只清 paboot 侧的 thread / transcript 绑定。runtime 自己存的记忆（例如
+     * Claude 的项目记忆）清不掉，所以文案用的是「重置上下文」。
      */
     fun resetAgentContext(agentId: String) {
         val id = sessionId ?: return
         viewModelScope.launch {
             when (val r = agentRepository.resetContext(id, agentId)) {
                 is NetworkResult.Success -> loadSessionAgents(id)
-                is NetworkResult.Error -> _agentError.value = r.message
+                is NetworkResult.Error -> _agentError.value = when (r.apiCode) {
+                    "run_in_progress" -> "该助手正在回答，等它结束后再重置上下文"
+                    else -> r.message
+                }
             }
         }
     }

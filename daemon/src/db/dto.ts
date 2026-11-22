@@ -21,6 +21,8 @@ export function sessionRunBrief(r: RunRow): SessionRunBrief {
     startedAt: r.started_at,
     status: r.status,
     turnId: r.turn_id ?? null,
+    agentId: r.agent_id ?? null,
+    taskId: r.task_id ?? null,
   };
 }
 

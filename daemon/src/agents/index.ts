@@ -25,6 +25,7 @@ export {
 export {
   AgentValidationError,
   addToSession,
+  assertWritableSlotFree,
   createAgent,
   ensureThread,
   getAgent,
@@ -46,6 +47,7 @@ export {
 
 export {
   findSummonMentions,
+  MAX_MENTIONS,
   mentionsAll,
   parseMentionNames,
   routeMentions,
@@ -62,7 +64,6 @@ export {
 } from './projection.js';
 
 export {
-  assertWritableSlotFree,
   createTurn,
   type CreatedTurn,
   type CreateTurnInput,

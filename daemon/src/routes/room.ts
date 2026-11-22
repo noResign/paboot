@@ -1,9 +1,53 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { SseFrame } from '../types/api.js';
-import { AgentValidationError, createTurn, runTurn, type TaskRunnerDeps } from '../agents/index.js';
+import {
+  AgentValidationError,
+  createTurn,
+  listAgents,
+  MAX_MENTIONS,
+  runTurn,
+  type Agent,
+  type TaskRunnerDeps,
+} from '../agents/index.js';
+import { normalizeAttachmentIds } from '../attachments/request.js';
 import { log } from '../platform/log.js';
+import { getActiveRun } from '../runtimes/active-runs.js';
 import { sseHeaders, writeSseFrame } from '../http/sse.js';
+
+/**
+ * Whether each workspace agent can receive images, with a user-facing reason
+ * when it cannot. Builtin is accepted here because its model-level check runs
+ * in the driver; runtime agents need an explicit `imageInput` capability.
+ */
+async function imageSupportByAgent(
+  ctx: AppContext,
+  workspaceId: string,
+): Promise<Map<string, string | null>> {
+  const agents = listAgents(ctx.db, workspaceId);
+  const entries = await Promise.all(
+    agents.map(async (agent): Promise<[string, string | null]> => {
+      if (agent.kind === 'builtin') return [agent.id, null];
+      if (agent.kind === 'peer') return [agent.id, 'peer agents do not receive images yet'];
+      const runtime = agent.runtime ?? '';
+      if (!runtime) return [agent.id, 'the agent has no runtime'];
+      let detection = ctx.registry.detection(runtime);
+      if (!detection) {
+        try {
+          detection = await ctx.registry.detect(runtime, process.env);
+        } catch {
+          detection = undefined;
+        }
+      }
+      if (!detection?.available) return [agent.id, `runtime ${runtime} is not available`];
+      if (detection.capabilities?.imageInput !== true) {
+        return [agent.id, `runtime ${runtime} does not support image input`];
+      }
+      return [agent.id, null];
+    }),
+  );
+  return new Map(entries);
+}
 
 /**
  * Room stream: one SSE connection per session, carrying every agent's frames.
@@ -40,6 +84,12 @@ const subscribers = new Map<string, Set<Subscriber>>();
 
 /** Rows per replay query; the route loops until it catches up. */
 const REPLAY_PAGE = 500;
+
+/** Close every room listener for a session that is being deleted. */
+export function closeSessionRoomStreams(sessionId: string): void {
+  for (const subscriber of subscribers.get(sessionId) ?? []) subscriber.close();
+  subscribers.delete(sessionId);
+}
 
 function broadcast(ctx: AppContext, sessionId: string, frame: Omit<RoomFrame, 'roomSeq'>): void {
   const roomSeq = ctx.db.nextRoomSeq(sessionId);
@@ -158,13 +208,52 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
   });
 
   /**
+   * Stop every piece of work the room currently owns.
+   *
+   * A turn can have several runs alive at once, so cancelling one stream/run is
+   * not the product action. Queued tasks that never acquired a run are marked
+   * cancelled synchronously; active runs are cancelled and close their tasks
+   * through their normal terminal path.
+   */
+  app.post('/api/sessions/:id/cancel', (req, res) => {
+    const session = ctx.db.getSession(req.params.id!);
+    if (!session) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    const now = Date.now();
+    const touchedTurns = new Set<string>();
+    let cancelled = 0;
+    for (const task of ctx.db.listOpenTasks(session.id)) {
+      touchedTurns.add(task.turn_id);
+      if (task.status === 'queued' && !task.run_id) {
+        ctx.db.updateTask(task.id, {
+          status: 'cancelled',
+          endedAt: now,
+          error: 'cancelled by user',
+        });
+        cancelled += 1;
+      }
+    }
+    for (const run of ctx.db.listRunningRuns()) {
+      if (run.session_id !== session.id) continue;
+      const active = getActiveRun(run.id);
+      if (!active) continue;
+      active.cancel('cancelled by user');
+      cancelled += 1;
+    }
+    for (const turnId of touchedTurns) ctx.db.finishTurnIfSettled(turnId, now);
+    res.json({ ok: true, cancelled });
+  });
+
+  /**
    * One user input, several agents.
    *
    * Returns 202 with the tasks it created: the answer arrives on the room
    * stream, not in this response. That is what makes the turn a batch rather
    * than a barrier — the client is free immediately and watches the room.
    */
-  app.post('/api/sessions/:id/turns', (req, res) => {
+  app.post('/api/sessions/:id/turns', async (req, res) => {
     const session = ctx.db.getSession(req.params.id!);
     if (!session) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
@@ -176,7 +265,12 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    const body = (req.body ?? {}) as { prompt?: unknown; mentions?: unknown; commandId?: unknown };
+    const body = (req.body ?? {}) as {
+      prompt?: unknown;
+      mentions?: unknown;
+      commandId?: unknown;
+      attachmentIds?: unknown;
+    };
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     if (!prompt) {
       res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
@@ -185,12 +279,78 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
     const mentionIds = Array.isArray(body.mentions)
       ? body.mentions.filter((id): id is string => typeof id === 'string')
       : [];
+    if (mentionIds.length > MAX_MENTIONS) {
+      res.status(400).json({
+        error: `at most ${MAX_MENTIONS} agents may be addressed in one turn`,
+        code: 'too_many_mentions',
+      });
+      return;
+    }
     const commandId =
       typeof body.commandId === 'string' && body.commandId ? body.commandId : null;
+    const attachmentIds = normalizeAttachmentIds(body.attachmentIds);
+    if (attachmentIds === null) {
+      res.status(400).json({
+        error: 'attachmentIds must be an array of unique ids',
+        code: 'bad_request',
+      });
+      return;
+    }
+    for (const id of attachmentIds) {
+      const attachment = ctx.attachments.get(id);
+      if (!attachment) {
+        res.status(404).json({ error: `attachment not found: ${id}`, code: 'attachment_not_found' });
+        return;
+      }
+      if (attachment.sessionId && attachment.sessionId !== session.id) {
+        res.status(403).json({
+          error: `attachment belongs to another session: ${id}`,
+          code: 'attachment_forbidden',
+        });
+        return;
+      }
+      if (attachment.workspaceId && attachment.workspaceId !== workspace.id) {
+        res.status(403).json({
+          error: `attachment belongs to another workspace: ${id}`,
+          code: 'attachment_forbidden',
+        });
+        return;
+      }
+    }
+    const imageSupport =
+      attachmentIds.length > 0 ? await imageSupportByAgent(ctx, workspace.id) : null;
 
     let created;
     try {
-      created = createTurn(ctx.db, { session, workspace, prompt, mentionIds, commandId });
+      created = createTurn(ctx.db, {
+        session,
+        workspace,
+        prompt,
+        mentionIds,
+        commandId,
+        attachmentIds,
+        ...(imageSupport
+          ? {
+              validateAttachmentTargets: (agents: readonly Agent[]) => {
+                const rejected = agents
+                  .map((agent) => ({
+                    agent,
+                    reason: imageSupport.has(agent.id)
+                      ? imageSupport.get(agent.id)!
+                      : 'image input is not available',
+                  }))
+                  .filter((entry) => entry.reason !== null);
+                if (rejected.length === 0) return;
+                throw new AgentValidationError(
+                  'attachments_unsupported_agent',
+                  rejected
+                    .map((entry) => `${entry.agent.name}: ${entry.reason}`)
+                    .join('; '),
+                );
+              },
+            }
+          : {}),
+      });
     } catch (err) {
       if (err instanceof AgentValidationError) {
         res.status(err.code === 'command_id_conflict' ? 409 : 400).json({
@@ -200,6 +360,13 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
         return;
       }
       throw err;
+    }
+
+    // Own the uploads as soon as the turn exists. The per-run bind below adds a
+    // run id later; the session/workspace binding is the access-control fact
+    // the attachment GET route relies on.
+    for (const id of attachmentIds) {
+      ctx.attachments.bind(id, { sessionId: session.id, workspaceId: workspace.id });
     }
 
     res.status(202).json({

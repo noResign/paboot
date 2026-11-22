@@ -1,14 +1,27 @@
+import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, SessionRow } from '../db/db.js';
 import { resolveSessionEndsScope } from '../ends/scope.js';
 import { endDto } from './ends.js';
 import type { SessionDto, SessionEndsResponse, SessionEvent } from '../types/api.js';
-import type { ProductPermissionMode } from '../permissions/permission-mode.js';
+import {
+  getDefaultPermissionMode,
+  isProductPermissionMode,
+  type ProductPermissionMode,
+} from '../permissions/permission-mode.js';
+import { resolveEffectivePermissionMode } from '../permissions/security-profile.js';
 import { sseHeaders } from '../http/sse.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
-import { runningRunBySession } from '../runs/session-runs.js';
+import { runningRunIdsBySession } from '../runs/session-runs.js';
+import { closeSessionRoomStreams } from './room.js';
 import { runDto } from '../db/dto.js';
+import { resolveWorkspaceForRequest } from '../workspaces/workspace-service.js';
+import {
+  resolveNewSessionPermissionMode,
+  resolveNewSessionRuntime,
+} from '../workspaces/workspace-defaults.js';
+import { titleFromPrompt } from '../runs/session-title.js';
 import {
   isValidModelParameters,
   normalizeModel,
@@ -22,9 +35,10 @@ import {
 function sessionDto(
   ctx: AppContext,
   s: SessionRow,
-  runningRunId: string | null = null,
+  runningRunIds: readonly string[] = [],
   scheduledTaskCount = 0,
 ): SessionDto {
+  const runningRunId = runningRunIds[0] ?? null;
   return {
     id: s.id,
     runtime: s.runtime,
@@ -41,6 +55,7 @@ function sessionDto(
     lastActiveAt: s.last_active_at,
     running: runningRunId !== null,
     runningRunId,
+    runningRunIds: [...runningRunIds],
     scheduledTaskCount,
     purpose: s.purpose ?? null,
     memoryMode: s.memory_mode as SessionDto['memoryMode'],
@@ -60,12 +75,79 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const running = runningRunBySession(ctx);
+    const running = runningRunIdsBySession(ctx);
     const taskCounts = ctx.db.countScheduledTasksBySession();
     const sessions = ctx.db
       .listSessions(workspaceId)
-      .map((s) => sessionDto(ctx, s, running.get(s.id) ?? null, taskCounts.get(s.id) ?? 0));
+      .map((s) => sessionDto(ctx, s, running.get(s.id) ?? [], taskCounts.get(s.id) ?? 0));
     res.json({ sessions });
+  });
+
+  /**
+   * Create a chat session without starting a run.
+   *
+   * Interactive clients use this once, then drive every message through
+   * `/turns` + the room stream. Keeping creation separate makes single-agent
+   * sessions use the same send/reconnect path as group rooms.
+   */
+  app.post('/api/sessions', (req, res) => {
+    const body = (req.body ?? {}) as {
+      workspaceId?: unknown;
+      runtime?: unknown;
+      permissionMode?: unknown;
+      model?: unknown;
+      modelParameters?: unknown;
+      title?: unknown;
+    };
+    if (body.permissionMode !== undefined && !isProductPermissionMode(body.permissionMode)) {
+      res.status(400).json({ error: 'permissionMode must be ask, acceptEdits or bypass', code: 'bad_request' });
+      return;
+    }
+    if (body.modelParameters !== undefined && !isValidModelParameters(body.modelParameters)) {
+      res.status(400).json({ error: 'modelParameters must be an object or null', code: 'bad_request' });
+      return;
+    }
+    const workspace = resolveWorkspaceForRequest(
+      ctx.db,
+      typeof body.workspaceId === 'string' && body.workspaceId.trim() ? body.workspaceId.trim() : undefined,
+    );
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const requestedRuntime =
+      typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
+    const runtime = resolveNewSessionRuntime(workspace, requestedRuntime);
+    const driver = ctx.registry.driver(runtime);
+    if (!driver || driver.internal) {
+      res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
+      return;
+    }
+    const requestedPermissionMode: ProductPermissionMode = isProductPermissionMode(body.permissionMode)
+      ? body.permissionMode
+      : resolveNewSessionPermissionMode(
+          workspace,
+          undefined,
+          getDefaultPermissionMode(ctx.db, ctx.config),
+        );
+    const permissionMode = resolveEffectivePermissionMode(requestedPermissionMode, ctx.builtinConfig);
+    const model = normalizeModel(body.model);
+    const modelParameters =
+      body.modelParameters !== undefined ? normalizeModelParameters(body.modelParameters) : null;
+    const promptTitle = typeof body.title === 'string' ? body.title : '';
+    const session = ctx.db.createSession({
+      id: randomUUID(),
+      runtime,
+      workspaceId: workspace.id,
+      permissionMode,
+      model,
+      modelParameters,
+      cwd: workspace.path,
+      title: promptTitle.trim() ? titleFromPrompt(promptTitle) : null,
+    });
+    res.status(201).json({
+      session: sessionDto(ctx, session, [], ctx.db.countScheduledTasksForSession(session.id)),
+    });
   });
 
   app.get('/api/sessions/:id', (req, res) => {
@@ -74,13 +156,20 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
-    const running = runningRunBySession(ctx);
+    const running = runningRunIdsBySession(ctx);
+    const messages = ctx.db.listMessages(s.id);
+    const committedByTask = new Map(
+      messages
+        .filter((row) => row.role === 'assistant' && row.task_id && row.committed_seq !== null)
+        .map((row) => [row.task_id!, row.committed_seq!] as const),
+    );
     res.json({
-      session: sessionDto(ctx, s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
-      messages: ctx.db.listMessages(s.id),
-      runs: ctx.db
-        .listRuns(s.id)
-        .map((r) => runDto(r, ctx.db.getRunCheckpoint(r.id), s.workspace_id)),
+      session: sessionDto(ctx, s, running.get(s.id) ?? [], ctx.db.countScheduledTasksForSession(s.id)),
+      messages,
+      runs: ctx.db.listRuns(s.id).map((r) => ({
+        ...runDto(r, ctx.db.getRunCheckpoint(r.id), s.workspace_id),
+        answerCommittedSeq: r.task_id ? (committedByTask.get(r.task_id) ?? null) : null,
+      })),
     });
   });
 
@@ -103,10 +192,10 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       if (res.writableEnded) return;
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
-    const running = runningRunBySession(ctx);
+    const running = runningRunIdsBySession(ctx);
     send({
       type: 'state',
-      session: sessionDto(ctx, s, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(s.id)),
+      session: sessionDto(ctx, s, running.get(s.id) ?? [], ctx.db.countScheduledTasksForSession(s.id)),
     });
 
     const unsubscribe = ctx.sessionNotifier.subscribe(s.id, send);
@@ -135,9 +224,9 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     ctx.db.setSessionTitle(s.id, title.slice(0, 200));
     ctx.sessionNotifier.publish(s.id, { type: 'session_updated', sessionId: s.id, title: title.slice(0, 200) });
     ctx.db.audit('rename_session', s.id);
-    const running = runningRunBySession(ctx);
+    const running = runningRunIdsBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, session: sessionDto(ctx, updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
+    res.json({ ok: true, session: sessionDto(ctx, updated, running.get(s.id) ?? [], ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   // Switch the model used by this session's subsequent runs. An in-flight run
@@ -171,9 +260,9 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       : parseStoredModelParameters(s.model_parameters);
     ctx.db.setSessionModelSelection(s.id, model, modelParameters);
     ctx.db.audit('set_session_model', JSON.stringify({ sessionId: s.id, model, modelParameters }));
-    const running = runningRunBySession(ctx);
+    const running = runningRunIdsBySession(ctx);
     const updated = ctx.db.getSession(s.id) as SessionRow;
-    res.json({ ok: true, effective: 'next_run', session: sessionDto(ctx, updated, running.get(s.id) ?? null, ctx.db.countScheduledTasksForSession(updated.id)) });
+    res.json({ ok: true, effective: 'next_run', session: sessionDto(ctx, updated, running.get(s.id) ?? [], ctx.db.countScheduledTasksForSession(updated.id)) });
   });
 
   function sessionEndsPayload(ctx: AppContext, session: SessionRow): SessionEndsResponse {
@@ -255,6 +344,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       }
     }
     await ctx.attachments?.deleteForSession(s.id);
+    closeSessionRoomStreams(s.id);
     ctx.db.deleteSession(s.id);
     ctx.permissions.clearSession(s.id);
     ctx.spill?.removeSession(s.id);

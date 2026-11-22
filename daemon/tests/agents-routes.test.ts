@@ -50,6 +50,7 @@ interface Harness {
   base: string;
   workspaceId: string;
   workspacePath: string;
+  unavailable: Set<string>;
   request: (method: string, url: string, body?: unknown) => Promise<Response>;
 }
 
@@ -59,6 +60,7 @@ async function startApi(): Promise<Harness> {
   const workspace = db.createWorkspace({ name: 'demo', path: workspacePath });
 
   const starts: RuntimeDriverRequest[] = [];
+  const unavailable = new Set<string>();
   const makeDriver = (id: string): RuntimeDriver => ({
     id,
     start(req) {
@@ -74,7 +76,7 @@ async function startApi(): Promise<Harness> {
     id,
     name: id,
     bin: id,
-    available: true,
+    available: !unavailable.has(id),
     version: 'test',
     authed: true,
     capabilities: { ...defaultCapabilities },
@@ -110,6 +112,7 @@ async function startApi(): Promise<Harness> {
     base,
     workspaceId: workspace.id,
     workspacePath,
+    unavailable,
     request: (method, url, body) =>
       fetch(`${base}${url}`, {
         method,
@@ -141,6 +144,33 @@ describe('agent API', () => {
 
     expect((await h.request('DELETE', `/api/agent-profiles/${agent.id}`)).status).toBe(204);
     expect((await h.request('GET', `/api/agent-profiles/${agent.id}`)).status).toBe(404);
+  });
+
+  it('reports builtin offline when no provider model is available', async () => {
+    const h = await startApi();
+    h.unavailable.add('builtin');
+    const created = await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+      name: '内置助手',
+      kind: 'builtin',
+    });
+    expect(created.status).toBe(201);
+    const list = (await (await h.request('GET', `/api/workspaces/${h.workspaceId}/agents`)).json()) as {
+      agents: { name: string; available: boolean; online: boolean }[];
+    };
+    expect(list.agents.find((agent) => agent.name === '内置助手')).toMatchObject({
+      online: false,
+      available: false,
+    });
+  });
+
+  it('reserves @all / @全体 as agent names', async () => {
+    const h = await startApi();
+    const response = await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+      name: 'all',
+      kind: 'builtin',
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('reserved_name');
   });
 
   it('rejects a cwd outside the workspace with a typed error', async () => {
@@ -283,13 +313,130 @@ describe('room membership API', () => {
     expect(before.length).toBeGreaterThanOrEqual(2);
 
     const target = h.db.getSessionLeader(sessionId)!.agent_id;
+    // The session column mirrors the leader for thread-less callers (notably
+    // scheduled runs); a reset must clear both or the old conversation resumes.
+    const leaderThread = h.db.getAgentThread(sessionId, target)!;
+    h.db.setAgentThreadNativeId(leaderThread.id, 'native-leader');
+    expect(h.db.getSession(sessionId)!.native_session_id).toBe('native-leader');
+
     expect((await h.request('POST', `/api/sessions/${sessionId}/agents/${target}/reset-context`)).status).toBe(204);
     const after = h.db.getAgentThread(sessionId, target)!;
     expect(after.native_session_id).toBeNull();
     expect(after.status).toBe('broken');
+    expect(h.db.getSession(sessionId)!.native_session_id).toBeNull();
     // The other agent's conversation is untouched.
     for (const thread of h.db.listAgentThreads(sessionId)) {
       if (thread.agent_id !== target) expect(thread.status).not.toBe('broken');
     }
+  });
+
+  it('treats a builtin transcript as context and clears it on reset', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+    const created = (await (
+      await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+        name: 'builtin-review',
+        kind: 'builtin',
+        readOnly: true,
+      })
+    ).json()) as { agent: { id: string } };
+    const agentId = created.agent.id;
+    expect((await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId })).status).toBe(204);
+
+    // Builtin has no provider session id; its context is the native transcript.
+    const native = h.db.createNativeThread({ sessionId, agentId });
+    h.db.appendNativeMessage({
+      threadId: native.id,
+      role: 'assistant',
+      blocks: [{ type: 'text', text: 'hi' }],
+      source: { kind: 'user' },
+    });
+
+    const roster = async (): Promise<{ id: string; hasContext: boolean }[]> =>
+      (
+        (await (await h.request('GET', `/api/sessions/${sessionId}/agents`)).json()) as {
+          agents: { id: string; hasContext: boolean }[];
+        }
+      ).agents;
+
+    expect((await roster()).find((agent) => agent.id === agentId)?.hasContext).toBe(true);
+    expect((await h.request('POST', `/api/sessions/${sessionId}/agents/${agentId}/reset-context`)).status).toBe(204);
+    expect((await roster()).find((agent) => agent.id === agentId)?.hasContext).toBe(false);
+    expect(h.db.listNativeMessages(native.id)).toHaveLength(0);
+  });
+
+  it('refuses to reset an agent while it is still working', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+    const created = (await (
+      await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+        name: 'busy-builtin',
+        kind: 'builtin',
+        readOnly: true,
+      })
+    ).json()) as { agent: { id: string } };
+    const agentId = created.agent.id;
+    await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId });
+
+    const native = h.db.createNativeThread({ sessionId, agentId });
+    h.db.appendNativeMessage({
+      threadId: native.id,
+      role: 'assistant',
+      blocks: [{ type: 'text', text: 'hi' }],
+      source: { kind: 'user' },
+    });
+    h.db.createTurn({ id: 'turn-reset', sessionId, prompt: 'hi', tokenLimit: 0, now: Date.now() });
+    h.db.createTask({
+      id: 'task-reset',
+      sessionId,
+      turnId: 'turn-reset',
+      agentId,
+      source: 'mention',
+      prompt: 'hi',
+      needsWrite: false,
+      snapshotSeq: 0,
+      now: Date.now(),
+    });
+
+    const res = await h.request(
+      'POST',
+      `/api/sessions/${sessionId}/agents/${agentId}/reset-context`,
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('run_in_progress');
+    // The live transcript must survive: the builtin kernel still holds this id.
+    expect(h.db.getNativeThreadForSession(sessionId, agentId)).toBeDefined();
+    expect(h.db.listNativeMessages(native.id).length).toBeGreaterThan(0);
+  });
+
+  it('refuses to reset an agent while its run row is still running', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+    const created = (await (
+      await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+        name: 'running-builtin',
+        kind: 'builtin',
+        readOnly: true,
+      })
+    ).json()) as { agent: { id: string } };
+    const agentId = created.agent.id;
+    await h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId });
+    h.db.createNativeThread({ sessionId, agentId });
+    h.db.createRun({
+      id: 'run-reset',
+      sessionId,
+      runtime: 'builtin',
+      model: null,
+      prompt: 'hi',
+      status: 'running',
+      agentId,
+    });
+
+    const res = await h.request(
+      'POST',
+      `/api/sessions/${sessionId}/agents/${agentId}/reset-context`,
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('run_in_progress');
   });
 });

@@ -170,6 +170,19 @@ describe('buildAssistantFromEvents (history replay)', () => {
     expect(replayed.assistant.done).toBe(true);
   });
 
+  it('can keep an in-flight card unfinished for a running history replay', () => {
+    const replayed = buildAssistantFromEvents(
+      [
+        frame(1, { type: 'status', label: 'starting' }),
+        frame(2, { type: 'text_delta', delta: 'partial' }),
+      ],
+      makeId,
+      { finalize: false },
+    );
+    expect(replayed.assistant.done).toBe(false);
+    expect(replayed.assistant.blocks).toEqual([{ kind: 'text', text: 'partial' }]);
+  });
+
   it('skips permission frames, which are transient', () => {
     const replayed = buildAssistantFromEvents(
       [frame(1, { type: 'permission_request', permissionId: 'p1', toolName: 'Bash', toolInput: {}, status: 'pending' })],

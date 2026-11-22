@@ -82,10 +82,24 @@ export function friendlyMessage(
       return '已经有同名助手了，换一个名字';
     case 'invalid_name':
       return '助手名字不能为空';
+    case 'reserved_name':
+      return '「all / 全体」是群聊 @ 的保留名，请换一个名字';
+    case 'run_in_progress':
+      return '该助手正在回答，等它结束后再重置上下文';
+    case 'too_many_mentions':
+      return '一条消息最多点名 8 个助手';
     case 'no_available_agent':
       return '没有可用的助手能回答这条消息';
     case 'agent_disabled':
       return '该助手已停用，先启用再试';
+    case 'attachments_unsupported_agent':
+      return `有被点名的助手不支持图片输入：${message}`;
+    case 'attachments_unsupported_runtime':
+      return `当前 Agent 不支持图片输入：${message}`;
+    case 'attachment_not_found':
+      return '图片不存在或已过期，请重新上传';
+    case 'attachment_forbidden':
+      return '这张图片属于其他会话，请重新上传';
 
     // permissions
     case 'bad_response':

@@ -213,6 +213,7 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
     const events: SseFrame[] = ctx.db.listReplayEvents(run.id, afterSeq).map((row) => ({
       runId: row.run_id,
       seq: row.seq,
+      ...(row.room_seq !== null && row.room_seq !== undefined ? { roomSeq: row.room_seq } : {}),
       event: JSON.parse(row.payload) as NormalizedEvent,
     }));
 

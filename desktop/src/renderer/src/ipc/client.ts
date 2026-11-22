@@ -74,6 +74,8 @@ import type {
   UpdateScheduledTaskRequest,
   TaskConfigSessionResponse,
   SessionAgentsResponse,
+  CreateSessionRequest,
+  CreateSessionResponse,
   SessionDetailResponse,
   SessionsResponse,
   UpdateSessionModelResponse,
@@ -277,6 +279,8 @@ export const api = {
       path: ROUTES.sessions,
       query: { workspaceId },
     }),
+  createSession: (body: CreateSessionRequest) =>
+    request<CreateSessionResponse>({ method: 'POST', path: ROUTES.sessions, body }),
   session: (id: string) =>
     request<SessionDetailResponse>({ method: 'GET', path: ROUTES.session(id) }),
 
@@ -305,15 +309,31 @@ export const api = {
   deleteAgentProfile: (id: string) =>
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.agentProfiles(id) }),
   /** 发一次输入：202 + 任务列表，答案是走房间流的。 */
-  sendTurn: (sessionId: string, prompt: string, mentions: string[], commandId: string) =>
+  sendTurn: (
+    sessionId: string,
+    prompt: string,
+    mentions: string[],
+    commandId: string,
+    attachmentIds: string[] = [],
+  ) =>
     request<{ turnId: string; tasks: { id: string; agentId: string }[] }>({
       method: 'POST',
       path: ROUTES.sessionTurns(sessionId),
       // A retry carrying the same commandId re-attaches to the same turn.
-      body: { prompt, mentions, commandId },
+      body: {
+        prompt,
+        mentions,
+        commandId,
+        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+      },
     }),
   sessionAgents: (sessionId: string) =>
     request<SessionAgentsResponse>({ method: 'GET', path: ROUTES.sessionAgents(sessionId) }),
+  cancelSessionRuns: (sessionId: string) =>
+    request<{ ok: boolean; cancelled: number }>({
+      method: 'POST',
+      path: ROUTES.sessionCancel(sessionId),
+    }),
   addSessionAgent: (sessionId: string, agentId: string) =>
     request<{ ok: boolean }>({
       method: 'POST',

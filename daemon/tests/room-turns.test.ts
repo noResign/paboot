@@ -5,7 +5,8 @@ import path from 'node:path';
 import express from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppContext } from '../src/app/context';
-import { addToSession, createAgent, getLeader } from '../src/agents/index';
+import { addToSession, createAgent, getLeader, updateAgent } from '../src/agents/index';
+import { AttachmentStore } from '../src/attachments/store';
 import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerAgentsRoutes } from '../src/routes/agents';
@@ -35,6 +36,19 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
+/** Minimal structurally valid PNG header carrying exact dimensions. */
+function pngBytes(width = 3, height = 2): Buffer {
+  const buffer = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buffer, 0);
+  buffer.writeUInt32BE(13, 8);
+  buffer.write('IHDR', 12, 'ascii');
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  buffer[24] = 8;
+  buffer[25] = 6;
+  return buffer;
+}
+
 afterEach(async () => {
   await Promise.all(
     servers.splice(0).map(
@@ -49,6 +63,7 @@ afterEach(async () => {
 
 interface Harness {
   db: Db;
+  attachments: AttachmentStore;
   starts: RuntimeDriverRequest[];
   base: string;
   workspaceId: string;
@@ -56,6 +71,8 @@ interface Harness {
   /** Reply text the stub driver produces, keyed by runtime id. */
   replies: Map<string, string>;
   failures: Set<string>;
+  /** Runtime ids whose detection advertises image input. */
+  imageCapable: Set<string>;
   request: (method: string, url: string, body?: unknown) => Promise<Response>;
 }
 
@@ -64,9 +81,11 @@ async function startApi(): Promise<Harness> {
   const db = new Db(':memory:');
   const workspace = db.createWorkspace({ name: 'demo', path: workspacePath });
 
+  const attachments = new AttachmentStore(db, tempDir('paboot-room-attachments-'));
   const starts: RuntimeDriverRequest[] = [];
   const replies = new Map<string, string>();
   const failures = new Set<string>();
+  const imageCapable = new Set(['claude', 'codex']);
 
   const makeDriver = (id: string): RuntimeDriver => ({
     id,
@@ -95,7 +114,7 @@ async function startApi(): Promise<Harness> {
     available: true,
     version: 'test',
     authed: true,
-    capabilities: { ...defaultCapabilities },
+    capabilities: { ...defaultCapabilities, imageInput: imageCapable.has(id) },
     models: [],
     error: null,
   });
@@ -108,6 +127,7 @@ async function startApi(): Promise<Harness> {
 
   const ctx = {
     db,
+    attachments,
     registry,
     permissions: new PermissionManager(1000, () => {}),
     notifier: new RunNotifier(),
@@ -125,12 +145,14 @@ async function startApi(): Promise<Harness> {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     db,
+    attachments,
     starts,
     base,
     workspaceId: workspace.id,
     workspacePath,
     replies,
     failures,
+    imageCapable,
     request: (method, url, body) =>
       fetch(`${base}${url}`, {
         method,
@@ -270,9 +292,168 @@ describe('POST /api/sessions/:id/turns', () => {
     expect((await turns(h, sessionId, { prompt: '   ' })).status).toBe(400);
   });
 
+  it('rejects more than the addressable mention cap before changing membership', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const response = await turns(h, sessionId, {
+      prompt: '太多人',
+      mentions: Array.from({ length: 9 }, (_, i) => `ag_${i}`),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe('too_many_mentions');
+    expect(h.db.listSessionAgents(sessionId)).toHaveLength(1);
+  });
+
   it('404s for an unknown session', async () => {
     const h = await startApi();
     expect((await turns(h, 'nope', { prompt: 'hi' })).status).toBe(404);
+  });
+});
+
+describe('POST /api/sessions/:id/cancel', () => {
+  it('cancels queued room tasks that have not acquired a run yet', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const leader = getLeader(h.db, sessionId)!;
+    h.db.createTurn({
+      id: 'turn-manual',
+      sessionId,
+      prompt: '排队',
+      tokenLimit: 0,
+      now: Date.now(),
+    });
+    h.db.createTask({
+      id: 'task-manual',
+      sessionId,
+      turnId: 'turn-manual',
+      agentId: leader.id,
+      source: 'leader_default',
+      prompt: '排队',
+      needsWrite: false,
+      snapshotSeq: 0,
+      now: Date.now(),
+    });
+
+    const response = await h.request('POST', `/api/sessions/${sessionId}/cancel`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, cancelled: 1 });
+    expect(h.db.getTask('task-manual')!.status).toBe('cancelled');
+    expect(h.db.getTurn('turn-manual')!.status).toBe('done');
+  });
+
+  it('404s for an unknown session', async () => {
+    const h = await startApi();
+    expect((await h.request('POST', '/api/sessions/nope/cancel')).status).toBe(404);
+  });
+});
+
+
+describe('room attachments', () => {
+  it('shares one turn attachment with every addressed agent and run', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    const leader = getLeader(h.db, sessionId)!;
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+
+    const response = await turns(h, sessionId, {
+      prompt: '一起看这张图',
+      mentions: [leader.id, review.agent_id],
+      attachmentIds: [attachment.id],
+    });
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as { turnId: string; tasks: { id: string }[] };
+    expect(body.tasks).toHaveLength(2);
+
+    await waitFor(() =>
+      h.db.listTasksByTurn(body.turnId).every((task) => task.status === 'done'),
+    );
+
+    // One user message, one turn-owned attachment list, and one copy of the
+    // image for each agent's own provider conversation.
+    expect(h.db.listMessages(sessionId).filter((row) => row.role === 'user')).toHaveLength(1);
+    expect(h.db.getTurnAttachmentIds(body.turnId)).toEqual([attachment.id]);
+    expect(h.starts).toHaveLength(2);
+    for (const start of h.starts) {
+      expect(start.attachmentIds).toEqual([attachment.id]);
+      expect(start.images?.map((image) => image.id)).toEqual([attachment.id]);
+    }
+    for (const task of h.db.listTasksByTurn(body.turnId)) {
+      expect(h.db.getRun(task.run_id!)!.attachment_ids).toBe(JSON.stringify([attachment.id]));
+    }
+    expect(h.attachments.get(attachment.id)?.sessionId).toBe(sessionId);
+  });
+
+  it('gives a summoned agent the same turn attachments', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+    h.replies.set('claude', '结论在下面\n@审阅 你看一下这张图');
+
+    await turns(h, sessionId, {
+      prompt: '先由主答看',
+      attachmentIds: [attachment.id],
+    });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const tasks = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(tasks.map((task) => task.source).sort()).toEqual(['leader_default', 'summon']);
+    expect(h.starts).toHaveLength(2);
+    for (const start of h.starts) {
+      expect(start.attachmentIds).toEqual([attachment.id]);
+    }
+  });
+
+  it('rejects an attachment owned by another session before writing the turn', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+    h.attachments.bind(attachment.id, { sessionId: 'someone-else' });
+
+    const response = await turns(h, sessionId, {
+      prompt: '不该写进去',
+      attachmentIds: [attachment.id],
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe('attachment_forbidden');
+    expect(h.db.listTurns(sessionId, null, 10)).toHaveLength(0);
+    expect(h.db.listMessages(sessionId)).toHaveLength(0);
+  });
+
+  it('refuses the whole turn when an addressed agent cannot receive images', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+    h.imageCapable.delete('codex');
+
+    const response = await turns(h, sessionId, {
+      prompt: '你俩都看',
+      mentions: [review.agent_id],
+      attachmentIds: [attachment.id],
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code: string; error: string };
+    expect(body.code).toBe('attachments_unsupported_agent');
+    expect(body.error).toContain('审阅');
+    expect(h.db.listTurns(sessionId, null, 10)).toHaveLength(0);
+    expect(h.db.listMessages(sessionId)).toHaveLength(0);
+    expect(h.starts).toHaveLength(0);
+  });
+
+  it('validates attachment ids before creating a turn', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+
+    expect(
+      (await turns(h, sessionId, { prompt: '重复', attachmentIds: ['a', 'a'] })).status,
+    ).toBe(400);
+    expect(
+      (await turns(h, sessionId, { prompt: '太多', attachmentIds: Array.from({ length: 9 }, (_, i) => `a${i}`) }))
+        .status,
+    ).toBe(400);
+    expect((await turns(h, sessionId, { prompt: '没有', attachmentIds: ['missing'] })).status).toBe(404);
+    expect(h.db.listTurns(sessionId, null, 10)).toHaveLength(0);
   });
 });
 
@@ -392,6 +573,25 @@ describe('a turn is a batch, not a barrier', () => {
     }
   });
 
+  it('uses the agent\'s model parameters on its room run', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const tuned = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '深思',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: true,
+      modelParameters: { reasoningEffort: 'high' },
+    });
+
+    await turns(h, sessionId, { prompt: '仔细想', mentions: [tuned.id] });
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    expect(h.starts.at(-1)!.modelParameters).toEqual({ reasoningEffort: 'high' });
+  });
+
   it('stores each run event once, not once per stream', async () => {
     const h = await startApi();
     const sessionId = seedRoom(h, []);
@@ -407,6 +607,38 @@ describe('a turn is a batch, not a barrier', () => {
     expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
     expect(events.every((event) => event.session_id === sessionId)).toBe(true);
     expect(events.every((event) => event.room_seq !== null)).toBe(true);
+  });
+
+  it('publishes a failed task when its driver never starts', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const missing = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '失踪运行时',
+      kind: 'runtime',
+      runtime: 'missing-runtime',
+      readOnly: true,
+    });
+    addToSession(h.db, { id: sessionId, workspaceId: h.workspaceId }, missing.id);
+
+    const response = await turns(h, sessionId, {
+      prompt: '启动一下',
+      mentions: [missing.id],
+    });
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as { turnId: string };
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const [task] = h.db.listTasksByTurn(body.turnId);
+    expect(task!.status).toBe('failed');
+    expect(task!.run_id).toBeTruthy();
+    expect(h.db.getRun(task!.run_id!)!.status).toBe('failed');
+    const events = h.db.listRoomEvents(sessionId);
+    expect(events.some((event) => {
+      const payload = JSON.parse(event.payload) as { type?: string; code?: string };
+      return payload.type === 'error' && payload.code === 'task_failed';
+    })).toBe(true);
   });
 
   it('does not cancel siblings when one agent fails', async () => {
@@ -453,6 +685,18 @@ describe('single writable rule', () => {
     });
     expect(response.status).toBe(400);
     expect(((await response.json()) as { code: string }).code).toBe('writable_agent_exists');
+  });
+
+  it('refuses turning an existing read-only member into a second writer', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+
+    expect(() => updateAgent(h.db, workspace, review.agent_id, { readOnly: false })).toThrowError(
+      /already has a writable agent/,
+    );
+    expect(h.db.getAgent(review.agent_id)!.read_only).toBe(1);
   });
 });
 
@@ -521,12 +765,42 @@ describe('leader summon', () => {
     expect(summon.snapshot_seq!).toBeGreaterThanOrEqual(mainMessage.committed_seq!);
 
     const start = h.starts.at(-1)!;
-    expect(start.prompt).toContain('我怀疑是连接池太小');
+    // The leader's answer is in the room projection exactly once; the task
+    // prompt is only the instruction to supplement it.
+    expect(start.prompt.match(/我怀疑是连接池太小/g)).toHaveLength(1);
     expect(start.prompt).toContain('[默认] 我怀疑是连接池太小');
+    expect(summon.prompt).not.toContain('我怀疑是连接池太小');
     expect(turn.status).toBe('done');
   });
 
-  it('does not let a summoned or explicitly addressed agent summon back', async () => {
+  it('lets a summoned agent reply to the leader exactly once', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    const leader = getLeader(h.db, sessionId)!;
+    h.replies.set('claude', '我先给出主结论。\n@审阅 请你补充');
+    h.replies.set('codex', `@${leader.name} 我的补充结论是 X`);
+
+    const response = await turns(h, sessionId, { prompt: '一起判断一下' });
+    expect(response.status).toBe(202);
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    const tasks = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id);
+    expect(tasks.map((task) => task.source).sort()).toEqual([
+      'leader_default',
+      'reply',
+      'summon',
+    ]);
+    const summon = tasks.find((task) => task.source === 'summon')!;
+    const reply = tasks.find((task) => task.source === 'reply')!;
+    expect(reply.agent_id).toBe(leader.id);
+    expect(reply.parent_task_id).toBe(summon.id);
+    // The leader's reply task itself contains @审阅, but source=reply is a
+    // terminal edge and must not spawn a fourth task.
+    expect(tasks).toHaveLength(3);
+  });
+
+  it('does not let an explicitly addressed member summon back', async () => {
     const h = await startApi();
     const sessionId = seedRoom(h, ['审阅']);
     const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
@@ -573,9 +847,12 @@ describe('room stream', () => {
     const streamPromise = readRoomStream(h, sessionId, controller.signal, (frame) => frames.push(frame));
 
     await turns(h, sessionId, { prompt: '都上', mentions: [leader.id, review.agent_id] });
-    await waitFor(() => frames.length > 0);
-    await waitFor(() => h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id)
-      .every((task) => task.status === 'done' || task.status === 'failed'));
+    await waitFor(() => {
+      const agentIds = new Set(frames.map((frame) => frame.agentId).filter(Boolean));
+      const settled = h.db.listTasksByTurn(h.db.listTurns(sessionId, null, 1)[0]!.id)
+        .every((task) => task.status === 'done' || task.status === 'failed');
+      return agentIds.size === 2 && settled;
+    });
     controller.abort();
     await streamPromise;
 

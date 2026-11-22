@@ -352,6 +352,12 @@ input.mono {
   border-color: var(--warning);
 }
 
+.badge.ask {
+  color: var(--primary-deep);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
 .badge.subtle {
   color: var(--text-muted);
   border-style: dashed;
@@ -994,36 +1000,6 @@ button.end-chip {
   color: var(--text-muted);
 }
 
-.pending-answers {
-  flex: none;
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0 10px 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.pending-answer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 2px 0;
-}
-.pending-answer b {
-  flex: none;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.pending-answer-text {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .pending-answer-dot {
   flex: none;
   width: 6px;
@@ -5919,4 +5895,422 @@ a.btn {
 }
 .mem-claims-pane[hidden] {
   display: none;
+}
+
+/* ---------- keep-alive tabs / assistant tab ---------- */
+
+.tabs {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  color: var(--primary-deep);
+  border-bottom-color: var(--primary);
+}
+
+.tab:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.tab-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.tab-live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pending-pulse 1.2s ease-in-out infinite;
+}
+
+.tab-ask {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+}
+
+/*
+ * Keep-alive panels: every tab body stays mounted so component state and scroll
+ * offsets survive a switch. `visibility` (not `display`) matters — a panel with
+ * no layout box loses `scrollTop`. `inert` on the React side handles focus.
+ */
+.tab-panels {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.tab-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tab-panel.active {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.assistant-tab {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18px 20px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.assistant-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.assistant-section-head b {
+  font-size: 13px;
+}
+
+.assistant-section-head span {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.assistant-live,
+.assistant-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.live-row b {
+  flex: none;
+  color: var(--text-primary);
+}
+
+.live-row span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pending-answer-dot.ready {
+  background: var(--primary);
+  animation: none;
+}
+
+.assistant-live-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--elevation-1);
+}
+
+.assistant-live-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.assistant-live-head b {
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.assistant-live-text {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.assistant-live-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.assistant-live-card.awaiting {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.assistant-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.assistant-member-main {
+  min-width: 0;
+}
+
+.assistant-member-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.assistant-member-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.chat-live-status {
+  flex: none;
+  width: calc(100% - 44px);
+  max-width: 760px;
+  margin: 0 auto 4px;
+  min-height: 30px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-live-status:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.chat-live-status.attention {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+}
+
+.chat-live-status-link {
+  margin-left: auto;
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+
+/* Assistant page: roster/live content on the left, run trace docked right. */
+.assistant-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.assistant-page > .chat-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.trace-pane {
+  flex: 0 0 min(440px, 46%);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.trace-pane-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.trace-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+/* Narrow windows: a side pane would leave both columns unreadable. */
+@media (max-width: 900px) {
+  .assistant-page {
+    flex-direction: column;
+  }
+
+  .trace-pane {
+    flex: 0 0 45%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+.assistant-live-card[role='button'] {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.assistant-live-card[role='button']:hover,
+.assistant-live-card[role='button']:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.assistant-live-open {
+  margin-left: auto;
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+
+/* Group-chat style incoming messages: avatar + optional name + bubble. */
+.msg.assistant.chat-message {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.msg-avatar {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #000 7%, transparent) inset;
+}
+
+.msg.assistant.chat-message .assistant-body {
+  min-width: 0;
+  /* The user bubble stays capped on the right; an answer fills the row. */
+  flex: 1;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.msg.assistant.chat-message .msg-speaker {
+  margin: 0 0 1px 2px;
+  font-size: 11.5px;
+}
+
+.assistant-bubble {
+  max-width: 100%;
+  /* `align-items: flex-start` on the body keeps the name/actions tight; the
+     bubble itself still fills the row so answers read like group-chat turns. */
+  align-self: stretch;
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px 12px 12px 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  line-height: 1.6;
+  word-break: break-word;
+  box-shadow: var(--elevation-1);
+}
+
+.assistant-bubble > :first-child {
+  margin-top: 0;
+}
+
+.assistant-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.assistant-bubble .chat-notice {
+  margin: 4px 0;
+}
+
+.summon-bubble {
+  background: var(--primary-subtle);
+  border-color: color-mix(in srgb, var(--primary) 26%, var(--border));
+  color: var(--primary-deep);
+  font-size: 12.5px;
+  padding: 7px 11px;
+}
+
+.msg.assistant.chat-message .assistant-actions {
+  top: 1px;
+  right: 0;
 }

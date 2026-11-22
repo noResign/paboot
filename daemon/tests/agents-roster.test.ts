@@ -82,6 +82,30 @@ describe('room roster', () => {
     expect(text).not.toContain('默认（主手）');
   });
 
+  it('lets a summoned member reply to the leader once', () => {
+    const room = makeRoom();
+    const text = buildRoomSystem(room.db, {
+      sessionId: room.sessionId,
+      selfAgentId: room.review.id,
+      canReplyToLeader: true,
+    })!;
+    expect(text).toContain('<room-reply>');
+    expect(text).toContain(`@${room.leader.name}`);
+    expect(text).toContain('只允许回报主答一次');
+    expect(text).not.toContain('你的 @ 不会召唤任何人');
+  });
+
+  it('stops a leader follow-up task from summoning again', () => {
+    const room = makeRoom();
+    const text = buildRoomSystem(room.db, {
+      sessionId: room.sessionId,
+      selfAgentId: room.leader.id,
+      canSummon: false,
+    })!;
+    expect(text).toContain('本轮链路到此结束');
+    expect(text).not.toContain('最多 3 个');
+  });
+
   it('is absent for a single-assistant session', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paboot-roster-solo-'));
     tempDirs.push(dir);

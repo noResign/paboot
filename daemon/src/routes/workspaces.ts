@@ -5,6 +5,7 @@ import type { WorkspaceRow } from '../db/db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspaces/workspace-service.js';
 import { scaffoldWorkspaceKnowledge } from '../knowledge/scaffold.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
+import { closeSessionRoomStreams } from './room.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
 import {
   resolveEffectivePermissionMode,
@@ -358,6 +359,7 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
         if (row && row.session_id === session.id) active.cancel('workspace deleted');
       }
       await ctx.attachments?.deleteForSession(session.id);
+      closeSessionRoomStreams(session.id);
       ctx.db.deleteSession(session.id);
       ctx.permissions.clearSession(session.id);
       ctx.spill?.removeSession(session.id);

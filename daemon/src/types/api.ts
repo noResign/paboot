@@ -206,14 +206,31 @@ export interface SessionDto {
   lastActiveAt: number;
   /** Whether this session has a run in flight right now. */
   running: boolean;
-  /** The id of the in-flight run, when `running` is true. */
+  /** First active run, retained for older clients and single-run attach paths. */
   runningRunId: string | null;
+  /** Every active run. A room may have several; absent on older daemons. */
+  runningRunIds?: string[];
   /** Scheduled tasks bound to this session (0 for older daemons). */
   scheduledTaskCount?: number;
   /** `task_config` for the reusable AI authoring chat; null otherwise. */
   purpose?: string | null;
   /** Memory capture/injection mode (M0); older daemons omit it. */
   memoryMode?: 'normal' | 'no_injection' | 'off';
+}
+
+/** `POST /api/sessions` — create a chat session without starting a run. */
+export interface CreateSessionRequest {
+  workspaceId?: string;
+  runtime?: string;
+  permissionMode?: ProductPermissionMode;
+  model?: string | null;
+  modelParameters?: Record<string, string> | null;
+  /** Usually the first prompt; the server derives the normal session title. */
+  title?: string;
+}
+
+export interface CreateSessionResponse {
+  session: SessionDto;
 }
 
 export interface WorkspaceDto {
@@ -288,6 +305,12 @@ export interface RunDto {
   permissionMode?: string | null;
   /** The agent that produced this run; omitted by pre-agent daemons. */
   agentId?: string | null;
+  /**
+   * Timeline position of this run's committed answer (null while running or
+   * when it produced no visible text). Clients use it to rebuild a room in the
+   * same completion order the live reducer showed.
+   */
+  answerCommittedSeq?: number | null;
   /**
    * The turn this run belongs to, when it was a room task.
    *
@@ -367,6 +390,10 @@ export interface SessionRunBrief {
   status: string;
   /** Set for room tasks: the turn whose question this run answers. */
   turnId?: string | null;
+  /** The agent that owns the run; absent on pre-agent daemons. */
+  agentId?: string | null;
+  /** The room task id, when this run answers a turn. */
+  taskId?: string | null;
 }
 
 /**
@@ -1095,7 +1122,7 @@ export interface AgentProfileDetailResponse {
 /** `GET /api/sessions/:id/agents` 的一项：成员身份 + 是否已有对话。 */
 export interface SessionAgentDto extends AgentProfileDto {
   role: 'leader' | 'member';
-  /** 这个 agent 在本会话是否已有自己的对话（「重置对话」作用的对象）。 */
+  /** 这个 agent 在本会话是否已有自己的上下文（「重置上下文」作用的对象）。 */
   hasContext: boolean;
   /** Live work in this room, if any. `null` = idle. */
   taskStatus?: 'queued' | 'running' | null;

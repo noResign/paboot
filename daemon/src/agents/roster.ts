@@ -18,6 +18,10 @@ import type { Agent } from './types.js';
 export interface RoomSystemInput {
   sessionId: string;
   selfAgentId: string;
+  /** Leader tasks can summon unless the follow-up chain has ended. */
+  canSummon?: boolean;
+  /** A summoned member may send one final reply back to the leader. */
+  canReplyToLeader?: boolean;
 }
 
 export function buildRoomSystem(db: Db, input: RoomSystemInput): string | null {
@@ -31,6 +35,7 @@ export function buildRoomSystem(db: Db, input: RoomSystemInput): string | null {
   if (others.length === 0) return null;
 
   const isLeader = leader?.id === input.selfAgentId;
+  const canReplyToLeader = !isLeader && input.canReplyToLeader === true && leader !== null;
   const lines = others.map((agent) => `- ${labelFor(agent, leader?.id === agent.id)}：${summaryOf(agent)}`);
   const you = self?.name ?? getAgent(db, input.selfAgentId)?.name ?? '你';
 
@@ -38,25 +43,56 @@ export function buildRoomSystem(db: Db, input: RoomSystemInput): string | null {
     `<room-agents you="${escapeAttr(you)}">`,
     isLeader
       ? '本房间的其他助手：'
-      : '本房间的其他助手（你可以建议用户找他们，但你的 @ 不会召唤任何人 —— 需要补充时请让用户自己 @）：',
+      : canReplyToLeader
+        ? '本房间的其他助手。你是被主答召唤来补充的：'
+        : '本房间的其他助手（你可以建议用户找他们，但你的 @ 不会召唤任何人 —— 需要补充时请让用户自己 @）：',
     ...lines,
-    ...(isLeader ? [] : ['', '注意：你输出里写的 @名字 只是普通文本，不会生效。']),
+    ...(isLeader || canReplyToLeader
+      ? []
+      : ['', '注意：你输出里写的 @名字 只是普通文本，不会生效。']),
     '</room-agents>',
   ].join('\n');
 
-  if (!isLeader) return rosterBlock;
+  if (!isLeader) {
+    return canReplyToLeader
+      ? `${rosterBlock}\n\n${replyBlock(leader!.name)}`
+      : rosterBlock;
+  }
+  if (input.canSummon === false) {
+    return `${rosterBlock}\n\n${finalReplyBlock()}`;
+  }
   return `${rosterBlock}\n\n${routingBlock()}`;
 }
 
 function routingBlock(): string {
   return [
     '<room-routing>',
-    '你是这个房间的主答者。回答完用户的问题后，如果确实需要其他助手补充，可以在回复**最后单独一行**用 @名字 召唤他们（最多 3 个）。',
+    '你是这个房间的主答者。遇到专业问题、需要不同角色分工，或需要各方商量时，可以主动 @ 合适的助手；回答完用户的问题后，在回复**最后单独一行**用 @名字 召唤他们（最多 3 个）。',
     '- 召唤只认**行首**的 @名字；正文中间、代码块、引用里的 @ 都只是文本',
     '- 你的回答要先说完，再 @ 别人 —— 不要只说「让 X 来看」就不说了',
     '- 只有你完全不擅长这个问题（真的答不上来），才可以只写 @ 不写内容',
     '- 补充是增量：说清楚你要他们补什么，不要让他们重复你刚说过的话',
     '- 不要叫不在上面列表里的人，最多 3 个',
+    '- 不需要客套式地 @ 所有人；只在确实需要专业意见时使用',
+    '</room-routing>',
+  ].join('\n');
+}
+
+function replyBlock(leaderName: string): string {
+  return [
+    '<room-reply>',
+    `你是被主答召唤来补充的。完成后如果需要把结论告诉主答，可以在回答最后单独一行 @${leaderName}（也可以写 @主答）。`,
+    '- 只允许回报主答一次；不要 @ 其他助手，也不要试图继续召唤别人',
+    '- 系统不会再把你这次回报变成下一轮召唤，避免循环 @',
+    '- 如果不需要主答继续处理，就不要 @ 任何人',
+    '</room-reply>',
+  ].join('\n');
+}
+
+function finalReplyBlock(): string {
+  return [
+    '<room-routing>',
+    '这条任务是对某个助手的回执。请直接给出最终答复，不要再 @ 其他人；本轮链路到此结束。',
     '</room-routing>',
   ].join('\n');
 }

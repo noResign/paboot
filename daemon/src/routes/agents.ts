@@ -105,10 +105,10 @@ async function availabilityOf(ctx: AppContext, agent: Agent): Promise<AgentAvail
     // reported as offline rather than optimistically available.
     return { enabled: true, online: false, available: false, reason: 'peer_not_connected' };
   }
-  if (agent.kind === 'builtin') {
-    return { enabled: true, online: true, available: true };
-  }
-  const runtime = agent.runtime ?? '';
+  // Builtin has no executable to probe, but it still needs a configured
+  // provider with at least one enabled model. Treat it like any other runtime
+  // so the @ picker cannot offer an assistant that is guaranteed to fail.
+  const runtime = agent.kind === 'builtin' ? 'builtin' : (agent.runtime ?? '');
   const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
   if (!detection?.available) {
     return { enabled: true, online: false, available: false, reason: detection?.error ?? 'runtime_unavailable' };
@@ -270,8 +270,13 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         ...agentSummaryDto(row.agent, availability[index]!),
         role: row.role,
         // Whether this agent already has its own conversation here — what the
-        // "reset conversation" action operates on.
-        hasContext: threadCount(threads.get(row.agent.id)),
+        // "reset context" action operates on. Builtin (including the implicit
+        // builtin runtime agents) keeps its transcript in the native tables, so
+        // it has no provider id to look at.
+        hasContext:
+          threadCount(threads.get(row.agent.id)) ||
+          ((row.agent.kind === 'builtin' || row.agent.runtime === 'builtin') &&
+            ctx.db.hasNativeTranscript(session.id, row.agent.id)),
         taskStatus: taskStatus.get(row.agent.id) ?? null,
       })),
     });
@@ -331,12 +336,30 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
-    const thread = ctx.db.getAgentThread(session.id, req.params.agentId!);
-    if (!thread) {
+    const agentId = req.params.agentId!;
+    const thread = ctx.db.getAgentThread(session.id, agentId);
+    const nativeThread = ctx.db.getNativeThreadForSession(session.id, agentId);
+    if (!thread && !nativeThread) {
       res.status(404).json({ error: 'this agent has no conversation in the session', code: 'not_found' });
       return;
     }
-    ctx.db.clearAgentThreadByOwner(session.id, req.params.agentId!);
+    // A live run holds its thread id and keeps appending to the transcript —
+    // deleting the thread underneath it would fail the run mid-step. Refuse
+    // instead of silently corrupting it.
+    const busy =
+      ctx.db.listOpenTasks(session.id).some((task) => task.agent_id === agentId) ||
+      ctx.db.listRunningRunsForAgent(session.id, agentId).length > 0;
+    if (busy) {
+      res.status(409).json({
+        error: 'this agent is still working; wait for it to finish before resetting',
+        code: 'run_in_progress',
+      });
+      return;
+    }
+    // Provider-backed runtimes keep a native session id; builtin keeps its own
+    // transcript rows. Resetting must clear whichever one exists.
+    ctx.db.clearAgentThreadByOwner(session.id, agentId);
+    ctx.db.clearNativeTranscriptByOwner(session.id, agentId);
     res.status(204).end();
   });
 }

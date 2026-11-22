@@ -66,11 +66,12 @@
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
 | `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?,supportsImages?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）；`supportsImages=false` 表示不能接收图片。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
+| `POST /api/sessions` | 是 | 只创建会话、不启动 run。body `{workspaceId?, runtime?, permissionMode?, model?, modelParameters?, title?}`；交互客户端随后统一走 `/turns` + 房间流。返回 `{session}` |
 | `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
-| `POST /api/chat` | 是 | 发指令，返回 SSE 流。body 可带 `attachmentIds`（≤8 张图片）。带 `commandId` 时幂等（重发重连到同一个 run）。该 Session 已有在跑的 run → 409 `session_busy`（见下文「一个 Session 同时只跑一个 Run」） |
+| `POST /api/chat` | 是 | **兼容/自动化入口**：发指令并直接返回该 run 的 SSE。新交互客户端应使用 `POST /api/sessions` + `/turns` + 房间流；单 agent 只是只有一个 leader 的房间。body 可带 `attachmentIds`（≤8 张图片）。带 `commandId` 时幂等。该 Session 已有在跑的 run → 409 `session_busy` |
 | `POST /api/attachments` | 是 | raw body 上传图片（png/jpeg/webp/gif，≤10MB），返回 `AttachmentDto` |
 | `GET /api/attachments/:id` | operator | 取图片字节；agent token 拒绝 |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
@@ -255,18 +256,35 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
   `dropped`，**不会**回落给 leader——静默换人回答比不回答更糟。
 - **并发**：同一 turn 的 tasks 同时开跑（turn 不是屏障），但同一 `(session, agent)` 的 run
   串行排队：同一个 agent 的两轮若并发，会同时 `--resume` 同一个 provider 会话。
+- **有限接力**：leader 可在回答最后用行首 `@成员` 召唤最多 3 个助手（task source=`summon`）；
+  被召唤的助手完成后可以行首 `@leader` / `@主答` 回报一次，最多生成 3 个 `reply` task。
+  `reply` 是链路终点，不能再召唤别人，因此 `leader → summon → reply` 之后一定停止，避免
+  来回 @ 形成循环。
+- **上下文投影**：每个成员只看到其他成员的 committed 消息，默认保留最近 6 条、总预算
+  24,000 字符。超出总预算时优先丢更早的消息；最新一条即使很长也优先完整保留，只有单条
+  本身超过总预算时才截断，并在文本中明确标注 `（已截断）`。
 - **端点**：
   - `GET /api/workspaces/:id/agents`、`POST /api/workspaces/:id/agents`
   - `GET|PATCH|DELETE /api/agent-profiles/:id`
   - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
     `POST /api/sessions/:id/agents/:agentId/reset-context`
-  - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], commandId?}`）→ 202
-    `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
+  - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], attachmentIds?: string[], commandId?}`，
+    `mentions` 最多 8 个）
+    → 202 `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
+    `attachmentIds` 是最多 8 张、此前通过 `POST /api/attachments` 上传的图片，由 turn 持有并
+    同传给该 turn 的每个 task（包括 leader 之后召唤的 supplement）。只要有一个被点名的 agent
+    所属 runtime 不支持图片输入，整张 turn 会在写用户消息前以
+    `attachments_unsupported_agent` 拒绝，不会静默漏掉某个 @。
     同一个 `commandId` 重试会**重连到已建好的 turn** 并跳过启动任务，不会变成第二个提问；
     同一个 key 出现在**另一个会话** → 409 `command_id_conflict`，且不会写入任何行。
+  - `POST /api/sessions/:id/cancel`：停止该会话当前所有 room 工作。排队中、尚未拿到
+    run 的 task 直接标为 cancelled；正在运行的 runs 走取消路径。返回
+    `{ok, cancelled}`。单个 run 仍可用 `POST /api/runs/:id/cancel`。
   - `GET /api/sessions/:id/stream?after=<roomSeq>`：一个会话一条流，承载所有 agent 的帧
     （会话级通知也在内）。帧额外带 `roomSeq` / `taskId` / `agentId`；SSE 的 `id:` 是
     `roomSeq`，省略 `after` 只收直播，给了则回放并分页（500 行/页）直到追平。
+    客户端重建历史时用 run events 的 `roomSeq` 取得快照游标，再从该位置接入 room stream，
+    避免多个并发 run 的已显示前缀被直播流重复或遗漏。
 
 ## 每轮 checkpoint 与回滚
 

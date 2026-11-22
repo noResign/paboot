@@ -19,6 +19,7 @@ import {
 } from '../workspaces/workspace-defaults.js';
 import { resolveSessionAgent } from '../agents/index.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
+import { normalizeAttachmentIds } from '../attachments/request.js';
 import {
   isValidModelParameters,
   normalizeModel,
@@ -280,9 +281,14 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const requestedModel = model ?? undefined;
     const sessionModel = requestedModel ?? normalizeModel(session?.model) ?? null;
     // Same precedence for the knobs: a request-level override wins, otherwise
-    // the session's saved selection, otherwise the provider defaults.
-    const effectiveParameters = body.modelParameters !== undefined
+    // the agent's own parameters, otherwise the session's saved selection.
+    // `startSessionRun` owns the agent fallback so a room task does not need to
+    // duplicate this logic.
+    const requestedParameters = body.modelParameters !== undefined
       ? normalizeModelParameters(body.modelParameters)
+      : undefined;
+    const effectiveParameters = requestedParameters !== undefined
+      ? requestedParameters
       : parseStoredModelParameters(session?.model_parameters);
 
     // A session with a native id resumes it. Otherwise the driver decides how
@@ -340,7 +346,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         driver,
         permissionMode: sessionPermissionMode,
         model: requestedModel ?? null,
-        modelParameters: effectiveParameters ?? null,
+        modelParameters: requestedParameters,
         attachmentIds,
         trigger: 'user',
         commandId: commandId ?? null,
@@ -357,18 +363,4 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       }
     }
   });
-}
-
-
-function normalizeAttachmentIds(value: unknown): string[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 8) return null;
-  const ids: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string' || !item.trim()) return null;
-    const id = item.trim();
-    if (ids.includes(id)) return null;
-    ids.push(id);
-  }
-  return ids;
 }

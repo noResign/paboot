@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useChat } from '../../store/chat';
 import { api } from '../../ipc/client';
 import { useSessions } from '../../store/sessions';
@@ -15,12 +15,16 @@ import { Icon } from '../../ui/Icon';
 import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
+import { agentDisplayName } from './agentLabel';
+import { findAwaitingAnswer } from './liveAnswers';
 import { Composer } from './Composer';
 import { useStickToBottom } from './useStickToBottom';
+import { TabBar, TabPanels, type TabItem } from '../../ui/Tabs';
 import { transcriptSignature } from './transcriptSignature';
 import { TodoPanel } from './TodoPanel';
 import { PermissionDialog, InlinePermissionCard } from '../permissions/PermissionDialog';
-import { AssistantDialog } from './AssistantDialog';
+import { AssistantTab } from './AssistantTab';
+import { RunTracePane } from './RunTracePane';
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
 import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
@@ -31,6 +35,9 @@ import type {
   ProductPermissionMode,
   SessionAgentDto,
 } from '../../../../shared/contract';
+
+/** Chat pages. Add a `TabItem` and extend this union together. */
+type ChatTab = 'chat' | 'assistants';
 
 interface Props {
   workspaceName: string | null;
@@ -54,9 +61,7 @@ export function ChatView({
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
   const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const send = useChat((state) => state.send);
-  const sendTurn = useChat((state) => state.sendTurn);
   const ensureRoomStream = useChat((state) => state.ensureRoomStream);
-  const closeRoomStream = useChat((state) => state.closeRoomStream);
   const setLeaderAgentId = useChat((state) => state.setLeaderAgentId);
   const stop = useChat((state) => state.stop);
   const decide = useChat((state) => state.decide);
@@ -70,9 +75,8 @@ export function ChatView({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [showPerms, setShowPerms] = useState(false);
-  const [showAssistants, setShowAssistants] = useState(false);
-  /** 这台 daemon 是否支持助手功能；404 = 老版本，入口隐藏而不是点了没反应。 */
-  const [agentsSupported, setAgentsSupported] = useState(false);
+  const [tab, setTab] = useState<ChatTab>('chat');
+  const [traceRunId, setTraceRunId] = useState<string | null>(null);
   /** 名册用来把消息上的 agentId 翻成显示名；只有一个成员时不标注。 */
   const [sessionAgents, setSessionAgents] = useState<SessionAgentDto[]>([]);
   /** 工作区里的 agent：@ 的候选池；点名一个非成员会把会话升级成群聊。 */
@@ -85,25 +89,17 @@ export function ChatView({
   const [models, setModels] = useState<ModelOptionDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
-  /** A room (not a plain chat): the roster is the switch, not a session kind. */
-  const isGroup = sessionAgents.length > 1;
-  /** Once a room stream exists, every send must go through `/turns`. */
-  const roomMode = isGroup || Boolean(chat?.roomStreamId);
 
-  // Probe once per session: the assistant endpoints only exist on a daemon that
-  // knows about agents. A 404 hides the entry rather than offering a menu item
-  // that does nothing.
+  // Refresh the roster used by both the transcript labels and the 助手 tab.
   useEffect(() => {
     const sessionId = chat?.sessionId;
     if (!sessionId) {
-      setAgentsSupported(false);
       setLeaderAgentId(null);
       return;
     }
     let live = true;
     void api.sessionAgents(sessionId).then((res) => {
       if (!live) return;
-      setAgentsSupported(res.ok);
       setSessionAgents(res.ok ? res.data.agents : []);
       setLeaderAgentId(res.ok ? (res.data.leaderId ?? null) : null);
     });
@@ -137,18 +133,12 @@ export function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mentionWorkspaceId]);
 
-  // A room's answers arrive on one multiplexed stream instead of a per-run one.
-  // Opening it is idempotent; adding the second member is what starts it.
+  // Every interactive session uses the multiplexed room stream, even when it
+  // currently has one agent. Single-agent is just a room with one leader.
   useEffect(() => {
     if (!chat?.sessionId) return;
-    if (isGroup) {
-      void ensureRoomStream();
-    } else {
-      // Back to one assistant: that path streams per run, so the room stream
-      // must not stay open feeding the same frames twice.
-      closeRoomStream();
-    }
-  }, [chat?.sessionId, isGroup, ensureRoomStream, closeRoomStream]);
+    void ensureRoomStream();
+  }, [chat?.sessionId, ensureRoomStream]);
 
   // The catalogue belongs to the runtime. The daemon caches it, so refetching
   // per session is cheap after the first call. A session that has not been
@@ -198,6 +188,13 @@ export function ChatView({
     return () => clearTimeout(timer);
   }, [rollbackNotice]);
 
+  const tabsId = useId();
+
+  useEffect(() => {
+    setTab('chat');
+    setTraceRunId(null);
+  }, [chat?.key]);
+
   // Hooks must run before the early return below.
   const { ref: scrollRef, showJump, jumpToBottom, onScroll } = useStickToBottom({
     resetKey: chat?.key ?? null,
@@ -210,6 +207,49 @@ export function ChatView({
 
   const pending = chat.permissions.active;
   const busy = chat.phase === 'connecting' || chat.phase === 'live' || chat.phase === 'reconnecting';
+  const roomRunning =
+    Boolean(chat.roomStreamId) &&
+    (chat.dispatchedTasks.length > 0 ||
+      chat.pendingAnswers.length > 0 ||
+      chat.messages.some((message) => message.kind === 'assistant' && !message.done));
+  const leaderAgentId =
+    sessionAgents.find((agent) => agent.role === 'leader')?.id ?? chat.leaderAgentId;
+  const liveCount =
+    (chat.turnSending ? 1 : 0) +
+    chat.dispatchedTasks.length +
+    chat.pendingAnswers.length +
+    chat.displayQueue.length;
+  const liveNames = [
+    ...new Set(
+      [...chat.pendingAnswers, ...chat.dispatchedTasks, ...chat.displayQueue]
+        .map((item) => {
+          const member = sessionAgents.find((agent) => agent.id === item.agentId);
+          return member
+            ? agentDisplayName(member)
+            : workspaceAgents.find((agent) => agent.id === item.agentId)?.name;
+        })
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ];
+  // Builtin/Codex questions emit no permission_request, so the only hint that
+  // the room is blocked on the user is this badge (and the live-card one). It
+  // also has to see per-run stream answers, which live in `messages`.
+  const awaitingAnswer = findAwaitingAnswer(chat);
+  const awaitingName = (() => {
+    if (!awaitingAnswer) return null;
+    const member = sessionAgents.find((agent) => agent.id === awaitingAnswer.agentId);
+    if (member) return agentDisplayName(member);
+    return workspaceAgents.find((agent) => agent.id === awaitingAnswer.agentId)?.name ?? '助手';
+  })();
+  const liveStatusText = awaitingAnswer
+    ? `${awaitingName ?? '助手'} 需要你的回答`
+    : chat.turnSending
+      ? '正在发送消息…'
+      : chat.pendingAnswers.length > 0
+        ? `${liveNames.slice(0, 3).join('、')}${liveNames.length > 3 ? ` 等 ${liveNames.length} 个助手` : ''} 正在回答…`
+        : chat.dispatchedTasks.length > 0
+          ? `${liveNames.slice(0, 3).join('、')} 已派发任务，等待开始…`
+          : '回答已就绪，稍后显示…';
 
   /** Secondary session actions, so the header keeps two or three visible controls. */
   function overflowMenu(current: ChatSessionState): MenuItem[] {
@@ -227,13 +267,6 @@ export function ChatView({
       });
     }
     if (current.sessionId) {
-      if (agentsSupported) {
-        items.push({
-          id: 'assistants',
-          label: '助手 / 群聊…',
-          run: () => setShowAssistants(true),
-        });
-      }
       items.push({ id: 'permissions', label: '会话权限…', run: () => setShowPerms(true) });
       const memoryMode = current.memoryMode ?? 'normal';
       items.push(
@@ -332,6 +365,87 @@ export function ChatView({
     setRollbackNotice(data?.error ?? '回滚失败');
   }
 
+  const chatPanel = (
+    <div className="chat-scroll-wrap">
+      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
+        {chat.historyLoading ? (
+          <TranscriptSkeleton />
+        ) : chat.messages.length === 0 ? (
+          <div className="main-body">发送一条消息开始对话</div>
+        ) : (
+          <Transcript
+            messages={chat.messages}
+            scrollRef={scrollRef}
+            runs={chat.runs}
+            agentNames={
+              sessionAgents.length > 0
+                ? new Map(sessionAgents.map((agent) => [agent.id, agentDisplayName(agent)]))
+                : undefined
+            }
+            showSpeakerName={sessionAgents.length > 1}
+            leaderAgentId={leaderAgentId}
+            onRollback={(runId) => setRollback({ runId, needForce: false })}
+            onOpenTrace={(runId) => {
+              setTraceRunId(runId);
+              setTab('assistants');
+            }}
+          />
+        )}
+      </div>
+
+      {showJump && (
+        <button className="jump-latest" onClick={jumpToBottom} title="有新内容，跳到最新">
+          ↓ 跳到最新
+        </button>
+      )}
+    </div>
+  );
+
+  const traceAgentId = traceRunId
+    ? (chat.runs.find((run) => run.id === traceRunId)?.agentId ?? null)
+    : null;
+
+  const assistantPanel = (
+    <div className="assistant-page">
+      <div className="chat-scroll">
+        <AssistantTab
+          sessionId={chat.sessionId}
+          agents={sessionAgents}
+          workspaceAgents={workspaceAgents}
+          chat={chat}
+          onOpenTrace={(runId) => setTraceRunId(runId)}
+          onChanged={refreshAgents}
+        />
+      </div>
+      {traceRunId && (
+        <RunTracePane
+          runId={traceRunId}
+          chat={chat}
+          agents={sessionAgents}
+          agentId={traceAgentId}
+          onClose={() => setTraceRunId(null)}
+        />
+      )}
+    </div>
+  );
+
+  const tabs: TabItem[] = [
+    { id: 'chat', label: '对话', content: chatPanel },
+    {
+      id: 'assistants',
+      label: (
+        <>
+          助手
+          {sessionAgents.length > 0 && <span className="tab-count">{sessionAgents.length}</span>}
+          {awaitingAnswer && <span className="tab-ask">需回答</span>}
+          {liveCount > 0 && <span className="tab-live" title="有回答正在进行或等待显示" />}
+        </>
+      ),
+      disabled: !chat.sessionId && !chat.pendingNew,
+      content: assistantPanel,
+    },
+  ];
+
   return (
     <div className="chat">
       <div className="chat-head">
@@ -426,6 +540,14 @@ export function ChatView({
         </div>
       </div>
 
+      <TabBar
+        tabs={tabs}
+        activeId={tab}
+        onChange={(id) => setTab(id as ChatTab)}
+        label="会话与助手"
+        idPrefix={tabsId}
+      />
+
       <TodoPanel todos={chat.todos} />
 
       {chat.error && (
@@ -473,59 +595,28 @@ export function ChatView({
         />
       )}
 
-      <div className="chat-scroll-wrap">
-        <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
-          {chat.historyLoading ? (
-            <TranscriptSkeleton />
-          ) : chat.messages.length === 0 ? (
-            <div className="main-body">发送一条消息开始对话</div>
-          ) : (
-            <Transcript
-              messages={chat.messages}
-              scrollRef={scrollRef}
-              runs={chat.runs}
-              agentNames={
-                sessionAgents.length > 1
-                  ? new Map(sessionAgents.map((agent) => [agent.id, agent.name]))
-                  : undefined
-              }
-              onRollback={(runId) => setRollback({ runId, needForce: false })}
-            />
-          )}
-        </div>
+      <TabPanels tabs={tabs} activeId={tab} idPrefix={tabsId} />
 
-        {showJump && (
-          <button className="jump-latest" onClick={jumpToBottom} title="有新内容，跳到最新">
-            ↓ 跳到最新
-          </button>
-        )}
-      </div>
-
-      {/* 进行区：答案定稿（run 终止）前不进时间线，避免慢的那位把已完成
-          的回答挤到新问题上面。这里只展示预览，提交后落到时间线底部。 */}
-      {chat.pendingAnswers.length > 0 && (
-        <div className="pending-answers">
-          {chat.pendingAnswers.map((answer) => {
-            const name =
-              sessionAgents.find((agent) => agent.id === answer.agentId)?.name ?? '助手';
-            const text = answer.message.blocks
-              .map((block) => (block.kind === 'text' ? block.text : ''))
-              .filter(Boolean)
-              .join(' ')
-              .trim();
-            return (
-              <div className="pending-answer" key={answer.runId}>
-                <span className="pending-answer-dot" aria-hidden="true" />
-                <b>{name}</b>
-                <span className="pending-answer-text">{text ? text.slice(-220) : '正在回答…'}</span>
-              </div>
-            );
-          })}
-        </div>
+      {tab === 'chat' && (liveCount > 0 || awaitingAnswer !== null) && (
+        <button
+          className={`chat-live-status${awaitingAnswer ? ' attention' : ''}`}
+          onClick={() => {
+            // A blocked question goes straight to the run that asked; opening
+            // the assistant tab alone still leaves the user one click away.
+            if (awaitingAnswer) setTraceRunId(awaitingAnswer.runId);
+            setTab('assistants');
+          }}
+        >
+          <span className="pending-answer-dot" />
+          <span>{liveStatusText}</span>
+          <span className="chat-live-status-link">
+            {awaitingAnswer ? '去回答' : '查看助手'}
+          </span>
+        </button>
       )}
 
       <Composer
-        disabled={busy || chat.historyLoading}
+        disabled={busy || chat.historyLoading || chat.turnSending}
         busy={busy}
         placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
         showModel={Boolean(chat.sessionId || chat.pendingNew)}
@@ -556,17 +647,12 @@ export function ChatView({
           void setSessionSelection(chat.model, next);
         }}
         onSend={(text, attachmentIds, mentionIds) => {
-          // `@` is workspace-level: mentioning someone outside the room makes
-          // this send a turn, and the daemon admits them before routing. A room
-          // (or a send that already opened its stream) always takes this path.
-          const mentions = mentionIds ?? [];
-          if (chat.sessionId && !attachmentIds?.length && (roomMode || mentions.length > 0)) {
-            void sendTurn(text, mentions).then(() => refreshAgents());
-            return;
-          }
-          // A new session's first message, or a single-agent send with images.
-          void send(text, attachmentIds);
+          // One interactive path: create the session lazily if needed, open the
+          // room stream, then POST a turn. Single-agent sessions simply route
+          // that turn to the leader.
+          void send(text, attachmentIds, mentionIds).then(() => refreshAgents());
         }}
+        canStop={!busy && roomRunning}
         onStop={stop}
         mentionAgents={workspaceAgents.map((agent) => ({
           id: agent.id,
@@ -576,21 +662,9 @@ export function ChatView({
           heavy: agent.heavy,
           member: sessionAgents.some((member) => member.id === agent.id),
         }))}
-        attachmentsEnabled={!roomMode}
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />
-
-      {showAssistants && chat.sessionId && (
-        <AssistantDialog
-          sessionId={chat.sessionId}
-          onChanged={refreshAgents}
-          onClose={() => {
-            setShowAssistants(false);
-            refreshAgents();
-          }}
-        />
-      )}
 
       {showPerms && chat.sessionId && (
         <SessionPermissionsDialog
