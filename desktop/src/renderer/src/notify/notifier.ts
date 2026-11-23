@@ -2,6 +2,8 @@ import {
   finishNotification,
   permissionNotification,
   permissionNotificationId,
+  questionNotification,
+  questionNotificationId,
   type FinishedOutcome,
 } from './notifications';
 import type { PendingPermission } from '../store/chat/types';
@@ -41,4 +43,20 @@ export function notifyRunFinished(
 ): void {
   const payload = finishNotification(outcome, runId, session, error);
   if (payload) void window.paboot.notify(payload);
+}
+
+/**
+ * Announce a blocking question. Main drops it when this session is already on
+ * screen (`shouldNotify`), so it only reaches a user who is looking elsewhere.
+ */
+export function notifyQuestion(
+  permissionId: string,
+  questions: readonly { header?: string; question: string }[],
+  session: SessionRef,
+): void {
+  void window.paboot.notify(questionNotification(permissionId, questions, session));
+}
+
+export function closeQuestionNotification(permissionId: string): void {
+  void window.paboot.notifyClose(questionNotificationId(permissionId));
 }

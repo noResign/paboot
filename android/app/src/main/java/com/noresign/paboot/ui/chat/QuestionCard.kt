@@ -30,11 +30,24 @@ internal fun QuestionCard(
     streaming: Boolean,
     onAnswer: (String, String, Map<String, List<String>>) -> Unit,
 ) {
-    // 每个问题的选中状态：问题下标 → 已选 label 集合（流式中也能预选，本地状态）
-    val selections = remember(block.toolUseId) { mutableStateMapOf<Int, Set<String>>() }
+    // 每个问题的选中状态：问题下标 → 已选 label 集合（流式中也能预选，本地状态）。
+    // 重进会话时用事件里回放的答案回填：卡片必须显示「当时选了什么」，
+    // 否则只写「已发送答案」，用户得翻回对话去找自己选的是哪个。
+    // 回放的答案与卡片是同一份输入：三者一起重建，任何一个变了就整体重置。
+    val restoreKey = listOf(block.toolUseId, block.answers, block.answerText)
+    val restored = remember(restoreKey) {
+        restoreSelections(block.questions, block.answers, block.answerText)
+    }
+    val selections = remember(restoreKey) {
+        mutableStateMapOf<Int, Set<String>>().also { it.putAll(restored.first) }
+    }
     // 「其他」：选项都不合适时自己输入，按问题进行。
-    val otherActive = remember(block.toolUseId) { mutableStateMapOf<Int, Boolean>() }
-    val otherTexts = remember(block.toolUseId) { mutableStateMapOf<Int, String>() }
+    val otherActive = remember(restoreKey) {
+        mutableStateMapOf<Int, Boolean>().also { it.putAll(restored.second) }
+    }
+    val otherTexts = remember(restoreKey) {
+        mutableStateMapOf<Int, String>().also { it.putAll(restored.third) }
+    }
 
     fun selected(i: Int): Set<String> = selections[i] ?: emptySet()
     fun isOtherActive(i: Int): Boolean = otherActive[i] == true
@@ -112,7 +125,8 @@ internal fun QuestionCard(
             }
             if (block.answered || block.answerStatus == "allowed") {
                 Text(
-                    text = "已发送答案",
+                    // 选项已经标回来了，再用一行文字点名，扫一眼就能读出来。
+                    text = answeredSummary(block.questions, selections, otherActive, otherTexts) ?: "已发送答案",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -272,3 +286,67 @@ internal fun buildAnswerText(
         }
         "关于「${q.question}」，我的选择是：${parts.joinToString("、")}"
     }.joinToString("\n")
+
+/** `buildAnswerText` 给手打答案加的前缀，回填时用它区分「选项」和「其他」。 */
+private const val OTHER_PREFIX = "其他："
+
+/**
+ * 从事件里回放出来的答案重建卡片状态。
+ *
+ * 返回 (选项, 其他是否激活, 其他文本)。不在 options 里的 label 是用户手打的，
+ * 按「其他」还原，而不是当成一个不存在的选项。
+ */
+internal fun restoreSelections(
+    questions: List<QuestionDto>,
+    answers: Map<String, List<String>>?,
+    answerText: String?,
+): Triple<Map<Int, Set<String>>, Map<Int, Boolean>, Map<Int, String>> {
+    val selections = mutableMapOf<Int, Set<String>>()
+    val otherActive = mutableMapOf<Int, Boolean>()
+    val otherTexts = mutableMapOf<Int, String>()
+    if (answers != null) {
+        questions.forEachIndexed { i, q ->
+            val labels = answers[q.id ?: i.toString()] ?: return@forEachIndexed
+            val known = q.options.map { it.label }.toSet()
+            val picked = mutableSetOf<String>()
+            val typed = mutableListOf<String>()
+            for (label in labels) {
+                when {
+                    label in known -> picked += label
+                    label.startsWith(OTHER_PREFIX) -> typed += label.removePrefix(OTHER_PREFIX)
+                    else -> typed += label
+                }
+            }
+            if (picked.isNotEmpty()) selections[i] = picked
+            if (typed.isNotEmpty()) {
+                otherActive[i] = true
+                otherTexts[i] = typed.joinToString("、")
+            }
+        }
+    }
+    // 纯文本答案（老客户端 / 老数据）不属于某一道题，放进第一题的「其他」。
+    if (answerText != null && answerText.isNotBlank() && questions.isNotEmpty()) {
+        otherActive[0] = true
+        otherTexts[0] = answerText.trim()
+    }
+    return Triple(selections, otherActive, otherTexts)
+}
+
+/** 「你的选择：A、B」；没有可显示的答案时返回 null（调用方回落到「已发送答案」）。 */
+internal fun answeredSummary(
+    questions: List<QuestionDto>,
+    selections: Map<Int, Set<String>>,
+    otherActive: Map<Int, Boolean>,
+    otherTexts: Map<Int, String>,
+): String? {
+    val parts = questions.indices.mapNotNull { i ->
+        val picked = (selections[i] ?: emptySet()).toMutableList()
+        if (otherActive[i] == true) {
+            val custom = otherTexts[i]?.trim().orEmpty()
+            if (custom.isNotEmpty()) picked += custom
+        }
+        if (picked.isEmpty()) null else picked.joinToString("、")
+    }
+    if (parts.isEmpty()) return null
+    return "你的选择：${parts.joinToString("；")}"
+}

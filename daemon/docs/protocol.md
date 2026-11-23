@@ -58,8 +58,8 @@
 | `DELETE /api/workspaces/:id/knowledge/:kid` | 是 | **永久删除**文件（不可恢复）；同时清理空的 end 目录 |
 | `GET /api/workspaces/:id/knowledge/export` | 是 | 导出 ZIP（识别到的 markdown + `.meta.json`） |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
-| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>`；带 `?runId=` 时改为该 run 的 `pre..post` 改动 |
-| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>`（可带 `?runId=`） |
+| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>` |
+| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>` |
 | `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=`；响应里的 `parent`：根目录为 `null`，一级目录为 `""`（父目录即根），更深为父目录的相对路径 |
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&root=<abs>&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
@@ -76,7 +76,6 @@
 | `GET /api/attachments/:id` | operator | 取图片字节；agent token 拒绝 |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
-| `POST /api/runs/:id/rollback` | 是 | **破坏性**：把工作区回滚到该 run 之前，`{confirm:true, force?}`（见下文「每轮 checkpoint 与回滚」） |
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
 | `GET /api/runs/:id/stream` | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播（重连订阅） |
 | `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
@@ -176,9 +175,10 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
 | `state` | `session: SessionDto` | 连接/重连后的权威快照：对标题、`runningRunId` |
 | `run_started` | `run: SessionRunBrief` | 该会话在别处开始了 run：若本地没在跑，追加用户消息 + 助手占位并 attach 到 `run.id` |
 | `run_finished` | `run: SessionRunBrief` | 结束提示；已 attach 到该 run 时以 run 流终局为准 |
-| `session_updated` | `sessionId, title` | 标题变化（builtin 首轮生成或另一端重命名），原地更新标题/会话列表 |
+| `session_updated` | `sessionId, title` | 标题变化（首轮自动生成或另一端重命名），原地更新标题/会话列表 |
 
-自动标题仍只由 builtin 在首轮生成；本流只是把结果推给所有打开该会话的客户端。
+自动标题在会话首轮生成：builtin 用本次 run 的模型，直连 runtime 用后台模型
+（`memory_model`）。本流只是把结果推给所有打开该会话的客户端。
 
 **`question` 有两种回答通道**：
 
@@ -196,9 +196,19 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
   run 里继续。超时 / 拒绝时工具返回错误结果，让模型自己决定下一步。builtin 仍兼容旧的
   `response: { "answer": string }`。
 
-**结算状态会持久化**：permission 解析时 daemon 把对应 `question` 事件的 payload 写上
-`answerStatus`（`allowed` / `denied` / `timed_out`，`permission_request` 则写最终
-`status`）。客户端重进会话时据此把卡片渲染成已结算，不会再要求用户回答同一个问题；
+**结算状态与答案都会持久化**：permission 解析时 daemon 把对应 `question` 事件的 payload 写上
+
+| 字段 | 内容 |
+|---|---|
+| `answerStatus` | `allowed` / `denied` / `timed_out`（`permission_request` 则写最终 `status`） |
+| `answers` | 用户选的选项，**按 question id 归键**：`{ "q1": ["方案 A", "其他：自定义"] }`。结构化答案从决策请求的嵌套形状扁平成这一层，客户端不用再解一层 |
+| `answerText` | 纯文本答案（老客户端的 `{ "answer": ... }` 形状）。与 `answers` 互斥地出现 |
+
+只写状态是不够的：卡片重进会话时只能显示「已发送答案」，选项一片空白，用户得翻回对话才能
+想起自己选了什么。所以**答案必须一起落库**，三端在重放时用它把选项标回勾选态，并把「其他」
+的输入框填回原文；不在 `options` 里的 label 按「其他」还原，不当成不存在的选项。
+老 daemon 没有这两个字段，客户端据此回落到「已发送答案」即可（只加不改）。
+
 拒绝和超时要分别显示，不能都叫「已回答」。没有 `permissionId` 的 runtime 由客户端按
 “问题是否还属于当前一轮”决定是否可答。
 
@@ -297,22 +307,16 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
     客户端重建历史时用 run events 的 `roomSeq` 取得快照游标，再从该位置接入 room stream，
     避免多个并发 run 的已显示前缀被直播流重复或遗漏。
 
-## 每轮 checkpoint 与回滚
+## 文件改动的查看
 
-每个 run 在**开跑前**和**收口后**各用隐藏 git ref（`refs/paboot/checkpoints/<runId>-{pre,post}`）
-快照一次 `session.cwd` 所在 git 仓库的整个工作区。快照走**临时 index**（`GIT_INDEX_FILE`），**不碰**
-真实的 index / HEAD / 暂存区，所以对你的未提交状态零影响。
+**没有 run 级回滚**（2026-11-23 移除）。原来每轮用隐藏 git ref 快照工作区、可以「回滚到某轮之前」，
+实际使用率是 1/1139 轮，而 `refs/paboot/checkpoints/*` 累积了两万多个 ref 且没有保留期——代价与
+收益不成比例，整套删掉（含 `RunDto.checkpoint`、`GET /api/changes?runId=`、`POST /api/runs/:id/rollback`
+和 `rolled_back` 状态）。想撤销改动就用 git 本身：paboot 从不碰真实的 index / HEAD，工作区里留下
+的改动照常用 `git diff` / `git checkout` 处理。
 
-- 非 git 工作区 / 快照失败：不落记录（`RunDto.checkpoint` 为 null），run 照常跑，绝不 `git init`。
-- `GET /api/changes?runId=<id>` 返回该 run 的 `pre..post` 改动（复用实时 changes 的形状），
-  `GET /api/changes/diff?runId=<id>&path=` 取单文件补丁。`RunDto.checkpoint` 让客户端知道某轮是否可看。
-- `POST /api/runs/:id/rollback` 把工作区恢复到该 run **之前**，并把该 run **及其之后**的所有 run 标为
-  `rolled_back`。防护：必须 `{confirm:true}`；同仓库有活跃 run → 409 `run_active`；存在更晚的 run 且未
-  `force` → 409 `later_runs_exist`（带数量）；回滚前先存一份 `refs/paboot/pre-rollback/<ts>` 安全快照
-  （只能用 git CLI 手动救，product 内无恢复入口）。
-- **破坏性**：会覆盖工作区当前内容、删掉被回滚 run 新增的文件、忽略/未跟踪的忽略文件与 submodule 内部
-  内容不入快照也不还原。且**文件回滚了，agent 对话不回退**——响应带 `conversationRewound:false`，
-  并追加一条合成助手消息说明，避免历史"说改了却没改"。
+`GET /api/changes` / `GET /api/changes/diff` 仍只回答「这个目录现在有什么未提交改动」，
+即实时状态，不按 run 切片。
 
 ## 会话续接
 

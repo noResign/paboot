@@ -131,4 +131,48 @@ describe('permission resolution persistence', () => {
     const [row] = db.listReplayEvents('run-q');
     expect(JSON.parse(row!.payload)).toMatchObject({ answerStatus: 'denied' });
   });
+
+  it('also records what was answered, so a replayed card can show the choice', () => {
+    // The bug this pins down: replay knew the question was settled but not what
+    // the user picked, so the card showed a blank form saying "已发送答案".
+    const db = new Db(':memory:');
+    dbs.push(db);
+    db.appendEvent('run-a', 1, 'question', {
+      type: 'question',
+      toolUseId: 't1',
+      questions: [],
+      permissionId: 'p1',
+    });
+
+    db.updateEventPermissionStatus('run-a', 'p1', 'allowed', {
+      answers: { q1: ['方案 A'], q2: ['其他：自己写的'] },
+      answerText: null,
+    });
+
+    const [row] = db.listReplayEvents('run-a');
+    expect(JSON.parse(row!.payload)).toMatchObject({
+      answerStatus: 'allowed',
+      answers: { q1: ['方案 A'], q2: ['其他：自己写的'] },
+    });
+  });
+
+  it('leaves answers absent for a plain tool approval', () => {
+    // Tool approvals are not questions; writing an empty answer map would make
+    // clients think something was chosen.
+    const db = new Db(':memory:');
+    dbs.push(db);
+    db.appendEvent('run-b', 1, 'question', {
+      type: 'question',
+      toolUseId: 't1',
+      questions: [],
+      permissionId: 'p1',
+    });
+
+    db.updateEventPermissionStatus('run-b', 'p1', 'allowed', { answers: null, answerText: null });
+
+    const [row] = db.listReplayEvents('run-b');
+    const payload = JSON.parse(row!.payload) as { answers?: unknown; answerText?: unknown };
+    expect(payload.answers).toBeNull();
+    expect(payload.answerText).toBeNull();
+  });
 });

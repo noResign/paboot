@@ -34,9 +34,9 @@
 - **Many runs at once, notified when done** — several sessions and runs in parallel without
   blocking each other; when you are not in that conversation, approvals and finished runs trigger
   a system notification.
-- **See and roll back every change** — Git changes, per-file diffs, the directory tree and
-  text / image / video previews without leaving the conversation; every run keeps a checkpoint
-  snapshot, and desktop can roll back to any of them.
+- **See every change** — Git changes, per-file diffs, the directory tree and text / image / video
+  previews without leaving the conversation. The daemon never touches your index or HEAD, so
+  undoing a change is plain `git`.
 - **Front-end / back-end separation, deploy anywhere** — the clients and the daemon are separate.
   The daemon runs anywhere via npm / Docker — any computer or server — so you can build your own
   control matrix.

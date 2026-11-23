@@ -49,6 +49,16 @@ export interface QuestionDto {
   options: QuestionOption[];
 }
 
+/**
+ * The labels a user picked, keyed by `QuestionDto.id`.
+ *
+ * Flat on purpose: the wire shape clients *send* nests one level deeper
+ * (`{ answers: { id: { answers: [...] } } }`, Codex's protocol), but nothing
+ * downstream benefits from that nesting, and a replay payload should be as
+ * cheap to read as possible.
+ */
+export type QuestionAnswers = Record<string, string[]>;
+
 export type NormalizedEvent =
   | {
       type: 'status';
@@ -131,6 +141,17 @@ export type NormalizedEvent =
        * a session does not ask it a second time.
        */
       answerStatus?: 'allowed' | 'denied' | 'timed_out';
+      /**
+       * Replay-only: the labels the user picked, keyed by `QuestionDto.id`.
+       *
+       * Without this a replayed card can only say "answered" — the user has to
+       * re-read the transcript to find out what they actually chose. Absent on
+       * questions settled by an older daemon, and on free-text answers (which
+       * use `answerText` instead).
+       */
+      answers?: QuestionAnswers;
+      /** Replay-only: the free-text answer, when the user typed one. */
+      answerText?: string;
     };
 
 /** Optional list price for a provider model, in USD per million tokens. */
@@ -280,14 +301,6 @@ export interface PermissionGrantDto {
   createdAt: number;
 }
 
-/** Per-run workspace checkpoint. `status`: complete | unavailable | rolled_back. */
-export interface RunCheckpointDto {
-  status: string;
-  repoRoot: string;
-  preRef: string | null;
-  postRef: string | null;
-}
-
 export interface RunDto {
   id: string;
   sessionId: string;
@@ -326,16 +339,6 @@ export interface RunDto {
   turnId?: string | null;
   /** Command tasks: aggregated stdout/stderr (tail-capped) for the detail view. */
   output?: string | null;
-  /** Present when the run's repo could be snapshotted; lets clients diff/roll back. */
-  checkpoint?: RunCheckpointDto | null;
-}
-
-/** `POST /api/runs/:id/rollback` response. */
-export interface RunRollbackResponse {
-  ok: boolean;
-  rolledBackRuns: number;
-  /** The file tree rewound; the agent's conversation did not. */
-  conversationRewound: false;
 }
 
 /** ---- deploy ---- */
@@ -462,8 +465,6 @@ export interface ChangesResponse {
   roots: string[];
   /** Browse-only bookmarks; not roots, grant nothing. See `WorkspaceDto.shortcutDirs`. */
   shortcutDirs: string[];
-  /** Set when the request was scoped to a run's `pre..post` checkpoint diff. */
-  runId?: string;
   isGitRepo: boolean;
   gitRoot: string | null;
   /** Git repos among `dir`'s direct children; only filled when `isGitRepo` is false. */
@@ -1137,6 +1138,39 @@ export interface SessionAgentDto extends AgentProfileDto {
 export interface SessionAgentsResponse {
   leaderId: string | null;
   agents: SessionAgentDto[];
+  /** Room capacity, so clients grey out "add" instead of hardcoding the limit. */
+  capacity?: { used: number; max: number };
+}
+
+/** Why an addressed agent did not get a task (`POST /turns` 202, `dropped`). */
+export type TurnDropReason =
+  | 'unknown'
+  | 'disabled'
+  | 'unavailable'
+  | 'cross_workspace'
+  | 'writable_agent_exists'
+  | 'room_full';
+
+/** One agent the user addressed that the turn could not route a task to. */
+export interface TurnDroppedAgentDto {
+  /** Agent id, or the raw `@` text when no such agent exists. */
+  id: string;
+  /** Display name to echo back; equals `id` for an unknown mention. */
+  name: string;
+  reason: TurnDropReason;
+}
+
+/** `POST /api/sessions/:id/turns` → 202. The answer itself arrives on the room stream. */
+export interface CreateTurnResponse {
+  turnId: string;
+  /** Tasks actually created, in routing order. */
+  addressed: { agentId: string; name: string; source: string }[];
+  /**
+   * Addressed agents that got no task. Clients should surface these: an `@`
+   * that silently produces no answer reads as a broken mention.
+   */
+  dropped: TurnDroppedAgentDto[];
+  tasks: { id: string; agentId: string; source: string; status: string }[];
 }
 
 /** 新建 / 编辑 agent 的请求体；字段都可选，服务端只改传了的。 */

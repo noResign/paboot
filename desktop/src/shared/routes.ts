@@ -97,7 +97,6 @@ export const ROUTES = {
   run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,
   runStream: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,
   runCancel: (id: string) => `/api/runs/${encodeURIComponent(id)}/cancel`,
-  runRollback: (id: string) => `/api/runs/${encodeURIComponent(id)}/rollback`,
   runEvents: (id: string) => `/api/runs/${encodeURIComponent(id)}/events`,
   chat: '/api/chat',
   permissions: '/api/permissions',

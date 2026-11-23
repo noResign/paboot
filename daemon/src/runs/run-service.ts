@@ -11,7 +11,6 @@ import {
 } from '../permissions/security-profile.js';
 import type { RuntimeDriver } from '../runtimes/RuntimeDriver.js';
 import type { RunOutcome } from '../runtimes/engine.js';
-import { captureCheckpoint, repoRootFor } from '../workspaces/checkpoints.js';
 import { log } from '../platform/log.js';
 import { existingDirs, workspaceRoots } from '../workspaces/workspace-service.js';
 import { ensureKnowledgeRoot } from '../knowledge/paths.js';
@@ -26,10 +25,12 @@ import {
 } from '../context/prelude.js';
 import { perRunToolServers } from '../mcp/injection.js';
 import { sessionRunBrief } from '../db/dto.js';
+import { configuredMemoryModel, resolveMemoryModel } from '../memory/model.js';
 import { endsContext } from './end-context.js';
 import { knowledgeContext } from './knowledge-context.js';
 import { memoryContext } from './memory-context.js';
 import { memoryRecall } from './memory-recall.js';
+import { generateSessionTitle, titleFromPrompt } from './session-title.js';
 
 /** Claude's resume failure when the conversation is gone from its own storage. */
 const MISSING_NATIVE_SESSION_RE = /No conversation found with session ID/i;
@@ -98,7 +99,7 @@ export interface StartSessionRunInput {
 
 export interface RunHandle {
   runId: string;
-  /** Resolves after the post-checkpoint and terminal status are persisted. */
+  /** Resolves after the terminal status is persisted. */
   done: Promise<RunOutcome>;
 }
 
@@ -182,7 +183,7 @@ export function extraDirsForRun(
 /**
  * Start one run against an already-resolved session and workspace. Extracted
  * from the `/api/chat` handler so the scheduler and the command runner share
- * exactly the same persistence, checkpoint, notifier and terminal-frame rules.
+ * exactly the same persistence, notifier and terminal-frame rules.
  *
  * Callers own validation (session busy, workspace/cwd checks, runtime
  * detection) and session creation; this function owns everything after that.
@@ -233,6 +234,9 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         ? stricterPermissionMode(resolvedMode, agent.permissionCeiling)
         : resolvedMode;
   const runId = randomUUID();
+  // Read before this run is created: a session's first turn gets a generated
+  // title, later turns leave whatever title it already has alone.
+  const isFirstRun = ctx.db.listRuns(session.id).length === 0;
 
   ctx.db.touchWorkspace(workspace.id);
   if (!input.skipUserMessage) ctx.db.addMessage(session.id, 'user', prompt);
@@ -283,6 +287,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   for (const id of input.attachmentIds ?? []) {
     ctx.attachments.bind(id, { runId });
   }
+  if (isFirstRun) maybeGenerateTitle(ctx, session, prompt, runtime, input.trigger);
 
   // [debug] Live-only entry so `/debug` can show the run before its first
   // model step; it disappears from the page when the process ends or it ages out.
@@ -324,21 +329,6 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       }
       ctx.notifier.broadcast(runId, frame);
     };
-
-    // Snapshot the workspace before the run can touch it, so its changes can be
-    // diffed and rolled back later. Best-effort: a non-git cwd or a git failure
-    // just means no checkpoint, and the run proceeds anyway.
-    const repoRoot = await repoRootFor(runCwd);
-    const preRef = repoRoot ? await captureCheckpoint(repoRoot, `${runId}-pre`) : null;
-    if (repoRoot) {
-      ctx.db.upsertRunCheckpoint({
-        runId,
-        repoRoot,
-        preRef,
-        postRef: null,
-        status: preRef ? 'complete' : 'unavailable',
-      });
-    }
 
     input.sink.begin?.();
     send({
@@ -506,7 +496,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         systemContext: nativeSystemPrompt && injected ? injected.prefix : undefined,
         toolServers,
         // The service owns the terminal frame: provider errors may arrive before
-        // exit, while the final checkpoint and run metadata are not ready yet.
+        // exit, while the run metadata is not ready yet.
         onEvent: (event) => send('terminal' in event && event.terminal ? { ...event, terminal: false } : event),
       });
 
@@ -554,21 +544,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
         // Memory capture is post-run and best-effort: the SSE stream and the
         // terminal frame must never wait for memory.db or an extraction call.
         scheduleMemoryCapture(ctx, session, workspace, runId);
-        // Close the checkpoint pair so the run's diff (pre..post) is available.
-        // Cancelled runs converge here too, so they stay diffable/rollback-able.
-        if (repoRoot) {
-          const postRef = await captureCheckpoint(repoRoot, `${runId}-post`);
-          ctx.db.upsertRunCheckpoint({
-            runId,
-            repoRoot,
-            preRef,
-            postRef,
-            status: preRef && postRef ? 'complete' : 'unavailable',
-          });
-        }
       }
-      // Keep the session busy until its post-checkpoint is durable. A new run
-      // must not edit files while the previous run is still taking its snapshot.
       ctx.db.updateRun(runId, {
         status: finalOutcome.status,
         endedAt: Date.now(),
@@ -607,6 +583,80 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
   })();
 
   return { runId, done };
+}
+
+/**
+ * Sessions whose first turn is already asking for a title. One room turn can
+ * start several agents at once; only the first one should spend the call.
+ */
+const titleGenerations = new Set<string>();
+
+/**
+ * Upgrade the prompt-derived title on a session's first turn.
+ *
+ * builtin generates its own title from the model driving the run; every other
+ * runtime (Claude / Codex / DeepSeek) has no daemon-side provider for that
+ * conversation, so the call goes through the same background model memory
+ * extraction uses. No configured background model means the default title
+ * stays, exactly like memory's record-only mode.
+ *
+ * Only the first run of a `chat` session triggered by a user message qualifies,
+ * and only while the title is still the prompt-derived default — a rename by the
+ * user (or a previous upgrade) is never overwritten.
+ */
+function maybeGenerateTitle(
+  ctx: AppContext,
+  session: SessionRow,
+  prompt: string,
+  runtime: string,
+  trigger: StartSessionRunInput['trigger'],
+): void {
+  if (runtime === 'builtin' || session.kind !== 'chat' || trigger !== 'user') return;
+  const defaultTitle = titleFromPrompt(prompt);
+  if (defaultTitle === null) return;
+  if (session.title !== null && session.title !== defaultTitle) return;
+  if (titleGenerations.has(session.id)) return;
+  titleGenerations.add(session.id);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  timer.unref?.();
+  void (async () => {
+    try {
+      const selection = await resolveMemoryModel(
+        configuredMemoryModel((key) => ctx.db.getSetting(key), ctx.config.memoryModel),
+      );
+      if (!selection || !selection.provider.available) return;
+      const title = await generateSessionTitle({
+        provider: selection.provider,
+        model: selection.model,
+        prompt,
+        signal: controller.signal,
+      });
+      if (title === null) return;
+      const latest = ctx.db.getSession(session.id);
+      if (!latest) return;
+      // Lost the race to a rename or another agent's title.
+      if (latest.title !== null && latest.title !== defaultTitle) return;
+      if (latest.title === title) return;
+      ctx.db.setSessionTitle(session.id, title);
+      ctx.sessionNotifier.publish(session.id, {
+        type: 'session_updated',
+        sessionId: session.id,
+        title,
+      });
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        log.warn(
+          `session ${session.id}: title generation failed: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+      titleGenerations.delete(session.id);
+    }
+  })();
 }
 
 /** Publish the terminal hint once the run row carries its final status. */

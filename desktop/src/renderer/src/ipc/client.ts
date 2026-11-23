@@ -21,6 +21,7 @@ import type {
   AgentsResponse,
   ChangesResponse,
   ConfigResponse,
+  CreateTurnResponse,
   DeleteWorkspaceResponse,
   DiffResponse,
   DirectoriesResponse,
@@ -66,7 +67,6 @@ import type {
   ProviderResponse,
   ProviderTestResponse,
   RunNowResponse,
-  RunRollbackResponse,
   ScheduledTaskDetailResponse,
   ScheduledTaskDto,
   ScheduledTasksResponse,
@@ -262,17 +262,10 @@ export const api = {
   }) => request<FilesResponse>({ method: 'GET', path: ROUTES.files, query: { ...params } }),
   fileContent: (params: { workspaceId?: string; root?: string; path: string }) =>
     request<FileContentDto>({ method: 'GET', path: ROUTES.fileContent, query: { ...params } }),
-  changes: (params: { workspaceId?: string; root?: string; runId?: string }) =>
+  changes: (params: { workspaceId?: string; root?: string }) =>
     request<ChangesResponse>({ method: 'GET', path: ROUTES.changes, query: { ...params } }),
-  changesDiff: (params: { workspaceId?: string; root?: string; path: string; runId?: string }) =>
+  changesDiff: (params: { workspaceId?: string; root?: string; path: string }) =>
     request<DiffResponse>({ method: 'GET', path: ROUTES.changesDiff, query: { ...params } }),
-  /** Destructive: restore the workspace to before `runId`. `force` also discards later runs. */
-  runRollback: (runId: string, force = false) =>
-    request<RunRollbackResponse>({
-      method: 'POST',
-      path: ROUTES.runRollback(runId),
-      body: { confirm: true, force },
-    }),
   sessions: (workspaceId?: string) =>
     request<SessionsResponse>({
       method: 'GET',
@@ -316,7 +309,7 @@ export const api = {
     commandId: string,
     attachmentIds: string[] = [],
   ) =>
-    request<{ turnId: string; tasks: { id: string; agentId: string }[] }>({
+    request<CreateTurnResponse>({
       method: 'POST',
       path: ROUTES.sessionTurns(sessionId),
       // A retry carrying the same commandId re-attaches to the same turn.

@@ -284,17 +284,25 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// 房间容量（含 leader）；老 daemon 不发这个字段。
+public struct RoomCapacityDto: Decodable, Equatable, Sendable {
+    public let used: Int
+    public let max: Int
+}
+
 public struct SessionAgentsResponse: Decodable, Equatable, Sendable {
     public let leaderId: String?
     public let agents: [SessionAgentDto]
+    public let capacity: RoomCapacityDto?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         leaderId = try c.decodeIfPresent(String.self, forKey: .leaderId)
         agents = try c.decodeIfPresent([SessionAgentDto].self, forKey: .agents) ?? []
+        capacity = try c.decodeIfPresent(RoomCapacityDto.self, forKey: .capacity)
     }
 
-    private enum CodingKeys: String, CodingKey { case leaderId, agents }
+    private enum CodingKeys: String, CodingKey { case leaderId, agents, capacity }
 }
 
 /// 新建 / 编辑 agent 的请求体；字段都可选，daemon 只改传了的。

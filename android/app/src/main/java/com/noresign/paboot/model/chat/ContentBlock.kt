@@ -30,6 +30,10 @@ sealed interface ContentBlock {
         val answered: Boolean = false,
         /** allowed | denied | timed_out；非空表示服务端已结算，不能再回答。 */
         val answerStatus: String? = null,
+        /** 重放时携带：用户选的选项（按 question id 归键），用于把选项标回来。 */
+        val answers: Map<String, List<String>>? = null,
+        /** 重放时携带：用户手打的答案。 */
+        val answerText: String? = null,
         /** 非空 = builtin 阻塞式提问，答案走权限决策端点。 */
         val permissionId: String? = null,
     ) : ContentBlock

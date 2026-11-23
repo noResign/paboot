@@ -150,10 +150,18 @@ data class SessionAgentDto(
     val taskId: String? = null,
 )
 
+/** 房间容量（含 leader）；老 daemon 不发，缺省表示不做上限提示。 */
+@Serializable
+data class RoomCapacityDto(
+    val used: Int = 0,
+    val max: Int = 0,
+)
+
 @Serializable
 data class SessionAgentsResponse(
     val leaderId: String? = null,
     val agents: List<SessionAgentDto> = emptyList(),
+    val capacity: RoomCapacityDto? = null,
 )
 
 /** 新建 / 编辑 agent 的请求体；字段都可选，daemon 只改传了的。 */

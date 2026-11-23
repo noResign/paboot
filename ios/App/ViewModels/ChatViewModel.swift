@@ -751,6 +751,11 @@ final class ChatViewModel {
             if let id = status.sessionId, !id.isEmpty, sessionId == nil {
                 sessionId = id
                 state.sessionId = id
+                // A session created by this send never went through
+                // `loadHistory`, which is the only other place that opens the
+                // watch. Without it the daemon's first-turn title update only
+                // reaches the list, not the open chat's header.
+                startSessionWatch(sessionId: id)
             }
             if let model = status.model, !model.isEmpty {
                 state.model = model
@@ -915,7 +920,10 @@ final class ChatViewModel {
         // permission endpoint and the same run continues with the tool result.
         if let permissionId = question.permissionId {
             guard !question.answered else { return }
-            markQuestionAnswered(toolUseId, answered: true)
+            // Store the picks locally too: a live block comes from an event that
+            // carries no answer, so without this the card stays blank until the
+            // session is reloaded from persisted events.
+            markQuestionAnswered(toolUseId, answered: true, answers: answers)
             let payload = answers.mapValues { labels in
                 JSONValue.object(["answers": .array(labels.map(JSONValue.string))])
             }
@@ -952,7 +960,11 @@ final class ChatViewModel {
         return nil
     }
 
-    private func markQuestionAnswered(_ toolUseId: String, answered: Bool) {
+    private func markQuestionAnswered(
+        _ toolUseId: String,
+        answered: Bool,
+        answers: [String: [String]]? = nil
+    ) {
         for messageIndex in state.messages.indices
         where state.messages[messageIndex].role == .assistant {
             for blockIndex in state.messages[messageIndex].blocks.indices {
@@ -961,6 +973,7 @@ final class ChatViewModel {
                     continue
                 }
                 question.answered = answered
+                if let answers { question.answers = answers }
                 state.messages[messageIndex].blocks[blockIndex] = .question(question)
             }
         }

@@ -10,7 +10,6 @@ import { Icon } from '../../ui/Icon';
 import { formatMessageTime, formatTokens } from '../../../../shared/format';
 import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
-import { canRollbackRun } from './runActions';
 import { AttachmentThumbs } from './AttachmentThumbs';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
@@ -40,12 +39,11 @@ export function Transcript({
   agentNames,
   showSpeakerName = true,
   leaderAgentId = null,
-  onRollback,
   onOpenTrace,
 }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
-  /** The session's runs, to gate the per-message rollback action by checkpoint. */
+  /** The session's runs, so a question can be matched to the run that answered it. */
   runs: RunDto[];
   /** agentId → name, used for labels, avatars and summon parsing. */
   agentNames?: Map<string, string>;
@@ -53,7 +51,6 @@ export function Transcript({
   showSpeakerName?: boolean;
   /** Only the leader's line-start @lines become summon bubbles. */
   leaderAgentId?: string | null;
-  onRollback(runId: string): void;
   /** Open the full thinking/tool trace for a completed answer. */
   onOpenTrace?(runId: string): void;
 }) {
@@ -124,8 +121,6 @@ export function Transcript({
               text={message.text}
               attachmentIds={message.attachmentIds}
               at={message.at}
-              run={message.runId ? runs.find((r) => r.id === message.runId) : undefined}
-              onRollback={onRollback}
             />
           );
         }
@@ -180,15 +175,11 @@ function UserRow({
   text,
   attachmentIds,
   at,
-  run,
-  onRollback,
 }: {
   id: string;
   text: string;
   attachmentIds?: string[];
   at: number | undefined;
-  run: RunDto | undefined;
-  onRollback(runId: string): void;
 }) {
   const sentAt =
     at === undefined || !Number.isFinite(at) || at <= 0
@@ -209,15 +200,6 @@ function UserRow({
       </div>
       <div className="msg-actions">
         <CopyButton text={text} />
-        {run && canRollbackRun(run) && (
-          <button
-            className="btn ghost tiny"
-            title="把工作区文件恢复到这次发送之前（破坏性，agent 对话不回退）"
-            onClick={() => onRollback(run.id)}
-          >
-            回滚
-          </button>
-        )}
       </div>
     </div>
   );
@@ -314,6 +296,8 @@ export function AssistantRow({
                           questions={segment.questions}
                           answered={segment.answered}
                           answerStatus={segment.answerStatus ?? null}
+                          answers={segment.answers ?? null}
+                          answerText={segment.answerText ?? null}
                           permissionId={segment.permissionId}
                           interactive={interactive}
                           closed={questionClosed(segment)}
@@ -404,6 +388,8 @@ export function AssistantRow({
                 questions={segment.questions}
                 answered={segment.answered}
                 answerStatus={segment.answerStatus ?? null}
+                answers={segment.answers ?? null}
+                answerText={segment.answerText ?? null}
                 permissionId={segment.permissionId}
                 interactive={interactive}
                 closed={questionClosed(segment)}

@@ -55,7 +55,7 @@
 
 - `runs`：`task_id`、`trigger`（`user|scheduled|run_now`）、`permission_mode`。
 - `sessions`：`kind`（`chat|command`）。命令任务使用隐藏会话（`kind='command'`, `runtime='command'`）
-  承载 run / events / checkpoint；`listSessions` 与计数只返回 `kind='chat'`，内部清理用 `listAllSessions`。
+  承载 run / events；`listSessions` 与计数只返回 `kind='chat'`，内部清理用 `listAllSessions`。
 
 ## 4. HTTP API
 
@@ -129,14 +129,14 @@ do not use system cron/systemd timers or other scheduling mechanisms.` 这样不
 `runtimes/command.ts` 是一个内部 `RuntimeDriver`（`internal: true`, `requiresDetection: false`），
 `/api/chat` 拒绝客户端直接使用。它 spawn `/bin/sh -c <command>`，独立进程组，取消时 SIGTERM → 3s → SIGKILL；
 stdout/stderr 以 `text_delta` 流式写入，结束时补一个 `tool_result`（只带 exit code，避免输出重复两遍）。
-run / events / checkpoint / rollback / cancel 全部复用 `startSessionRun`。
+run / events / cancel 全部复用 `startSessionRun`。
 
-## 7. 安全边界与可回滚范围
+## 7. 安全边界与不可撤销范围
 
 - 定时 run 以 `bypass` 发起；全局 `securityProfile=server-strict` 且未显式
   `allowServerBypass: true` 时，run 会在 `startSessionRun` 降级为 `acceptEdits`。创建任务时
   客户端仍必须展示无人值守风险提示。
-- 可回滚的只有**工作区内 git 仓库的文件改动**（沿用每轮 `pre..post` checkpoint）。
-- 不可回滚：gitignored 文件、外部副作用（`git push`、部署、HTTP、发消息、装包、后台进程）。
+- daemon 不提供 run 级回滚（2026-11-23 移除）：定时 run 的文件改动同样只能用 git 自己处理。
+- 更要紧的是外部副作用根本不可回滚：`git push`、部署、HTTP、发消息、装包、后台进程。
 - 命令任务等价于用户创建的 cron：命令本身在创建时就已授权，运行时不经过 AI 工具审批。
 - 任务触发只跳过本次（会话忙）；绑定会话消失时任务被删除，工作区消失时任务停用，不会排队堆积。

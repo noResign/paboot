@@ -289,6 +289,42 @@ describe('room membership API', () => {
     expect(roster.agents[0]!.hasContext).toBe(false);
   });
 
+  it('caps a room at eight members and reports the capacity', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+
+    const roster = (await (await h.request('GET', `/api/sessions/${sessionId}/agents`)).json()) as {
+      agents: unknown[];
+      capacity?: { used: number; max: number };
+    };
+    expect(roster.capacity).toEqual({ used: 1, max: 8 });
+
+    // Only one writable agent per room, so every added member is read-only.
+    const add = async (name: string): Promise<Response> => {
+      const created = (await (
+        await h.request('POST', `/api/workspaces/${h.workspaceId}/agents`, {
+          name,
+          kind: 'runtime',
+          runtime: 'codex',
+          readOnly: true,
+        })
+      ).json()) as { agent: { id: string } };
+      return h.request('POST', `/api/sessions/${sessionId}/agents`, { agentId: created.agent.id });
+    };
+
+    for (let i = 0; i < 7; i += 1) expect((await add(`mate${i}`)).status).toBe(204);
+    const full = await add('overflow');
+    expect(full.status).toBe(409);
+    expect(await full.json()).toMatchObject({ code: 'room_full' });
+
+    const after = (await (await h.request('GET', `/api/sessions/${sessionId}/agents`)).json()) as {
+      agents: unknown[];
+      capacity?: { used: number; max: number };
+    };
+    expect(after.agents).toHaveLength(8);
+    expect(after.capacity).toEqual({ used: 8, max: 8 });
+  });
+
   it('resets one agent conversation without touching the others', async () => {
     const h = await startApi();
     const sessionId = await seedSession(h);

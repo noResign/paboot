@@ -69,6 +69,10 @@ struct QuestionBlock: Equatable {
     var answered: Bool = false
     /// Replay only: `allowed` | `denied` | `timed_out`; non-nil means settled.
     var answerStatus: String?
+    /// Replay only: what the user picked, keyed by question id.
+    var answers: [String: [String]]?
+    /// Replay only: the free-text answer, when one was typed.
+    var answerText: String?
     /// Non-nil for builtin's blocking questions: the answer is submitted through
     /// the permission-decision endpoint and the run continues.
     var permissionId: String?

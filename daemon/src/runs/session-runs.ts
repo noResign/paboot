@@ -2,9 +2,9 @@ import type { AppContext } from '../app/context.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 
 /**
- * Map every in-flight run's session id → all active run ids, including
- * checkpoint work. A plain chat has at most one; a room deliberately has one
- * per answering agent, so this map must not collapse them.
+ * Map every in-flight run's session id → all active run ids. A plain chat has
+ * at most one; a room deliberately has one per answering agent, so this map
+ * must not collapse them.
  */
 export function runningRunIdsBySession(ctx: AppContext): Map<string, string[]> {
   const map = new Map<string, string[]>();

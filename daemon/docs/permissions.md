@@ -148,8 +148,8 @@ claude 要执行工具 → hook(dist/permission-hook.js) → POST /api/internal/
 - **定时任务**：任务按 `bypass` 发起；若全局 `securityProfile=server-strict` 且未显式
   `allowServerBypass: true`，run 会降级为 `acceptEdits`（工作区编辑可无人值守，Bash/MCP 无审批人时
   超时拒绝）。创建时客户端仍必须展示无人值守风险提示。
-  可回滚的只有工作区内 git 文件改动；外部副作用（push/部署/消息等）不可撤销，详见
-  [scheduled-tasks.md](scheduled-tasks.md)。agent 通过 `paboot_tasks` 的 `schedule_task` 创建任务：
+  daemon 不提供 run 级回滚（2026-11-23 移除）：文件改动只能用 git 自己处理，而外部副作用
+  （push/部署/消息等）根本不可撤销，详见 [scheduled-tasks.md](scheduled-tasks.md)。agent 通过 `paboot_tasks` 的 `schedule_task` 创建任务：
   `target` 可选当前会话 / 同 workspace 的已有会话 / 首次触发新建；目标会话由 daemon 校验，
   agent 不能跨 workspace 指定。记录 `created_by='mcp'` 与 audit；每会话最多 20 个；定时 run 内再次
   创建会被 `recursion_blocked`。AI 配置会话使用会话自身的权限模式（通常 `ask`），因此创建任务时

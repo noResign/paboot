@@ -20,7 +20,11 @@ export interface PermissionRequest {
   decidedAt: number | null;
   /** 是否已经把 pending 请求广播给客户端；只有广播过的请求才需要在解决时再发状态帧。 */
   announced: boolean;
-  /** User input is held in memory only, never included in DTOs or SSE. */
+  /**
+   * User input as posted by the client. Never echoed into DTOs or live SSE —
+   * but the *answer* is written back onto the `question` event for replay (see
+   * `answerForEvent`), otherwise a settled card cannot show what was chosen.
+   */
   response?: unknown;
   validateResponse?: (response: unknown) => string | null;
 }

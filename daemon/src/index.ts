@@ -17,6 +17,7 @@ import { AttachmentStore } from './attachments/store.js';
 import { DEFAULT_PROVIDERS_FILE } from './llm/credentials.js';
 import { ProviderManager } from './providers/provider-manager.js';
 import { PermissionManager } from './permissions/permissions.js';
+import { answerForEvent } from './permissions/question-answers.js';
 import { fromLegacyPermissionMode } from './permissions/permission-mode.js';
 import { RunNotifier } from './runs/run-notifier.js';
 import { SessionNotifier } from './runs/session-notifier.js';
@@ -221,7 +222,9 @@ async function main(): Promise<void> {
     permissions: new PermissionManager(
       config.permissionTimeoutMs,
       (req) => {
-        db.updateEventPermissionStatus(req.runId, req.id, req.status);
+        // Questions are persisted with the answer the user gave, not just the
+        // fact that they answered: a replayed card has to show the choice.
+        db.updateEventPermissionStatus(req.runId, req.id, req.status, answerForEvent(req.response));
         // Pending requests may be resolved by timeout / run cleanup / allow-all
         // without a direct client action. Push the new status so every attached
         // client can remove it from its approval queue.

@@ -116,6 +116,10 @@ sealed class NormalizedEvent {
         val permissionId: String? = null,
         /** 重放时携带：allowed | denied | timed_out，非空表示这个问题已结算。 */
         val answerStatus: String? = null,
+        /** 重放时携带：用户选的选项，按 `QuestionDto.id` 归键。缺省 = 老 daemon。 */
+        val answers: Map<String, List<String>>? = null,
+        /** 重放时携带：用户手打的答案（选了「其他」）。 */
+        val answerText: String? = null,
     ) : NormalizedEvent()
 }
 
@@ -158,6 +162,9 @@ data class ChatRequest(
 data class PermissionDecisionRequest(
     val decision: String,
     val reason: String? = null,
-    /** UserInput answers: returned to the provider, not saved in history. */
+    /**
+     * UserInput 的结构化答案。daemon 会把它回填给工具/RPC，并把扁平化后的
+     * `answers` 写回 `question` 事件（重放时卡片据此显示当时选了什么）。
+     */
     val response: JsonElement? = null,
 )

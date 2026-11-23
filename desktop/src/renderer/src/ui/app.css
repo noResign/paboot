@@ -1165,6 +1165,26 @@ button.end-chip {
 .perm-modal {
   width: 560px;
 }
+/* A blocking question asked on top of the conversation: same card as the
+   transcript, so answering here and answering there cannot look different. */
+.question-modal {
+  width: 520px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.question-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+.question-modal-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
 .new-session-modal {
   width: 520px;
   padding: 16px;
@@ -1527,6 +1547,17 @@ button.end-chip {
   padding: 6px 18px 8px;
   max-height: 30vh;
   overflow: auto;
+}
+/* Fold toggle + dismiss, on one line: the list can stay up for the whole run,
+   so putting it away has to be one click and always in the same place. */
+.todo-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.todo-head .fold-head {
+  flex: 1;
+  min-width: 0;
 }
 .todo-list {
   list-style: none;
@@ -3608,15 +3639,6 @@ a.btn {
 }
 .local-pick:hover {
   border-color: var(--primary);
-}
-.rollback-confirm {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.rollback-confirm span {
-  flex: 1 1 100%;
 }
 .btn.danger {
   color: var(--danger, #e06c75);

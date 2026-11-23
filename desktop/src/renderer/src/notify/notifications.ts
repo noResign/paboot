@@ -26,6 +26,34 @@ export function permissionNotification(
   };
 }
 
+/**
+ * A blocking question asked while the user is elsewhere.
+ *
+ * Questions emit no `permission_request`, so without their own notice the only
+ * hint is a strip inside the app — and a blocked run produces no "finished"
+ * notice either, because it never finishes. The id is the permission id, which
+ * is what lets the answer retract it.
+ */
+export function questionNotificationId(permissionId: string): string {
+  return `question:${permissionId}`;
+}
+
+export function questionNotification(
+  permissionId: string,
+  questions: readonly { header?: string; question: string }[],
+  session: { id: string | null; title: string | null },
+): NotifyInput {
+  const first = questions[0];
+  const asked = first?.header?.trim() || first?.question?.trim() || 'Agent 需要你的回答';
+  const more = questions.length > 1 ? `（共 ${questions.length} 问）` : '';
+  return {
+    id: questionNotificationId(permissionId),
+    title: `需要你的回答${more}`,
+    body: `${firstLine(asked)} · ${session.title ?? '未命名会话'}`,
+    sessionId: session.id,
+  };
+}
+
 /** Mirrors `StreamOutcome` minus `cancelled` — a user-cancelled run needs no notice. */
 export type FinishedOutcome = 'finished' | 'settled' | 'giveup';
 

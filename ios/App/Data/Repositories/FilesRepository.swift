@@ -160,10 +160,6 @@ final class FilesRepository: FileListingRepository {
             return "目录不可读"
         case "git_unavailable":
             return "daemon 所在电脑上没有可用的 git"
-        case "no_checkpoint":
-            return "该 run 没有可用的改动快照"
-        case "file_not_changed":
-            return "该文件在这个 run 中没有改动"
         default:
             return apiError?.message ?? apiError?.error ?? "HTTP \(status)"
         }

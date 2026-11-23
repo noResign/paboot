@@ -582,7 +582,7 @@ final class ChatViewController: UIViewController {
         inputBar.isUserInteractionEnabled = !state.loadingHistory
         inputBar.alpha = state.loadingHistory ? 0.6 : 1
         reconnectBanner.isHidden = !state.reconnecting
-        todoPanel.configure(state.todos)
+        todoPanel.configure(state.todos, sessionId: state.sessionId)
         updateMenu(state)
         updateLoading(state)
         updatePermissionAlert(state.permission)

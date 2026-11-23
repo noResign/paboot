@@ -11,6 +11,7 @@ import {
   listThreads,
   MAX_SUMMARY_CHARS,
   removeAgent,
+  ROOM_MAX_MEMBERS,
   sessionRoster,
   updateAgent,
 } from '../agents/index.js';
@@ -75,7 +76,12 @@ function agentDetailDto(agent: Agent): AgentProfileDetailDto {
 
 function sendAgentError(res: Response, err: unknown): void {
   if (err instanceof AgentValidationError) {
-    const status = err.code === 'not_found' ? 404 : err.code === 'leader_required' ? 409 : 400;
+    const status =
+      err.code === 'not_found'
+        ? 404
+        : err.code === 'leader_required' || err.code === 'room_full'
+          ? 409
+          : 400;
     res.status(status).json({ error: err.message, code: err.code });
     return;
   }
@@ -279,6 +285,8 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         taskStatus: openTask.get(row.agent.id)?.status ?? null,
         taskId: openTask.get(row.agent.id)?.id ?? null,
       })),
+      // Clients grey out "add" against this instead of guessing the constant.
+      capacity: { used: roster.length, max: ROOM_MAX_MEMBERS },
     });
   });
 

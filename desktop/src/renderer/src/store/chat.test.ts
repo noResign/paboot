@@ -13,14 +13,20 @@ vi.mock('../ipc/client', () => ({
   connectionApi: { streamStart: vi.fn() },
 }));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
-vi.mock('../notify/notifier', () => ({ notifyRunFinished: vi.fn(), notifyPermission: vi.fn(), closePermissionNotification: vi.fn() }));
+vi.mock('../notify/notifier', () => ({
+  notifyRunFinished: vi.fn(),
+  notifyPermission: vi.fn(),
+  closePermissionNotification: vi.fn(),
+  notifyQuestion: vi.fn(),
+  closeQuestionNotification: vi.fn(),
+}));
 import { api, connectionApi } from '../ipc/client';
 import { reduceRoomFrames, useChat } from './chat';
 import { emptyChat } from './chat/types';
 import type { ChatMessage } from './chat/types';
 import type { RunDto } from '../../../shared/contract';
 
-const run = { id: 'r', status: 'succeeded', checkpoint: { status: 'complete', preRef: 'pre', postRef: 'post' } } as RunDto;
+const run = { id: 'r', status: 'succeeded' } as RunDto;
 const key = 'host::s';
 beforeEach(() => {
   vi.clearAllMocks();
@@ -144,6 +150,12 @@ describe('model selection before the session exists', () => {
       kind: 'room',
       sessionId: 's-new',
     });
+    // The chat existed before the session did, so it also has to open the
+    // session watch itself — the first-turn title update arrives there.
+    expect(vi.mocked(connectionApi.streamStart).mock.calls[1]![0]).toMatchObject({
+      kind: 'session',
+      sessionId: 's-new',
+    });
     expect(api.sendTurn).toHaveBeenCalledWith(
       's-new',
       'hi',
@@ -242,7 +254,7 @@ describe('title sync', () => {
 });
 
 describe('finished run metadata', () => {
-  it('refreshes checkpoints without reopening or replacing the transcript', async () => {
+  it('refreshes run metadata without reopening or replacing the transcript', async () => {
     vi.mocked(api.session).mockResolvedValue({ ok: true, status: 200, data: { runs: [run] } } as never);
     useChat.getState().applyStreamEvent({ streamId: 'stream', kind: 'done', outcome: 'finished', httpCode: null, apiCode: null, message: null });
     await vi.waitFor(() => expect(useChat.getState().byKey[key]!.runs).toEqual([run]));
@@ -439,6 +451,10 @@ describe('question answers', () => {
     const chat = useChat.getState().byKey[key]!;
     expect(chat.pendingAnswers[0]!.message.blocks[0]).toMatchObject({ answered: true });
     expect(chat.displayQueue[0]!.message.blocks[0]).toMatchObject({ answered: true });
+    // The picks are stored on the block, not only sent to the daemon: a live
+    // block comes from an event with no answer, so without this the card shows
+    // a blank option list until the session is reloaded from events.
+    expect(chat.pendingAnswers[0]!.message.blocks[0]).toMatchObject({ answers: { q: ['A'] } });
     await vi.waitFor(() =>
       expect(api.decidePermission).toHaveBeenCalledWith(
         'p1',

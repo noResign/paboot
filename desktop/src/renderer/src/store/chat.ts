@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, connectionApi } from '../ipc/client';
-import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
+import { apiErrorOf, describeDropped, friendlyMessage } from '../../../shared/errors';
 import {
   applyFrame,
   buildAssistantFromEvents,
@@ -15,6 +15,7 @@ import type { ChatMessage, ChatSessionState, ContentBlock, TodoItem } from './ch
 import type { ContextUsage } from '../../../shared/format';
 import type {
   ProductPermissionMode,
+  QuestionAnswers,
   RunDto,
   SessionEvent,
   SessionRunBrief,
@@ -28,7 +29,13 @@ import type {
   StreamSpec,
 } from '../../../shared/ipc';
 import { useSessions } from './sessions';
-import { closePermissionNotification, notifyPermission, notifyRunFinished } from '../notify/notifier';
+import {
+  closePermissionNotification,
+  closeQuestionNotification,
+  notifyPermission,
+  notifyQuestion,
+  notifyRunFinished,
+} from '../notify/notifier';
 
 /**
  * Chat state, keyed by `connectionId::sessionId`. M1 shows one conversation at
@@ -354,6 +361,16 @@ export const useChat = create<ChatStore>((set, get) => ({
         }));
         return;
       }
+      // A session created here never went through `openSession`, which is the
+      // only other place that opens the watch. Without it the daemon's
+      // first-turn title update would only show up after reopening the chat.
+      const watched = get().byKey[key];
+      if (watched?.sessionId && !watched.sessionStreamId) {
+        // Best-effort: a failed watch must not stop the message from sending.
+        await startSessionWatch(set, key, watched.connectionId, watched.sessionId).catch(
+          () => undefined,
+        );
+      }
 
       // Stable id: a retry (lost response, double submit) re-attaches instead of
       // creating a second question.
@@ -372,11 +389,15 @@ export const useChat = create<ChatStore>((set, get) => ({
           taskId: task.id,
           agentId: task.agentId,
         }));
+        // An addressed agent that got no task is a fact the user has to see:
+        // otherwise a full room or a disabled agent looks like a dead mention.
+        const droppedNotice = describeDropped(res.data.dropped ?? []);
         set((state) => ({
           byKey: patch(state, key, (chatState) => ({
             ...chatState,
             turnSending: false,
             dispatchedTasks,
+            error: droppedNotice,
             messages: chatState.messages.map((message) =>
               message.kind === 'user' && message.id === messageId
                 ? { ...message, turnId }
@@ -406,26 +427,26 @@ export const useChat = create<ChatStore>((set, get) => ({
     let chat = key ? get().byKey[key] : undefined;
     if (!key || !chat?.sessionId) return false;
 
-    // The leader's answer only streams live when we know who the leader is.
-    // Learn it before opening the stream (or before sending a turn), instead of
-    // depending on the roster's timing; a previous failed refresh may have left
-    // it null, which made the leader sit in the pending area until it finished.
-    if (!chat.leaderAgentId) {
-      const sessionId = chat.sessionId;
-      const roster = await api.sessionAgents(sessionId);
-      if (roster?.ok) {
-        set((state) => ({
-          byKey: patch(state, key, (current) =>
-            current.sessionId === sessionId
-              ? withLeaderAgent(current, roster.data.leaderId ?? null)
-              : current,
-          ),
-        }));
-      }
-      chat = get().byKey[key];
-      if (!chat?.sessionId) return false;
-    }
     if (chat.roomStreamId) return true;
+
+    // The leader's answer only streams live when we know who the leader is.
+    // Learn it alongside opening the stream rather than before it: both are one
+    // round trip, and serializing them is time the user spends wondering why
+    // the agent has not started.
+    const roster =
+      !chat.leaderAgentId && chat.sessionId
+        ? api.sessionAgents(chat.sessionId).then((res) => {
+            if (!res?.ok) return;
+            const sessionId = chat!.sessionId;
+            set((state) => ({
+              byKey: patch(state, key, (current) =>
+                current.sessionId === sessionId
+                  ? withLeaderAgent(current, res.data.leaderId ?? null)
+                  : current,
+              ),
+            }));
+          })
+        : null;
 
     // The room stream already carries every run's frames. A per-run stream left
     // from `/api/chat` would feed the same answer a second time (and to a card
@@ -457,7 +478,10 @@ export const useChat = create<ChatStore>((set, get) => ({
       // partial answer that will be committed in full at the end.
       after: chat.roomCursor,
     };
-    const result = await connectionApi.streamStart({ ...spec, streamId });
+    const [result] = await Promise.all([
+      connectionApi.streamStart({ ...spec, streamId }),
+      roster,
+    ]);
     if (result.ok) return true;
     set((state) => ({
       streamKeys: withoutKey(state.streamKeys, streamId),
@@ -496,7 +520,12 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (question.permissionId) {
       // A done answer means the run already released the permission id.
       if (question.answered || found.done) return;
-      set(questionAnswered(key, toolUseId, true));
+      // Record the picks locally as well: the live block came from a stream
+      // event that carries no answer, so without this the card stays blank
+      // until the session is reloaded from persisted events.
+      set(questionAnswered(key, toolUseId, true, answers ?? null));
+      // The notice outlived its question the moment we answered it.
+      closeQuestionNotification(question.permissionId);
       const response = {
         answers: Object.fromEntries(
           Object.entries(answers ?? {}).map(([id, labels]) => [id, { answers: labels }]),
@@ -527,6 +556,8 @@ export const useChat = create<ChatStore>((set, get) => ({
     // by the leader — and let the per-agent queue serialize it behind that
     // agent's live run.
     if (question.answered) return;
+    // No answer to record here: this path sends the choice as the next user
+    // message, which is already on the timeline right below the card.
     set(questionAnswered(key, toolUseId, true));
     // Address the asker explicitly. If the roster has not loaded yet we cannot
     // tell whether it is the leader; sending a member's answer to the leader is
@@ -893,6 +924,13 @@ export const useChat = create<ChatStore>((set, get) => ({
           if (e.type === 'permission_request' && e.status !== 'pending') {
             closePermissionNotification(e.permissionId);
           }
+          // A blocking question is its own kind of "needs a human": it emits no
+          // permission_request and blocks the run, so without a notice the user
+          // in another app is never told. Replay carries `answerStatus`, which
+          // is what keeps this from re-announcing history.
+          if (e.type === 'question' && e.permissionId && !e.answerStatus) {
+            notifyQuestion(e.permissionId, e.questions, session);
+          }
         }
       }
       return;
@@ -1142,7 +1180,7 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
   }
 
   // A fresh send's user message has no run id until the stream tells us; stamp
-  // it so its per-message rollback action appears while the run is live.
+  // it so the transcript can pair the question with the run answering it.
   if (runId) {
     let lastUser = -1;
     for (let i = 0; i < messages.length; i += 1) {
@@ -1650,14 +1688,33 @@ function findQuestion(chat: ChatSessionState, toolUseId: string): FoundQuestion 
   return null;
 }
 
-function markAnswered(messages: ChatMessage[], toolUseId: string, answered: boolean): ChatMessage[] {
+/**
+ * Mark a question answered, and record *what* was answered.
+ *
+ * The picks have to be written onto the block here, not only sent to the
+ * daemon. A live block is built from stream events, which carry no answer, so
+ * without this the card shows a blank option list until the session is
+ * reloaded from events (which is exactly the "switch away and back" bug).
+ */
+function markAnswered(
+  messages: ChatMessage[],
+  toolUseId: string,
+  answered: boolean,
+  answers?: QuestionAnswers | null,
+  answerText?: string | null,
+): ChatMessage[] {
   return messages.map((message) =>
     message.kind === 'assistant'
       ? {
           ...message,
           blocks: message.blocks.map((block) =>
             block.kind === 'question' && block.toolUseId === toolUseId
-              ? { ...block, answered }
+              ? {
+                  ...block,
+                  answered,
+                  ...(answers ? { answers } : {}),
+                  ...(answerText ? { answerText } : {}),
+                }
               : block,
           ),
         }
@@ -1669,27 +1726,44 @@ function markAnsweredAnswer(
   answer: PendingAnswer,
   toolUseId: string,
   answered: boolean,
+  answers?: QuestionAnswers | null,
+  answerText?: string | null,
 ): PendingAnswer {
-  return { ...answer, message: markAnswered([answer.message], toolUseId, answered)[0] as PendingAnswer['message'] };
+  return {
+    ...answer,
+    message: markAnswered([answer.message], toolUseId, answered, answers, answerText)[0] as PendingAnswer['message'],
+  };
 }
 
 function markAnsweredChat(
   chat: ChatSessionState,
   toolUseId: string,
   answered: boolean,
+  answers?: QuestionAnswers | null,
+  answerText?: string | null,
 ): Pick<ChatSessionState, 'messages' | 'pendingAnswers' | 'displayQueue'> {
   return {
-    messages: markAnswered(chat.messages, toolUseId, answered),
-    pendingAnswers: chat.pendingAnswers.map((answer) => markAnsweredAnswer(answer, toolUseId, answered)),
-    displayQueue: chat.displayQueue.map((answer) => markAnsweredAnswer(answer, toolUseId, answered)),
+    messages: markAnswered(chat.messages, toolUseId, answered, answers, answerText),
+    pendingAnswers: chat.pendingAnswers.map((answer) =>
+      markAnsweredAnswer(answer, toolUseId, answered, answers, answerText),
+    ),
+    displayQueue: chat.displayQueue.map((answer) =>
+      markAnsweredAnswer(answer, toolUseId, answered, answers, answerText),
+    ),
   };
 }
 
-function questionAnswered(key: string, toolUseId: string, answered: boolean) {
+function questionAnswered(
+  key: string,
+  toolUseId: string,
+  answered: boolean,
+  answers?: QuestionAnswers | null,
+  answerText?: string | null,
+) {
   return (state: ChatStore): Partial<ChatStore> => ({
     byKey: patch(state, key, (chat) => ({
       ...chat,
-      ...markAnsweredChat(chat, toolUseId, answered),
+      ...markAnsweredChat(chat, toolUseId, answered, answers, answerText),
     })),
   });
 }

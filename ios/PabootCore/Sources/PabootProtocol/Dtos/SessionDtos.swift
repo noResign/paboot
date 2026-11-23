@@ -100,14 +100,6 @@ public struct MessageDto: Decodable, Equatable, Sendable {
     }
 }
 
-/// Per-run workspace checkpoint; absent when the workspace is not a git repo.
-public struct RunCheckpointDto: Decodable, Equatable, Sendable {
-    public let status: String
-    public let repoRoot: String
-    public let preRef: String?
-    public let postRef: String?
-}
-
 public struct RunDto: Decodable, Equatable, Sendable {
     public let id: String
     public let sessionId: String
@@ -121,7 +113,6 @@ public struct RunDto: Decodable, Equatable, Sendable {
     public let endedAt: Int64?
     public let exitCode: Int?
     public let error: String?
-    public let checkpoint: RunCheckpointDto?
     public let taskId: String?
     public let trigger: String?
     public let permissionMode: String?
@@ -147,7 +138,6 @@ public struct RunDto: Decodable, Equatable, Sendable {
         endedAt = try container.decodeIfPresent(Int64.self, forKey: .endedAt)
         exitCode = try container.decodeIfPresent(Int.self, forKey: .exitCode)
         error = try container.decodeIfPresent(String.self, forKey: .error)
-        checkpoint = try container.decodeIfPresent(RunCheckpointDto.self, forKey: .checkpoint)
         taskId = try container.decodeIfPresent(String.self, forKey: .taskId)
         trigger = try container.decodeIfPresent(String.self, forKey: .trigger)
         permissionMode = try container.decodeIfPresent(String.self, forKey: .permissionMode)
@@ -159,7 +149,7 @@ public struct RunDto: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, sessionId, runtime, model, modelParameters, status, prompt, attachmentIds
-        case startedAt, endedAt, exitCode, error, checkpoint
+        case startedAt, endedAt, exitCode, error
         case taskId, trigger, permissionMode, agentId, turnId, answerCommittedSeq, output
     }
 }

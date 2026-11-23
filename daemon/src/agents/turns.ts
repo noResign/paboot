@@ -20,8 +20,8 @@ import type { Agent } from './types.js';
  * turn exists only to group them for budget accounting.
  *
  * Deliberate ordering: the user's own message is written first, then the tasks.
- * If task creation fails halfway, the user still sees their message rather than
- * losing it into a rollback.
+ * If task creation fails halfway, the user still sees their message instead of
+ * being told nothing happened.
  */
 
 export interface CreateTurnInput {
@@ -156,15 +156,26 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
         'the addressed agent is writable and this room already has a writer',
       );
     }
+    // Capacity is a room fact, not an agent one: say so instead of "unavailable".
+    if (admission.some((entry) => entry.reason === 'room_full')) {
+      throw new AgentValidationError(
+        'room_full',
+        'the addressed agent is not a member and this room is full',
+      );
+    }
     throw new AgentValidationError(
       'no_available_agent',
       routed.dropped.length > 0 ? 'the addressed agent is not available' : 'there is nobody to answer',
     );
   }
+  // Carry the display name with the id: a client showing "审阅 didn't answer"
+  // should not have to hold the whole workspace roster to say it. For an
+  // unknown mention the id *is* what the user typed, which is the most useful
+  // thing to echo back anyway.
   const dropped = [
     ...admission,
     ...routed.dropped.filter((entry) => !admission.some((admitted) => admitted.id === entry.id)),
-  ];
+  ].map((entry) => ({ ...entry, name: getAgent(db, entry.id)?.name ?? entry.id }));
 
   // Check before committing the question: a turn whose images cannot reach one
   // of its explicitly addressed agents should fail as a whole, not write a user

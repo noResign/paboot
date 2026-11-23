@@ -257,14 +257,20 @@ describe('POST /api/sessions/:id/turns', () => {
 
   it('commits the user message before any task runs', async () => {
     const h = await startApi();
+    // Hold the answer open so the window being tested is the real one: the
+    // question is on the timeline while the run that answers it is still going.
+    h.holds.add('claude');
     const sessionId = seedRoom(h, []);
     await turns(h, sessionId, { prompt: '先说这句' });
+    await waitFor(() => h.starts.length === 1);
 
     const committed = h.db.listCommittedMessages(sessionId);
     expect(committed).toHaveLength(1);
     expect(committed[0]!.role).toBe('user');
     expect(committed[0]!.content).toBe('先说这句');
     expect(committed[0]!.agent_id).toBeNull();
+
+    for (const release of h.releases.values()) release();
   });
 
   it('admits a workspace agent the user @s, upgrading the session to a room', async () => {
@@ -312,6 +318,74 @@ describe('POST /api/sessions/:id/turns', () => {
     expect(((await response.json()) as { code: string }).code).toBe('writable_agent_exists');
     expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === writer.id)).toBe(
       false,
+    );
+  });
+
+  it('will not admit past the room capacity, even through @', async () => {
+    const h = await startApi();
+    // Leader + 7 read-only members = the cap (03-room §A3).
+    const sessionId = seedRoom(h, ['a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6']);
+    expect(h.db.listSessionAgents(sessionId)).toHaveLength(8);
+
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const outsider = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '后来者',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: true,
+    });
+
+    const response = await turns(h, sessionId, { prompt: '你也来', mentions: [outsider.id] });
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { code: string }).code).toBe('room_full');
+    // Nothing was written: the cap check runs before the user's message lands.
+    expect(h.db.listSessionAgents(sessionId)).toHaveLength(8);
+    expect(h.db.listTurns(sessionId, null, 10)).toHaveLength(0);
+  });
+
+  it('reports a dropped mention by name so the client can explain it', async () => {
+    const h = await startApi();
+    // Leader + 6 = 7 members, so one more fits and the next one does not.
+    const sessionId = seedRoom(h, ['a0', 'a1', 'a2', 'a3', 'a4', 'a5']);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+
+    // A member that is already in the room answers; a disabled one does not, and
+    // the turn still succeeds. Both facts come back in the same 202.
+    const shipped = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '在位',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: true,
+    });
+    const off = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '歇业',
+      kind: 'runtime',
+      runtime: 'codex',
+      readOnly: true,
+      enabled: false,
+    });
+    addToSession(h.db, { id: sessionId, workspaceId: h.workspaceId }, shipped.id);
+
+    const response = await turns(h, sessionId, {
+      prompt: '你们俩看下',
+      mentions: [shipped.id, off.id, 'no-such-agent'],
+    });
+    expect(response.status).toBe(202);
+    const body = (await response.json()) as {
+      dropped: { id: string; name: string; reason: string }[];
+    };
+    await waitFor(() => h.db.listTurns(sessionId, null, 1)[0]!.status !== 'running');
+
+    // The name travels with the drop so a client without the roster can still
+    // say who it was; an unknown mention echoes back what the user typed.
+    expect(body.dropped).toContainEqual(
+      expect.objectContaining({ id: off.id, name: '歇业', reason: 'disabled' }),
+    );
+    expect(body.dropped).toContainEqual(
+      expect.objectContaining({ id: 'no-such-agent', name: 'no-such-agent', reason: 'unknown' }),
     );
   });
 

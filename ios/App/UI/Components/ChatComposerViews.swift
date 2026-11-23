@@ -500,11 +500,27 @@ final class ChatBottomBar: UIView {
 }
 
 /// Compact TODO panel shown above the composer.
+///
+/// A list with work left in it stays up for as long as the agent works, which
+/// can be far longer than the user cares to watch. So it can be put away: the
+/// dismissal is keyed on the list's content, and only a different list (or a
+/// different conversation) brings it back.
 final class TodoPanelView: UIView {
     private let headerButton = UIButton(type: .system)
+    private let dismissButton = UIButton(type: .system)
     private let rowsStack = UIStackView()
     private var todos: [TodoItem] = []
     private var expanded = true
+    /// The list the user put away, identified by its content.
+    private var dismissedSignature: String?
+    /// Dismissals belong to one conversation (same rule as desktop/Android).
+    private var currentSessionId: String?
+
+    /// Keyed by session id: the daemon's uuid, so reaching the same daemon over a
+    /// different port or tunnel does not resurrect a strip already put away.
+    private static func defaultsKey(_ sessionId: String) -> String {
+        "paboot.todoDismissed.\(sessionId)"
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -512,18 +528,34 @@ final class TodoPanelView: UIView {
         backgroundColor = Theme.Colors.surface
         isHidden = true
 
-        headerButton.titleLabel?.font = Typography.caption
-        headerButton.setTitleColor(Theme.Colors.textSecondary, for: .normal)
+        // Title/colour come from the configuration built in `update()`: setting
+        // them here would be overridden by it on the first render anyway.
         headerButton.contentHorizontalAlignment = .leading
         headerButton.addAction(
             UIAction { [weak self] _ in self?.toggle() },
             for: .touchUpInside
         )
 
+        // Separate from the fold toggle: that one collapses the detail, this
+        // takes the whole strip away.
+        dismissButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        dismissButton.tintColor = Theme.Colors.textMuted
+        dismissButton.accessibilityLabel = "收起这条待办"
+        dismissButton.setContentHuggingPriority(.required, for: .horizontal)
+        dismissButton.addAction(
+            UIAction { [weak self] _ in self?.dismiss() },
+            for: .touchUpInside
+        )
+
+        let headerRow = UIStackView(arrangedSubviews: [headerButton, dismissButton])
+        headerRow.axis = .horizontal
+        headerRow.alignment = .center
+        headerRow.spacing = Spacing.xxs
+
         rowsStack.axis = .vertical
         rowsStack.spacing = Spacing.xxs
 
-        let stack = UIStackView(arrangedSubviews: [headerButton, rowsStack])
+        let stack = UIStackView(arrangedSubviews: [headerRow, rowsStack])
         stack.axis = .vertical
         stack.spacing = Spacing.xxs
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -542,14 +574,40 @@ final class TodoPanelView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(_ todos: [TodoItem]) {
+    func configure(_ todos: [TodoItem], sessionId: String? = nil) {
+        if sessionId != currentSessionId {
+            currentSessionId = sessionId
+            // Read the persisted dismissal: coming back to the conversation must
+            // not put the same strip in front of the user again.
+            dismissedSignature = sessionId.flatMap {
+                UserDefaults.standard.string(forKey: Self.defaultsKey($0))
+            }
+            expanded = true
+        }
         self.todos = todos
         // A finished list is noise: once every item is completed the panel must
-        // disappear from above the composer (same rule as Android).
+        // disappear from above the composer (same rule as Android and desktop).
         let allCompleted = !todos.isEmpty && todos.allSatisfy { $0.status == "completed" }
-        isHidden = todos.isEmpty || allCompleted
+        let putAway = dismissedSignature != nil && dismissedSignature == signature(todos)
+        isHidden = todos.isEmpty || allCompleted || putAway
         guard !isHidden else { return }
         update()
+    }
+
+    /// Identity of a list = what the agent wrote down, not where each item is.
+    /// Ticking an item off is progress on the same list; bringing the strip back
+    /// is exactly what dismissing it was meant to stop.
+    private func signature(_ todos: [TodoItem]) -> String {
+        todos.map(\.content).joined(separator: "\n")
+    }
+
+    private func dismiss() {
+        let current = signature(todos)
+        dismissedSignature = current
+        if let sessionId = currentSessionId {
+            UserDefaults.standard.set(current, forKey: Self.defaultsKey(sessionId))
+        }
+        isHidden = true
     }
 
     private func toggle() {
@@ -559,10 +617,23 @@ final class TodoPanelView: UIView {
 
     private func update() {
         let completed = todos.filter { $0.status == "completed" }.count
-        headerButton.setTitle(
-            "任务 \(completed)/\(todos.count) \(expanded ? "▾" : "▸")",
-            for: .normal
-        )
+        // Text plus a trailing chevron: no 展开/收起 words (the strip is narrow,
+        // and the arrow already says which way it goes).
+        var header = UIButton.Configuration.plain()
+        header.title = "任务 \(completed)/\(todos.count)"
+        header.image = UIImage(systemName: expanded ? "chevron.up" : "chevron.down")
+        header.imagePlacement = .trailing
+        header.imagePadding = Spacing.xxs
+        header.contentInsets = .zero
+        header.baseForegroundColor = Theme.Colors.textSecondary
+        header.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 11)
+        header.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = Typography.caption
+            return result
+        }
+        headerButton.configuration = header
+        headerButton.accessibilityHint = expanded ? "收起明细" : "展开明细"
         rowsStack.isHidden = !expanded
         rowsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 

@@ -1,4 +1,4 @@
-import type { QuestionDto } from '../../../../shared/contract';
+import type { QuestionAnswers, QuestionDto } from '../../../../shared/contract';
 
 /** question index → the option labels picked for it. */
 export type QuestionSelections = Record<number, string[]>;
@@ -76,4 +76,40 @@ export function buildAnswerText(
       return `关于「${question.question}」，我的选择是：${parts.join('、')}`;
     })
     .join('\n');
+}
+
+/** The marker `buildStructuredAnswers` uses for a typed answer. */
+const OTHER_PREFIX = '其他：';
+
+/**
+ * Rebuild the card's local state from a replayed answer.
+ *
+ * A settled card has to look exactly like it did the moment it was sent —
+ * otherwise the user re-reads the transcript to find out what they chose
+ * (which is what this whole field exists to prevent). Labels that are not
+ * options were typed into「其他」, so they come back as text rather than as a
+ * phantom selection.
+ */
+export function selectionsFromAnswers(
+  questions: QuestionDto[],
+  answers: QuestionAnswers | null | undefined,
+): { selections: QuestionSelections; others: QuestionOthers } {
+  const selections: QuestionSelections = {};
+  const others: QuestionOthers = {};
+  if (!answers) return { selections, others };
+
+  questions.forEach((question, index) => {
+    const labels = answers[question.id ?? String(index)] ?? [];
+    const known = new Set(question.options.map((option) => option.label));
+    const picked: string[] = [];
+    const typed: string[] = [];
+    for (const label of labels) {
+      if (known.has(label)) picked.push(label);
+      else if (label.startsWith(OTHER_PREFIX)) typed.push(label.slice(OTHER_PREFIX.length));
+      else typed.push(label);
+    }
+    if (picked.length > 0) selections[index] = picked;
+    if (typed.length > 0) others[index] = { active: true, text: typed.join('、') };
+  });
+  return { selections, others };
 }

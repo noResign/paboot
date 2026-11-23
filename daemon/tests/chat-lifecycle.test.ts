@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '../src/app/context';
 import type { NormalizedEvent } from '../src/types/api';
 import { Db } from '../src/db/db';
-import { captureCheckpoint, repoRootFor } from '../src/workspaces/checkpoints';
 import { registerChatRoutes } from '../src/routes/chat';
 import { registerRunRoutes } from '../src/routes/runs';
 import { RunNotifier } from '../src/runs/run-notifier';
@@ -17,8 +16,6 @@ import { PermissionManager } from '../src/permissions/permissions';
 import { registerActiveRun } from '../src/runtimes/active-runs';
 import type { RunOutcome } from '../src/runtimes/engine';
 
-// Control the git boundary to exercise requests arriving during each snapshot.
-vi.mock('../src/workspaces/checkpoints', () => ({ captureCheckpoint: vi.fn(), repoRootFor: vi.fn() }));
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
@@ -26,10 +23,6 @@ function deferred<T>() {
 }
 const finished: RunOutcome = { status: 'succeeded', exitCode: 0, error: null };
 const cleanups: Array<() => Promise<void>> = [];
-beforeEach(() => {
-  vi.mocked(repoRootFor).mockResolvedValue('/tmp');
-  vi.mocked(captureCheckpoint).mockReset().mockResolvedValue('snapshot');
-});
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 async function setup(detecting = false) {
@@ -68,33 +61,29 @@ async function setup(detecting = false) {
 }
 
 describe('chat lifecycle serialization', () => {
-  it('rejects a second command during the pre-checkpoint', async () => {
-    const pre = deferred<string>();
-    vi.mocked(captureCheckpoint).mockImplementationOnce(() => pre.promise);
+  it('rejects a second command while the first run is live', async () => {
     const { post, start, outcome, db } = await setup();
     const first = post('one');
-    await vi.waitFor(() => expect(captureCheckpoint).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     const second = await post('two');
     expect(second.status).toBe(409);
     expect(await second.json()).toMatchObject({ code: 'session_busy' });
     expect(db.listRuns('s')).toHaveLength(1);
-    expect(start).not.toHaveBeenCalled();
-    pre.resolve('pre'); outcome.resolve(finished);
+    outcome.resolve(finished);
     await (await first).text();
   });
 
-  it('keeps same-command retries attached before the driver starts', async () => {
-    const pre = deferred<string>();
-    vi.mocked(captureCheckpoint).mockImplementationOnce(() => pre.promise);
-    const { post, start, outcome } = await setup();
+  it('re-attaches a same-command retry instead of starting a second run', async () => {
+    const { post, start, outcome, db } = await setup();
     const first = post('same');
-    await vi.waitFor(() => expect(captureCheckpoint).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
     const retry = await post('same');
     let ended = false;
     const replay = retry.text().then((text) => { ended = true; return text; });
     await new Promise((resolve) => setImmediate(resolve));
     expect(ended).toBe(false);
-    pre.resolve('pre'); outcome.resolve(finished);
+    expect(db.listRuns('s')).toHaveLength(1);
+    outcome.resolve(finished);
     const [original, repeated] = await Promise.all([(await first).text(), replay]);
     expect(repeated).toContain('"terminal":true');
     expect(repeated).toBe(original);
@@ -174,26 +163,17 @@ describe('chat lifecycle serialization', () => {
     expect(stream).not.toContain('old thought');
   });
 
-  it('keeps the session busy until the post-checkpoint completes', async () => {
-    const postCheckpoint = deferred<string>();
-    vi.mocked(captureCheckpoint).mockResolvedValueOnce('pre').mockImplementationOnce(() => postCheckpoint.promise);
+  it('sends exactly one terminal frame when the provider errors before exit', async () => {
     const { post, outcome, db, start, base } = await setup();
     const first = await post('one');
     start.mock.calls[0][0].onEvent({ type: 'error', code: 'provider_error', message: 'early', terminal: true });
-    outcome.resolve(finished);
-    await vi.waitFor(() => expect(captureCheckpoint).toHaveBeenCalledTimes(2));
     const run = db.listRuns('s')[0];
     expect(run.status).toBe('running');
     const live = await fetch(`${base}/api/runs`).then((response) => response.json());
     expect(live.runs).toEqual([expect.objectContaining({ id: run.id })]);
-    const rollback = await fetch(`${base}/api/runs/${run.id}/rollback`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }),
-    });
-    expect(rollback.status).toBe(409);
-    expect(await rollback.json()).toMatchObject({ code: 'run_active' });
     const second = await post('two');
     expect(second.status).toBe(409);
-    postCheckpoint.resolve('post');
+    outcome.resolve(finished);
     const text = await first.text();
     expect(text).toContain('"terminal":false');
     expect(text.match(/"terminal":true/g)).toHaveLength(1);

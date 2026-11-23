@@ -15,6 +15,8 @@ export type Segment =
       questions: Extract<ContentBlock, { kind: 'question' }>['questions'];
       answered: boolean;
       answerStatus?: Extract<ContentBlock, { kind: 'question' }>['answerStatus'];
+      answers?: Extract<ContentBlock, { kind: 'question' }>['answers'];
+      answerText?: Extract<ContentBlock, { kind: 'question' }>['answerText'];
       permissionId?: string | null;
     }
   | { kind: 'notice'; text: string }
@@ -53,6 +55,8 @@ export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
           questions: block.questions,
           answered: block.answered,
           answerStatus: block.answerStatus,
+          answers: block.answers,
+          answerText: block.answerText,
           permissionId: block.permissionId,
         });
         break;

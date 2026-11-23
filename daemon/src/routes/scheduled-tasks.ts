@@ -385,7 +385,6 @@ export function registerScheduledTaskRoutes(app: Express, ctx: AppContext): void
       .map((run) =>
         runDto(
           run,
-          ctx.db.getRunCheckpoint(run.id),
           task.workspace_id,
           task.task_type === 'command' ? commandOutput(ctx, run.id) : null,
         ),

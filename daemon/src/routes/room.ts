@@ -395,7 +395,8 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       });
     } catch (err) {
       if (err instanceof AgentValidationError) {
-        res.status(err.code === 'command_id_conflict' ? 409 : 400).json({
+        const status = err.code === 'command_id_conflict' || err.code === 'room_full' ? 409 : 400;
+        res.status(status).json({
           error: err.message,
           code: err.code,
         });

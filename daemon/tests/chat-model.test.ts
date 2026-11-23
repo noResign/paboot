@@ -15,11 +15,6 @@ import { RunNotifier } from '../src/runs/run-notifier';
 import { SessionNotifier } from '../src/runs/session-notifier';
 import { PermissionManager } from '../src/permissions/permissions';
 
-vi.mock('../src/workspaces/checkpoints', () => ({
-  captureCheckpoint: vi.fn(async () => null),
-  repoRootFor: vi.fn(async () => null),
-}));
-
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   const runs = listActiveRuns();

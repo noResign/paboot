@@ -3,6 +3,8 @@ import {
   finishNotification,
   permissionNotification,
   permissionNotificationId,
+  questionNotification,
+  questionNotificationId,
   runNotificationId,
   summarizeTool,
 } from './notifications';
@@ -63,5 +65,32 @@ describe('finishNotification', () => {
   it('carries the session so a click can open it', () => {
     expect(finishNotification('finished', 'r1', session, null)?.sessionId).toBe('s1');
     expect(permissionNotification(permission(), session).sessionId).toBe('s1');
+  });
+});
+
+describe('questionNotification', () => {
+  const session = { id: 's1', title: '群聊' };
+
+  it('says how many questions and quotes the first one', () => {
+    const payload = questionNotification(
+      'p9',
+      [{ header: '部署目标', question: '部署到哪台机器？' }, { question: '什么时候？' }],
+      session,
+    );
+    expect(payload.id).toBe('question:p9');
+    expect(payload.title).toContain('2');
+    expect(payload.body).toContain('部署目标');
+    expect(payload.body).toContain('群聊');
+    expect(payload.sessionId).toBe('s1');
+  });
+
+  it('keys the notice by permission id, so answering can retract it', () => {
+    // A session-scoped id would let a finishing run overwrite the question.
+    expect(questionNotificationId('p9')).toBe('question:p9');
+    expect(questionNotificationId('p9')).not.toBe(permissionNotificationId('p9'));
+  });
+
+  it('falls back to a neutral line when the question has no text', () => {
+    expect(questionNotification('p10', [], session).body).toContain('需要你的回答');
   });
 });

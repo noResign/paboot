@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { WorkspaceSource } from '../app/config.js';
 import type { AttachmentRow, CreateAttachmentInput } from '../types/attachments.js';
+import type { QuestionAnswers } from '../types/api.js';
 import type {
   AppendNativeCompactionInput,
   AppendNativeMessageInput,
@@ -300,16 +301,6 @@ export interface ScheduledTaskRow {
   updated_at: number;
 }
 
-/** Per-run workspace checkpoint. `status`: complete | unavailable | rolled_back. */
-export interface RunCheckpointRow {
-  run_id: string;
-  repo_root: string;
-  pre_ref: string | null;
-  post_ref: string | null;
-  status: string;
-  created_at: number;
-}
-
 export interface EventRow {
   id: number;
   run_id: string;
@@ -418,15 +409,6 @@ export class Db {
         exit_code INTEGER,
         error TEXT,
         command_id TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS run_checkpoints (
-        run_id TEXT PRIMARY KEY,
-        repo_root TEXT NOT NULL,
-        pre_ref TEXT,
-        post_ref TEXT,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS events (
@@ -3199,7 +3181,7 @@ export class Db {
     return rows.length;
   }
 
-  /** Includes checkpoint preparation and finalization, not just live processes. */
+  /** In-flight runs: a row is `running` from creation until its outcome lands. */
   listRunningRuns(): RunRow[] {
     return this.db.prepare(`SELECT * FROM runs WHERE status = 'running'`).all() as unknown as RunRow[];
   }
@@ -3227,50 +3209,6 @@ export class Db {
     return this.db
       .prepare(`SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`)
       .all(taskId, limit) as unknown as RunRow[];
-  }
-
-  // ---- run checkpoints ----
-
-  upsertRunCheckpoint(input: {
-    runId: string;
-    repoRoot: string;
-    preRef: string | null;
-    postRef: string | null;
-    status: string;
-  }): void {
-    this.db
-      .prepare(
-        `INSERT INTO run_checkpoints (run_id, repo_root, pre_ref, post_ref, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(run_id) DO UPDATE SET
-           repo_root = excluded.repo_root,
-           pre_ref = excluded.pre_ref,
-           post_ref = excluded.post_ref,
-           status = excluded.status`,
-      )
-      .run(input.runId, input.repoRoot, input.preRef, input.postRef, input.status, Date.now());
-  }
-
-  getRunCheckpoint(runId: string): RunCheckpointRow | undefined {
-    return this.db.prepare(`SELECT * FROM run_checkpoints WHERE run_id = ?`).get(runId) as unknown as
-      | RunCheckpointRow
-      | undefined;
-  }
-
-  markRunCheckpointRolledBack(runId: string): void {
-    this.db.prepare(`UPDATE run_checkpoints SET status = 'rolled_back' WHERE run_id = ?`).run(runId);
-  }
-
-  /**
-   * Mark a run and every run that started at or after it as `rolled_back`, for
-   * the session that owns them. Runs are ordered by `started_at` (see
-   * `listRuns`), so that is the boundary. Returns how many rows changed.
-   */
-  markRunsRolledBack(sessionId: string, fromStartedAt: number): number {
-    const result = this.db
-      .prepare(`UPDATE runs SET status = 'rolled_back' WHERE session_id = ? AND started_at >= ?`)
-      .run(sessionId, fromStartedAt);
-    return Number(result.changes);
   }
 
   // ---- events ----
@@ -3370,8 +3308,18 @@ export class Db {
    * session does not ask a question that is already settled. The update is
    * scoped by run id: `events` is the largest table, and this runs on the
    * blocking approval path.
+   *
+   * `answer` is what the user actually picked. Status alone answers "was it
+   * answered", never "with what" — and a card that has forgotten the choice
+   * forces the user to re-read the transcript to find out. Only questions have
+   * an answer; a tool approval passes null.
    */
-  updateEventPermissionStatus(runId: string, permissionId: string, status: string): void {
+  updateEventPermissionStatus(
+    runId: string,
+    permissionId: string,
+    status: string,
+    answer?: { answers: QuestionAnswers | null; answerText: string | null } | null,
+  ): void {
     this.db
       .prepare(
         `UPDATE events SET payload = json_set(payload, '$.status', ?)
@@ -3379,13 +3327,28 @@ export class Db {
            AND json_extract(payload, '$.permissionId') = ?`,
       )
       .run(status, runId, permissionId);
+    // `json_set` with a SQL NULL writes a JSON null, which every client's
+    // optional decode reads as "absent" — so leaving the answer out is safe.
+    // `json(?)` is load-bearing: passing the JSON text without it stores a
+    // *string*, and clients would decode `answers` as a string literal.
     this.db
       .prepare(
-        `UPDATE events SET payload = json_set(payload, '$.answerStatus', ?)
+        `UPDATE events SET payload = json_set(
+           payload,
+           '$.answerStatus', ?,
+           '$.answers', json(?),
+           '$.answerText', ?
+         )
          WHERE run_id = ? AND type = 'question'
            AND json_extract(payload, '$.permissionId') = ?`,
       )
-      .run(status, runId, permissionId);
+      .run(
+        status,
+        answer?.answers ? JSON.stringify(answer.answers) : null,
+        answer?.answerText ?? null,
+        runId,
+        permissionId,
+      );
   }
 
   // ---- deploy jobs ----

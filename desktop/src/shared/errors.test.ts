@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiErrorOf, friendlyMessage } from './errors';
+import { apiErrorOf, describeDropped, dropReasonLabel, friendlyMessage } from './errors';
 
 describe('friendlyMessage', () => {
   it('maps a known daemon code', () => {
@@ -22,6 +22,28 @@ describe('friendlyMessage', () => {
   it('surfaces session_busy as a queue-ish message, not a generic error', () => {
     // The 409 from the M0 same-session guard is a normal race, not a bug.
     expect(friendlyMessage('session_busy', 409, 'busy')).not.toContain('409');
+  });
+});
+
+describe('dropped mentions', () => {
+  it('names every address that got no task, with the reason', () => {
+    // A full room is the case this exists for: the turn still succeeds, so
+    // without this the mention just looks dead.
+    expect(
+      describeDropped([
+        { name: '审阅', reason: 'disabled' },
+        { name: '实现', reason: 'room_full' },
+      ]),
+    ).toBe('审阅（已停用）、实现（房间已满）没有收到这条消息');
+  });
+
+  it('says nothing when every addressed agent got a task', () => {
+    expect(describeDropped([])).toBeNull();
+  });
+
+  it('falls back to a neutral label for a reason it does not know', () => {
+    // Older daemons can add reasons; an unknown one must not render blank.
+    expect(dropReasonLabel('some_future_reason')).toBe('未收到任务');
   });
 });
 

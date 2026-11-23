@@ -85,6 +85,8 @@ enum ChatEventReducer {
                         questions: event.questions,
                         answered: event.answerStatus == "allowed",
                         answerStatus: event.answerStatus,
+                        answers: event.answers,
+                        answerText: event.answerText,
                         permissionId: event.permissionId
                     )
                 )

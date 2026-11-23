@@ -1,5 +1,5 @@
 import type { ContextUsage } from '../../../../shared/format';
-import type { PermissionStatus, QuestionDto, RunDto } from '../../../../shared/contract';
+import type { PermissionStatus, QuestionAnswers, QuestionDto, RunDto } from '../../../../shared/contract';
 
 /** One ordered piece of an assistant turn, in the order the runtime produced it. */
 export type ContentBlock =
@@ -25,6 +25,14 @@ export type ContentBlock =
       answered: boolean;
       /** Replay: how the daemon settled the question; any value makes it inert. */
       answerStatus?: 'allowed' | 'denied' | 'timed_out' | null;
+      /**
+       * Replay: what the user picked, keyed by `QuestionDto.id`. Without it a
+       * settled card can only say "answered", so the user has to re-read the
+       * transcript to see their own choice.
+       */
+      answers?: QuestionAnswers | null;
+      /** Replay: the free-text answer, when one was typed instead of picking. */
+      answerText?: string | null;
       /** Builtin blocking question: answer through the permission endpoint. */
       permissionId?: string | null;
     }
@@ -156,7 +164,7 @@ export interface ChatSessionState {
    * messages one at a time (commit order). User messages bypass it entirely.
    */
   displayQueue: PendingAnswer[];
-  /** The session's runs, newest last — each carries its checkpoint (or null). */
+  /** The session's runs, newest last. */
   runs: RunDto[];
   runId: string | null;
   /** The open run stream, if this chat is attached to one. */

@@ -21,6 +21,8 @@ object SettingsStore {
     private const val KEY_SAVED_CONNECTIONS = "saved_connections"
     private const val KEY_BACKGROUND_NOTIFICATIONS = "background_notifications"
     private const val KEY_NOTIFICATION_PROMPT_SHOWN = "notification_prompt_shown"
+    /** 前缀 + 会话 id；按会话记，不放在固定 key 上。 */
+    private const val KEY_TODO_DISMISSED = "todo_dismissed."
 
     private const val MAX_SAVED_CONNECTIONS = 5
     private const val ENTRY_SEPARATOR = "\n"
@@ -167,6 +169,23 @@ object SettingsStore {
         }
         return true
     }
+
+    /**
+     * 用户主动收起的待办清单，按会话记（值为该清单内容的签名）。
+     *
+     * 会话 id 是 daemon 生成的 uuid，比 baseUrl 稳：换端口 / 走隧道连同一台
+     * daemon 时，收起的条不该又冒出来。值只存条目内容，不存状态——agent 勾掉
+     * 一项属于同一份清单的推进，不该让用户刚收起的条又弹回来。
+     */
+    fun todoDismissal(sessionId: String): String? =
+        kv.decodeString(todoDismissalKey(sessionId))
+
+    fun setTodoDismissal(sessionId: String, signature: String?) {
+        if (signature == null) kv.removeValueForKey(todoDismissalKey(sessionId))
+        else kv.encode(todoDismissalKey(sessionId), signature)
+    }
+
+    private fun todoDismissalKey(sessionId: String): String = "$KEY_TODO_DISMISSED$sessionId"
 
     fun forgetConnection(baseUrl: String) {
         writeSavedConnections(savedConnections.filterNot { it.baseUrl == baseUrl })

@@ -188,7 +188,6 @@ export type LiveRunStatus =
   | 'failed'
   | 'cancelled'
   | 'interrupted'
-  | 'rolled_back'
   | 'deleted';
 
 export interface LiveRunRecord {

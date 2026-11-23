@@ -934,6 +934,9 @@ final class ChatQuestionCardView: ChatBlockView {
     private var submitButton: UIButton?
     private var answered = false
     private var answerStatus: String?
+    /// Replayed choice, used to repopulate `selections` on the first update.
+    private var answers: [String: [String]]?
+    private var answerText: String?
     private var streaming = false
     private var permissionId: String?
 
@@ -976,6 +979,8 @@ final class ChatQuestionCardView: ChatBlockView {
             || block.questions != questions
             || block.answered != answered
             || block.answerStatus != answerStatus
+            || block.answers != answers
+            || block.answerText != answerText
             || block.permissionId != permissionId
             || streaming != self.streaming else {
             return
@@ -984,6 +989,8 @@ final class ChatQuestionCardView: ChatBlockView {
         self.streaming = streaming
         permissionId = block.permissionId
         answerStatus = block.answerStatus
+        answers = block.answers
+        answerText = block.answerText
 
         if block.toolUseId != toolUseId {
             toolUseId = block.toolUseId
@@ -991,6 +998,10 @@ final class ChatQuestionCardView: ChatBlockView {
             selections.removeAll()
             otherActive.removeAll()
             otherTexts.removeAll()
+            // A question replayed from history carries the user's choice; without
+            // restoring it the card could only say "answered" and the user would
+            // have to re-read the transcript to find out what they picked.
+            restoreSelections(from: block.answers, answerText: block.answerText)
         } else if block.questions != questions {
             questions = block.questions
         }
@@ -1071,7 +1082,9 @@ final class ChatQuestionCardView: ChatBlockView {
         }
 
         if answered || answerStatus == "allowed" {
-            stack.addArrangedSubview(statusLabel("已发送答案"))
+            // The picks are marked above; naming them here is what makes a
+            // replayed card readable at a glance.
+            stack.addArrangedSubview(statusLabel(answeredSummary() ?? "已发送答案"))
         } else if answerStatus == "denied" {
             stack.addArrangedSubview(statusLabel("已回答拒绝；助手会自行处理。"))
         } else if answerStatus == "timed_out" {
@@ -1100,6 +1113,59 @@ final class ChatQuestionCardView: ChatBlockView {
                 stack.addArrangedSubview(statusLabel("还有问题未选择"))
             }
         }
+    }
+
+    /// The marker `submit` uses for a typed answer.
+    private static let otherPrefix = "其他："
+
+    /// Rebuild the card's picks from a replayed answer.
+    ///
+    /// Labels that are not options were typed into「其他」, so they come back as
+    /// text rather than as a selection that renders as nothing.
+    private func restoreSelections(from answers: [String: [String]]?, answerText: String?) {
+        if let answers {
+            for (index, question) in questions.enumerated() {
+                guard let labels = answers[question.id ?? String(index)] else { continue }
+                let known = Set(question.options.map(\.label))
+                var picked: Set<String> = []
+                var typed: [String] = []
+                for label in labels {
+                    if known.contains(label) {
+                        picked.insert(label)
+                    } else if label.hasPrefix(Self.otherPrefix) {
+                        typed.append(String(label.dropFirst(Self.otherPrefix.count)))
+                    } else {
+                        typed.append(label)
+                    }
+                }
+                if !picked.isEmpty { selections[index] = picked }
+                if !typed.isEmpty {
+                    otherActive[index] = true
+                    otherTexts[index] = typed.joined(separator: "、")
+                }
+            }
+        }
+        // A free-text answer belongs to no single question, so it goes in the
+        // first one — where the user typed it.
+        if let answerText, !answerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !questions.isEmpty {
+            otherActive[0] = true
+            otherTexts[0] = answerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// 「你的选择：A、B」; nil when nothing was recorded (older daemon).
+    private func answeredSummary() -> String? {
+        let parts: [String] = questions.indices.compactMap { index in
+            var picked = Array(selections[index] ?? []).sorted()
+            if otherActive[index] == true {
+                let typed = (otherTexts[index] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !typed.isEmpty { picked.append(typed) }
+            }
+            return picked.isEmpty ? nil : picked.joined(separator: "、")
+        }
+        guard !parts.isEmpty else { return nil }
+        return "你的选择：" + parts.joined(separator: "；")
     }
 
     private func statusLabel(_ text: String) -> UILabel {

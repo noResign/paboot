@@ -8,8 +8,8 @@ import type { RuntimeDriver } from './RuntimeDriver.js';
 
 /**
  * Runs a fixed shell command with no agent. It reuses the whole run pipeline
- * (checkpoint, events, cancel, replay) so a command task's history and diff are
- * as inspectable as an AI run's.
+ * (events, cancel, replay) so a command task's history is as inspectable as an
+ * AI run's.
  *
  * Output is streamed as `text_delta` (so it lands in the transcript and the
  * aggregated assistant message); the matching `tool_result` only carries the

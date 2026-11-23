@@ -72,7 +72,7 @@ provider 的 HTTP 接口，自带工具 / MCP / Skill）。
 | `http/` | HTTP/SSE 传输原语：`auth`（Bearer 鉴权 + 按来源失败冷却）、`cors`、`sse`（帧写入 + 终态判断） |
 | `platform/` | 无领域依赖的共享原语：`log`、`network`（监听地址翻译）、`paths`、`executable`（跨平台 spawn / `.cmd` 解析）、`shell`（命令任务 shell）、`process-tree`（进程树终止） |
 | `db/` | 持久化：`db.ts`（`node:sqlite`）、`dto.ts`（run DTO 映射）、`model-selection.ts`、`server-id.ts` |
-| `workspaces/` | 工作区领域：`workspace` / `workspace-service`（路径校验、目录选择）、`changes`（git 改动/diff）、`checkpoints`（run 前后快照）、`file-browser`（目录懒加载与文件读取） |
+| `workspaces/` | 工作区领域：`workspace` / `workspace-service`（路径校验、目录选择）、`changes`（git 改动/diff）、`file-browser`（目录懒加载与文件读取） |
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
@@ -102,7 +102,7 @@ daemon/
 │  ├─ http/               auth / cors / sse
 │  ├─ platform/           log / executable / shell / process-tree / network / paths（无领域依赖）
 │  ├─ db/                 db / dto / model-selection / server-id
-│  ├─ workspaces/         workspace / workspace-service / changes / checkpoints / file-browser
+│  ├─ workspaces/         workspace / workspace-service / changes / file-browser
 │  ├─ ends/               端作用域：session_ends 收窄 / 主端选择 / cwd 归属
 │  ├─ domains/            端领域模板（kind → 激活时种入的约定）
 │  ├─ runs/               run-service / run-notifier / session-runs / session-title

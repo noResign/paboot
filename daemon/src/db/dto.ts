@@ -1,4 +1,4 @@
-import type { RunCheckpointRow, RunRow } from './db.js';
+import type { RunRow } from './db.js';
 import { parseStoredModelParameters } from './model-selection.js';
 import type { RunDto, SessionRunBrief } from '../types/api.js';
 
@@ -29,7 +29,6 @@ export function sessionRunBrief(r: RunRow): SessionRunBrief {
 /** Shared run mapping so session and scheduled-task responses agree. */
 export function runDto(
   r: RunRow,
-  checkpoint?: RunCheckpointRow,
   workspaceId: string | null = null,
   output: string | null = null,
 ): RunDto {
@@ -53,13 +52,5 @@ export function runDto(
     agentId: r.agent_id ?? null,
     turnId: r.turn_id ?? null,
     output,
-    checkpoint: checkpoint
-      ? {
-          status: checkpoint.status,
-          repoRoot: checkpoint.repo_root,
-          preRef: checkpoint.pre_ref,
-          postRef: checkpoint.post_ref,
-        }
-      : null,
   };
 }

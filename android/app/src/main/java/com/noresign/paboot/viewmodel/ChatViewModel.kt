@@ -787,6 +787,9 @@ class ChatViewModel(
             sessionId = e.sessionId
             ChatVisibility.enter(sessionId)
             sessionId?.let { RunWatchCenter.clearFor(it) }
+            // 新会话是在这里才拿到 id 的，没走过「打开已有会话」那条路径；
+            // 不补上会话提示流，首轮生成的标题只会改动列表，页面标题要重进才同步。
+            sessionId?.let { startSessionWatch(it) }
         }
         // 登记后台监听：离开会话页（或锁屏后进程被回收）时，审批 / 完成仍能弹通知。
         // 同一 run 重复登记只更新标题，daemon 允许同一 run 有多个订阅者。
@@ -1049,6 +1052,8 @@ class ChatViewModel(
                     questions = e.questions,
                     answered = e.answerStatus == "allowed",
                     answerStatus = e.answerStatus,
+                    answers = e.answers,
+                    answerText = e.answerText,
                     permissionId = e.permissionId,
                 ),
         )
@@ -1131,7 +1136,9 @@ class ChatViewModel(
         if (permissionId != null) {
             // 阻塞式提问（builtin / Codex）：结构化答案通过权限端点回填 tool_result，run 继续。
             if (question.answered) return
-            setQuestionAnswered(toolUseId, true)
+            // 答案同时写回本地 block：直播中的卡片来自事件流，事件里没有答案，
+            // 不写回的话要等重进会话（从持久化事件重建）才看得到勾选。
+            setQuestionAnswered(toolUseId, true, answers)
             viewModelScope.launch {
                 val response = buildJsonObject {
                     put("answers", buildJsonObject {
@@ -1168,13 +1175,20 @@ class ChatViewModel(
         return null
     }
 
-    private fun setQuestionAnswered(toolUseId: String, answered: Boolean) {
+    private fun setQuestionAnswered(
+        toolUseId: String,
+        answered: Boolean,
+        answers: Map<String, List<String>>? = null,
+    ) {
         _messages.update { list ->
             list.map { message ->
                 if (message is ChatUiMessage.Assistant) {
                     message.copy(blocks = message.blocks.map { block ->
                         if (block is ContentBlock.Question && block.toolUseId == toolUseId) {
-                            block.copy(answered = answered)
+                            block.copy(
+                                answered = answered,
+                                answers = if (answers != null) answers else block.answers,
+                            )
                         } else {
                             block
                         }

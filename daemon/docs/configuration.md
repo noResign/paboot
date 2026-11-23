@@ -46,7 +46,7 @@
 | `PABOOT_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |
 | `PABOOT_PERMISSION_TIMEOUT_SECONDS` | `120` | 工具审批决策窗口（秒，超时自动拒绝；`0`/非法值回退 `120`） |
 | `PABOOT_RUN_IDLE_TIMEOUT_SECONDS` | `900` | 空闲看门狗（无事件多少秒自动取消；`0` = 禁用） |
-| `PABOOT_MEMORY_MODEL` | 无 | 无 UI 部署的记忆抽取模型，格式 `<provider>:<model>`；设置页选择优先，未配置 = 仅记录 |
+| `PABOOT_MEMORY_MODEL` | 无 | 无 UI 部署的后台模型（记忆抽取 + 直连 runtime 的会话标题），格式 `<provider>:<model>`；设置页选择优先，未配置 = 仅记录 |
 | `PABOOT_TLS_CERT` | 无 | TLS 证书路径（与 KEY 同设才启用 TLS） |
 | `PABOOT_TLS_KEY` | 无 | TLS 私钥路径 |
 | `PABOOT_ENV_FILE` | `./.env` | `.env` 路径（等价 `--env-file`） |

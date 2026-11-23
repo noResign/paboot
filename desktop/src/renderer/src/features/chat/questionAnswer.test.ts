@@ -3,6 +3,7 @@ import {
   buildAnswerText,
   buildStructuredAnswers,
   isFullyAnswered,
+  selectionsFromAnswers,
   toggleSelection,
 } from './questionAnswer';
 import type { QuestionDto } from '../../../../shared/contract';
@@ -92,5 +93,58 @@ describe('buildAnswerText', () => {
     expect(
       buildAnswerText([single], {}, { 0: { active: true, text: '别的' } }),
     ).toBe('关于「用哪个 runtime？」，我的选择是：其他：别的');
+  });
+});
+
+describe('selectionsFromAnswers', () => {
+  // Exact payload captured from a real answered question, so this stays a
+  // regression test for the round trip rather than a synthetic guess.
+  const singleWithPicks: QuestionDto = {
+    id: 'q0',
+    question: '下一步先做哪一件？',
+    multiSelect: false,
+    options: [
+      { label: '移动端接房间流' },
+      { label: '补 P2 剩余细节' },
+      { label: '先不稳，继续验证' },
+    ],
+  };
+  const multiWithOther: QuestionDto = {
+    id: 'q1',
+    question: '请随便勾 2 项以上',
+    multiSelect: true,
+    options: [
+      { label: '选项回填正确' },
+      { label: '「其他」原文回填正确' },
+      { label: '底部文案显示选择' },
+      { label: '轨迹页同样正确' },
+    ],
+  };
+
+  it('restores a pick and a typed answer from one payload', () => {
+    const { selections, others } = selectionsFromAnswers(
+      [singleWithPicks, multiWithOther],
+      { q0: ['先不稳，继续验证'], q1: ['轨迹页同样正确', '其他：测试'] },
+    );
+    // A real option comes back as a selection...
+    expect(selections[0]).toEqual(['先不稳，继续验证']);
+    expect(selections[1]).toEqual(['轨迹页同样正确']);
+    // ...while `其他：…` comes back as text, not as a phantom option.
+    expect(others[1]).toEqual({ active: true, text: '测试' });
+  });
+
+  it('falls back to the question index when an option list has no ids', () => {
+    // Older daemons key nothing; the widget still has to line up.
+    const { selections } = selectionsFromAnswers(
+      [{ ...singleWithPicks, id: undefined }],
+      { '0': ['移动端接房间流'] },
+    );
+    expect(selections[0]).toEqual(['移动端接房间流']);
+  });
+
+  it('returns empty state for a question answered by an older daemon', () => {
+    const { selections, others } = selectionsFromAnswers([singleWithPicks], undefined);
+    expect(selections).toEqual({});
+    expect(others).toEqual({});
   });
 });

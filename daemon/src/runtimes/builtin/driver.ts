@@ -59,6 +59,7 @@ import type { AgentProfile, AgentRunContext, PathGrant, ResolvedPathPolicy, Tool
 import type { AgentPromptPreset } from './prompt.js';
 import { generateSessionTitle, titleFromPrompt } from '../../runs/session-title.js';
 import { isBypassAllowed } from '../../permissions/security-profile.js';
+import { parseStructuredAnswers, readAnswerText } from '../../permissions/question-answers.js';
 import { resolveReadPolicy } from '../../memory/read-policy.js';
 import { isMemoryInjectionEnabled } from '../../memory/settings.js';
 
@@ -623,49 +624,18 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
-/**
- * Legacy/free-text answer: a bare string or `{ answer: string }`. Kept for older
- * clients; blocking question cards now send structured answers.
- */
-function readQuestionAnswer(response: unknown): string | null {
-  if (typeof response === 'string' && response.trim().length > 0) return response.trim();
-  if (response && typeof response === 'object' && !Array.isArray(response)) {
-    const answer = (response as Record<string, unknown>)['answer'];
-    if (typeof answer === 'string' && answer.trim().length > 0) return answer.trim();
-  }
-  return null;
-}
-
-/** `{ answers: { <questionId>: { answers: string[] } } }` (same shape as Codex). */
-function parseStructuredAnswers(response: unknown): Map<string, string[]> | null {
-  if (!response || typeof response !== 'object' || Array.isArray(response)) return null;
-  const answers = (response as Record<string, unknown>)['answers'];
-  if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return null;
-  const parsed = new Map<string, string[]>();
-  for (const [id, value] of Object.entries(answers as Record<string, unknown>)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const list = (value as Record<string, unknown>)['answers'];
-    if (!Array.isArray(list)) continue;
-    const labels = list
-      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-      .map((item) => item.trim());
-    if (labels.length > 0) parsed.set(id, labels);
-  }
-  return parsed;
-}
-
 function validateQuestionResponse(
   response: unknown,
   questions: readonly QuestionDto[],
 ): string | null {
-  if (readQuestionAnswer(response)) return null;
+  if (readAnswerText(response)) return null;
   const answers = parseStructuredAnswers(response);
   if (!answers) return 'answers are required';
   for (const question of questions) {
-    if (!question.id || !(answers.get(question.id)?.length)) return 'Please answer every question';
+    if (!question.id || !(answers[question.id]?.length)) return 'Please answer every question';
   }
   const known = new Set(questions.map((question) => question.id));
-  for (const id of answers.keys()) {
+  for (const id of Object.keys(answers)) {
     if (!known.has(id)) return 'Unknown question';
   }
   return null;
@@ -675,12 +645,12 @@ function formatQuestionAnswers(
   questions: readonly QuestionDto[],
   response: unknown,
 ): string | null {
-  const legacy = readQuestionAnswer(response);
+  const legacy = readAnswerText(response);
   if (legacy) return legacy;
   const answers = parseStructuredAnswers(response);
   if (!answers) return null;
   return questions
-    .map((question) => `- ${question.question}：${(answers.get(question.id ?? '') ?? []).join('、')}`)
+    .map((question) => `- ${question.question}：${(answers[question.id ?? ''] ?? []).join('、')}`)
     .join('\n');
 }
 

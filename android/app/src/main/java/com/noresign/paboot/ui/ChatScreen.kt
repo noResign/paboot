@@ -104,6 +104,7 @@ import com.noresign.paboot.ui.chat.MessageList
 import com.noresign.paboot.ui.chat.VoiceInputOverlay
 import com.noresign.paboot.ui.chat.PermissionDialog
 import com.noresign.paboot.ui.chat.TodoListPanel
+import com.noresign.paboot.ui.chat.todoSignature
 import com.noresign.paboot.ui.chat.toolLabel
 import com.noresign.paboot.model.chat.ContextUsage
 import com.noresign.paboot.ui.component.ContextRing
@@ -170,6 +171,17 @@ fun ChatScreen(
     val messageListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
     var todoExpanded by remember { mutableStateOf(false) }
+    /**
+     * 用户主动收起的那份待办清单（[todoSignature]），落 MMKV 按会话存：
+     * 关掉条之后下次进来也不该再冒出来；只有清单内容变了才重新显示。
+     *
+     * 用 `remember(currentSessionId)` 在**组合期间**同步读出来，而不是放进
+     * LaunchedEffect：effect 在首帧之后才跑，待办已经在内存里时会先画出一条再消失。
+     * 按会话做 key，换会话时也会同步重读，不会残留上一个会话的判断。
+     */
+    var dismissedTodo by remember(currentSessionId) {
+        mutableStateOf(currentSessionId?.let { SettingsStore.todoDismissal(it) })
+    }
     var showModels by remember { mutableStateOf(false) }
     var showSessionMenu by remember { mutableStateOf(false) }
 
@@ -303,6 +315,10 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(currentSessionId) {
+        // 收起状态已经在 remember 里按会话读好了，这里只管展开态。
+        todoExpanded = false
+    }
     LaunchedEffect(sessionId) {
         // 人已经进来了，这条会话的旧提醒就没用了
         sessionId?.let { RunNotifications.clear(context, it) }
@@ -496,6 +512,12 @@ fun ChatScreen(
                         running = streaming,
                         expanded = todoExpanded,
                         onToggle = { todoExpanded = !todoExpanded },
+                        dismissedSignature = dismissedTodo,
+                        onDismiss = {
+                            val signature = todoSignature(todos)
+                            dismissedTodo = signature
+                            currentSessionId?.let { SettingsStore.setTodoDismissal(it, signature) }
+                        },
                     )
                 }
                 if (reconnecting) {

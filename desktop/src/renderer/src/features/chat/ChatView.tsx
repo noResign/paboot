@@ -17,6 +17,7 @@ import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { agentDisplayName } from './agentLabel';
 import { findAwaitingAnswer } from './liveAnswers';
+import { QuestionDialog, askerName } from './QuestionDialog';
 import { Composer } from './Composer';
 import { useStickToBottom } from './useStickToBottom';
 import { TabBar, TabPanels, type TabItem } from '../../ui/Tabs';
@@ -75,17 +76,20 @@ export function ChatView({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [showPerms, setShowPerms] = useState(false);
+  /**
+   * Questions the user waved away. A blocking question opens the dialog once;
+   * re-opening it on every re-render would fight the user, and the status strip
+   * above the composer stays as the way back in.
+   */
+  const [dismissedQuestions, setDismissedQuestions] = useState<string[]>([]);
   const [tab, setTab] = useState<ChatTab>('chat');
   const [traceRunId, setTraceRunId] = useState<string | null>(null);
   /** 名册用来把消息上的 agentId 翻成显示名；只有一个成员时不标注。 */
   const [sessionAgents, setSessionAgents] = useState<SessionAgentDto[]>([]);
+  /** Room capacity from the daemon, so "add" can be disabled instead of failing. */
+  const [roomCapacity, setRoomCapacity] = useState<{ used: number; max: number } | null>(null);
   /** 工作区里的 agent：@ 的候选池；点名一个非成员会把会话升级成群聊。 */
   const [workspaceAgents, setWorkspaceAgents] = useState<AgentProfileDto[]>([]);
-  // Rollback is destructive: two-step confirm, and a second step when it would
-  // also discard later runs.
-  const [rollback, setRollback] = useState<{ runId: string; needForce: boolean; laterRuns?: number } | null>(null);
-  const [rollbackBusy, setRollbackBusy] = useState(false);
-  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOptionDto[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
@@ -102,6 +106,7 @@ export function ChatView({
       if (!live) return;
       setSessionAgents(res.ok ? res.data.agents : []);
       setLeaderAgentId(res.ok ? (res.data.leaderId ?? null) : null);
+      setRoomCapacity(res.ok ? (res.data.capacity ?? null) : null);
     });
     return () => {
       live = false;
@@ -115,6 +120,7 @@ export function ChatView({
     void api.sessionAgents(sessionId).then((res) => {
       setSessionAgents(res.ok ? res.data.agents : []);
       setLeaderAgentId(res.ok ? (res.data.leaderId ?? null) : null);
+      setRoomCapacity(res.ok ? (res.data.capacity ?? null) : null);
     });
     refreshMentionAgents();
   }
@@ -167,26 +173,16 @@ export function ChatView({
   }, [chat?.runtime]);
 
   // This component outlives the session switch (it reads the active chat from
-  // the store), so local rollback state would otherwise follow the user to the
-  // next session. A confirmation/notice belongs to the session it was raised in.
-  // The same goes for an open rename box: leaving it set would put the previous
-  // session's title into an input over the new one — including a session that
-  // has no title to rename yet.
+  // the store), so an open rename box would otherwise follow the user to the
+  // next session and put the previous title into an input over the new one —
+  // including a session that has no title to rename yet.
   useEffect(() => {
-    setRollback(null);
-    setRollbackBusy(false);
-    setRollbackNotice(null);
     setRenaming(false);
     setDraft('');
+    // Message ids belong to one session; carrying the dismissed set across a
+    // switch would silently suppress a dialog in the next session.
+    setDismissedQuestions([]);
   }, [chat?.key]);
-
-  // The success notice is informational — it should not sit above the
-  // transcript forever.
-  useEffect(() => {
-    if (!rollbackNotice) return;
-    const timer = setTimeout(() => setRollbackNotice(null), 6_000);
-    return () => clearTimeout(timer);
-  }, [rollbackNotice]);
 
   const tabsId = useId();
 
@@ -239,12 +235,9 @@ export function ChatView({
   // the room is blocked on the user is this badge (and the live-card one). It
   // also has to see per-run stream answers, which live in `messages`.
   const awaitingAnswer = findAwaitingAnswer(chat);
-  const awaitingName = (() => {
-    if (!awaitingAnswer) return null;
-    const member = sessionAgents.find((agent) => agent.id === awaitingAnswer.agentId);
-    if (member) return agentDisplayName(member);
-    return workspaceAgents.find((agent) => agent.id === awaitingAnswer.agentId)?.name ?? '助手';
-  })();
+  const awaitingName = awaitingAnswer
+    ? (askerName(awaitingAnswer, sessionAgents, workspaceAgents) ?? '助手')
+    : null;
   const liveStatusText = awaitingAnswer
     ? `${awaitingName ?? '助手'} 需要你的回答`
     : chat.turnSending
@@ -342,33 +335,6 @@ export function ChatView({
     }
   }
 
-  async function doRollback(): Promise<void> {
-    const target = rollback?.runId;
-    if (!target) return;
-    const sessionKey = useChat.getState().activeKey;
-    setRollbackBusy(true);
-    setRollbackNotice(null);
-    const res = await api.runRollback(target, rollback.needForce);
-    setRollbackBusy(false);
-    // The user may have switched sessions while the request was in flight; the
-    // result must not be painted onto the newly opened one.
-    if (useChat.getState().activeKey !== sessionKey) return;
-    if (res.ok) {
-      setRollback(null);
-      setRollbackNotice('已回滚（agent 对话未回退）');
-      // Reload the session: runs, statuses, the tree and the synthetic note.
-      if (chat?.sessionId) void useChat.getState().openSession(chat.connectionId, chat.sessionId);
-      return;
-    }
-    const data = res.data as { code?: string; laterRuns?: number; error?: string };
-    if (data?.code === 'later_runs_exist') {
-      setRollback({ runId: target, needForce: true, laterRuns: data.laterRuns });
-      return;
-    }
-    setRollback(null);
-    setRollbackNotice(data?.error ?? '回滚失败');
-  }
-
   const chatPanel = (
     <div className="chat-scroll-wrap">
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
@@ -388,7 +354,6 @@ export function ChatView({
             }
             showSpeakerName={sessionAgents.length > 1}
             leaderAgentId={leaderAgentId}
-            onRollback={(runId) => setRollback({ runId, needForce: false })}
             onOpenTrace={(runId) => {
               setTraceRunId(runId);
               setTab('assistants');
@@ -415,6 +380,7 @@ export function ChatView({
         <AssistantTab
           sessionId={chat.sessionId}
           agents={sessionAgents}
+          capacity={roomCapacity}
           workspaceAgents={workspaceAgents}
           chat={chat}
           onOpenTrace={(runId) => setTraceRunId(runId)}
@@ -556,7 +522,13 @@ export function ChatView({
         idPrefix={tabsId}
       />
 
-      <TodoPanel todos={chat.todos} />
+      {/*
+        Keyed by session: the strip's "was this list put away?" answer belongs to
+        one conversation, and remounting is what makes the first render read the
+        right one. Without the key the component survives a session switch and
+        paints the previous session's dismissal for a frame.
+      */}
+      <TodoPanel key={chat.sessionId ?? 'new'} todos={chat.todos} sessionId={chat.sessionId} />
 
       {chat.error && (
         <div className="chat-banner error chat-banner-dismissible">
@@ -571,22 +543,6 @@ export function ChatView({
           </button>
         </div>
       )}
-      {rollback && (
-        <div className="chat-banner rollback-confirm">
-          <span>
-            {rollback.needForce
-              ? '该运行之后还有更晚的运行，回滚会把它们一并丢弃。文件恢复到该运行之前，agent 对话不回退。'
-              : '把工作区文件恢复到这次发送之前？该轮及之后的文件改动会被覆盖，agent 对话不回退，此操作难以撤销。'}
-          </span>
-          <button className="btn danger" disabled={rollbackBusy} onClick={() => void doRollback()}>
-            {rollback.needForce ? `丢弃后续 ${rollback.laterRuns} 轮并回滚` : '确认回滚'}
-          </button>
-          <button className="btn ghost" disabled={rollbackBusy} onClick={() => setRollback(null)}>
-            取消
-          </button>
-        </div>
-      )}
-      {rollbackNotice && <div className="chat-banner">{rollbackNotice}</div>}
       {chat.phase === 'reconnecting' && <div className="chat-banner">连接中断，正在重连…</div>}
       {chat.phase === 'settled' && (
         <div className="chat-banner">该运行已结束（daemon 侧已不在运行），以上为已收到的事件。</div>
@@ -609,9 +565,15 @@ export function ChatView({
         <button
           className={`chat-live-status${awaitingAnswer ? ' attention' : ''}`}
           onClick={() => {
-            // A blocked question goes straight to the run that asked; opening
-            // the assistant tab alone still leaves the user one click away.
-            if (awaitingAnswer) setTraceRunId(awaitingAnswer.runId);
+            // A blocked question opens the answer dialog again (dismissing it
+            // earlier must not be a dead end). Other live work goes to the
+            // assistant tab, where the per-run detail lives.
+            if (awaitingAnswer) {
+              setDismissedQuestions((current) =>
+                current.filter((id) => id !== awaitingAnswer.message.id),
+              );
+              return;
+            }
             setTab('assistants');
           }}
         >
@@ -680,6 +642,20 @@ export function ChatView({
           runtime={chat.runtime}
           onClose={() => setShowPerms(false)}
           onModeChanged={(mode) => setPermissionMode(mode)}
+        />
+      )}
+
+      {awaitingAnswer && !dismissedQuestions.includes(awaitingAnswer.message.id) && !pending && (
+        <QuestionDialog
+          answer={awaitingAnswer}
+          agentName={awaitingName}
+          onClose={() =>
+            setDismissedQuestions((current) =>
+              current.includes(awaitingAnswer.message.id)
+                ? current
+                : [...current, awaitingAnswer.message.id],
+            )
+          }
         />
       )}
 

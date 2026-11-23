@@ -167,7 +167,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       session: sessionDto(ctx, s, running.get(s.id) ?? [], ctx.db.countScheduledTasksForSession(s.id)),
       messages,
       runs: ctx.db.listRuns(s.id).map((r) => ({
-        ...runDto(r, ctx.db.getRunCheckpoint(r.id), s.workspace_id),
+        ...runDto(r, s.workspace_id),
         answerCommittedSeq: r.task_id ? (committedByTask.get(r.task_id) ?? null) : null,
       })),
     });

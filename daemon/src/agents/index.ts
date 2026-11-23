@@ -33,6 +33,7 @@ export {
   listThreads,
   MAX_SUMMARY_CHARS,
   removeAgent,
+  ROOM_MAX_MEMBERS,
   sessionRoster,
   syncSessionRuntime,
   updateAgent,

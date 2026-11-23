@@ -61,9 +61,13 @@ URL / 摘要，**不拉整页正文**；要读某条结果再调 `WebFetch`。�
 或地址不可推导时**不注册工具**（而不是注册一个永远失败的工具）。与 `WebFetch` 一样标记为
 `network` 副作用，在 `ask` / `acceptEdits` 下走审批。
 
-会话标题：首轮用户消息后，driver 用当前模型发一次**无工具**的小请求生成标题并落库；失败时
-保留 `titleFromPrompt` 的截取结果。只有标题仍是「prompt 截取值」时才会覆盖，用户改过的标题
-不会被冲掉。
+会话标题：首轮用户消息后自动生成并落库，失败时保留 `titleFromPrompt` 的截取结果。只有标题
+仍是「prompt 截取值」时才会覆盖，用户改过的标题不会被冲掉。
+
+- **builtin**：driver 用本次 run 的模型发一次**无工具**的小请求（标题与对话同一个 provider）。
+- **直连 runtime**（Claude Code / Codex / DeepSeek）：daemon 侧没有该对话的 provider，所以由
+  `run-service` 在 `startSessionRun` 里统一用**后台模型**（与记忆整理同一个 `memory_model`）
+  生成。没配置后台模型时保持默认标题，按记录模式处理。房间一轮里多个 agent 并发启动时只发一次。
 
 `AskUserQuestion` 是**阻塞式**：工具创建一条 pending `UserInput` 权限记录，发 `question` 事件
 （带 `permissionId`），等待客户端通过权限决策端点回填结构化答案，答案作为该调用的 `tool_result`
@@ -128,8 +132,8 @@ assistant message / thought，不是 token 级增量，长回复会在模型步�
 `runtimes/command.ts` 注册为 id `command` 的 `RuntimeDriver`，标记 `internal: true` /
 `requiresDetection: false`：`/api/chat` 拒绝客户端直接使用，只有调度器会启动它。它 spawn
 `/bin/sh -c <command>`（独立进程组，取消时 SIGTERM → 3s → SIGKILL），把 stdout/stderr 以
-`text_delta` 写入事件流，结束时补 `tool_result`（只带 exit code）。run / checkpoint / rollback /
-cancel 全部复用 `startSessionRun`。
+`text_delta` 写入事件流，结束时补 `tool_result`（只带 exit code）。run / events / cancel
+全部复用 `startSessionRun`。
 
 ## 通用工具桥（MCP）
 

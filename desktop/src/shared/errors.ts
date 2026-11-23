@@ -78,6 +78,8 @@ export function friendlyMessage(
       return '这个会话已经有可写助手了；新助手只能以只读身份加入';
     case 'leader_required':
       return '他是这个会话的主答者，不能移出；要换主答请新建会话';
+    case 'room_full':
+      return '房间已满，先移出一个助手再加';
     case 'name_taken':
       return '已经有同名助手了，换一个名字';
     case 'invalid_name':
@@ -116,6 +118,41 @@ export function friendlyMessage(
       if (httpCode === -1 || httpCode === 0) return '无法连接 daemon，请检查网络与地址';
       return `${fallbackPrefix}：${message}`;
   }
+}
+
+/**
+ * Why an addressed agent got no task (`POST /turns` 202 `dropped`).
+ *
+ * Not an error code: the turn succeeded, this one agent just did not take part.
+ * Silently swallowing them is worse than any of these strings — an `@` that
+ * produces no answer reads as a broken mention.
+ */
+export function dropReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'unknown':
+      return '没有这个助手';
+    case 'disabled':
+      return '已停用';
+    case 'unavailable':
+      return '当前离线';
+    case 'cross_workspace':
+      return '不在这个工作区';
+    case 'writable_agent_exists':
+      return '房间已有可写助手，只读之外加不进来';
+    case 'room_full':
+      return '房间已满';
+    default:
+      return '未收到任务';
+  }
+}
+
+/** 「审阅（已停用）、实现（房间已满）没有收到这条消息」 */
+export function describeDropped(
+  dropped: readonly { name: string; reason: string }[],
+): string | null {
+  if (dropped.length === 0) return null;
+  const parts = dropped.map((entry) => `${entry.name}（${dropReasonLabel(entry.reason)}）`);
+  return `${parts.join('、')}没有收到这条消息`;
 }
 
 /** Best-effort extraction of a daemon error body. */

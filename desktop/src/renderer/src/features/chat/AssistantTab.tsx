@@ -11,6 +11,8 @@ import type { AgentProfileDto, SessionAgentDto } from '../../../../shared/contra
 interface Props {
   sessionId: string | null;
   agents: SessionAgentDto[];
+  /** `used`/`max` from the daemon; absent on older daemons (then no cap is shown). */
+  capacity?: { used: number; max: number } | null;
   workspaceAgents: AgentProfileDto[];
   chat: ChatSessionState;
   onOpenTrace(runId: string): void;
@@ -27,6 +29,7 @@ interface Props {
 export function AssistantTab({
   sessionId,
   agents,
+  capacity = null,
   workspaceAgents,
   chat,
   onOpenTrace,
@@ -96,6 +99,9 @@ export function AssistantTab({
   const addable = workspaceAgents.filter(
     (candidate) => !agents.some((member) => member.id === candidate.id),
   );
+  // A full room refuses the add anyway; saying so here is the difference between
+  // "why did that do nothing" and "move someone out first".
+  const roomFull = capacity !== null && capacity.used >= capacity.max;
   // Room answers live in pendingAnswers, per-run streams in messages; both are
   // live work the user can see and, for a question, act on.
   const liveRows = listLiveAnswers(chat).sort(
@@ -121,7 +127,13 @@ export function AssistantTab({
           <div className="live-row">
             <span className="pending-answer-dot" />
             <b>消息</b>
-            <span>已发出，正在建立房间连接…</span>
+            {/*
+              Nothing has been sent yet at this point: the room stream has to be
+              open first, otherwise the answer's frames would arrive before the
+              client is listening and the run would look idle. Saying 已发出 here
+              was a lie that also hid why the agent took a moment to start.
+            */}
+            <span>{chat.sessionId ? '正在发送…' : '正在创建会话…'}</span>
           </div>
         )}
 
@@ -277,7 +289,9 @@ export function AssistantTab({
         <section className="assistant-roster">
           <div className="assistant-section-head">
             <b>拉入已有助手</b>
-            <span>{addable.length} 个可选</span>
+            <span>
+              {capacity ? `${capacity.used}/${capacity.max}` : `${addable.length} 个可选`}
+            </span>
           </div>
           {addable.length === 0 ? (
             <div className="hint">
@@ -289,8 +303,12 @@ export function AssistantTab({
                 <button
                   key={candidate.id}
                   className="agent-option"
-                  disabled={!candidate.available || busy}
-                  title={candidate.summary || candidate.backend}
+                  disabled={!candidate.available || busy || roomFull}
+                  title={
+                    roomFull
+                      ? '房间已满，先移出一个助手'
+                      : candidate.summary || candidate.backend
+                  }
                   onClick={() => void run(() => api.addSessionAgent(sessionId, candidate.id))}
                 >
                   <span>{candidate.name}</span>
@@ -301,7 +319,11 @@ export function AssistantTab({
               ))}
             </div>
           )}
-          <div className="hint">一个房间最多一个可写助手；其他成员以只读身份加入。</div>
+          <div className="hint">
+            {roomFull
+              ? `房间已满（${capacity!.max} 个助手），先移出一个再加入。`
+              : '一个房间最多一个可写助手；其他成员以只读身份加入。'}
+          </div>
         </section>
       )}
 

@@ -115,6 +115,11 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
         /// Replay only: `allowed` | `denied` | `timed_out`. Non-nil means the
         /// question is settled and must not invite another answer.
         public let answerStatus: String?
+        /// Replay only: the labels the user picked, keyed by `QuestionDto.id`.
+        /// A settled card uses it to show the choice instead of a blank form.
+        public let answers: [String: [String]]?
+        /// Replay only: the free-text answer, when the user typed one.
+        public let answerText: String?
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -122,10 +127,12 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
             questions = try container.decodeIfPresent([QuestionDto].self, forKey: .questions) ?? []
             permissionId = try container.decodeIfPresent(String.self, forKey: .permissionId)
             answerStatus = try container.decodeIfPresent(String.self, forKey: .answerStatus)
+            answers = try container.decodeIfPresent([String: [String]].self, forKey: .answers)
+            answerText = try container.decodeIfPresent(String.self, forKey: .answerText)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case toolUseId, questions, permissionId, answerStatus
+            case toolUseId, questions, permissionId, answerStatus, answers, answerText
         }
     }
 

@@ -43,6 +43,8 @@ export class AgentValidationError extends Error {
 }
 
 export const MAX_SUMMARY_CHARS = 40;
+/** Agents a room can hold, the leader included (03-room.md §A3). */
+export const ROOM_MAX_MEMBERS = 8;
 const MAX_INSTRUCTIONS_CHARS = 20_000;
 /** `@all` / `@全体` are routing keywords, so they cannot also be agent names. */
 const RESERVED_MENTION_NAMES = new Set(['all', '全体']);
@@ -220,6 +222,8 @@ export function addToSession(db: Db, session: { id: string; workspaceId: string 
   }
   const existing = db.listSessionAgents(session.id);
   if (existing.some((row) => row.agent_id === agentId)) return;
+  // Re-adding an existing member returns above, so a retry never trips the cap.
+  assertRoomHasSpace(db, session.id);
   db.upsertSessionAgent({
     session_id: session.id,
     agent_id: agentId,
@@ -372,6 +376,25 @@ export function assertWritableSlotFree(db: Db, sessionId: string, agent: Agent):
     throw new AgentValidationError(
       'writable_agent_exists',
       `this session already has a writable agent: ${otherWriter.name}`,
+    );
+  }
+}
+
+/**
+ * Room capacity (03-room.md §A3): a room holds at most `ROOM_MAX_MEMBERS`
+ * agents, the leader included.
+ *
+ * A plain constant rather than a DB constraint so raising it never needs a
+ * migration. Checked in `addToSession` — the one place membership is written —
+ * because that also covers the `@name` admission path, where a single request
+ * could otherwise grow the roster past the cap without any explicit "add".
+ */
+export function assertRoomHasSpace(db: Db, sessionId: string): void {
+  const used = db.listSessionAgents(sessionId).length;
+  if (used >= ROOM_MAX_MEMBERS) {
+    throw new AgentValidationError(
+      'room_full',
+      `a room holds at most ${ROOM_MAX_MEMBERS} agents; remove one before adding another`,
     );
   }
 }

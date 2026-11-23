@@ -128,7 +128,7 @@ pt 值作为默认档位。**已实现**：`App/UI/DesignSystem/Typography.swift
 - Codex `UserInput` 的 questions / form / url 专用表单（当前为通用权限 JSON）。
 - 设置页的通知开关（随后台通知一起做）。
 - 后台系统通知、启动自动连接、Markdown 链接跳转、语义级高亮。
-- 回滚入口（与 Android 一致，移动端不提供）、iOS UI 测试与发布流程。
+- iOS UI 测试与发布流程。（原「回滚入口」一项已随 run 级回滚整体移除，不再欠。）
 
 ## 8. 已拍板的技术决策
 

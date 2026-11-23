@@ -9,7 +9,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -20,36 +26,71 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.noresign.paboot.model.chat.TodoItem
 
+/**
+ * agent 自己的任务清单（TodoWrite），不进对话流。
+ *
+ * 有未完成项时它会一直挂着——agent 跑一小时就挂一小时，哪怕用户早就不看这段对话了。
+ * 所以给一个关闭按钮：用户能主动收起来，不用等 agent 干完；只有清单内容变了才会再出现。
+ *
+ * @param dismissedSignature 用户收起的那份清单（[todoSignature] 的返回值）；
+ *   与当前清单一致时整条隐藏。
+ * @param onDismiss 收起当前清单。
+ */
 @Composable
-internal fun TodoListPanel(todos: List<TodoItem>, running: Boolean, expanded: Boolean, onToggle: () -> Unit) {
+internal fun TodoListPanel(
+    todos: List<TodoItem>,
+    running: Boolean,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    dismissedSignature: String? = null,
+    onDismiss: () -> Unit = {},
+) {
+    if (!showTodoPanel(todos, dismissedSignature)) return
     val completed = todos.count { it.status == "completed" }
-    // 全完成的任务列表是历史噪音：它会一直挂在输入框上方说「已完成」。只留在飞的活。
-    if (todos.isEmpty() || completed == todos.size) return
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
         Column {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onToggle)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
             ) {
-                Text(
-                    text = "任务列表",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "$completed/${todos.size}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (expanded) "收起" else "展开",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                // 除最右边的 ✕ 之外，整条都能点：点它就展开/收起明细。
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onToggle)
+                        .padding(vertical = 8.dp),
+                ) {
+                    Text(
+                        text = "任务列表",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "$completed/${todos.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    // 只用一个箭头表示还能展开/收起，不写字：这一条本来就窄。
+                    Icon(
+                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (expanded) "收起明细" else "展开明细",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                // 与展开是两件事：这个把整条拿走，收起后只有清单内容变了才会再出现。
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "收起这条待办",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
             if (expanded) {
                 Column(
@@ -92,4 +133,21 @@ internal fun TodoRow(item: TodoItem, running: Boolean) {
             },
         )
     }
+}
+
+/**
+ * 一份清单的身份 = 它记下的内容，不看每项的状态。
+ *
+ * 只取 content 是有意的：agent 勾掉一项时用户不想让它又冒出来，
+ * 那正是他收起整条的原因；而 agent 换了一份清单才是新信息。
+ */
+internal fun todoSignature(todos: List<TodoItem>): String = todos.joinToString("\n") { it.content }
+
+/** 这条待办该不该显示。纯函数，便于单测。 */
+internal fun showTodoPanel(todos: List<TodoItem>, dismissedSignature: String?): Boolean {
+    if (todos.isEmpty()) return false
+    // 全完成 = 历史噪音，挂在输入框上方永远说「已完成」。
+    if (todos.all { it.status == "completed" }) return false
+    if (dismissedSignature != null && dismissedSignature == todoSignature(todos)) return false
+    return true
 }
