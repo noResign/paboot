@@ -389,6 +389,12 @@ export function ChatView({
       </div>
       {traceRunId && (
         <RunTracePane
+          // Keyed by run: everything this pane holds (the fetched snapshot, the
+          // remembered speaker, the scroll position) describes one run. Switching
+          // agents must start from a clean instance, not reconcile the previous
+          // one — the render guard in the pane covers the content, this covers
+          // the state around it.
+          key={traceRunId}
           runId={traceRunId}
           chat={chat}
           agents={sessionAgents}

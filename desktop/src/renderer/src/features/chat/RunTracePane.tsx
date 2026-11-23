@@ -7,6 +7,7 @@ import { Icon } from '../../ui/Icon';
 import { findLiveAnswer } from './liveAnswers';
 import { useStickToBottom } from './useStickToBottom';
 import { transcriptSignature } from './transcriptSignature';
+import { pickTraceMessage } from './traceMessage';
 import type { ChatMessage, ChatSessionState } from '../../store/chat/types';
 import type { SessionAgentDto } from '../../../../shared/contract';
 
@@ -40,12 +41,10 @@ export function RunTracePane({ runId, chat, agents, agentId, active, onClose }: 
 
   const liveTrace = findLiveAnswer(chat, runId);
   const liveTraceAgentId = liveTrace?.agentId ?? null;
-  // Clear only when the pane switches runs. Clearing whenever a run goes live →
-  // terminal would drop the speaker exactly when the replay takes over (the new
-  // run is usually not in `chat.runs` yet, so the prop is still null).
-  useEffect(() => {
-    traceAgentId.current = null;
-  }, [runId]);
+  // Remembered so a finished run's replay can still name its speaker: the new
+  // run is usually not in `chat.runs` yet, so the `agentId` prop is still null
+  // when the fetch lands. No reset on `runId` is needed — the pane is keyed by
+  // run in `ChatView`, so switching runs mounts a fresh ref.
   useEffect(() => {
     if (liveTraceAgentId) traceAgentId.current = liveTraceAgentId;
   }, [liveTraceAgentId]);
@@ -79,7 +78,11 @@ export function RunTracePane({ runId, chat, agents, agentId, active, onClose }: 
     };
   }, [runId, liveTrace?.runId, agentId, active]);
 
-  const message = liveTrace?.message ?? trace;
+  // Not `liveTrace?.message ?? trace`: the clear in the effect above happens
+  // after paint, so `trace` can still hold the previously opened run's
+  // snapshot. Showing it and replacing it a moment later is exactly the
+  // "still shows the last agent" behaviour.
+  const message = pickTraceMessage(liveTrace, trace, runId);
   // The live trace keeps growing at the bottom; follow it unless the user scrolls up.
   const { ref: bodyRef, onScroll } = useStickToBottom({
     resetKey: runId,
@@ -96,10 +99,10 @@ export function RunTracePane({ runId, chat, agents, agentId, active, onClose }: 
       </div>
       <div className="trace-pane-body" ref={bodyRef} onScroll={onScroll}>
         {error && <div className="error-text">{error}</div>}
-        {!liveTrace && !trace && !error && <div className="hint">正在读取运行过程…</div>}
-        {(liveTrace || trace) && (
+        {!message && !error && <div className="hint">正在读取运行过程…</div>}
+        {message && (
           <AssistantRow
-            message={(liveTrace?.message ?? trace)!}
+            message={message}
             agentNames={new Map(agents.map((agent) => [agent.id, agentDisplayName(agent)]))}
             // Only a live answer can be answered from here; a fetched trace is
             // a historical record whose permission/question already settled.
