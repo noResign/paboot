@@ -27,10 +27,10 @@ import { isProductPermissionMode } from '../permissions/permission-mode.js';
 /**
  * Agent CRUD, room membership, and per-agent conversation resets.
  *
- * The list DTO deliberately omits the mechanism fields (`readOnly`, tool
- * allow/deny, permission ceiling): those are the owner's view of the agent, not
- * something an `@` picker or another member needs. They appear on the detail
- * endpoint, which is the one an editor uses.
+ * The list DTO deliberately omits the mechanism fields (`readOnly`, permission
+ * ceiling, skills): those are the owner's view of the agent, not something an
+ * `@` picker or another member needs. They appear on the detail endpoint, which
+ * is the one an editor uses.
  */
 
 /**
@@ -64,8 +64,6 @@ function agentDetailDto(agent: Agent): AgentProfileDetailDto {
     extraDirs: agent.extraDirs,
     readOnly: agent.readOnly,
     permissionCeiling: agent.permissionCeiling,
-    toolsAllow: agent.toolsAllow,
-    toolsDeny: agent.toolsDeny,
     skills: agent.skills,
     budget: agent.budget,
     version: agent.version,
@@ -167,8 +165,6 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         extraDirs: Array.isArray(body.extraDirs) ? body.extraDirs.map(String) : null,
         readOnly: body.readOnly === true,
         permissionCeiling: isProductPermissionMode(body.permissionCeiling) ? body.permissionCeiling : undefined,
-        toolsAllow: Array.isArray(body.toolsAllow) ? body.toolsAllow.map(String) : null,
-        toolsDeny: Array.isArray(body.toolsDeny) ? body.toolsDeny.map(String) : null,
         skills: Array.isArray(body.skills) ? body.skills.map(String) : null,
         budget:
           body.budget && typeof body.budget === 'object' ? (body.budget as { maxSteps?: number; maxToolCalls?: number }) : null,
@@ -212,8 +208,6 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
         ...(isProductPermissionMode(body.permissionCeiling)
           ? { permissionCeiling: body.permissionCeiling as ProductPermissionMode }
           : {}),
-        ...(Array.isArray(body.toolsAllow) ? { toolsAllow: body.toolsAllow.map(String) } : {}),
-        ...(Array.isArray(body.toolsDeny) ? { toolsDeny: body.toolsDeny.map(String) } : {}),
         ...(Array.isArray(body.skills) ? { skills: body.skills.map(String) } : {}),
         ...(body.modelParameters === null
           ? { modelParameters: null }
@@ -254,11 +248,16 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     const roster = sessionRoster(ctx.db, session.id);
     const threads = new Map(listThreads(ctx.db, session.id).map((thread) => [thread.agentId, thread]));
     // Live work per member, so the roster can say "正在回答" instead of only
-    // whether the definition exists.
-    const taskStatus = new Map<string, 'queued' | 'running'>();
+    // whether the definition exists. A running task wins over a queued one:
+    // it is the one the user means when they stop this agent.
+    const openTask = new Map<string, { id: string; status: 'queued' | 'running' }>();
     for (const task of ctx.db.listOpenTasks(session.id)) {
-      if (task.status === 'running' || taskStatus.get(task.agent_id) !== 'running') {
-        taskStatus.set(task.agent_id, task.status === 'running' ? 'running' : 'queued');
+      const current = openTask.get(task.agent_id);
+      if (!current || task.status === 'running') {
+        openTask.set(task.agent_id, {
+          id: task.id,
+          status: task.status === 'running' ? 'running' : 'queued',
+        });
       }
     }
     // Probe the members too: the roster is where the user decides who to @, so
@@ -277,7 +276,8 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
           threadCount(threads.get(row.agent.id)) ||
           ((row.agent.kind === 'builtin' || row.agent.runtime === 'builtin') &&
             ctx.db.hasNativeTranscript(session.id, row.agent.id)),
-        taskStatus: taskStatus.get(row.agent.id) ?? null,
+        taskStatus: openTask.get(row.agent.id)?.status ?? null,
+        taskId: openTask.get(row.agent.id)?.id ?? null,
       })),
     });
   });

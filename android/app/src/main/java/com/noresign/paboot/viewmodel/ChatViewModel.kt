@@ -1047,6 +1047,8 @@ class ChatViewModel(
                 ContentBlock.Question(
                     toolUseId = e.toolUseId,
                     questions = e.questions,
+                    answered = e.answerStatus == "allowed",
+                    answerStatus = e.answerStatus,
                     permissionId = e.permissionId,
                 ),
         )

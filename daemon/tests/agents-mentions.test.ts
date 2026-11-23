@@ -26,8 +26,6 @@ function agent(id: string, name: string, patch: Partial<Agent> = {}): Agent {
     extraDirs: [],
     readOnly: false,
     permissionCeiling: 'ask',
-    toolsAllow: null,
-    toolsDeny: null,
     skills: null,
     budget: null,
     heavy: false,

@@ -272,7 +272,9 @@ async function runBuiltin(
       },
     };
     // A read-only member gets no write capability at all — not a tool that only
-    // fails at call time (03-room §5.2). Bash goes with it: it can write.
+    // fails at call time (03-room §5.2). Bash stays: inspection (tests, git log,
+    // greps) is the point of a reviewer, and the approval policy admits only its
+    // read-only subset for such an agent.
     const writeTools = agent.readOnly
       ? []
       : [
@@ -286,13 +288,6 @@ async function runBuiltin(
             wasRead: (path) => readFiles.has(path),
             recordWrite: (path) => readFiles.add(path),
           }),
-          createBashTool({
-            defaultTimeoutMs: builtinConfig.tools.bash.defaultTimeoutMs,
-            maxTimeoutMs: builtinConfig.tools.bash.maxTimeoutMs,
-            maxOutputBytes: builtinConfig.tools.bash.maxOutputBytes,
-            envAllow: builtinConfig.tools.bash.envAllow,
-            ...(ctx.spill ? { spill: ctx.spill } : {}),
-          }),
         ];
     const nativeTools = [
       createReadTool({
@@ -303,6 +298,14 @@ async function runBuiltin(
         maxOutputTokens: budget.maxResultTokens,
         measure,
         recordRead: (path) => readFiles.add(path),
+      }),
+      createBashTool({
+        defaultTimeoutMs: builtinConfig.tools.bash.defaultTimeoutMs,
+        maxTimeoutMs: builtinConfig.tools.bash.maxTimeoutMs,
+        maxOutputBytes: builtinConfig.tools.bash.maxOutputBytes,
+        envAllow: builtinConfig.tools.bash.envAllow,
+        ...(ctx.spill ? { spill: ctx.spill } : {}),
+        ...(agent.readOnly ? { readOnly: true } : {}),
       }),
       ...writeTools,
       createGrepTool({

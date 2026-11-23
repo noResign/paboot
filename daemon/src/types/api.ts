@@ -125,6 +125,12 @@ export type NormalizedEvent =
        * instead of sending a new chat message.
        */
       permissionId?: string;
+      /**
+       * Replay-only: how the question was resolved, written when the permission
+       * is decided. Clients render a resolved question as inert, so re-opening
+       * a session does not ask it a second time.
+       */
+      answerStatus?: 'allowed' | 'denied' | 'timed_out';
     };
 
 /** Optional list price for a provider model, in USD per million tokens. */
@@ -1103,8 +1109,6 @@ export interface AgentProfileDetailDto extends AgentProfileDto {
   readOnly: boolean;
   /** ask | acceptEdits | bypass —— 这个 agent 的权限上限。 */
   permissionCeiling: ProductPermissionMode;
-  toolsAllow: string[] | null;
-  toolsDeny: string[] | null;
   skills: string[] | null;
   /** Run budget override; `null` = the runtime's defaults. */
   budget: { maxSteps?: number; maxToolCalls?: number } | null;
@@ -1126,6 +1130,8 @@ export interface SessionAgentDto extends AgentProfileDto {
   hasContext: boolean;
   /** Live work in this room, if any. `null` = idle. */
   taskStatus?: 'queued' | 'running' | null;
+  /** The queued/running task behind `taskStatus`, for `POST /api/tasks/:id/cancel`. */
+  taskId?: string | null;
 }
 
 export interface SessionAgentsResponse {
@@ -1146,8 +1152,6 @@ export interface AgentProfileRequest {
   extraDirs?: string[];
   readOnly?: boolean;
   permissionCeiling?: ProductPermissionMode;
-  toolsAllow?: string[];
-  toolsDeny?: string[];
   heavy?: boolean;
   enabled?: boolean;
 }

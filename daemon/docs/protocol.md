@@ -196,6 +196,12 @@ tool_result | usage | turn_end | context_compacted | error | permission_request 
   run 里继续。超时 / 拒绝时工具返回错误结果，让模型自己决定下一步。builtin 仍兼容旧的
   `response: { "answer": string }`。
 
+**结算状态会持久化**：permission 解析时 daemon 把对应 `question` 事件的 payload 写上
+`answerStatus`（`allowed` / `denied` / `timed_out`，`permission_request` 则写最终
+`status`）。客户端重进会话时据此把卡片渲染成已结算，不会再要求用户回答同一个问题；
+拒绝和超时要分别显示，不能都叫「已回答」。没有 `permissionId` 的 runtime 由客户端按
+“问题是否还属于当前一轮”决定是否可答。
+
 `QuestionDto.id` 只有阻塞式通道需要；Codex 自带，builtin 由 daemon 生成（`q0`、`q1`…）。
 
 **思考内容不下发**：运行时产生的 `thinking_delta` 在 run service 里直接丢弃——既不落库也不进
@@ -280,6 +286,11 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
   - `POST /api/sessions/:id/cancel`：停止该会话当前所有 room 工作。排队中、尚未拿到
     run 的 task 直接标为 cancelled；正在运行的 runs 走取消路径。返回
     `{ok, cancelled}`。单个 run 仍可用 `POST /api/runs/:id/cancel`。
+  - `POST /api/tasks/:id/cancel`：只停**一个**排队/运行中的 task，兄弟任务继续。排队中的
+    同步标为 cancelled（并保证它在 per-agent 队列里轮到时不会执行）；运行中的通过其 run
+    取消，由正常终态路径落库并发终局帧。返回 `{ok, taskId, status}`（`cancelled` |
+    `cancelling`）。任务已结束 → 404 `task_not_found`。会话成员列表里的
+    `taskStatus` / `taskId` 就是这里要停的目标。
   - `GET /api/sessions/:id/stream?after=<roomSeq>`：一个会话一条流，承载所有 agent 的帧
     （会话级通知也在内）。帧额外带 `roomSeq` / `taskId` / `agentId`；SSE 的 `id:` 是
     `roomSeq`，省略 `after` 只收直播，给了则回放并分页（500 行/页）直到追平。

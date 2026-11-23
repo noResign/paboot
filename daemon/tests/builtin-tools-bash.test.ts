@@ -68,6 +68,18 @@ describe('Bash tool', () => {
     expect(result.meta).toMatchObject({ exitCode: 0 });
   });
 
+  it('rejects mutating commands for a read-only agent', async () => {
+    const root = tempDir();
+    const agent = makeAgent({ root });
+    const tool = createBashTool({ readOnly: true });
+
+    await expect(tool.call({ command: 'rm -rf build' }, callContext(agent))).rejects.toThrow(
+      /read-only/,
+    );
+    const ok = await tool.call({ command: 'ls' }, callContext(agent));
+    expect(ok.isError).toBe(false);
+  });
+
   it('marks a non-zero exit as an error but keeps the output', async () => {
     const root = tempDir();
     const agent = makeAgent({ root });
@@ -181,6 +193,22 @@ describe('Bash approval policy', () => {
         agent: acceptEdits,
       }),
     ).toBe('ask');
+  });
+
+  it('gives a read-only agent inspection only', () => {
+    const root = tempDir();
+    const agent = { ...makeAgent({ root }), readOnly: true } as AgentRunContext;
+    const descriptor = createBashTool({ readOnly: true }).descriptor;
+
+    expect(
+      defaultToolApprovalPolicy.decide({ descriptor, input: { command: 'git status' }, agent }),
+    ).toBe('allow');
+    expect(
+      defaultToolApprovalPolicy.decide({ descriptor, input: { command: 'rm -rf build' }, agent }),
+    ).toBe('deny');
+    expect(
+      defaultToolApprovalPolicy.decide({ descriptor, input: { command: 'ls | xargs rm' }, agent }),
+    ).toBe('deny');
   });
 });
 

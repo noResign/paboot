@@ -41,6 +41,8 @@ builtin 的原生工具：`Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` /
 Write / Edit 覆盖已有文件前必须在本会话 Read 过（readFiles 从 transcript 重建，重启不丢）；
 Bash 复用平台 shell 与进程树取消，环境变量只透传白名单，超限输出写 `~/.paboot/spill/`；
 Read / Grep / Glob / TodoWrite 免审批，Bash 的只读命令自动放行，其余按 Session 权限模式审批。
+只读 agent（`readOnly`）不挂 Write / Edit；Bash 仍然可用，但只放行同一份只读白名单，
+任何可能修改状态的命令直接拒绝（而不是询问）。
 
 `WebFetch` 后端可插拔，两个实现共用同一接口：
 

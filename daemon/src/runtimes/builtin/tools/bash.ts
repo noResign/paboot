@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { spawnExecutable } from '../../../platform/executable.js';
 import { killProcessGroup } from '../../../platform/process-tree.js';
 import { resolveShell, type ShellSpec } from '../../../platform/shell.js';
+import { isReadOnlyBash } from '../../../permissions/command-safety.js';
 import type { ToolDescriptor } from '../types.js';
 import { isRecord } from './file-utils.js';
 import type { SpillStore, SpillWriter } from './spill.js';
@@ -48,6 +49,12 @@ export interface BashToolOptions {
   /** Test seam; the product resolves the host shell. */
   shell?: ShellSpec;
   platform?: NodeJS.Platform;
+  /**
+   * The agent is read-only: the tool exists for inspection only and rejects any
+   * command outside the read-only subset. The approval policy is the primary
+   * gate; this keeps the guarantee even if a caller bypasses it.
+   */
+  readOnly?: boolean;
 }
 
 interface BashArgs {
@@ -82,8 +89,9 @@ export function createBashTool(options: BashToolOptions = {}): ToolImplementatio
   const descriptor: ToolDescriptor = {
     name: 'Bash',
     title: 'Bash',
-    description:
-      'Run a shell command in the session working directory. Uses /bin/sh on POSIX and cmd.exe on Windows (Git Bash only when configured). Returns stdout, stderr and the exit code.',
+    description: options.readOnly
+      ? 'Run a read-only shell command in the session working directory. Only inspection commands are accepted (ls, cat, grep, git status/log/diff, …); anything that could modify files, the repo or the environment is rejected. Uses /bin/sh on POSIX and cmd.exe on Windows. Returns stdout, stderr and the exit code.'
+      : 'Run a shell command in the session working directory. Uses /bin/sh on POSIX and cmd.exe on Windows (Git Bash only when configured). Returns stdout, stderr and the exit code.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -107,6 +115,12 @@ export function createBashTool(options: BashToolOptions = {}): ToolImplementatio
     descriptor,
     async call(input: unknown, context: ToolCallContext): Promise<ToolResult> {
       const args = parseBashArgs(input, defaultTimeout, maxTimeout);
+      if (options.readOnly && !isReadOnlyBash(args.command)) {
+        throw new ToolError(
+          'read-only agent: this command can modify state; only read-only commands are allowed',
+          'read_only',
+        );
+      }
       if (context.signal.aborted) {
         return { content: 'command cancelled before start', isError: true, interrupted: true };
       }

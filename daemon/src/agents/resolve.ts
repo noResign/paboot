@@ -128,8 +128,6 @@ function synthesize(
     extraDirs: [],
     readOnly: false,
     permissionCeiling: 'ask',
-    toolsAllow: null,
-    toolsDeny: null,
     skills: null,
     budget: null,
     heavy: false,

@@ -13,7 +13,9 @@ import { registerAgentsRoutes } from '../src/routes/agents';
 import { registerRoomRoutes } from '../src/routes/room';
 import { RunNotifier } from '../src/runs/run-notifier';
 import { SessionNotifier } from '../src/runs/session-notifier';
+import { registerActiveRun, type ManagedRun } from '../src/runtimes/active-runs';
 import type { RuntimeDriver, RuntimeDriverRequest } from '../src/runtimes/RuntimeDriver';
+import type { RunOutcome } from '../src/runtimes/engine';
 import { defaultCapabilities } from '../src/runtimes/types';
 
 /**
@@ -73,6 +75,10 @@ interface Harness {
   failures: Set<string>;
   /** Runtime ids whose detection advertises image input. */
   imageCapable: Set<string>;
+  /** Runtime ids whose runs stay pending until the test releases them. */
+  holds: Set<string>;
+  /** Resolve a held run; the key is the run id. */
+  releases: Map<string, () => void>;
   request: (method: string, url: string, body?: unknown) => Promise<Response>;
 }
 
@@ -86,6 +92,8 @@ async function startApi(): Promise<Harness> {
   const replies = new Map<string, string>();
   const failures = new Set<string>();
   const imageCapable = new Set(['claude', 'codex']);
+  const holds = new Set<string>();
+  const releases = new Map<string, () => void>();
 
   const makeDriver = (id: string): RuntimeDriver => ({
     id,
@@ -96,15 +104,42 @@ async function startApi(): Promise<Harness> {
       // emitted so the task→message attribution path is exercised.
       req.onNativeSessionId(`${id}-s${starts.length}`);
       req.onEvent({ type: 'text_delta', delta: replies.get(id) ?? `${id} 回答` });
-      return {
-        id: req.runId,
-        promise: Promise.resolve(
-          fail
-            ? { status: 'failed' as const, exitCode: 1, error: 'boom' }
-            : { status: 'succeeded' as const, exitCode: 0, error: null },
-        ),
-        cancel: () => {},
-      };
+      if (holds.has(id)) {
+        let settle!: (cancelled: boolean) => void;
+        const promise = new Promise<RunOutcome>((resolve) => {
+          settle = (cancelled) =>
+            resolve(
+              cancelled
+                ? { status: 'cancelled', exitCode: null, error: 'cancelled by user' }
+                : fail
+                  ? { status: 'failed', exitCode: 1, error: 'boom' }
+                  : { status: 'succeeded', exitCode: 0, error: null },
+            );
+        });
+        // Tests release it successfully with `releases.get(runId)()`; a cancel
+        // from the daemon settles it the other way.
+        const active: ManagedRun<RunOutcome> = {
+          id: req.runId,
+          promise,
+          cancel: () => settle(true),
+        };
+        releases.set(req.runId, () => settle(false));
+        registerActiveRun(active);
+        return active;
+      }
+      {
+        const active: ManagedRun<RunOutcome> = {
+          id: req.runId,
+          promise: Promise.resolve(
+            fail
+              ? { status: 'failed' as const, exitCode: 1, error: 'boom' }
+              : { status: 'succeeded' as const, exitCode: 0, error: null },
+          ),
+          cancel: () => {},
+        };
+        registerActiveRun(active);
+        return active;
+      }
     },
   });
   const detection = (id: string) => ({
@@ -153,6 +188,8 @@ async function startApi(): Promise<Harness> {
     replies,
     failures,
     imageCapable,
+    holds,
+    releases,
     request: (method, url, body) =>
       fetch(`${base}${url}`, {
         method,
@@ -344,6 +381,80 @@ describe('POST /api/sessions/:id/cancel', () => {
   it('404s for an unknown session', async () => {
     const h = await startApi();
     expect((await h.request('POST', '/api/sessions/nope/cancel')).status).toBe(404);
+  });
+});
+
+describe('POST /api/tasks/:id/cancel', () => {
+  it('closes a queued task and never runs it later', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const leader = getLeader(h.db, sessionId)!;
+    h.holds.add('claude');
+
+    // The first turn owns the agent; addressing the same agent again queues the
+    // second task behind it.
+    const firstBody = (await (await turns(h, sessionId, { prompt: '一' })).json()) as {
+      tasks: { id: string }[];
+    };
+    const secondBody = (await (
+      await turns(h, sessionId, { prompt: '二', mentions: [leader.id] })
+    ).json()) as { tasks: { id: string }[] };
+    const queued = h.db.getTask(secondBody.tasks[0]!.id)!;
+    expect(queued.status).toBe('queued');
+
+    const response = await h.request('POST', `/api/tasks/${queued.id}/cancel`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, status: 'cancelled' });
+    expect(h.db.getTask(queued.id)!.status).toBe('cancelled');
+
+    // The running sibling is untouched, and the cancelled task must not start
+    // once the queue frees up.
+    const running = h.db.getTask(firstBody.tasks[0]!.id)!;
+    expect(running.status).toBe('running');
+    const startsBefore = h.starts.length;
+    h.releases.get(running.run_id!)?.();
+    await waitFor(() => h.db.getTask(running.id)!.status === 'done');
+    expect(h.starts).toHaveLength(startsBefore);
+    expect(h.db.getTask(queued.id)!.status).toBe('cancelled');
+  });
+
+  it('cancels one running task without stopping its sibling', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, ['审阅']);
+    const leader = getLeader(h.db, sessionId)!;
+    const review = h.db.listSessionAgents(sessionId).find((row) => row.role === 'member')!;
+    h.holds.add('claude');
+    h.holds.add('codex');
+
+    const body = (await (
+      await turns(h, sessionId, { prompt: '都看看', mentions: [leader.id, review.agent_id] })
+    ).json()) as { tasks: { id: string; agentId: string }[] };
+    const leaderTask = body.tasks.find((task) => task.agentId === leader.id)!;
+    const reviewTask = body.tasks.find((task) => task.agentId === review.agent_id)!;
+    await waitFor(() => h.db.getTask(leaderTask.id)!.status === 'running');
+
+    const response = await h.request('POST', `/api/tasks/${reviewTask.id}/cancel`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, status: 'cancelling' });
+
+    await waitFor(() => h.db.getTask(reviewTask.id)!.status === 'cancelled');
+    expect(h.db.getTask(leaderTask.id)!.status).toBe('running');
+
+    h.releases.get(h.db.getTask(leaderTask.id)!.run_id!)?.();
+    await waitFor(() => h.db.getTask(leaderTask.id)!.status === 'done');
+  });
+
+  it('404s for a task that already ended', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const body = (await (await turns(h, sessionId, { prompt: '快问快答' })).json()) as {
+      tasks: { id: string }[];
+    };
+    const taskId = body.tasks[0]!.id;
+    await waitFor(() => h.db.getTask(taskId)!.status === 'done');
+
+    expect((await h.request('POST', `/api/tasks/${taskId}/cancel`)).status).toBe(404);
+    expect((await h.request('POST', '/api/tasks/nope/cancel')).status).toBe(404);
   });
 });
 

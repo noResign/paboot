@@ -102,6 +102,19 @@ async function runTaskOnce(
   input: { session: SessionRow; workspace: WorkspaceRow; task: AgentTaskRow },
 ): Promise<TaskOutcome> {
   const { session, workspace, task } = input;
+  // A queued task can be cancelled while it waits in the per-agent queue; the
+  // row we were handed is the one from creation time. Re-read before doing any
+  // work, or a cancelled task would still run when its predecessor finishes.
+  const current = ctx.db.getTask(task.id);
+  if (!current || current.status !== 'queued') {
+    return {
+      taskId: task.id,
+      agentId: task.agent_id,
+      status: current?.status === 'cancelled' ? 'cancelled' : 'failed',
+      messageId: current?.message_id ?? null,
+      error: current?.error ?? 'task is no longer queued',
+    };
+  }
   const agent = getAgent(ctx.db, task.agent_id);
   if (!agent) {
     return failTaskBeforeRun(ctx, deps, session, task, task.agent_id, 'agent not found');

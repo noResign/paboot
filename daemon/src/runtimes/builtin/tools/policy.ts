@@ -23,9 +23,13 @@ export const defaultToolApprovalPolicy: ToolApprovalPolicy = {
   decide({ descriptor, input, agent }) {
     // Read-only wins over every mode, including bypass: the point of a
     // read-only member is that no approval can turn it into a writer. Read,
-    // control and network (search/fetch) stay available; write and execute are
-    // gone, and MCP is unknown so it fails closed.
+    // control and network (search/fetch) stay available; MCP is unknown so it
+    // fails closed, and a shell exists only for its read-only subset.
     if (agent.readOnly) {
+      if (descriptor.name === 'Bash' && isRecord(input)) {
+        const command = input['command'];
+        if (typeof command === 'string' && isReadOnlyBash(command)) return 'allow';
+      }
       return descriptor.sideEffect === 'read' ||
         descriptor.sideEffect === 'control' ||
         descriptor.sideEffect === 'network'

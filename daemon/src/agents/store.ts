@@ -38,8 +38,6 @@ export function toAgent(row: AgentRow): Agent {
     permissionCeiling: (CEILINGS as readonly string[]).includes(row.permission_ceiling)
       ? (row.permission_ceiling as ProductPermissionMode)
       : 'ask',
-    toolsAllow: parseJson<string[]>(row.tools_allow),
-    toolsDeny: parseJson<string[]>(row.tools_deny),
     skills: parseJson<string[]>(row.skills),
     budget: parseJson<AgentBudgetOverride>(row.budget_json),
     heavy: row.heavy === 1,
@@ -90,8 +88,6 @@ export function toAgentRow(agent: Agent): AgentRow {
     extra_dirs: agent.extraDirs.length > 0 ? JSON.stringify(agent.extraDirs) : null,
     read_only: agent.readOnly ? 1 : 0,
     permission_ceiling: agent.permissionCeiling,
-    tools_allow: agent.toolsAllow ? JSON.stringify(agent.toolsAllow) : null,
-    tools_deny: agent.toolsDeny ? JSON.stringify(agent.toolsDeny) : null,
     skills: agent.skills ? JSON.stringify(agent.skills) : null,
     budget_json: agent.budget ? JSON.stringify(agent.budget) : null,
     heavy: agent.heavy ? 1 : 0,

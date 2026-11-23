@@ -39,8 +39,6 @@ export interface Agent {
   readOnly: boolean;
   /** Upper bound on the effective permission mode; the session may only tighten. */
   permissionCeiling: ProductPermissionMode;
-  toolsAllow: string[] | null;
-  toolsDeny: string[] | null;
   skills: string[] | null;
   budget: AgentBudgetOverride | null;
   /** External-CLI agents: in a room they are only addressed explicitly. */
@@ -79,8 +77,6 @@ export interface CreateAgentInput {
   extraDirs?: string[] | null;
   readOnly?: boolean;
   permissionCeiling?: ProductPermissionMode;
-  toolsAllow?: string[] | null;
-  toolsDeny?: string[] | null;
   skills?: string[] | null;
   budget?: AgentBudgetOverride | null;
   heavy?: boolean;

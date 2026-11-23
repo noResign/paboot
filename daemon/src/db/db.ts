@@ -50,8 +50,6 @@ export interface AgentRow {
   extra_dirs: string | null;
   read_only: number;
   permission_ceiling: string;
-  tools_allow: string | null;
-  tools_deny: string | null;
   skills: string | null;
   budget_json: string | null;
   heavy: number;
@@ -709,8 +707,6 @@ export class Db {
         extra_dirs TEXT,
         read_only INTEGER NOT NULL DEFAULT 0,
         permission_ceiling TEXT NOT NULL DEFAULT 'ask',
-        tools_allow TEXT,
-        tools_deny TEXT,
         skills TEXT,
         budget_json TEXT,
         heavy INTEGER NOT NULL DEFAULT 0,
@@ -1802,9 +1798,9 @@ export class Db {
         `INSERT INTO agents
            (id, workspace_id, name, summary, avatar, kind, runtime, peer_id, remote_agent_id,
             model, model_parameters, instructions, cwd, extra_dirs, read_only,
-            permission_ceiling, tools_allow, tools_deny, skills, budget_json, heavy,
+            permission_ceiling, skills, budget_json, heavy,
             is_implicit, enabled, version, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.id,
@@ -1823,8 +1819,6 @@ export class Db {
         row.extra_dirs,
         row.read_only,
         row.permission_ceiling,
-        row.tools_allow,
-        row.tools_deny,
         row.skills,
         row.budget_json,
         row.heavy,
@@ -1855,8 +1849,6 @@ export class Db {
       | 'extra_dirs'
       | 'read_only'
       | 'permission_ceiling'
-      | 'tools_allow'
-      | 'tools_deny'
       | 'skills'
       | 'budget_json'
       | 'heavy'
@@ -1870,7 +1862,7 @@ export class Db {
         `UPDATE agents SET
            name = ?, summary = ?, avatar = ?, runtime = ?, model = ?, model_parameters = ?,
            instructions = ?, cwd = ?, extra_dirs = ?, read_only = ?, permission_ceiling = ?,
-           tools_allow = ?, tools_deny = ?, skills = ?, budget_json = ?, heavy = ?,
+           skills = ?, budget_json = ?, heavy = ?,
            enabled = ?, version = ?, updated_at = ?
          WHERE id = ?`,
       )
@@ -1886,8 +1878,6 @@ export class Db {
         row.extra_dirs,
         row.read_only,
         row.permission_ceiling,
-        row.tools_allow,
-        row.tools_deny,
         row.skills,
         row.budget_json,
         row.heavy,
@@ -3371,14 +3361,31 @@ export class Db {
       .all(runId, afterSeq) as unknown as EventRow[];
   }
 
-  /** 把 permission_request 事件的最终审批状态写回 payload，供重连回放判定是否还 pending。 */
-  updateEventPermissionStatus(permissionId: string, status: string): void {
+  /**
+   * Persist a permission's final state on the events that announced it.
+   *
+   * Replay uses these rows to decide what still needs a human: a
+   * `permission_request` keeps its `status`, and a `question` (which never
+   * announces a permission_request) gets `answerStatus`, so re-opening a
+   * session does not ask a question that is already settled. The update is
+   * scoped by run id: `events` is the largest table, and this runs on the
+   * blocking approval path.
+   */
+  updateEventPermissionStatus(runId: string, permissionId: string, status: string): void {
     this.db
       .prepare(
         `UPDATE events SET payload = json_set(payload, '$.status', ?)
-         WHERE type = 'permission_request' AND json_extract(payload, '$.permissionId') = ?`,
+         WHERE run_id = ? AND type = 'permission_request'
+           AND json_extract(payload, '$.permissionId') = ?`,
       )
-      .run(status, permissionId);
+      .run(status, runId, permissionId);
+    this.db
+      .prepare(
+        `UPDATE events SET payload = json_set(payload, '$.answerStatus', ?)
+         WHERE run_id = ? AND type = 'question'
+           AND json_extract(payload, '$.permissionId') = ?`,
+      )
+      .run(status, runId, permissionId);
   }
 
   // ---- deploy jobs ----

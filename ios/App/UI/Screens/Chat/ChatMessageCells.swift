@@ -933,8 +933,15 @@ final class ChatQuestionCardView: ChatBlockView {
     private var otherTexts: [Int: String] = [:]
     private var submitButton: UIButton?
     private var answered = false
+    private var answerStatus: String?
     private var streaming = false
     private var permissionId: String?
+
+    /// Settled by the daemon, or a blocking ask whose run already ended: the
+    /// permission id is dead, so this is a record rather than an actionable ask.
+    private var resolved: Bool { answered || answerStatus != nil }
+    private var closed: Bool { !resolved && permissionId != nil && !streaming }
+    private var readOnly: Bool { resolved || closed }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -968,6 +975,7 @@ final class ChatQuestionCardView: ChatBlockView {
         guard block.toolUseId != toolUseId
             || block.questions != questions
             || block.answered != answered
+            || block.answerStatus != answerStatus
             || block.permissionId != permissionId
             || streaming != self.streaming else {
             return
@@ -975,6 +983,7 @@ final class ChatQuestionCardView: ChatBlockView {
 
         self.streaming = streaming
         permissionId = block.permissionId
+        answerStatus = block.answerStatus
 
         if block.toolUseId != toolUseId {
             toolUseId = block.toolUseId
@@ -1026,7 +1035,7 @@ final class ChatQuestionCardView: ChatBlockView {
                     detail: option.description,
                     selected: selections[index]?.contains(option.label) == true
                 )
-                row.isEnabled = !answered
+                row.isEnabled = !readOnly
                 row.onTap = { [weak self] in
                     self?.toggle(
                         index: index,
@@ -1042,7 +1051,7 @@ final class ChatQuestionCardView: ChatBlockView {
                 detail: "自己输入答案",
                 selected: otherActive[index] == true
             )
-            other.isEnabled = !answered
+            other.isEnabled = !readOnly
             other.onTap = { [weak self] in self?.toggleOther(index) }
             stack.addArrangedSubview(other)
 
@@ -1053,7 +1062,7 @@ final class ChatQuestionCardView: ChatBlockView {
                 field.font = Typography.body
                 field.textColor = Theme.Colors.textPrimary
                 field.borderStyle = .roundedRect
-                field.isEnabled = !answered
+                field.isEnabled = !readOnly
                 field.tag = index
                 field.addTarget(self, action: #selector(otherTextChanged(_:)), for: .editingChanged)
                 stack.addArrangedSubview(field)
@@ -1061,8 +1070,14 @@ final class ChatQuestionCardView: ChatBlockView {
             }
         }
 
-        if answered {
+        if answered || answerStatus == "allowed" {
             stack.addArrangedSubview(statusLabel("已发送答案"))
+        } else if answerStatus == "denied" {
+            stack.addArrangedSubview(statusLabel("已回答拒绝；助手会自行处理。"))
+        } else if answerStatus == "timed_out" {
+            stack.addArrangedSubview(statusLabel("超时未回答；助手会自行处理。"))
+        } else if closed {
+            stack.addArrangedSubview(statusLabel("这次提问已结束（运行结束或超时），无法再回答。"))
         } else if streaming && permissionId == nil {
             stack.addArrangedSubview(statusLabel("等待本轮结束…"))
         } else {
@@ -1096,7 +1111,7 @@ final class ChatQuestionCardView: ChatBlockView {
     }
 
     private func toggle(index: Int, label: String, multiSelect: Bool) {
-        guard !answered else { return }
+        guard !readOnly else { return }
 
         var current = selections[index] ?? []
         if multiSelect {
@@ -1115,7 +1130,7 @@ final class ChatQuestionCardView: ChatBlockView {
     }
 
     private func toggleOther(_ index: Int) {
-        guard !answered, index < questions.count else { return }
+        guard !readOnly, index < questions.count else { return }
         if questions[index].multiSelect == true {
             otherActive[index] = !(otherActive[index] == true)
         } else {
@@ -1132,7 +1147,7 @@ final class ChatQuestionCardView: ChatBlockView {
     }
 
     private func submit() {
-        guard allAnswered else { return }
+        guard allAnswered, !readOnly else { return }
 
         var structured: [String: [String]] = [:]
         let answer = questions.enumerated().map { index, question in

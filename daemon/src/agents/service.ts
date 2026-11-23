@@ -85,8 +85,6 @@ export function createAgent(
     extraDirs: paths.extraDirs,
     readOnly: input.readOnly ?? false,
     permissionCeiling: normalizeCeiling(input.permissionCeiling, kind),
-    toolsAllow: input.toolsAllow ?? null,
-    toolsDeny: input.toolsDeny ?? null,
     skills: input.skills ?? null,
     budget: input.budget ?? null,
     heavy: input.heavy ?? false,
@@ -151,8 +149,6 @@ export function updateAgent(db: Db, workspace: WorkspaceRow, id: string, patch: 
       patch.permissionCeiling !== undefined
         ? normalizeCeiling(patch.permissionCeiling, current.kind)
         : current.permissionCeiling,
-    toolsAllow: patch.toolsAllow !== undefined ? patch.toolsAllow : current.toolsAllow,
-    toolsDeny: patch.toolsDeny !== undefined ? patch.toolsDeny : current.toolsDeny,
     skills: patch.skills !== undefined ? patch.skills : current.skills,
     budget: patch.budget !== undefined ? patch.budget : current.budget,
     heavy: patch.heavy !== undefined ? patch.heavy : current.heavy,

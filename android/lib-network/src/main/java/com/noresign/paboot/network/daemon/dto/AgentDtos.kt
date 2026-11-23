@@ -62,7 +62,7 @@ data class AgentModelsResponse(
 /**
  * `GET /api/workspaces/:id/agents` 的一项。
  *
- * 刻意不含机制字段（`readOnly` / `toolsAllow` / `permissionCeiling`）：那是创建者的视角，
+ * 刻意不含机制字段（`readOnly` / `permissionCeiling` / `skills`）：那是创建者的视角，
  * `@` 候选和普通成员不需要看到。详情走 [AgentProfileDetailDto]。
  */
 @Serializable
@@ -114,8 +114,6 @@ data class AgentProfileDetailDto(
     val readOnly: Boolean = false,
     /** ask | acceptEdits | bypass —— 这个 agent 的权限上限。 */
     val permissionCeiling: String = "ask",
-    val toolsAllow: List<String>? = null,
-    val toolsDeny: List<String>? = null,
     val skills: List<String>? = null,
     val version: Int = 1,
     val isImplicit: Boolean = false,
@@ -148,6 +146,8 @@ data class SessionAgentDto(
     val hasContext: Boolean = false,
     /** queued | running；null = 空闲。 */
     val taskStatus: String? = null,
+    /** 该状态背后的排队/运行任务 id；用于单独取消。 */
+    val taskId: String? = null,
 )
 
 @Serializable
@@ -170,8 +170,6 @@ data class AgentProfileRequest(
     val extraDirs: List<String>? = null,
     val readOnly: Boolean? = null,
     val permissionCeiling: String? = null,
-    val toolsAllow: List<String>? = null,
-    val toolsDeny: List<String>? = null,
     val heavy: Boolean? = null,
     val enabled: Boolean? = null,
 )

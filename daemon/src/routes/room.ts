@@ -247,6 +247,48 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
   });
 
   /**
+   * Stop one queued or running task, leaving its siblings alone.
+   *
+   * A queued task never acquired a run, so it is closed synchronously. A live
+   * one is cancelled through its run: the normal terminal path finalizes the
+   * task row and emits the frame the room stream is already watching for.
+   */
+  app.post('/api/tasks/:id/cancel', (req, res) => {
+    const task = ctx.db.getTask(req.params.id!);
+    if (!task || (task.status !== 'queued' && task.status !== 'running')) {
+      // Ended tasks are not an error worth explaining: stopping an answer that
+      // already finished is a no-op the caller can ignore (and its roster will
+      // refresh anyway).
+      res.status(404).json({ error: 'task is no longer running', code: 'task_not_found' });
+      return;
+    }
+
+    if (task.status === 'queued' && !task.run_id) {
+      const now = Date.now();
+      ctx.db.updateTask(task.id, {
+        status: 'cancelled',
+        endedAt: now,
+        error: 'cancelled by user',
+      });
+      ctx.db.finishTurnIfSettled(task.turn_id, now);
+      res.json({ ok: true, taskId: task.id, status: 'cancelled' });
+      return;
+    }
+
+    const active = task.run_id ? getActiveRun(task.run_id) : undefined;
+    if (active) {
+      active.cancel('cancelled by user');
+      res.json({ ok: true, taskId: task.id, status: 'cancelling' });
+      return;
+    }
+
+    // The run left the active table but its task row has not settled yet: the
+    // normal terminal path is already writing the final status. Report "not
+    // running" rather than racing it with a second update.
+    res.status(404).json({ error: 'task is no longer running', code: 'task_not_found' });
+  });
+
+  /**
    * One user input, several agents.
    *
    * Returns 202 with the tasks it created: the answer arrives on the room

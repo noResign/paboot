@@ -114,3 +114,21 @@ describe('internal permission create', () => {
     expect(await status.json()).toMatchObject({ status: 'pending' });
   });
 });
+
+describe('permission resolution persistence', () => {
+  it('records how a resolved question was settled for replay', () => {
+    const db = new Db(':memory:');
+    dbs.push(db);
+    db.appendEvent('run-q', 1, 'question', {
+      type: 'question',
+      toolUseId: 't1',
+      questions: [],
+      permissionId: 'p1',
+    });
+
+    db.updateEventPermissionStatus('run-q', 'p1', 'denied');
+
+    const [row] = db.listReplayEvents('run-q');
+    expect(JSON.parse(row!.payload)).toMatchObject({ answerStatus: 'denied' });
+  });
+});

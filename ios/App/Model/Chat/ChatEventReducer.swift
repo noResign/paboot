@@ -83,6 +83,8 @@ enum ChatEventReducer {
                     QuestionBlock(
                         toolUseId: event.toolUseId,
                         questions: event.questions,
+                        answered: event.answerStatus == "allowed",
+                        answerStatus: event.answerStatus,
                         permissionId: event.permissionId
                     )
                 )

@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     permissions: new PermissionManager(
       config.permissionTimeoutMs,
       (req) => {
-        db.updateEventPermissionStatus(req.id, req.status);
+        db.updateEventPermissionStatus(req.runId, req.id, req.status);
         // Pending requests may be resolved by timeout / run cleanup / allow-all
         // without a direct client action. Push the new status so every attached
         // client can remove it from its approval queue.

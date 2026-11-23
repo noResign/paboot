@@ -192,13 +192,12 @@ describe('agent API', () => {
       runtime: 'claude',
       readOnly: true,
       permissionCeiling: 'bypass',
-      toolsAllow: ['Read'],
     });
     const list = (await (await h.request('GET', `/api/workspaces/${h.workspaceId}/agents`)).json()) as {
       agents: Record<string, unknown>[];
     };
     const row = list.agents.find((item) => item.name === 'secretive')!;
-    for (const hidden of ['readOnly', 'permissionCeiling', 'toolsAllow', 'toolsDeny', 'instructions']) {
+    for (const hidden of ['readOnly', 'permissionCeiling', 'instructions']) {
       expect(row).not.toHaveProperty(hidden);
     }
     // ...but the detail endpoint is the owner's view and does show them.

@@ -57,7 +57,12 @@ internal fun QuestionCard(
     // Claude 等 headless runtime 只能等本轮结束后自动发下一条消息；出现「其他」时也必须显式发送，
     // 避免边输入边提交。
     val blocking = block.permissionId != null
-    val autoSubmit = allAnswered && !anyOtherActive && !blocking && !streaming
+    // 服务端已结算（allowed / denied / timed_out），或阻塞式提问的 run 已结束：
+    // 都不能再回答。前者带结果，后者是权限 id 已释放的历史卡片。
+    val resolved = block.answered || block.answerStatus != null
+    val closed = !resolved && blocking && !streaming
+    val readOnly = resolved || closed
+    val autoSubmit = allAnswered && !anyOtherActive && !blocking && !streaming && !readOnly
     LaunchedEffect(autoSubmit, block.answered) {
         if (autoSubmit && !block.answered) {
             onAnswer(
@@ -82,7 +87,7 @@ internal fun QuestionCard(
                 QuestionItem(
                     question = q,
                     selected = selected(i),
-                    enabled = !block.answered,
+                    enabled = !readOnly,
                     otherActive = isOtherActive(i),
                     otherText = otherTexts[i].orEmpty(),
                     onToggle = { label ->
@@ -105,9 +110,27 @@ internal fun QuestionCard(
                     onOtherTextChange = { otherTexts[i] = it },
                 )
             }
-            if (block.answered) {
+            if (block.answered || block.answerStatus == "allowed") {
                 Text(
                     text = "已发送答案",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (block.answerStatus == "denied") {
+                Text(
+                    text = "已回答拒绝；助手会自行处理。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (block.answerStatus == "timed_out") {
+                Text(
+                    text = "超时未回答；助手会自行处理。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (closed) {
+                Text(
+                    text = "这次提问已结束（运行结束或超时），无法再回答。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

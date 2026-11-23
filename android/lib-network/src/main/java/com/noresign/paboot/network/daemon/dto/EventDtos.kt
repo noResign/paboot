@@ -114,6 +114,8 @@ sealed class NormalizedEvent {
         val questions: List<QuestionDto> = emptyList(),
         /** builtin 阻塞式提问：答案通过权限决策端点回传，而不是发新消息。 */
         val permissionId: String? = null,
+        /** 重放时携带：allowed | denied | timed_out，非空表示这个问题已结算。 */
+        val answerStatus: String? = null,
     ) : NormalizedEvent()
 }
 

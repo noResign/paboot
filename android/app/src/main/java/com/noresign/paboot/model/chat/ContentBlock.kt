@@ -28,6 +28,8 @@ sealed interface ContentBlock {
         val toolUseId: String,
         val questions: List<QuestionDto>,
         val answered: Boolean = false,
+        /** allowed | denied | timed_out；非空表示服务端已结算，不能再回答。 */
+        val answerStatus: String? = null,
         /** 非空 = builtin 阻塞式提问，答案走权限决策端点。 */
         val permissionId: String? = null,
     ) : ContentBlock

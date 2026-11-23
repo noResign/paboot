@@ -112,16 +112,20 @@ public enum NormalizedEvent: Decodable, Equatable, Sendable {
         /// Builtin only: the run blocks on this pending permission; the answer
         /// goes back through the permission-decision endpoint.
         public let permissionId: String?
+        /// Replay only: `allowed` | `denied` | `timed_out`. Non-nil means the
+        /// question is settled and must not invite another answer.
+        public let answerStatus: String?
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             toolUseId = try container.decode(String.self, forKey: .toolUseId)
             questions = try container.decodeIfPresent([QuestionDto].self, forKey: .questions) ?? []
             permissionId = try container.decodeIfPresent(String.self, forKey: .permissionId)
+            answerStatus = try container.decodeIfPresent(String.self, forKey: .answerStatus)
         }
 
         private enum CodingKeys: String, CodingKey {
-            case toolUseId, questions, permissionId
+            case toolUseId, questions, permissionId, answerStatus
         }
     }
 

@@ -109,7 +109,7 @@ public struct AgentModelsResponse: Decodable, Equatable, Sendable {
 
 /// `GET /api/workspaces/:id/agents` 的一项。
 ///
-/// 刻意不含机制字段（`readOnly` / `toolsAllow` / `permissionCeiling`）：那是创建者的视角，
+/// 刻意不含机制字段（`readOnly` / `permissionCeiling` / `skills`）：那是创建者的视角，
 /// `@` 候选和普通成员不需要看到。详情走 `AgentProfileDetailDto`。
 public struct AgentProfileDto: Decodable, Equatable, Identifiable, Sendable {
     public let id: String
@@ -183,8 +183,6 @@ public struct AgentProfileDetailDto: Decodable, Equatable, Sendable {
     public let readOnly: Bool
     /// ask | acceptEdits | bypass —— 这个 agent 的权限上限。
     public let permissionCeiling: String
-    public let toolsAllow: [String]?
-    public let toolsDeny: [String]?
     public let skills: [String]?
     public let version: Int
     public let isImplicit: Bool
@@ -211,8 +209,6 @@ public struct AgentProfileDetailDto: Decodable, Equatable, Sendable {
         extraDirs = try c.decodeIfPresent([String].self, forKey: .extraDirs) ?? []
         readOnly = try c.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
         permissionCeiling = try c.decodeIfPresent(String.self, forKey: .permissionCeiling) ?? "ask"
-        toolsAllow = try c.decodeIfPresent([String].self, forKey: .toolsAllow)
-        toolsDeny = try c.decodeIfPresent([String].self, forKey: .toolsDeny)
         skills = try c.decodeIfPresent([String].self, forKey: .skills)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         isImplicit = try c.decodeIfPresent(Bool.self, forKey: .isImplicit) ?? false
@@ -223,7 +219,7 @@ public struct AgentProfileDetailDto: Decodable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, summary, avatar, kind, backend, heavy, enabled, online, available
         case workspaceId, instructions, model, modelParameters, cwd, extraDirs
-        case readOnly, permissionCeiling, toolsAllow, toolsDeny, skills
+        case readOnly, permissionCeiling, skills
         case version, isImplicit, createdAt, updatedAt
     }
 }
@@ -259,6 +255,8 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
     public let hasContext: Bool
     /// queued | running; nil = idle.
     public let taskStatus: String?
+    /// The queued/running task behind `taskStatus`, for a per-task cancel.
+    public let taskId: String?
 
     public var isLeader: Bool { role == "leader" }
 
@@ -277,11 +275,12 @@ public struct SessionAgentDto: Decodable, Equatable, Identifiable, Sendable {
         role = try c.decodeIfPresent(String.self, forKey: .role) ?? "member"
         hasContext = try c.decodeIfPresent(Bool.self, forKey: .hasContext) ?? false
         taskStatus = try c.decodeIfPresent(String.self, forKey: .taskStatus)
+        taskId = try c.decodeIfPresent(String.self, forKey: .taskId)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, summary, avatar, kind, backend, heavy, enabled, online, available
-        case role, hasContext, taskStatus
+        case role, hasContext, taskStatus, taskId
     }
 }
 
@@ -311,8 +310,6 @@ public struct AgentProfileRequest: Encodable, Sendable {
     public var extraDirs: [String]?
     public var readOnly: Bool?
     public var permissionCeiling: String?
-    public var toolsAllow: [String]?
-    public var toolsDeny: [String]?
     public var heavy: Bool?
     public var enabled: Bool?
 
@@ -328,8 +325,6 @@ public struct AgentProfileRequest: Encodable, Sendable {
         extraDirs: [String]? = nil,
         readOnly: Bool? = nil,
         permissionCeiling: String? = nil,
-        toolsAllow: [String]? = nil,
-        toolsDeny: [String]? = nil,
         heavy: Bool? = nil,
         enabled: Bool? = nil
     ) {
@@ -344,8 +339,6 @@ public struct AgentProfileRequest: Encodable, Sendable {
         self.extraDirs = extraDirs
         self.readOnly = readOnly
         self.permissionCeiling = permissionCeiling
-        self.toolsAllow = toolsAllow
-        self.toolsDeny = toolsDeny
         self.heavy = heavy
         self.enabled = enabled
     }
