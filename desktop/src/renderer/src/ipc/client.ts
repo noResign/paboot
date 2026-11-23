@@ -334,6 +334,11 @@ export const api = {
       method: 'POST',
       path: ROUTES.sessionCancel(sessionId),
     }),
+  cancelTask: (taskId: string) =>
+    request<{ ok: boolean; taskId: string; status: 'cancelled' | 'cancelling' }>({
+      method: 'POST',
+      path: ROUTES.taskCancel(taskId),
+    }),
   addSessionAgent: (sessionId: string, agentId: string) =>
     request<{ ok: boolean }>({
       method: 'POST',

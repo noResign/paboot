@@ -214,6 +214,10 @@ export function ChatView({
       chat.messages.some((message) => message.kind === 'assistant' && !message.done));
   const leaderAgentId =
     sessionAgents.find((agent) => agent.role === 'leader')?.id ?? chat.leaderAgentId;
+  // `sessions.runtime` mirrors the leader; the roster's backend is the same
+  // value once loaded, and it is what the header must show even while a member
+  // on another backend is answering.
+  const leaderBackend = sessionAgents.find((agent) => agent.role === 'leader')?.backend ?? null;
   const liveCount =
     (chat.turnSending ? 1 : 0) +
     chat.dispatchedTasks.length +
@@ -423,6 +427,7 @@ export function ChatView({
           chat={chat}
           agents={sessionAgents}
           agentId={traceAgentId}
+          active={tab === 'assistants'}
           onClose={() => setTraceRunId(null)}
         />
       )}
@@ -488,7 +493,10 @@ export function ChatView({
             </div>
           )}
           <div className="chat-sub">
-            {chat.runtime && <RuntimeBadge id={chat.runtime} />}
+            {/* The header names the room's leader, not whichever member last spoke. */}
+            {(leaderBackend ?? chat.runtime) && (
+              <RuntimeBadge id={(leaderBackend ?? chat.runtime)!} />
+            )}
             {chat.cwd ? (
               <span className="mono cwd" title={chat.cwd}>
                 {shortCwd(chat.cwd)}

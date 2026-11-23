@@ -25,7 +25,9 @@ export function hasTraceSegments(blocks: ContentBlock[]): boolean {
  * tell the user to open it.
  */
 export function hasUnansweredQuestion(blocks: readonly ContentBlock[]): boolean {
-  return blocks.some((block) => block.kind === 'question' && !block.answered);
+  return blocks.some(
+    (block) => block.kind === 'question' && !block.answered && !block.answerStatus,
+  );
 }
 
 /**

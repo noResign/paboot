@@ -21,7 +21,10 @@ export type ContentBlock =
       kind: 'question';
       toolUseId: string;
       questions: QuestionDto[];
+      /** The user sent an answer from this client. */
       answered: boolean;
+      /** Replay: how the daemon settled the question; any value makes it inert. */
+      answerStatus?: 'allowed' | 'denied' | 'timed_out' | null;
       /** Builtin blocking question: answer through the permission endpoint. */
       permissionId?: string | null;
     }
@@ -70,6 +73,8 @@ export type ChatMessage =
 export interface PendingAnswer {
   runId: string;
   agentId: string | null;
+  /** Room task behind this run; known once a frame names it, used for a lone stop. */
+  taskId?: string | null;
   message: Extract<ChatMessage, { kind: 'assistant' }>;
 }
 
@@ -143,11 +148,12 @@ export interface ChatSessionState {
   dispatchedTasks: { taskId: string; agentId: string }[];
   pendingAnswers: PendingAnswer[];
   /**
-   * Completed agent messages waiting for the current speaker to finish.
+   * Completed agent messages waiting for a presentation slot.
    *
-   * Group-chat presentation is serialized even though execution is concurrent:
-   * a finished answer becomes a visible bubble only after any live answer has
-   * stopped streaming. User messages bypass this queue and appear immediately.
+   * Display is decoupled from execution: an answer another agent is still
+   * streaming in the assistant tab does not hold this queue. It waits only for
+   * an answer the transcript itself is still writing, then reveals queued
+   * messages one at a time (commit order). User messages bypass it entirely.
    */
   displayQueue: PendingAnswer[];
   /** The session's runs, newest last — each carries its checkpoint (or null). */

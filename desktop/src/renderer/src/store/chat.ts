@@ -123,6 +123,11 @@ interface ChatStore {
     answers?: Record<string, string[]>,
   ): void;
   stop(): void;
+  /**
+   * Stop one queued/running task. Returns false when the daemon refused it
+   * (usually because the task just finished) so the caller can refresh.
+   */
+  cancelTask(taskId: string): Promise<boolean>;
   detach(): void;
   leave(): void;
   /** Drop every chat, not just the open one — see the implementation's note. */
@@ -135,9 +140,8 @@ interface ChatStore {
   /**
    * Re-read the session from the daemon.
    *
-   * Used after a change that the session row reflects (e.g. handing the room to
-   * another agent changes `runtime`): the transcript is untouched, only the
-   * header fields move.
+   * Used after a change that the session row reflects (e.g. a permission or
+   * model change): the transcript is untouched, only the header fields move.
    */
   syncSession(): void;
   /** Persist the session memory mode (`normal` | `no_injection` | `off`). */
@@ -583,6 +587,32 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
   },
 
+  async cancelTask(taskId: string): Promise<boolean> {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    if (!key || !chat) return false;
+    const res = await api.cancelTask(taskId);
+    if (!res.ok) {
+      const { apiCode, message } = apiErrorOf(res.data);
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          error: friendlyMessage(apiCode, res.status, message, '停止任务失败'),
+        })),
+      }));
+      return false;
+    }
+    // A queued task has no run to produce a frame, so drop its row here. A
+    // running one finalizes through the terminal frame the room stream sends.
+    set((state) => ({
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        dispatchedTasks: current.dispatchedTasks.filter((task) => task.taskId !== taskId),
+      })),
+    }));
+    return true;
+  },
+
   detach() {
     const key = get().activeKey;
     const chat = key ? get().byKey[key] : undefined;
@@ -954,11 +984,17 @@ function finalizeAll(messages: ChatMessage[]): ChatMessage[] {
 
 
 /** A room has one visible speaker at a time; status-only frames do not count. */
-function hasLiveAnswer(chat: ChatSessionState): boolean {
-  return (
-    chat.pendingAnswers.length > 0 ||
-    chat.messages.some((message) => message.kind === 'assistant' && !message.done)
-  );
+/**
+ * A live answer the transcript is itself growing.
+ *
+ * Room answers stream in the assistant tab (`pendingAnswers`) and are not part
+ * of the conversation, so they must not hold a finished answer back: display is
+ * decoupled from a *different* agent's execution. Only a card being written into
+ * `messages` (the legacy per-run path) has to finish first, or a completed
+ * bubble would land below a still-growing one.
+ */
+function hasLiveTranscriptAnswer(chat: ChatSessionState): boolean {
+  return chat.messages.some((message) => message.kind === 'assistant' && !message.done);
 }
 
 /**
@@ -972,7 +1008,7 @@ function hasLiveAnswer(chat: ChatSessionState): boolean {
 function scheduleDisplayDrain(set: SetState, get: GetState, key: string): void {
   if (displayTimers.has(key)) return;
   const chat = get().byKey[key];
-  if (!chat || chat.displayQueue.length === 0 || hasLiveAnswer(chat)) return;
+  if (!chat || chat.displayQueue.length === 0 || hasLiveTranscriptAnswer(chat)) return;
 
   const [next, ...rest] = chat.displayQueue;
   if (!next) return;
@@ -1056,7 +1092,6 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
   let permissions = chat.permissions;
   let runId = chat.runId;
   let sessionId = chat.sessionId;
-  let runtime = chat.runtime;
   let pendingNew = chat.pendingNew;
   let title = chat.title;
 
@@ -1077,7 +1112,8 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
     }
 
     if (event.type === 'status') {
-      if (event.runtime) runtime = event.runtime;
+      // `sessions.runtime` (leader mirror) is the header's source; a frame's
+      // runtime is the answering agent's, which may be a member.
       if (event.sessionId && !sessionId) {
         sessionId = event.sessionId;
         // The session now exists server-side; stop sending creation params.
@@ -1118,7 +1154,7 @@ function reduceFrames(chat: ChatSessionState, frames: SseFrame[]): ChatSessionSt
     }
   }
 
-  return { ...chat, messages, todos, contextUsage, permissions, runId, sessionId, runtime, pendingNew, title };
+  return { ...chat, messages, todos, contextUsage, permissions, runId, sessionId, pendingNew, title };
 }
 
 /**
@@ -1137,7 +1173,6 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
   let todos = chat.todos;
   let contextUsage = chat.contextUsage;
   let permissions = chat.permissions;
-  let runtime = chat.runtime;
   let sessionId = chat.sessionId;
 
   for (const frame of frames) {
@@ -1155,7 +1190,9 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     }
 
     if (event.type === 'status') {
-      if (event.runtime) runtime = event.runtime;
+      // Every answering agent's frames carry *its* runtime. The session header
+      // shows the leader's, which comes from the session row / roster, so a
+      // member running a different backend must not repaint it.
       if (event.sessionId && !sessionId) sessionId = event.sessionId;
     }
 
@@ -1190,11 +1227,18 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
         {
           runId,
           agentId: frame.agentId ?? existing?.agentId ?? null,
+          taskId: frame.taskId ?? null,
           message:
             existing ?? { ...newAssistant(nextId('a')), runId, agentId: frame.agentId ?? null },
         },
       ];
       index = pending.length - 1;
+    } else if (frame.taskId && pending[index]!.taskId !== frame.taskId) {
+      // The first frame of a re-opened run is what names its task; without this
+      // the live card has no id to stop until the session is reloaded.
+      pending = pending.map((answer, at) =>
+        at === index ? { ...answer, taskId: frame.taskId } : answer,
+      );
     }
 
     const entry = pending[index]!;
@@ -1215,8 +1259,9 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     contextUsage = next.contextUsage;
 
     if (next.terminal) {
-      // Nothing enters the transcript while another agent is visibly working.
-      // The final message joins the presentation queue and is appended later.
+      // The final message joins the presentation queue. Room answers held back
+      // only by *another agent still running* drain immediately; the queue waits
+      // only for an answer the transcript itself is still writing.
       updated = finalizeLast([updated])[0] as Assistant;
       displayQueue = [
         ...displayQueue.filter((answer) => answer.runId !== runId),
@@ -1239,7 +1284,6 @@ export function reduceRoomFrames(chat: ChatSessionState, frames: SseFrame[]): Ch
     todos,
     contextUsage,
     permissions,
-    runtime,
     sessionId,
   };
 }

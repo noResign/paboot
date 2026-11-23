@@ -14,6 +14,7 @@ export type Segment =
       toolUseId: string;
       questions: Extract<ContentBlock, { kind: 'question' }>['questions'];
       answered: boolean;
+      answerStatus?: Extract<ContentBlock, { kind: 'question' }>['answerStatus'];
       permissionId?: string | null;
     }
   | { kind: 'notice'; text: string }
@@ -51,6 +52,7 @@ export function segmentBlocks(blocks: ContentBlock[]): Segment[] {
           toolUseId: block.toolUseId,
           questions: block.questions,
           answered: block.answered,
+          answerStatus: block.answerStatus,
           permissionId: block.permissionId,
         });
         break;

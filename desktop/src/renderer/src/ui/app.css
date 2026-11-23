@@ -1021,7 +1021,9 @@ button.end-chip {
 .composer {
   flex: none;
   background: var(--page-bg);
-  padding: 8px 22px 14px;
+  /* Same 20px gutter as `.transcript` / `.assistant-tab`, so the input card is
+     exactly as wide as the answers above it. */
+  padding: 8px 20px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1033,7 +1035,7 @@ button.end-chip {
  */
 .composer .box {
   width: 100%;
-  max-width: 760px;
+  max-width: 720px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
@@ -1192,7 +1194,7 @@ button.end-chip {
 .perm-inline {
   flex: none;
   width: 100%;
-  max-width: 760px;
+  max-width: 720px;
   margin: 10px auto 0;
   background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
@@ -2535,6 +2537,11 @@ a.btn {
   overflow: auto;
   min-height: 0;
   background: var(--page-bg);
+  /* Classic scrollbars would otherwise shift the centered read column ~4.5px
+     left once a long transcript starts scrolling, while the composer stays put.
+     Reserving both edges keeps the column's center identical in both states
+     (overlay scrollbars on macOS reserve nothing, so this is a no-op there). */
+  scrollbar-gutter: stable both-edges;
 }
 /*
  * No card: assistant turns are plain content straight on the chat ground, and
@@ -6044,11 +6051,23 @@ a.btn {
   color: var(--text-primary);
 }
 
-.live-row span:last-child {
+.live-row span:not(.pending-answer-dot) {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Compact per-row actions: a stop is a footnote, not a second headline. */
+.live-row .btn.ghost,
+.assistant-live-head .btn.ghost {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.live-row-stop {
+  margin-left: auto;
 }
 
 .pending-answer-dot.ready {
@@ -6080,9 +6099,13 @@ a.btn {
   font-size: 12.5px;
 }
 
+/* Every row keeps one height: two lines of preview, the trace is one click away. */
 .assistant-live-text {
-  max-height: 180px;
-  overflow: auto;
+  height: calc(12.5px * 1.55 * 2);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-primary);
@@ -6130,8 +6153,8 @@ a.btn {
 
 .chat-live-status {
   flex: none;
-  width: calc(100% - 44px);
-  max-width: 760px;
+  width: calc(100% - 40px);
+  max-width: 720px;
   margin: 0 auto 4px;
   min-height: 30px;
   padding: 4px 10px;

@@ -90,6 +90,8 @@ export const ROUTES = {
   sessionTurns: (id: string) => `/api/sessions/${encodeURIComponent(id)}/turns`,
   /** 停止该会话当前所有 room 任务。 */
   sessionCancel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/cancel`,
+  /** 只停一个排队/运行中的任务，兄弟任务不受影响。 */
+  taskCancel: (id: string) => `/api/tasks/${encodeURIComponent(id)}/cancel`,
   sessionModel: (id: string) => `/api/sessions/${encodeURIComponent(id)}/model`,
   runs: '/api/runs',
   run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,

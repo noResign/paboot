@@ -167,7 +167,9 @@ export function applyEvent(a: AssistantMessage, event: NormalizedEvent): Assista
             kind: 'question',
             toolUseId: event.toolUseId,
             questions: event.questions,
-            answered: false,
+            // Replay carries how it was settled; a live event starts open.
+            answered: event.answerStatus === 'allowed',
+            answerStatus: event.answerStatus ?? null,
             permissionId: event.permissionId,
           },
         ],

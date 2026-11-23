@@ -6,6 +6,8 @@ export type LiveAnswerMessage = Extract<ChatMessage, { kind: 'assistant' }>;
 export interface LiveAnswer {
   runId: string;
   agentId: string | null;
+  /** The room task behind this run, when a frame has named it. */
+  taskId?: string | null;
   message: LiveAnswerMessage;
 }
 
@@ -38,10 +40,10 @@ export function findLiveAnswer(chat: ChatSessionState, runId: string): LiveAnswe
     (item): item is LiveAnswerMessage =>
       item.kind === 'assistant' && item.runId === runId && !item.done,
   );
-  if (direct) return { runId, agentId: direct.agentId ?? null, message: direct };
+  if (direct) return { runId, agentId: direct.agentId ?? null, taskId: null, message: direct };
   if (chat.runId === runId) {
     const message = lastLiveMessage(chat);
-    if (message) return { runId, agentId: message.agentId ?? null, message };
+    if (message) return { runId, agentId: message.agentId ?? null, taskId: null, message };
   }
   return null;
 }
@@ -53,12 +55,12 @@ export function listLiveAnswers(chat: ChatSessionState): LiveAnswer[] {
   for (const item of chat.messages) {
     if (item.kind !== 'assistant' || item.done || !item.runId || seen.has(item.runId)) continue;
     seen.add(item.runId);
-    answers.push({ runId: item.runId, agentId: item.agentId ?? null, message: item });
+    answers.push({ runId: item.runId, agentId: item.agentId ?? null, taskId: null, message: item });
   }
   if (chat.runId && !seen.has(chat.runId)) {
     const message = lastLiveMessage(chat);
     if (message) {
-      answers.push({ runId: chat.runId, agentId: message.agentId ?? null, message });
+      answers.push({ runId: chat.runId, agentId: message.agentId ?? null, taskId: null, message });
     }
   }
   return answers;

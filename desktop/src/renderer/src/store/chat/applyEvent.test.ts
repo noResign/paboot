@@ -207,3 +207,58 @@ describe('buildAssistantFromEvents (history replay)', () => {
     expect(state.contextUsage).toBeNull();
   });
 });
+
+describe('question replay', () => {
+  it('carries how the daemon settled the question', () => {
+    const replayed = buildAssistantFromEvents(
+      [
+        frame(1, {
+          type: 'question',
+          toolUseId: 'q1',
+          questions: [],
+          permissionId: 'p1',
+          answerStatus: 'denied',
+        }),
+      ],
+      makeId,
+    );
+    expect(replayed.assistant.blocks[0]).toMatchObject({
+      kind: 'question',
+      answered: false,
+      answerStatus: 'denied',
+    });
+  });
+
+  it('marks an allowed answer as answered', () => {
+    const replayed = buildAssistantFromEvents(
+      [
+        frame(1, {
+          type: 'question',
+          toolUseId: 'q1',
+          questions: [],
+          permissionId: 'p1',
+          answerStatus: 'allowed',
+        }),
+      ],
+      makeId,
+    );
+    expect(replayed.assistant.blocks[0]).toMatchObject({
+      kind: 'question',
+      answered: true,
+      answerStatus: 'allowed',
+    });
+  });
+
+  it('leaves a live question open while its run is still running', () => {
+    const replayed = buildAssistantFromEvents(
+      [frame(1, { type: 'question', toolUseId: 'q1', questions: [] })],
+      makeId,
+      { finalize: false },
+    );
+    expect(replayed.assistant.blocks[0]).toMatchObject({
+      kind: 'question',
+      answered: false,
+      answerStatus: null,
+    });
+  });
+});

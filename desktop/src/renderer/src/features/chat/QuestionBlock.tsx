@@ -13,6 +13,8 @@ interface Props {
   toolUseId: string;
   questions: QuestionDto[];
   answered: boolean;
+  /** How the daemon settled it (replay); any value makes the ask inert. */
+  answerStatus?: 'allowed' | 'denied' | 'timed_out' | null;
   /** Builtin blocking question: answer while the run is still live. */
   permissionId?: string | null;
   /**
@@ -38,6 +40,7 @@ export function QuestionBlock({
   toolUseId,
   questions,
   answered,
+  answerStatus = null,
   permissionId,
   interactive = true,
   closed = false,
@@ -60,7 +63,7 @@ export function QuestionBlock({
   const anyOther = Object.values(others).some((entry) => entry.active);
   const complete = isFullyAnswered(questions, selections, others);
   const blocking = Boolean(permissionId);
-  const readonly = closed || !interactive;
+  const readonly = closed || answerStatus !== null || !interactive;
 
   useEffect(() => {
     // Builtin blocks the run, so a blocking question must be confirmed with the
@@ -169,8 +172,12 @@ export function QuestionBlock({
         </div>
         );
       })}
-      {answered ? (
+      {answered || answerStatus === 'allowed' ? (
         <div className="question-status">已发送答案</div>
+      ) : answerStatus === 'denied' ? (
+        <div className="question-status">已回答拒绝；助手会自行处理。</div>
+      ) : answerStatus === 'timed_out' ? (
+        <div className="question-status">超时未回答；助手会自行处理。</div>
       ) : readonly ? (
         <div className="question-status">
           {closed

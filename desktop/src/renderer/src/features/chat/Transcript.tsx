@@ -267,9 +267,19 @@ export function AssistantRow({
     (textOnly &&
       message.runId &&
       (hasTrace || (message.done && split.summons.length === 0)));
-  /** A blocking permission cannot outlive its run, so a finalized ask is inert. */
-  const questionClosed = (segment: { permissionId?: string | null; answered: boolean }): boolean =>
-    Boolean(segment.permissionId) && message.done && !segment.answered;
+  /**
+   * An ask is inert once the daemon settled it (`answerStatus`) or once a
+   * blocking ask's run ended (the permission id is dead). A headless-runtime
+   * ask has no permission id: its answer is a continuation turn, so it stays
+   * open for the turn it belongs to.
+   */
+  const questionClosed = (segment: {
+    permissionId?: string | null;
+    answered: boolean;
+    answerStatus?: 'allowed' | 'denied' | 'timed_out' | null;
+  }): boolean =>
+    Boolean(segment.answerStatus) ||
+    (Boolean(segment.permissionId) && message.done && !segment.answered);
   const avatarText = (speaker ?? 'AI').trim().slice(0, 1).toUpperCase() || 'AI';
   const avatarColor = agentColor(message.agentId ?? speaker ?? 'AI');
 
@@ -278,9 +288,13 @@ export function AssistantRow({
       <>
         {showMainRow && (
           <div className="msg assistant chat-message" data-msg-id={id}>
-            <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
-              {avatarText}
-            </div>
+            {/* Single-agent chats have no one to tell apart: the avatar would
+                only inset the answer from the composer's column. */}
+            {showSpeakerName && (
+              <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
+                {avatarText}
+              </div>
+            )}
             <div className="assistant-body">
               {showSpeakerName && speaker && (
                 <div className="msg-speaker">
@@ -299,6 +313,7 @@ export function AssistantRow({
                           toolUseId={segment.toolUseId}
                           questions={segment.questions}
                           answered={segment.answered}
+                          answerStatus={segment.answerStatus ?? null}
                           permissionId={segment.permissionId}
                           interactive={interactive}
                           closed={questionClosed(segment)}
@@ -341,9 +356,11 @@ export function AssistantRow({
 
         {split.summons.map((line, index) => (
           <div className="msg assistant chat-message summon-message" key={`${id}-summon-${index}`}>
-            <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
-              {avatarText}
-            </div>
+            {showSpeakerName && (
+              <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
+                {avatarText}
+              </div>
+            )}
             <div className="assistant-body">
               {showSpeakerName && speaker && (
                 <div className="msg-speaker">
@@ -386,6 +403,7 @@ export function AssistantRow({
                 toolUseId={segment.toolUseId}
                 questions={segment.questions}
                 answered={segment.answered}
+                answerStatus={segment.answerStatus ?? null}
                 permissionId={segment.permissionId}
                 interactive={interactive}
                 closed={questionClosed(segment)}

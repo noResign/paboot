@@ -16,6 +16,12 @@ interface Props {
   agents: SessionAgentDto[];
   /** The run's owner, when the session's run list already knows it. */
   agentId: string | null;
+  /**
+   * The assistant tab is the visible one. The panel itself is keep-alive, so a
+   * re-entry refreshes the fetched trace instead of remounting (and must not
+   * drop the user's chosen run).
+   */
+  active: boolean;
   onClose(): void;
 }
 
@@ -27,7 +33,7 @@ interface Props {
  * renders straight from `pendingAnswers`; a finished one is replayed from the
  * run's persisted events.
  */
-export function RunTracePane({ runId, chat, agents, agentId, onClose }: Props) {
+export function RunTracePane({ runId, chat, agents, agentId, active, onClose }: Props) {
   const [trace, setTrace] = useState<Extract<ChatMessage, { kind: 'assistant' }> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const traceAgentId = useRef<string | null>(null);
@@ -51,8 +57,10 @@ export function RunTracePane({ runId, chat, agents, agentId, onClose }: Props) {
       return;
     }
     let live = true;
-    setTrace(null);
     setError(null);
+    // Re-entering the tab re-runs this effect. Keep the snapshot already on
+    // screen (no flicker); drop it only when the pane switched runs.
+    setTrace((current) => (current?.runId === runId ? current : null));
     void api.runEvents(runId).then((res) => {
       if (!live) return;
       if (!res.ok) {
@@ -69,7 +77,7 @@ export function RunTracePane({ runId, chat, agents, agentId, onClose }: Props) {
     return () => {
       live = false;
     };
-  }, [runId, liveTrace?.runId, agentId]);
+  }, [runId, liveTrace?.runId, agentId, active]);
 
   const message = liveTrace?.message ?? trace;
   // The live trace keeps growing at the bottom; follow it unless the user scrolls up.

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../ipc/client';
+import { useChat } from '../../store/chat';
 import { agentDisplayName } from './agentLabel';
 import { hasUnansweredQuestion } from './conversationSegments';
 import { listLiveAnswers } from './liveAnswers';
@@ -52,6 +53,19 @@ export function AssistantTab({
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Stop one agent's queued/running answer; the store owns the optimistic row. */
+  async function cancelTask(taskId: string): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const ok = await useChat.getState().cancelTask(taskId);
+      if (!ok) setError('这个任务可能已经结束，已刷新');
+      onChanged();
     } finally {
       setBusy(false);
     }
@@ -123,6 +137,14 @@ export function AssistantTab({
               <span className="pending-answer-dot" />
               <b>{agentName(task.agentId)}</b>
               <span>{live ? '排队中，等待当前回答结束…' : '已收到任务，准备回答…'}</span>
+              <button
+                className="btn ghost live-row-stop"
+                title="只取消这个排队中的任务，其他助手继续"
+                disabled={busy}
+                onClick={() => void cancelTask(task.taskId)}
+              >
+                停止
+              </button>
             </div>
           );
         })}
@@ -150,6 +172,20 @@ export function AssistantTab({
                 <b>{agentName(answer.agentId)}</b>
                 <span>正在回答</span>
                 {awaiting && <span className="badge ask">需要回答</span>}
+                {answer.taskId && (
+                  <button
+                    className="btn ghost"
+                    title="只停止这个助手的回答，其他任务继续"
+                    disabled={busy}
+                    onClick={(event) => {
+                      // The card itself opens the trace; the stop is a local action.
+                      event.stopPropagation();
+                      void cancelTask(answer.taskId!);
+                    }}
+                  >
+                    停止
+                  </button>
+                )}
                 <span className="assistant-live-open">
                   {awaiting ? '去回答 ›' : '查看轨迹 ›'}
                 </span>
@@ -196,6 +232,20 @@ export function AssistantTab({
               </div>
             </div>
             <div className="assistant-member-actions">
+              {agent.taskId && agent.taskStatus && (
+                <button
+                  className="btn ghost"
+                  title={
+                    agent.taskStatus === 'running'
+                      ? '停止这个助手当前的回答'
+                      : '取消这个助手排队中的任务'
+                  }
+                  disabled={busy}
+                  onClick={() => void cancelTask(agent.taskId!)}
+                >
+                  停止
+                </button>
+              )}
               {agent.hasContext && (
                 <button
                   className="btn ghost"

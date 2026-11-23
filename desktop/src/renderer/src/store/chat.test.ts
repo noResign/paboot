@@ -7,6 +7,7 @@ vi.mock('../ipc/client', () => ({
     sendTurn: vi.fn(),
     sessionAgents: vi.fn(),
     cancelSessionRuns: vi.fn(),
+    cancelTask: vi.fn(),
     decidePermission: vi.fn(),
   },
   connectionApi: { streamStart: vi.fn() },
@@ -27,6 +28,46 @@ beforeEach(() => {
     activeKey: key, streamKeys: { stream: key }, failedIds: [],
     byKey: { [key]: { ...emptyChat(key, 'host'), sessionId: 's', streamId: 'stream', runId: 'r', phase: 'live',
       messages: [{ kind: 'user', id: 'u', text: 'hello', runId: 'r' }] } },
+  });
+});
+
+describe('single-task cancel', () => {
+  it('drops the queued row once the daemon accepts', async () => {
+    const chat = useChat.getState().byKey[key]!;
+    useChat.setState({
+      byKey: {
+        ...useChat.getState().byKey,
+        [key]: { ...chat, dispatchedTasks: [{ taskId: 'task-1', agentId: 'a1' }] },
+      },
+    });
+    vi.mocked(api.cancelTask).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ok: true, taskId: 'task-1', status: 'cancelled' },
+    } as never);
+
+    await expect(useChat.getState().cancelTask('task-1')).resolves.toBe(true);
+    expect(api.cancelTask).toHaveBeenCalledWith('task-1');
+    expect(useChat.getState().byKey[key]!.dispatchedTasks).toHaveLength(0);
+  });
+
+  it('keeps the row and reports the error when the daemon refuses', async () => {
+    const chat = useChat.getState().byKey[key]!;
+    useChat.setState({
+      byKey: {
+        ...useChat.getState().byKey,
+        [key]: { ...chat, dispatchedTasks: [{ taskId: 'task-1', agentId: 'a1' }] },
+      },
+    });
+    vi.mocked(api.cancelTask).mockResolvedValue({
+      ok: false,
+      status: 404,
+      data: { code: 'task_not_found', error: 'task is no longer running' },
+    } as never);
+
+    await expect(useChat.getState().cancelTask('task-1')).resolves.toBe(false);
+    expect(useChat.getState().byKey[key]!.dispatchedTasks).toHaveLength(1);
+    expect(useChat.getState().byKey[key]!.error).toBeTruthy();
   });
 });
 
@@ -599,6 +640,17 @@ describe('room stream reducer', () => {
     expect(next.messages.filter((message) => message.kind === 'assistant')).toHaveLength(0);
   });
 
+  it('never repaints the session runtime from a member agent frame', () => {
+    const base = { ...emptyChat('host::room', 'host'), runtime: 'claude' };
+    const next = reduceRoomFrames(base, [
+      frame('r1', 'builtin-member', 1, { type: 'status', label: 'starting', runtime: 'builtin' }),
+    ]);
+
+    // The header names the leader; a supplementary agent's backend is local to
+    // its own answer.
+    expect(next.runtime).toBe('claude');
+  });
+
   it('enqueues permission requests without inventing an answer card', () => {
     const base = emptyChat('host::room', 'host');
     const next = reduceRoomFrames(base, [
@@ -1047,6 +1099,51 @@ describe('leader streaming', () => {
         .map((message) => (message.kind === 'assistant' ? message.runId : null)),
     ).toEqual(['r2']);
     expect(chat.displayQueue.map((answer) => answer.runId)).toEqual(['r1']);
+  });
+
+  it('does not let a live assistant-tab answer hold a completed answer back', () => {
+    const key = 'host::decoupled';
+    const liveMessage = {
+      kind: 'assistant' as const,
+      id: 'live-msg',
+      runId: 'r1',
+      agentId: 'a1',
+      done: false,
+      error: null,
+      usage: null,
+      blocks: [{ kind: 'text' as const, text: '还在说' }],
+    };
+    useChat.setState({
+      activeKey: key,
+      streamKeys: { room: key },
+      failedIds: [],
+      byKey: {
+        [key]: {
+          ...emptyChat(key, 'host'),
+          sessionId: 's-decoupled',
+          roomStreamId: 'room',
+          leaderAgentId: 'a1',
+          messages: [{ kind: 'user', id: 'u1', text: '开始' }],
+          // A room answer is live, but only in the assistant tab — the
+          // transcript is not writing anything.
+          pendingAnswers: [{ runId: 'r1', agentId: 'a1', message: liveMessage }],
+        },
+      },
+    });
+
+    useChat.getState().applyStreamEvent({
+      streamId: 'room',
+      kind: 'frames',
+      frames: [frame('r2', 'a2', 3, { type: 'status', label: 'succeeded', terminal: true })],
+    } as never);
+
+    const chat = useChat.getState().byKey[key]!;
+    expect(
+      chat.messages
+        .filter((message) => message.kind === 'assistant')
+        .map((message) => (message.kind === 'assistant' ? message.runId : null)),
+    ).toEqual(['r2']);
+    expect(chat.pendingAnswers.map((answer) => answer.runId)).toEqual(['r1']);
   });
 
   it('does not move a live answer into the transcript when the roster arrives', () => {
