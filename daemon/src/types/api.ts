@@ -1142,6 +1142,43 @@ export interface SessionAgentsResponse {
   capacity?: { used: number; max: number };
 }
 
+/** One open task owned by a member (`GET /sessions/:id/agents/:agentId`). */
+export interface SessionAgentTaskDto {
+  id: string;
+  source: string;
+  status: 'queued' | 'running';
+  createdAt: number;
+  startedAt: number | null;
+  /** `now − (startedAt ?? createdAt)`: how long it has been queued or running. */
+  elapsedMs: number;
+}
+
+/**
+ * The assistant tab's expanded row: what this agent is doing, what it last
+ * said, and where its conversation lives.
+ *
+ * Token usage and injection sizes are deliberately absent — paboot does not
+ * track them per agent (an external CLI owns that conversation), and inventing
+ * a number here would be worse than saying nothing.
+ */
+export interface SessionAgentDetailResponse {
+  /** The same entry the roster returns for this member. */
+  agent: SessionAgentDto;
+  task: SessionAgentTaskDto | null;
+  /** Most recent committed answer by this agent. */
+  lastSpoke: { messageId: number; committedSeq: number; at: number } | null;
+  context: {
+    /** Thread cwd, else the agent's, else the session's. */
+    cwd: string | null;
+    backend: string | null;
+    model: string | null;
+    /** builtin only: paboot can count its native transcript. External CLIs: null. */
+    messageCount: number | null;
+    compactionCount: number | null;
+    lastCompactedAt: number | null;
+  };
+}
+
 /** Why an addressed agent did not get a task (`POST /turns` 202, `dropped`). */
 export type TurnDropReason =
   | 'unknown'

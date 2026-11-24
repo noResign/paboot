@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../ipc/client';
 import { useChat } from '../../store/chat';
 import { agentDisplayName } from './agentLabel';
 import { hasUnansweredQuestion } from './conversationSegments';
 import { listLiveAnswers } from './liveAnswers';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
+import { formatMessageTime } from '../../../../shared/format';
 import type { ChatMessage, ChatSessionState } from '../../store/chat/types';
-import type { AgentProfileDto, SessionAgentDto } from '../../../../shared/contract';
+import type {
+  AgentProfileDto,
+  SessionAgentDetailResponse,
+  SessionAgentDto,
+} from '../../../../shared/contract';
 
 interface Props {
   sessionId: string | null;
@@ -38,6 +43,57 @@ export function AssistantTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<SessionAgentDto | null>(null);
+  /** Which member row is expanded, and the detail fetched for it. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<SessionAgentDetailResponse | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailSeq = useRef(0);
+
+  // The tab outlives a session switch; an expanded row belongs to the old one.
+  useEffect(() => {
+    detailSeq.current += 1;
+    setExpandedId(null);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(false);
+  }, [sessionId]);
+
+  async function toggleDetail(agentId: string): Promise<void> {
+    const seq = ++detailSeq.current;
+    if (expandedId === agentId) {
+      setExpandedId(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedId(agentId);
+    setDetail(null);
+    setDetailError(null);
+    if (!sessionId) {
+      setDetailError('还没有会话，无法读取助手详情');
+      return;
+    }
+    setDetailLoading(true);
+    const res = await api.sessionAgentDetail(sessionId, agentId);
+    // A slower fetch for a row the user already collapsed must not paint.
+    if (seq !== detailSeq.current) return;
+    setDetailLoading(false);
+    if (!res.ok) {
+      const { apiCode, message } = apiErrorOf(res.data);
+      setDetailError(
+        apiCode === 'agent_not_in_session'
+          ? '这个助手已经不在会话里了'
+          : apiCode === 'session_not_found'
+            ? '会话不存在或已被删除'
+            : // A generic 404 is an older daemon: the endpoint does not exist yet.
+              res.status === 404
+              ? '这个 daemon 还不支持助手详情（重启 daemon 后可用）'
+              : friendlyMessage(apiCode, res.status, message, '无法读取助手详情'),
+      );
+      return;
+    }
+    setDetail(res.data);
+  }
 
   function errorText(res: { status: number; data: unknown }): string {
     const { apiCode, message } = apiErrorOf(res.data);
@@ -229,7 +285,19 @@ export function AssistantTab({
           const ready = chat.displayQueue.some((answer) => answer.agentId === agent.id);
           return (
           <div className="assistant-member" key={agent.id}>
-            <div className="assistant-member-main">
+            <div
+              className="assistant-member-main"
+              role="button"
+              tabIndex={0}
+              aria-expanded={expandedId === agent.id}
+              title={expandedId === agent.id ? '收起详情' : '查看这个助手的详情'}
+              onClick={() => void toggleDetail(agent.id)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                void toggleDetail(agent.id);
+              }}
+            >
               <div className="assistant-member-name">
                 <b>{agentDisplayName(agent)}</b>
                 {agent.role === 'leader' && <span className="badge">主答</span>}
@@ -237,6 +305,7 @@ export function AssistantTab({
                 {live && <span className="badge">正在回答</span>}
                 {!live && queued && <span className="badge">排队中</span>}
                 {!live && !queued && ready && <span className="badge">已就绪</span>}
+                <span className="assistant-member-caret">{expandedId === agent.id ? '▾' : '▸'}</span>
               </div>
               <div className="hint">
                 {agent.available ? agent.summary || agent.backend : agent.enabled ? '当前离线' : '已停用'}
@@ -280,6 +349,61 @@ export function AssistantTab({
                 </button>
               )}
             </div>
+            {expandedId === agent.id && (
+              <div className="assistant-detail">
+                {detailLoading && <div className="hint">正在读取助手详情…</div>}
+                {detailError && <div className="error-text">{detailError}</div>}
+                {detail && (
+                  <>
+                    <DetailRow
+                      label="状态"
+                      value={
+                        detail.task
+                          ? detail.task.status === 'running'
+                            ? `正在回答 · ${formatElapsed(detail.task.elapsedMs)}`
+                            : `排队中 · 已等 ${formatElapsed(detail.task.elapsedMs)}`
+                          : detail.agent.available
+                            ? '空闲'
+                            : detail.agent.enabled
+                              ? '当前离线'
+                              : '已停用'
+                      }
+                    />
+                    <DetailRow
+                      label="最近发言"
+                      value={
+                        detail.lastSpoke
+                          ? `${formatMessageTime(detail.lastSpoke.at)}（第 ${detail.lastSpoke.committedSeq} 条）`
+                          : '还没有发过言'
+                      }
+                    />
+                    <DetailRow
+                      label="后端"
+                      value={
+                        [detail.context.backend, detail.context.model].filter(Boolean).join(' · ') ||
+                        '—'
+                      }
+                    />
+                    <DetailRow label="目录" value={detail.context.cwd ?? '—'} title={detail.context.cwd ?? undefined} />
+                    {detail.context.messageCount !== null && (
+                      <DetailRow
+                        label="历史"
+                        value={`${detail.context.messageCount} 条消息 · ${
+                          detail.context.compactionCount ?? 0
+                        } 次压缩${
+                          detail.context.lastCompactedAt
+                            ? ` · 最后 ${formatMessageTime(detail.context.lastCompactedAt)}`
+                            : ''
+                        }`}
+                      />
+                    )}
+                    {detail.task && (
+                      <DetailRow label="任务来源" value={detail.task.source} />
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
           );
         })}
@@ -362,4 +486,24 @@ export function AssistantTab({
       )}
     </div>
   );
+}
+
+function DetailRow({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="assistant-detail-row">
+      <span className="assistant-detail-label">{label}</span>
+      <span className="assistant-detail-value" title={title}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Coarse, human duration — the expanded row is for orientation, not timing. */
+function formatElapsed(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h${minutes % 60}m`;
 }

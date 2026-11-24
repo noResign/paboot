@@ -15,6 +15,13 @@ describe('composer mentions', () => {
     expect(mentionedAgentIds('@审阅助手', agents)).not.toContain('a1');
   });
 
+  it('ignores a name inside a blockquote or code', () => {
+    // `引用` prepends `> 引用 某人：…`; an @ in someone else's words is not a request.
+    expect(mentionedAgentIds('> 引用 审阅：@性能 需要改一下\n\n继续', agents)).toEqual([]);
+    expect(mentionedAgentIds('看 `@审阅` 那段', agents)).toEqual([]);
+    expect(mentionedAgentIds('```\n@审阅\n```', agents)).toEqual([]);
+  });
+
   it('detects the token under the caret', () => {
     expect(mentionTokenAt('帮我看看 @审', 8)).toEqual({ start: 5, query: '审' });
     expect(mentionTokenAt('@', 1)).toEqual({ start: 0, query: '' });

@@ -1028,6 +1028,33 @@ button.end-chip {
   flex-direction: column;
   align-items: center;
 }
+/* A quoted message rides above the input until sent (or dismissed). Same width
+   as the box, so the composer column never shifts. */
+.quote-banner {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.quote-banner .quote-label {
+  flex: none;
+  color: var(--primary);
+}
+.quote-banner .quote-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /*
  * The card is the affordance, not the textarea (preview.html `.composer .box`):
  * one surface box holds the input and its action row, and focus lights the box
@@ -6149,6 +6176,7 @@ a.btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 9px 10px;
   border: 1px solid var(--border);
@@ -6157,6 +6185,45 @@ a.btn {
 
 .assistant-member-main {
   min-width: 0;
+  cursor: pointer;
+}
+.assistant-member-main:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.assistant-member-caret {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Expanded row: full width on its own line under the name/actions row. */
+.assistant-detail {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+}
+.assistant-detail-row {
+  display: flex;
+  gap: 10px;
+}
+.assistant-detail-label {
+  flex: none;
+  width: 64px;
+  color: var(--text-muted);
+}
+.assistant-detail-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .assistant-member-name {

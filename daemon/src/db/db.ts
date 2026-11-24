@@ -3050,6 +3050,49 @@ export class Db {
       .all(sessionId) as unknown as MessageRow[];
   }
 
+  /** The newest committed answer by one agent — the assistant detail's "last spoke". */
+  lastCommittedMessageForAgent(
+    sessionId: string,
+    agentId: string,
+  ): { id: number; committed_seq: number; created_at: number } | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, committed_seq, created_at FROM messages
+         WHERE session_id = ? AND agent_id = ? AND role = 'assistant'
+           AND committed_seq IS NOT NULL
+         ORDER BY committed_seq DESC LIMIT 1`,
+      )
+      .get(sessionId, agentId) as
+      | { id: number; committed_seq: number; created_at: number }
+      | undefined;
+  }
+
+  /**
+   * How much of a builtin agent's conversation paboot can actually see.
+   *
+   * External runtimes keep this in their own store, so callers only use this
+   * for builtin threads and report null otherwise.
+   */
+  nativeTranscriptStats(threadId: string): {
+    messageCount: number;
+    compactionCount: number;
+    lastCompactedAt: number | null;
+  } {
+    const messages = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM native_messages WHERE thread_id = ?`)
+      .get(threadId) as { c: number };
+    const compactions = this.db
+      .prepare(
+        `SELECT COUNT(*) AS c, MAX(created_at) AS last FROM native_compactions WHERE thread_id = ?`,
+      )
+      .get(threadId) as { c: number; last: number | null };
+    return {
+      messageCount: Number(messages.c),
+      compactionCount: Number(compactions.c),
+      lastCompactedAt: compactions.last ?? null,
+    };
+  }
+
   // ---- runs ----
 
   createRun(input: {

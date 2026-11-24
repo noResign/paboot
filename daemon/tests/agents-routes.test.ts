@@ -289,6 +289,39 @@ describe('room membership API', () => {
     expect(roster.agents[0]!.hasContext).toBe(false);
   });
 
+  it('expands one member into its conversation details', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+    const leaderId = h.db.getSessionLeader(sessionId)!.agent_id;
+    const messageId = h.db.addMessage(sessionId, 'assistant', '已完成', {
+      agentId: leaderId,
+      commit: true,
+    });
+    const detail = (await (
+      await h.request('GET', `/api/sessions/${sessionId}/agents/${leaderId}`)
+    ).json()) as {
+      agent: { id: string; role: string };
+      lastSpoke: { messageId: number; committedSeq: number } | null;
+      context: { cwd: string | null; backend: string | null; messageCount: number | null };
+    };
+    expect(detail.agent).toMatchObject({ id: leaderId, role: 'leader' });
+    expect(detail.context.cwd).toBe(h.workspacePath);
+    expect(detail.context.backend).toBeTruthy();
+    // The newest committed answer, not any later draft.
+    expect(detail.lastSpoke).toMatchObject({ messageId });
+    // This leader is an external runtime: paboot cannot count its transcript,
+    // and must say so instead of inventing a number.
+    expect(detail.context.messageCount).toBeNull();
+  });
+
+  it('404s when the expanded agent is not a member', async () => {
+    const h = await startApi();
+    const sessionId = await seedSession(h);
+    expect(
+      (await h.request('GET', `/api/sessions/${sessionId}/agents/not-a-member`)).status,
+    ).toBe(404);
+  });
+
   it('caps a room at eight members and reports the capacity', async () => {
     const h = await startApi();
     const sessionId = await seedSession(h);

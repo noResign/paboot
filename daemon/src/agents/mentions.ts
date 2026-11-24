@@ -19,6 +19,20 @@ import type { Agent } from './types.js';
  * they are gated on, so honouring it is the whole point.
  */
 
+/**
+ * Remove what is being *quoted*, not said: fenced/inline code and blockquote
+ * lines. A `@name` inside a quote is someone else's words (a pasted log, the
+ * text this message is replying to) and must not route a task.
+ */
+function stripQuoted(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(?:```|$)/g, '')
+    .replace(/`[^`\n]*`/g, '')
+    .split('\n')
+    .filter((line) => !/^\s*>/.test(line))
+    .join('\n');
+}
+
 export interface MentionTarget {
   agent: Agent;
   /** Why this agent is in the list; carried into `agent_tasks.source`. */
@@ -121,16 +135,18 @@ export function parseMentionNames(text: string, members: readonly Agent[]): stri
   const names = [...members].sort((a, b) => b.name.length - a.name.length).map((m) => m.name);
   const found: string[] = [];
   const consumed = new Set<number>();
+  // Same rule as summons and `@all`: quoted text is not an instruction.
+  const said = stripQuoted(text);
 
   for (const name of names) {
     const needle = `@${name}`;
     let from = 0;
     for (;;) {
-      const at = text.indexOf(needle, from);
+      const at = said.indexOf(needle, from);
       if (at < 0) break;
       const end = at + needle.length;
       // Reject `@名字` that is really a prefix of a longer word (`@审阅助手`).
-      const nextChar = text[end];
+      const nextChar = said[end];
       const isWholeWord = nextChar === undefined || !/[\p{L}\p{N}_]/u.test(nextChar);
       const overlaps = [...consumed].some((index) => index >= at && index < end);
       if (isWholeWord && !overlaps) {
@@ -156,12 +172,7 @@ export function parseMentionNames(text: string, members: readonly Agent[]): stri
  * the ones the reader sees first.
  */
 export function findSummonMentions(text: string, members: readonly Agent[]): Agent[] {
-  const stripped = text
-    .replace(/```[\s\S]*?(?:```|$)/g, '')
-    .replace(/`[^`\n]*`/g, '')
-    .split('\n')
-    .filter((line) => !/^\s*>/.test(line))
-    .join('\n');
+  const stripped = stripQuoted(text);
 
   const seen = new Set<string>();
   const out: Agent[] = [];
@@ -234,11 +245,6 @@ function mentionsInText(text: string, members: readonly Agent[]): Agent[] {
  * `@all` anywhere, which is the intended user-facing behaviour.
  */
 export function mentionsAll(text: string): boolean {
-  const stripped = text
-    .replace(/```[\s\S]*?(?:```|$)/g, '')
-    .replace(/`[^`\n]*`/g, '')
-    .split('\n')
-    .filter((line) => !/^\s*>/.test(line))
-    .join('\n');
+  const stripped = stripQuoted(text);
   return /@all\b/i.test(stripped) || stripped.includes('@全体');
 }

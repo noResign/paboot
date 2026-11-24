@@ -284,6 +284,12 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
   - `GET|PATCH|DELETE /api/agent-profiles/:id`
   - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
     `POST /api/sessions/:id/agents/:agentId/reset-context`
+  - `GET /api/sessions/:id/agents/:agentId`：助手 tab 的**展开态**——当前任务（queued/running
+    与已等待/已运行时长）、最近一次已提交发言、以及它的对话信息（`cwd` / backend / model；
+    builtin 另给 native 消息数与压缩次数）。成员不在会话里 → 404 `agent_not_in_session`
+    （刻意区别于兜底 404，客户端据此区分「被移出」和「daemon 太老」）。
+    **不返回 token 用量与记忆注入条数**：paboot 没有按 agent 记录这些（外部 CLI 自己管对话），
+    宁可缺字段也不编一个数。
   - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], attachmentIds?: string[], commandId?}`，
     `mentions` 最多 8 个）
     → 202 `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。

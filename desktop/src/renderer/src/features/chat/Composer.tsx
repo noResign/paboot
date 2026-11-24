@@ -10,6 +10,7 @@ import {
   prepareImage,
 } from './imageDraft';
 import { mentionOptions, mentionTokenAt, mentionedAgentIds, type MentionAgent } from './mentions';
+import { quoteBlock, type Quote } from './quoteDraft';
 import type { ModelOptionDto, ModelParameterDto } from '../../../../shared/contract';
 
 interface Props {
@@ -34,6 +35,9 @@ interface Props {
   onStop(): void;
   /** Roster for the `@` picker; absent on a single-agent session. */
   mentionAgents?: MentionAgent[];
+  /** A message being replied to; prepended to the prompt as a quote on send. */
+  quote?: Quote | null;
+  onClearQuote?(): void;
 }
 
 interface DraftImage {
@@ -64,6 +68,8 @@ export function Composer({
   canStop = false,
   onStop,
   mentionAgents,
+  quote = null,
+  onClearQuote,
 }: Props) {
   const [text, setText] = useState('');
   const [mention, setMention] = useState<{ start: number; query: string; index: number } | null>(
@@ -189,10 +195,11 @@ export function Composer({
     setImages([]);
     setAttachError(null);
     onSend(
-      value,
+      quote ? `${quoteBlock(quote)}\n\n${value}` : value,
       ids.length > 0 ? ids : undefined,
       hasMentions ? mentionedIds : undefined,
     );
+    onClearQuote?.();
   }
 
   return (
@@ -209,6 +216,20 @@ export function Composer({
         disabled input. The old notice line above the box said it a third time,
         every time, in a full sentence; the explanation now lives in the tooltip.
       */}
+      {quote && (
+        <div className="quote-banner">
+          <span className="quote-label">引用{quote.author ? ` ${quote.author}` : ''}</span>
+          <span className="quote-snippet">{quote.text.replace(/\s+/g, ' ').trim().slice(0, 120)}</span>
+          <button
+            className="icon-btn"
+            title="取消引用"
+            aria-label="取消引用"
+            onClick={() => onClearQuote?.()}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
       <div
         className="box"
         onDragOver={(event) => {

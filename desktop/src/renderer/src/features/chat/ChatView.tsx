@@ -16,6 +16,7 @@ import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { agentDisplayName } from './agentLabel';
+import { mentionedAgentIds, type MentionAgent } from './mentions';
 import { findAwaitingAnswer, traceTargetOnJump } from './liveAnswers';
 import { QuestionDialog, askerName } from './QuestionDialog';
 import { Composer } from './Composer';
@@ -82,6 +83,8 @@ export function ChatView({
    * above the composer stays as the way back in.
    */
   const [dismissedQuestions, setDismissedQuestions] = useState<string[]>([]);
+  /** A message the user picked "引用" on; prepended to the next prompt. */
+  const [quote, setQuote] = useState<{ author: string | null; text: string } | null>(null);
   const [tab, setTab] = useState<ChatTab>('chat');
   const [traceRunId, setTraceRunId] = useState<string | null>(null);
   /** 名册用来把消息上的 agentId 翻成显示名；只有一个成员时不标注。 */
@@ -127,6 +130,27 @@ export function ChatView({
 
   /** `@` candidates are workspace-level, not room members. */
   const mentionWorkspaceId = chat?.workspaceId ?? workspaceId;
+  const mentionAgentList: MentionAgent[] = workspaceAgents.map((agent) => ({
+    id: agent.id,
+    name: agent.name,
+    summary: agent.summary,
+    available: agent.available,
+    heavy: agent.heavy,
+    member: sessionAgents.some((member) => member.id === agent.id),
+  }));
+
+  /**
+   * Re-run a user message. The message text is the source of truth: the
+   * composer's resolved mention ids were never stored on it, so they are
+   * re-derived here — otherwise a room message would quietly fall back to the
+   * leader on resend.
+   */
+  function resend(text: string, attachmentIds?: string[]): void {
+    const mentionIds = mentionedAgentIds(text, mentionAgentList);
+    void send(text, attachmentIds, mentionIds.length > 0 ? mentionIds : undefined).then(() =>
+      refreshAgents(),
+    );
+  }
 
   async function refreshMentionAgents(): Promise<void> {
     if (!mentionWorkspaceId) return;
@@ -182,6 +206,8 @@ export function ChatView({
     // Message ids belong to one session; carrying the dismissed set across a
     // switch would silently suppress a dialog in the next session.
     setDismissedQuestions([]);
+    // A quote points at a message in the session being left.
+    setQuote(null);
   }, [chat?.key]);
 
   const tabsId = useId();
@@ -357,6 +383,9 @@ export function ChatView({
               setTraceRunId(runId);
               setTab('assistants');
             }}
+            onQuote={(author, text) => setQuote({ author, text })}
+            onResend={resend}
+            resendDisabled={busy || chat.historyLoading || chat.turnSending}
           />
         )}
       </div>
@@ -634,14 +663,9 @@ export function ChatView({
         }}
         canStop={!busy && roomRunning}
         onStop={stop}
-        mentionAgents={workspaceAgents.map((agent) => ({
-          id: agent.id,
-          name: agent.name,
-          summary: agent.summary,
-          available: agent.available,
-          heavy: agent.heavy,
-          member: sessionAgents.some((member) => member.id === agent.id),
-        }))}
+        mentionAgents={mentionAgentList}
+        quote={quote}
+        onClearQuote={() => setQuote(null)}
       />
 
       <ContextMenu menu={menu} onClose={closeMenu} />

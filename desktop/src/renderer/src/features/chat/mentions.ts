@@ -20,18 +20,34 @@ export interface MentionAgent {
 
 const WORD_CHAR = /[\p{L}\p{N}_]/u;
 
+/**
+ * Quoted text is not an instruction: code fences/inline code and blockquote
+ * lines are removed before looking for `@name`. Must match the daemon's rule in
+ * `daemon/src/agents/mentions.ts` — a quote (including the one this composer
+ * prepends for "引用") is someone else's words and must not address anyone.
+ */
+function stripQuoted(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(?:```|$)/g, '')
+    .replace(/`[^`\n]*`/g, '')
+    .split('\n')
+    .filter((line) => !/^\s*>/.test(line))
+    .join('\n');
+}
+
 /** Agent ids whose `@name` appears in the text, whole-word, deduped. */
 export function mentionedAgentIds(text: string, agents: readonly MentionAgent[]): string[] {
+  const said = stripQuoted(text);
   const ids: string[] = [];
   const seen = new Set<string>();
   for (const agent of agents) {
     const needle = `@${agent.name}`;
     let from = 0;
     for (;;) {
-      const at = text.indexOf(needle, from);
+      const at = said.indexOf(needle, from);
       if (at < 0) break;
       const end = at + needle.length;
-      const next = text[end];
+      const next = said[end];
       if (next === undefined || !WORD_CHAR.test(next)) {
         if (!seen.has(agent.id)) {
           seen.add(agent.id);

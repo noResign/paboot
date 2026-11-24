@@ -16,7 +16,7 @@ import {
   updateAgent,
 } from '../agents/index.js';
 import type { Agent, AgentAvailability } from '../agents/index.js';
-import type { WorkspaceRow } from '../db/db.js';
+import type { AgentTaskRow, WorkspaceRow } from '../db/db.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import type {
   AgentProfileDetailDto,
@@ -38,6 +38,47 @@ import { isProductPermissionMode } from '../permissions/permission-mode.js';
  * Shapes below mirror the wire contract in `types/api.ts` — that file is the
  * source of truth (Desktop imports it directly), so the routes only assemble it.
  */
+type SessionThread = ReturnType<typeof listThreads>[number];
+
+/**
+ * One member as the roster reports it. Shared with the expanded-detail route so
+ * the two cannot disagree about `hasContext` or which task is "current".
+ */
+function sessionAgentEntry(
+  ctx: AppContext,
+  sessionId: string,
+  row: { agent: Agent; role: 'leader' | 'member' },
+  thread: SessionThread | undefined,
+  task: { id: string; status: 'queued' | 'running' } | null,
+  availability: AgentAvailability,
+): SessionAgentDto {
+  return {
+    ...agentSummaryDto(row.agent, availability),
+    role: row.role,
+    // Whether this agent already has its own conversation here — what the
+    // "reset context" action operates on. Builtin (including the implicit
+    // builtin runtime agents) keeps its transcript in the native tables, so it
+    // has no provider id to look at.
+    hasContext:
+      threadCount(thread) ||
+      ((row.agent.kind === 'builtin' || row.agent.runtime === 'builtin') &&
+        ctx.db.hasNativeTranscript(sessionId, row.agent.id)),
+    taskStatus: task?.status ?? null,
+    taskId: task?.id ?? null,
+  };
+}
+
+/** A running task wins over a queued one: it is what "stop this agent" means. */
+function currentTask(tasks: AgentTaskRow[]): AgentTaskRow | null {
+  return tasks.find((task) => task.status === 'running') ?? tasks[0] ?? null;
+}
+
+/** The two-state summary the roster field and detail DTO both carry. */
+function taskRef(task: AgentTaskRow | null): { id: string; status: 'queued' | 'running' } | null {
+  if (!task) return null;
+  return { id: task.id, status: task.status === 'running' ? 'running' : 'queued' };
+}
+
 function agentSummaryDto(agent: Agent, availability: AgentAvailability): AgentProfileDto {
   return {
     id: agent.id,
@@ -254,39 +295,83 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
     const roster = sessionRoster(ctx.db, session.id);
     const threads = new Map(listThreads(ctx.db, session.id).map((thread) => [thread.agentId, thread]));
     // Live work per member, so the roster can say "正在回答" instead of only
-    // whether the definition exists. A running task wins over a queued one:
-    // it is the one the user means when they stop this agent.
-    const openTask = new Map<string, { id: string; status: 'queued' | 'running' }>();
+    // whether the definition exists.
+    const tasksByAgent = new Map<string, AgentTaskRow[]>();
     for (const task of ctx.db.listOpenTasks(session.id)) {
-      const current = openTask.get(task.agent_id);
-      if (!current || task.status === 'running') {
-        openTask.set(task.agent_id, {
-          id: task.id,
-          status: task.status === 'running' ? 'running' : 'queued',
-        });
-      }
+      const list = tasksByAgent.get(task.agent_id);
+      if (list) list.push(task);
+      else tasksByAgent.set(task.agent_id, [task]);
     }
     // Probe the members too: the roster is where the user decides who to @, so
     // "available" must mean the same thing it does in the workspace list.
     const availability = await Promise.all(roster.map((row) => availabilityOf(ctx, row.agent)));
     res.json({
       leaderId: roster.find((row) => row.role === 'leader')?.agent.id ?? null,
-      agents: roster.map((row, index) => ({
-        ...agentSummaryDto(row.agent, availability[index]!),
-        role: row.role,
-        // Whether this agent already has its own conversation here — what the
-        // "reset context" action operates on. Builtin (including the implicit
-        // builtin runtime agents) keeps its transcript in the native tables, so
-        // it has no provider id to look at.
-        hasContext:
-          threadCount(threads.get(row.agent.id)) ||
-          ((row.agent.kind === 'builtin' || row.agent.runtime === 'builtin') &&
-            ctx.db.hasNativeTranscript(session.id, row.agent.id)),
-        taskStatus: openTask.get(row.agent.id)?.status ?? null,
-        taskId: openTask.get(row.agent.id)?.id ?? null,
-      })),
+      agents: roster.map((row, index) =>
+        sessionAgentEntry(
+          ctx,
+          session.id,
+          row,
+          threads.get(row.agent.id),
+          taskRef(currentTask(tasksByAgent.get(row.agent.id) ?? [])),
+          availability[index]!,
+        ),
+      ),
       // Clients grey out "add" against this instead of guessing the constant.
       capacity: { used: roster.length, max: ROOM_MAX_MEMBERS },
+    });
+  });
+
+  /** One member's expanded row: current task, last answer, and its conversation. */
+  app.get('/api/sessions/:id/agents/:agentId', async (req, res) => {
+    const session = ctx.db.getSession(req.params.id!);
+    if (!session) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    const roster = sessionRoster(ctx.db, session.id);
+    const row = roster.find((entry) => entry.agent.id === req.params.agentId);
+    if (!row) {
+      // Distinct from the server's generic 404: the client must be able to tell
+      // "this member was removed" apart from "this daemon has no such endpoint".
+      res
+        .status(404)
+        .json({ error: 'agent is not a member of this session', code: 'agent_not_in_session' });
+      return;
+    }
+    const thread = listThreads(ctx.db, session.id).find((item) => item.agentId === row.agent.id);
+    const task = currentTask(
+      ctx.db.listOpenTasks(session.id).filter((item) => item.agent_id === row.agent.id),
+    );
+    const availability = await availabilityOf(ctx, row.agent);
+    const entry = sessionAgentEntry(ctx, session.id, row, thread, taskRef(task), availability);
+    const last = ctx.db.lastCommittedMessageForAgent(session.id, row.agent.id);
+    const builtin = row.agent.kind === 'builtin' || row.agent.runtime === 'builtin';
+    const stats = builtin && thread ? ctx.db.nativeTranscriptStats(thread.id) : null;
+    const now = Date.now();
+    res.json({
+      agent: entry,
+      task: task
+        ? {
+            id: task.id,
+            source: task.source,
+            status: task.status === 'running' ? 'running' : 'queued',
+            createdAt: task.created_at,
+            startedAt: task.started_at,
+            elapsedMs: Math.max(0, now - (task.started_at ?? task.created_at)),
+          }
+        : null,
+      lastSpoke: last
+        ? { messageId: last.id, committedSeq: last.committed_seq, at: last.created_at }
+        : null,
+      context: {
+        cwd: thread?.cwd ?? row.agent.cwd ?? session.cwd ?? null,
+        backend: thread?.backend ?? backendFor(row.agent),
+        model: thread?.modelSnapshot ?? session.model ?? row.agent.model ?? null,
+        messageCount: stats?.messageCount ?? null,
+        compactionCount: stats?.compactionCount ?? null,
+        lastCompactedAt: stats?.lastCompactedAt ?? null,
+      },
     });
   });
 

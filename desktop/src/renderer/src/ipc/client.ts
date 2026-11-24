@@ -73,6 +73,7 @@ import type {
   CreateScheduledTaskRequest,
   UpdateScheduledTaskRequest,
   TaskConfigSessionResponse,
+  SessionAgentDetailResponse,
   SessionAgentsResponse,
   CreateSessionRequest,
   CreateSessionResponse,
@@ -322,6 +323,11 @@ export const api = {
     }),
   sessionAgents: (sessionId: string) =>
     request<SessionAgentsResponse>({ method: 'GET', path: ROUTES.sessionAgents(sessionId) }),
+  sessionAgentDetail: (sessionId: string, agentId: string) =>
+    request<SessionAgentDetailResponse>({
+      method: 'GET',
+      path: ROUTES.sessionAgent(sessionId, agentId),
+    }),
   cancelSessionRuns: (sessionId: string) =>
     request<{ ok: boolean; cancelled: number }>({
       method: 'POST',

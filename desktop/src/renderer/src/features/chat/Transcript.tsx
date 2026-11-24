@@ -7,6 +7,7 @@ import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
 import { ToolIcon } from '../../ui/ToolIcon';
 import { Icon } from '../../ui/Icon';
+import { ContextMenu, useContextMenu } from '../../ui/ContextMenu';
 import { formatMessageTime, formatTokens } from '../../../../shared/format';
 import type { RunDto } from '../../../../shared/contract';
 import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
@@ -40,6 +41,9 @@ export function Transcript({
   showSpeakerName = true,
   leaderAgentId = null,
   onOpenTrace,
+  onQuote,
+  onResend,
+  resendDisabled = false,
 }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -53,6 +57,12 @@ export function Transcript({
   leaderAgentId?: string | null;
   /** Open the full thinking/tool trace for a completed answer. */
   onOpenTrace?(runId: string): void;
+  /** Put a message into the composer as a quote. */
+  onQuote?(author: string | null, text: string): void;
+  /** Re-run a user message through the same send path. */
+  onResend?(text: string, attachmentIds?: string[]): void;
+  /** A send is already in flight; the menu's "重发" would be a silent no-op. */
+  resendDisabled?: boolean;
 }) {
   const [limit, setLimit] = useState(VISIBLE);
   const shown = messages.length > limit ? messages.slice(messages.length - limit) : messages;
@@ -121,6 +131,9 @@ export function Transcript({
               text={message.text}
               attachmentIds={message.attachmentIds}
               at={message.at}
+              onQuote={onQuote}
+              onResend={onResend}
+              resendDisabled={resendDisabled}
             />
           );
         }
@@ -140,6 +153,7 @@ export function Transcript({
               lastUserTurnId,
             })}
             onOpenTrace={onOpenTrace}
+            onQuote={onQuote}
           />
         );
       })}
@@ -175,12 +189,19 @@ function UserRow({
   text,
   attachmentIds,
   at,
+  onQuote,
+  onResend,
+  resendDisabled = false,
 }: {
   id: string;
   text: string;
   attachmentIds?: string[];
   at: number | undefined;
+  onQuote?(author: string | null, text: string): void;
+  onResend?(text: string, attachmentIds?: string[]): void;
+  resendDisabled?: boolean;
 }) {
+  const { menu, open, close } = useContextMenu();
   const sentAt =
     at === undefined || !Number.isFinite(at) || at <= 0
       ? null
@@ -200,7 +221,32 @@ function UserRow({
       </div>
       <div className="msg-actions">
         <CopyButton text={text} />
+        {(onQuote || onResend) && (
+          <button
+            className="icon-btn"
+            title="更多操作"
+            aria-label="更多操作"
+            onClick={(event) =>
+              open(event, [
+                ...(onQuote ? [{ id: 'quote', label: '引用', run: () => onQuote('我', text) }] : []),
+                ...(onResend
+                  ? [
+                      {
+                        id: 'resend',
+                        label: '重发',
+                        disabled: resendDisabled,
+                        run: () => onResend(text, attachmentIds),
+                      },
+                    ]
+                  : []),
+              ])
+            }
+          >
+            <Icon name="more" size={14} />
+          </button>
+        )}
       </div>
+      <ContextMenu menu={menu} onClose={close} />
     </div>
   );
 }
@@ -213,6 +259,7 @@ export function AssistantRow({
   textOnly = false,
   interactive = true,
   onOpenTrace,
+  onQuote,
 }: {
   message: Extract<ChatMessage, { kind: 'assistant' }>;
   agentNames?: Map<string, string>;
@@ -223,7 +270,10 @@ export function AssistantRow({
   /** False for a static trace/historical view where answering is not possible. */
   interactive?: boolean;
   onOpenTrace?(runId: string): void;
+  /** Put this answer into the composer as a quote. */
+  onQuote?(author: string | null, text: string): void;
 }) {
+  const { menu, open, close } = useContextMenu();
   const id = message.id;
   const segments = segmentBlocks(message.blocks);
   const text = message.blocks
@@ -324,6 +374,24 @@ export function AssistantRow({
               </div>
               <div className="msg-actions assistant-actions">
                 {split.body && <CopyButton text={split.body} />}
+                {onQuote && (
+                  <button
+                    className="icon-btn"
+                    title="更多操作"
+                    aria-label="更多操作"
+                    onClick={(event) =>
+                      open(event, [
+                        {
+                          id: 'quote',
+                          label: '引用',
+                          run: () => onQuote(speaker ?? '助手', text),
+                        },
+                      ])
+                    }
+                  >
+                    <Icon name="more" size={14} />
+                  </button>
+                )}
                 {message.runId && hasTrace && (
                   <button
                     className="btn ghost tiny"
@@ -337,6 +405,8 @@ export function AssistantRow({
             </div>
           </div>
         )}
+
+        <ContextMenu menu={menu} onClose={close} />
 
         {split.summons.map((line, index) => (
           <div className="msg assistant chat-message summon-message" key={`${id}-summon-${index}`}>

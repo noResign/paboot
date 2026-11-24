@@ -122,6 +122,15 @@ describe('parseMentionNames', () => {
   it('does not double-count a name mentioned twice', () => {
     expect(parseMentionNames('@审阅 看这个，@审阅 再看这个', members)).toEqual(['审阅', '审阅']);
   });
+
+  it('ignores @names inside a blockquote or code', () => {
+    // The composer prepends `> 引用 某人：…` when the user quotes a message;
+    // an @ inside someone else's words must not summon them.
+    const quoted = '> 引用 审阅：这里 @实现 需要再看一下\n\n继续';
+    expect(parseMentionNames(quoted, members)).toEqual([]);
+    expect(parseMentionNames('看一下 ```@实现 的代码``` 这段', members)).toEqual([]);
+    expect(parseMentionNames('看 `@实现` 那段', members)).toEqual([]);
+  });
 });
 
 describe('mentionsAll', () => {
