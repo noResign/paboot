@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { showTodoPanel, todoSignature } from './todoPanel';
+import { showTodoPanel, todoSignature } from './todoVisibility';
 import type { TodoItem } from '../../store/chat/types';
 
 function todo(content: string, status: string): TodoItem {

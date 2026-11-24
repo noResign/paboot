@@ -1,5 +1,9 @@
 import type { TodoItem } from '../../store/chat/types';
 
+// Deliberately not `todoPanel.ts`: on a case-insensitive filesystem (macOS,
+// Windows) `./TodoPanel` would resolve to this file before `TodoPanel.tsx`
+// (`.ts` is tried before `.tsx`), and the component would import nothing.
+
 /**
  * Identity of a todo list, for "has this changed since the user put it away?".
  *

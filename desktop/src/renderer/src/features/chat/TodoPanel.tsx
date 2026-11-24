@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { TodoItem } from '../../store/chat/types';
 import { Icon } from '../../ui/Icon';
-import { showTodoPanel, todoSignature } from './todoPanel';
+import { showTodoPanel, todoSignature } from './todoVisibility';
 import { readTodoDismissal, writeTodoDismissal } from '../../store/todoDismissal';
 
 /** Completed rows keep their tick; the rest are plain status dots. */
