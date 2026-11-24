@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { findAwaitingAnswer, findLiveAnswer, listLiveAnswers } from './liveAnswers';
+import {
+  findAwaitingAnswer,
+  findLiveAnswer,
+  listLiveAnswers,
+  traceTargetOnJump,
+} from './liveAnswers';
 import { emptyChat } from '../../store/chat/types';
 import type { ChatMessage } from '../../store/chat/types';
 
@@ -79,5 +84,53 @@ describe('live answers', () => {
       ],
     };
     expect(findAwaitingAnswer(state)).toBeNull();
+  });
+});
+
+describe('trace target on jump', () => {
+  const withLive = (runId: string) => ({
+    ...base(),
+    pendingAnswers: [{ runId, agentId: 'member', message: assistant() }],
+  });
+
+  it('leaves a closed pane closed, even when work is live', () => {
+    expect(traceTargetOnJump(withLive('r2'), null)).toBeNull();
+  });
+
+  it('keeps a pane whose run is still live', () => {
+    expect(traceTargetOnJump(withLive('r1'), 'r1')).toBe('r1');
+  });
+
+  it('keeps the open run even when other agents are live too', () => {
+    const state = {
+      ...base(),
+      pendingAnswers: [
+        { runId: 'r1', agentId: 'a', message: assistant() },
+        { runId: 'r2', agentId: 'b', message: assistant() },
+      ],
+    };
+    expect(traceTargetOnJump(state, 'r1')).toBe('r1');
+  });
+
+  it('retargets a stale pane when exactly one agent is live', () => {
+    // What the user saw: a finished agent's trace while another one answered.
+    expect(traceTargetOnJump(withLive('r2'), 'r1')).toBe('r2');
+  });
+
+  it('closes a stale pane when several agents are live', () => {
+    // Following one of them blindly would hide the rest; the tab's live cards
+    // are the chooser.
+    const state = {
+      ...base(),
+      pendingAnswers: [
+        { runId: 'r2', agentId: 'a', message: assistant() },
+        { runId: 'r3', agentId: 'b', message: assistant() },
+      ],
+    };
+    expect(traceTargetOnJump(state, 'r1')).toBeNull();
+  });
+
+  it('closes a stale pane when nothing is live', () => {
+    expect(traceTargetOnJump(base(), 'r1')).toBeNull();
   });
 });

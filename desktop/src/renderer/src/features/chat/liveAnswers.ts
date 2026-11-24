@@ -66,6 +66,30 @@ export function listLiveAnswers(chat: ChatSessionState): LiveAnswer[] {
   return answers;
 }
 
+/**
+ * Where an already-open trace pane should point after the user jumps to the
+ * assistant tab from the live strip.
+ *
+ * `openRunId` is whatever the user last opened, which may belong to an agent
+ * that already finished — keeping it would show "the previous agent's trace"
+ * while sending them to whatever is running now.
+ *
+ * A closed pane stays closed (the strip asks to show current work, not to open
+ * a trace). An open pane is kept when its run is still live. When that run has
+ * finished there is only an unambiguous answer if exactly one agent is running;
+ * with several, following any one of them would hide the rest, so the pane is
+ * closed and the tab's live cards — one per agent — become the chooser.
+ */
+export function traceTargetOnJump(
+  chat: ChatSessionState,
+  openRunId: string | null,
+): string | null {
+  if (openRunId === null) return null;
+  const live = listLiveAnswers(chat);
+  if (live.some((answer) => answer.runId === openRunId)) return openRunId;
+  return live.length === 1 ? live[0]!.runId : null;
+}
+
 /** The first live answer blocked on an unanswered question. */
 export function findAwaitingAnswer(chat: ChatSessionState): LiveAnswer | null {
   return (

@@ -270,8 +270,8 @@ export function AssistantRow({
       <>
         {showMainRow && (
           <div className="msg assistant chat-message" data-msg-id={id}>
-            {/* Single-agent chats have no one to tell apart: the avatar would
-                only inset the answer from the composer's column. */}
+            {/* Shown for a single agent too: the same layout as a room, and an
+                answer with no avatar there reads to the user as a bug. */}
             {showSpeakerName && (
               <div className="msg-avatar" style={{ background: avatarColor }} aria-hidden="true">
                 {avatarText}

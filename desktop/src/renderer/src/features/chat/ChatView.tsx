@@ -16,7 +16,7 @@ import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { agentDisplayName } from './agentLabel';
-import { findAwaitingAnswer } from './liveAnswers';
+import { findAwaitingAnswer, traceTargetOnJump } from './liveAnswers';
 import { QuestionDialog, askerName } from './QuestionDialog';
 import { Composer } from './Composer';
 import { useStickToBottom } from './useStickToBottom';
@@ -352,7 +352,6 @@ export function ChatView({
                 ? new Map(sessionAgents.map((agent) => [agent.id, agentDisplayName(agent)]))
                 : undefined
             }
-            showSpeakerName={sessionAgents.length > 1}
             leaderAgentId={leaderAgentId}
             onOpenTrace={(runId) => {
               setTraceRunId(runId);
@@ -580,6 +579,11 @@ export function ChatView({
               );
               return;
             }
+            // An open trace follows the jump when the target is unambiguous
+            // (one agent running); with several, close it so the live cards
+            // below — one per agent — are what the user picks from. A pane the
+            // user never opened (or already closed) stays closed.
+            setTraceRunId((open) => traceTargetOnJump(chat, open));
             setTab('assistants');
           }}
         >
