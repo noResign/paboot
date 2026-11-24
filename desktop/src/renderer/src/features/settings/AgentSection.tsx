@@ -45,6 +45,12 @@ export function AgentSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Inline editor for an existing definition; only name/summary are editable here. */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ name: string; summary: string }>({
+    name: '',
+    summary: '',
+  });
 
   const selected: WorkspaceDto | undefined =
     workspaces.find((workspace) => workspace.id === workspaceId) ?? workspaces[0];
@@ -148,6 +154,38 @@ export function AgentSection() {
     setBusy(false);
   }
 
+  function startEdit(agent: AgentProfileDto): void {
+    setEditing(agent.id);
+    // The list DTO falls an empty summary back to the name; do not pre-fill that.
+    setEditDraft({
+      name: agent.name,
+      summary: agent.summary === agent.name ? '' : agent.summary,
+    });
+    setError(null);
+    setNotice(null);
+  }
+
+  async function saveEdit(agent: AgentProfileDto): Promise<void> {
+    const name = editDraft.name.trim();
+    if (!name) {
+      setError('名字不能为空');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const body: AgentProfileRequest = { name, summary: editDraft.summary.trim() };
+    const res = await api.updateAgentProfile(agent.id, body);
+    if (!res.ok) {
+      setError(errorText(res));
+      setBusy(false);
+      return;
+    }
+    setEditing(null);
+    setNotice(`已更新「${res.data.agent.name}」`);
+    await load();
+    setBusy(false);
+  }
+
   async function setReadOnly(agent: AgentProfileDto, value: boolean): Promise<void> {
     setBusy(true);
     const body: AgentProfileRequest = { readOnly: value };
@@ -215,12 +253,50 @@ export function AgentSection() {
                 {agent.heavy && <span className="badge">外部 CLI</span>}
                 {!agent.enabled && <span className="badge">已停用</span>}
                 {agent.enabled && !agent.available && <span className="badge">当前离线</span>}
+                <button
+                  className="btn ghost"
+                  style={{ marginLeft: 'auto' }}
+                  disabled={busy}
+                  onClick={() => (editing === agent.id ? setEditing(null) : startEdit(agent))}
+                >
+                  {editing === agent.id ? '取消' : '编辑'}
+                </button>
               </div>
-              <div className="hint">
-                {agent.summary || agent.backend}
-                {details[agent.id] && ` · ${details[agent.id]!.readOnly ? '只读' : '可写'}`}
-              </div>
-              {details[agent.id] && !details[agent.id]!.isImplicit && (
+              {editing === agent.id ? (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <input
+                    value={editDraft.name}
+                    placeholder="名字，例如：审阅"
+                    maxLength={40}
+                    onChange={(event) =>
+                      setEditDraft((current) => ({ ...current, name: event.target.value }))
+                    }
+                  />
+                  <input
+                    value={editDraft.summary}
+                    placeholder="一句话简介"
+                    maxLength={40}
+                    onChange={(event) =>
+                      setEditDraft((current) => ({ ...current, summary: event.target.value }))
+                    }
+                  />
+                  <div>
+                    <button
+                      className="btn primary"
+                      disabled={busy || !editDraft.name.trim()}
+                      onClick={() => void saveEdit(agent)}
+                    >
+                      {busy ? '正在保存…' : '保存'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="hint">
+                  {agent.summary || agent.backend}
+                  {details[agent.id] && ` · ${details[agent.id]!.readOnly ? '只读' : '可写'}`}
+                </div>
+              )}
+              {editing !== agent.id && details[agent.id] && !details[agent.id]!.isImplicit && (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input
