@@ -9,6 +9,17 @@ import type { StartStreamResult, StreamCancelInput, StreamEvent, StreamSpec } fr
 type Streamer = RunStreamer | SessionStreamer | RoomStreamer;
 
 /**
+ * How long a stream may take to prove it is alive.
+ *
+ * A streamer resolves only once the daemon's headers arrive. A connection that
+ * establishes but never answers (a half-open tunnel, a stuck proxy) leaves that
+ * promise pending forever, and the caller — `sendTurn` — has no timeout of its
+ * own: the UI sticks on "正在发送…" with no way back. Failing after this long
+ * turns that into a retryable error instead.
+ */
+const START_TIMEOUT_MS = 15_000;
+
+/**
  * Owns every live stream in the main process: run transcripts and the lighter
  * per-session watch. The renderer reloads, HMRs and switches sessions freely;
  * streams survive it and events are pushed by `webContents.send`.
@@ -25,6 +36,7 @@ export class StreamManager {
       new Promise((resolve) => setTimeout(resolve, ms)),
     private readonly random: () => number = Math.random,
     private readonly now: () => number = Date.now,
+    private readonly startTimeoutMs: number = START_TIMEOUT_MS,
   ) {}
 
   async start(spec: StreamSpec): Promise<StartStreamResult> {
@@ -47,7 +59,7 @@ export class StreamManager {
       });
       this.streams.set(streamId, streamer);
       this.owners.set(streamId, spec.connectionId);
-      const result = await streamer.start(spec);
+      const result = await this.awaitReady(() => streamer.start(spec), () => streamer.cancel());
       if (!result.ok) {
         this.streams.delete(streamId);
         this.owners.delete(streamId);
@@ -67,7 +79,7 @@ export class StreamManager {
       });
       this.streams.set(streamId, streamer);
       this.owners.set(streamId, spec.connectionId);
-      const result = await streamer.start(spec);
+      const result = await this.awaitReady(() => streamer.start(spec), () => streamer.cancel());
       if (!result.ok) {
         this.streams.delete(streamId);
         this.owners.delete(streamId);
@@ -89,11 +101,39 @@ export class StreamManager {
     });
     this.streams.set(streamId, streamer);
     this.owners.set(streamId, spec.connectionId);
-    const result = await streamer.start(spec);
+    const result = await this.awaitReady(() => streamer.start(spec), () => streamer.cancel(false));
     if (!result.ok) {
       this.streams.delete(streamId);
       this.owners.delete(streamId);
     }
+    return result;
+  }
+
+  /**
+   * Wait for a streamer's first result, but never past `START_TIMEOUT_MS`.
+   * On timeout the streamer is cancelled, so a connection that arrives late
+   * cannot keep emitting into a stream the renderer already dropped.
+   */
+  private async awaitReady(
+    start: () => Promise<StartStreamResult>,
+    cancel: () => void,
+  ): Promise<StartStreamResult> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<StartStreamResult>((resolve) => {
+      timer = setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            httpCode: -1,
+            apiCode: 'timeout',
+            message: '建立连接超时，请重试',
+          }),
+        this.startTimeoutMs,
+      );
+    });
+    const result = await Promise.race([start(), timeout]);
+    clearTimeout(timer);
+    if (!result.ok) cancel();
     return result;
   }
 

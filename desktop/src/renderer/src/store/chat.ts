@@ -417,6 +417,18 @@ export const useChat = create<ChatStore>((set, get) => ({
           error: friendlyMessage(apiCode, res.status, message, '发送失败'),
         })),
       }));
+    } catch (err) {
+      // Every awaited step above is expected to resolve with a result, but an
+      // unexpected throw must not leave the composer stuck on "正在发送…" with
+      // no way back — the state is only cleared on the paths that return.
+      set((state) => ({
+        byKey: patch(state, key, (current) => ({
+          ...current,
+          turnSending: false,
+          dispatchedTasks: [],
+          error: err instanceof Error ? err.message : '发送失败，请重试',
+        })),
+      }));
     } finally {
       turnsInFlight.delete(key);
     }
