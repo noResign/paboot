@@ -36,6 +36,8 @@ final class ChatViewModel {
         /// UI 不显示任何 agent 入口，而不是显示一个空面板。
         var sessionAgents: [SessionAgentDto] = []
         var agentsSupported = false
+        /// 房间容量（含 leader）；老 daemon 不发，nil 时不做上限提示。
+        var roomCapacity: RoomCapacityDto?
         /// 工作区里可被拉进会话的助手（添加成员时用）。
         var workspaceAgents: [AgentProfileDto] = []
     }
@@ -1122,10 +1124,12 @@ final class ChatViewModel {
             let roster = try await agentRepository.sessionAgents(sessionId: id)
             state.agentsSupported = true
             state.sessionAgents = roster.agents
+            state.roomCapacity = roster.capacity
         } catch let error as PabootError {
             if case .http(let status, _) = error, status == 404 {
                 state.agentsSupported = false
                 state.sessionAgents = []
+                state.roomCapacity = nil
             } else {
                 state.error = error.localizedDescription
             }
@@ -1153,6 +1157,12 @@ final class ChatViewModel {
             do {
                 try await agentRepository.addToSession(sessionId: id, agentId: agentId)
                 loadSessionAgents()
+            } catch let error as PabootError {
+                if case .http(_, let apiError) = error, apiError?.code == "room_full" {
+                    state.error = "房间已满，先移出一个助手再加"
+                } else {
+                    state.error = error.localizedDescription
+                }
             } catch {
                 state.error = error.localizedDescription
             }

@@ -15,6 +15,7 @@ import com.noresign.paboot.data.repository.WorkspaceRepository
 import com.noresign.paboot.ui.identity.clampPermissionMode
 import com.noresign.paboot.network.daemon.dto.ModelOptionDto
 import com.noresign.paboot.network.daemon.dto.AgentProfileDto
+import com.noresign.paboot.network.daemon.dto.RoomCapacityDto
 import com.noresign.paboot.network.daemon.dto.SessionAgentDto
 import com.noresign.paboot.notify.ChatVisibility
 import com.noresign.paboot.notify.RunWatchCenter
@@ -127,6 +128,10 @@ class ChatViewModel(
 
     private val _agentsSupported = MutableStateFlow(false)
     val agentsSupported = _agentsSupported.asStateFlow()
+
+    /** 房间容量（含 leader）；老 daemon 不发，为 null 时不做上限提示。 */
+    private val _roomCapacity = MutableStateFlow<RoomCapacityDto?>(null)
+    val roomCapacity = _roomCapacity.asStateFlow()
 
     /** 工作区里可被拉进会话的 agent（新建会话选人 / 添加成员时用）。 */
     private val _workspaceAgents = MutableStateFlow<List<AgentProfileDto>>(emptyList())
@@ -1265,12 +1270,14 @@ class ChatViewModel(
                 is NetworkResult.Success -> {
                     _agentsSupported.value = true
                     _sessionAgents.value = r.data.agents
+                    _roomCapacity.value = r.data.capacity
                     _agentError.value = null
                 }
                 is NetworkResult.Error -> {
                     if (r.code == 404) {
                         _agentsSupported.value = false
                         _sessionAgents.value = emptyList()
+                        _roomCapacity.value = null
                     } else {
                         _agentError.value = r.message
                     }
@@ -1313,7 +1320,7 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = agentRepository.addToSession(id, agentId)) {
                 is NetworkResult.Success -> loadSessionAgents(id)
-                is NetworkResult.Error -> _agentError.value = r.message
+                is NetworkResult.Error -> _agentError.value = friendlyError(r)
             }
         }
     }
@@ -1323,7 +1330,7 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = agentRepository.removeFromSession(id, agentId)) {
                 is NetworkResult.Success -> loadSessionAgents(id)
-                is NetworkResult.Error -> _agentError.value = r.message
+                is NetworkResult.Error -> _agentError.value = friendlyError(r)
             }
         }
     }

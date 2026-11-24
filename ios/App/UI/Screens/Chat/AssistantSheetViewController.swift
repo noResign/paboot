@@ -102,7 +102,14 @@ final class AssistantSheetViewController: UIViewController {
 
     private func render() {
         let state = viewModel.state
-        headerLabel.text = "\(state.sessionAgents.count) 个助手"
+        let capacity = state.roomCapacity
+        // 满员时不再让用户点进菜单再吃一个错误：直接置灰并说明原因。
+        let roomFull = capacity.map { $0.max > 0 && $0.used >= $0.max } ?? false
+        if let capacity {
+            headerLabel.text = "\(state.sessionAgents.count)/\(capacity.max) 个助手"
+        } else {
+            headerLabel.text = "\(state.sessionAgents.count) 个助手"
+        }
 
         membersStack.arrangedSubviews.forEach { view in
             membersStack.removeArrangedSubview(view)
@@ -117,7 +124,13 @@ final class AssistantSheetViewController: UIViewController {
             !state.sessionAgents.contains { $0.id == candidate.id }
         }
         addButton.isHidden = addable.isEmpty
-        addButton.setTitle("添加助手（\(addable.count) 个可选）", for: .normal)
+        addButton.isEnabled = !roomFull
+        addButton.setTitle(
+            roomFull
+                ? "房间已满（\(capacity?.max ?? 0) 个助手），先移出一个"
+                : "添加助手（\(addable.count) 个可选）",
+            for: .normal
+        )
         addButton.menu = UIMenu(
             title: "添加助手",
             children: addable.map { candidate in

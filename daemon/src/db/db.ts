@@ -3320,35 +3320,44 @@ export class Db {
     status: string,
     answer?: { answers: QuestionAnswers | null; answerText: string | null } | null,
   ): void {
-    this.db
-      .prepare(
-        `UPDATE events SET payload = json_set(payload, '$.status', ?)
-         WHERE run_id = ? AND type = 'permission_request'
-           AND json_extract(payload, '$.permissionId') = ?`,
-      )
-      .run(status, runId, permissionId);
-    // `json_set` with a SQL NULL writes a JSON null, which every client's
-    // optional decode reads as "absent" — so leaving the answer out is safe.
-    // `json(?)` is load-bearing: passing the JSON text without it stores a
-    // *string*, and clients would decode `answers` as a string literal.
-    this.db
-      .prepare(
-        `UPDATE events SET payload = json_set(
-           payload,
-           '$.answerStatus', ?,
-           '$.answers', json(?),
-           '$.answerText', ?
-         )
-         WHERE run_id = ? AND type = 'question'
-           AND json_extract(payload, '$.permissionId') = ?`,
-      )
-      .run(
-        status,
-        answer?.answers ? JSON.stringify(answer.answers) : null,
-        answer?.answerText ?? null,
-        runId,
-        permissionId,
-      );
+    // Both writes settle the same human-facing card; a crash between them would
+    // leave it "answered" with no record of what was chosen.
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db
+        .prepare(
+          `UPDATE events SET payload = json_set(payload, '$.status', ?)
+           WHERE run_id = ? AND type = 'permission_request'
+             AND json_extract(payload, '$.permissionId') = ?`,
+        )
+        .run(status, runId, permissionId);
+      // `json_set` with a SQL NULL writes a JSON null, which every client's
+      // optional decode reads as "absent" — so leaving the answer out is safe.
+      // `json(?)` is load-bearing: passing the JSON text without it stores a
+      // *string*, and clients would decode `answers` as a string literal.
+      this.db
+        .prepare(
+          `UPDATE events SET payload = json_set(
+             payload,
+             '$.answerStatus', ?,
+             '$.answers', json(?),
+             '$.answerText', ?
+           )
+           WHERE run_id = ? AND type = 'question'
+             AND json_extract(payload, '$.permissionId') = ?`,
+        )
+        .run(
+          status,
+          answer?.answers ? JSON.stringify(answer.answers) : null,
+          answer?.answerText ?? null,
+          runId,
+          permissionId,
+        );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // ---- deploy jobs ----

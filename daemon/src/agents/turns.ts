@@ -49,8 +49,8 @@ export interface CreatedTurn {
   tasks: AgentTaskRow[];
   /** The agents that will answer, in start order. */
   addressed: { agentId: string; name: string; source: string }[];
-  /** Addressed agents that could not be used, with the reason. */
-  dropped: { id: string; reason: string }[];
+  /** Addressed agents that could not be used, with the reason and a name to echo back. */
+  dropped: { id: string; name: string; reason: string }[];
   /** True when this is a retry of an already-created turn; do not start it again. */
   replayed?: boolean;
 }

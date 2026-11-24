@@ -37,6 +37,9 @@ export function resolveSessionAgent(
     return { agent: leader, thread: ensureThread(db, session, leader, workspace), source: 'leader' };
   }
 
+  // No leader means no membership rows at all (the leader cannot be removed via
+  // the API), so adopting one here can never exceed the room cap that
+  // `addToSession` enforces — these writes deliberately skip `assertRoomHasSpace`.
   const fromDefault = defaultAgentFor(db, workspace.id);
   if (fromDefault) {
     // Adopt it as leader so the next resolution takes step 1 instead of

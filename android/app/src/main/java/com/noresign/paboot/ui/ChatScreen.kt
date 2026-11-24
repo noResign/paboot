@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.foundation.lazy.LazyColumn
 import com.noresign.paboot.network.daemon.dto.AgentProfileDto
+import com.noresign.paboot.network.daemon.dto.RoomCapacityDto
 import com.noresign.paboot.network.daemon.dto.SessionAgentDto
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -135,6 +136,7 @@ fun ChatScreen(
     val permissionSubmitting by viewModel.permissionSubmitting.collectAsState()
     val permissionInputError by viewModel.permissionInputError.collectAsState()
     val sessionAgents by viewModel.sessionAgents.collectAsState()
+    val roomCapacity by viewModel.roomCapacity.collectAsState()
     val agentsSupported by viewModel.agentsSupported.collectAsState()
     val workspaceAgents by viewModel.workspaceAgents.collectAsState()
     val agentError by viewModel.agentError.collectAsState()
@@ -584,6 +586,7 @@ fun ChatScreen(
             AssistantTabContent(
                 agents = sessionAgents,
                 workspaceAgents = workspaceAgents,
+                capacity = roomCapacity,
                 onResetContext = viewModel::resetAgentContext,
                 onAddAgent = viewModel::addSessionAgent,
                 onRemoveAgent = viewModel::removeSessionAgent,
@@ -965,12 +968,15 @@ private fun AssistantTabContent(
     onResetContext: (String) -> Unit,
     onAddAgent: (String) -> Unit,
     onRemoveAgent: (String) -> Unit,
+    capacity: RoomCapacityDto? = null,
     modifier: Modifier = Modifier,
 ) {
+    // 满员时只读地拒绝添加：让按钮可见但按下没反应，比先让用户点了再报错好。
+    val roomFull = capacity != null && capacity.max > 0 && capacity.used >= capacity.max
     LazyColumn(modifier = modifier.padding(horizontal = 16.dp)) {
         item {
             Text(
-                "${agents.size} 个助手",
+                if (capacity != null) "${agents.size}/${capacity.max} 个助手" else "${agents.size} 个助手",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 12.dp),
@@ -1028,16 +1034,25 @@ private fun AssistantTabContent(
         val addable = workspaceAgents.filter { candidate -> agents.none { it.id == candidate.id } }
         if (addable.isNotEmpty()) {
             item {
-                Text(
-                    "可添加：${addable.joinToString("、") { it.name }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp),
-                )
+                if (roomFull) {
+                    Text(
+                        "房间已满（${capacity?.max ?: 0} 个助手），先移出一个再加入",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                } else {
+                    Text(
+                        "可添加：${addable.joinToString("、") { it.name }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                }
                 addable.forEach { candidate ->
                     TextButton(
                         onClick = { onAddAgent(candidate.id) },
-                        enabled = candidate.available,
+                        enabled = candidate.available && !roomFull,
                     ) { Text("添加 ${candidate.name}") }
                 }
             }

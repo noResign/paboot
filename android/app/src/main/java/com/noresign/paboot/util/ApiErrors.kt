@@ -57,6 +57,12 @@ fun friendlyMessage(
     "permission_not_found" -> "该请求已失效，可能已超时或运行已结束"
     "bad_decision" -> "无效的审批决定"
 
+    // 助手 / 房间
+    "room_full" -> "房间已满，先移出一个助手再加"
+    "leader_required" -> "他是这个会话的主答者，不能移出；要换主答请新建会话"
+    "writable_agent_exists" -> "这个会话已经有可写助手了；新助手只能以只读身份加入"
+    "cross_workspace" -> "该助手属于另一个工作区"
+
     // 定时任务
     "schedule_invalid" -> "定时计划无效：$message"
     "task_limit_reached" -> "定时任务数量已达上限"
