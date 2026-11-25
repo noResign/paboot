@@ -54,6 +54,7 @@ export {
   type PeerTaskRunInput,
 } from './backend.js';
 export { reconcilePeerRuns } from './reconcile.js';
+export { loopbackInviteHost, pickAdvertisedHost } from './address.js';
 
 export {
   assertPeerInputBudget,

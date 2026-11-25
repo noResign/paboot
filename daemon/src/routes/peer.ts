@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import type { Express, Request, Response } from 'express';
 import type { ServerResponse } from 'node:http';
 import { getAgent } from '../agents/index.js';
@@ -20,6 +21,8 @@ import {
   isShareableBackend,
   joinPeer,
   listPeerConnections,
+  loopbackInviteHost,
+  pickAdvertisedHost,
   parseStoredContract,
   PeerValidationError,
   probeConnection,
@@ -434,17 +437,25 @@ function contractDto(contract: ExposedAgentContract): PeerContractDto {
 
 function inviteUrl(req: Request, ctx: AppContext, token: string, expiresAt: number): string {
   const header = req.get('host') ?? '';
-  let host = normalizeHost(ctx.config.host);
+  let headerHost = '';
   let port = String(ctx.config.port);
   if (header) {
     try {
       const parsed = new URL(`http://${header}`);
-      host = normalizeHost(parsed.hostname);
+      headerHost = parsed.hostname;
       port = parsed.port || port;
     } catch {
       // Keep the config fallback; a malformed Host header is not worth a 500.
     }
   }
+  // The desktop reaches us at 127.0.0.1, which is useless in an invite for
+  // another machine. Prefer a real interface address in that case.
+  const host =
+    pickAdvertisedHost({
+      hostHeader: headerHost,
+      configuredHost: ctx.config.host,
+      interfaces: os.networkInterfaces(),
+    }) ?? loopbackInviteHost();
   const params = new URLSearchParams({
     host,
     port,
@@ -760,13 +771,6 @@ function sendPeerError(res: Response, error: unknown): void {
     return;
   }
   res.status(500).json({ error: 'internal error', code: 'internal_error' });
-}
-
-/** Wildcard bind addresses are not dialable; IPv6 hostnames come bracketed. */
-function normalizeHost(host: string): string {
-  const trimmed = host.trim().replace(/^\[|\]$/g, '');
-  if (!trimmed || trimmed === '0.0.0.0' || trimmed === '::') return '127.0.0.1';
-  return trimmed;
 }
 
 function bearer(req: Request): string {

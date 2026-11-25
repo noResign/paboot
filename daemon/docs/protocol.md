@@ -336,7 +336,7 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
 | `POST /api/peer/runs/:id/permission` | guest | `relay` 决策回传：`{permissionId, decision:'allow'|'deny'}` |
 | `POST /api/agent-profiles/:id/exposed` | operator | 写入合同（v1 只接受 `access='full'`；`custom` → 400） |
 | `GET /api/agent-profiles/:id/exposed` | operator | 读合同 |
-| `POST /api/agent-profiles/:id/exposed/invites` | operator | 生成本 agent 的一次性邀请（一个邀请只能对应一个 agent），返回 `paboot://join?host&port&fp&t&exp` |
+| `POST /api/agent-profiles/:id/exposed/invites` | operator | 生成本 agent 的一次性邀请（一个邀请只能对应一个 agent），返回 `paboot://join?host&port&fp&t&exp`。请求来自 `127.0.0.1` 时 `host` 不写回环地址，而是取本机可用网卡（优先私有 IPv4 / Tailscale） |
 | `DELETE /api/agent-profiles/:id/exposed/tokens` | operator | 一键吊销：缩小所有相关 token 的 scopes，空则吊销；同时 `enabled=0` |
 | `GET /api/peer/sessions?workspaceId=` | operator | A 侧监控：列出本机 `purpose='peer'` 的隐藏会话（标题、共享的助手、来客 label、是否 running），**只读** |
 
