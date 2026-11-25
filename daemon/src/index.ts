@@ -138,6 +138,14 @@ async function main(): Promise<void> {
           fromLegacyPermissionMode(config.permissionMode),
           config.workspaceSource,
         );
+  // Peer runs also keep executing on the other machine after this process
+  // dies. Cancel those first; `interruptOrphanedRuns` then marks the local rows.
+  const { reconcilePeerRuns } = await import('./peer/index.js');
+  void reconcilePeerRuns(db)
+    .then((cancelled) => {
+      if (cancelled > 0) log.info(`cancelled ${cancelled} orphaned peer run(s) on their machines`);
+    })
+    .catch((err) => log.warn('failed to reconcile peer runs', err));
   // Runs are only ever `running` while a process is live. After a restart the
   // active-run registry is empty, so anything still `running` is a run the
   // previous process left behind — reconcile it before serving requests.

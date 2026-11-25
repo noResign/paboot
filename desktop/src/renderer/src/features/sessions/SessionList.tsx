@@ -5,10 +5,12 @@ import { RuntimeIcon } from '../../ui/RuntimeIcon';
 import { Icon } from '../../ui/Icon';
 import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import { SessionListSkeleton } from '../../ui/Skeleton';
-import type { SessionDto } from '../../../../shared/contract';
+import type { PeerSessionDto, SessionDto } from '../../../../shared/contract';
 
 interface Props {
   sessions: SessionDto[];
+  /** Hidden sessions a remote peer is driving with our exposed agents. */
+  peerSessions: PeerSessionDto[];
   selectedId: string | null;
   /** sessionId → number of approvals waiting in it. */
   needsInput: ReadonlyMap<string, number>;
@@ -30,6 +32,7 @@ interface Props {
  */
 export function SessionList({
   sessions,
+  peerSessions,
   selectedId,
   needsInput,
   failed,
@@ -47,6 +50,7 @@ export function SessionList({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [taskCollapsed, setTaskCollapsed] = useState(false);
+  const [peerCollapsed, setPeerCollapsed] = useState(false);
   const { menu, open, close } = useContextMenu();
 
   const isTaskRelated = (session: SessionDto): boolean =>
@@ -68,8 +72,8 @@ export function SessionList({
   );
   const isOpen = (id: BucketId): boolean => collapsed[id] !== undefined ? !collapsed[id] : defaultOpen.has(id);
 
-  if (loading && sessions.length === 0) return <SessionListSkeleton />;
-  if (sessions.length === 0) {
+  if (loading && sessions.length === 0 && peerSessions.length === 0) return <SessionListSkeleton />;
+  if (sessions.length === 0 && peerSessions.length === 0) {
     return (
       <div className="empty">
         还没有会话
@@ -188,6 +192,62 @@ export function SessionList({
     );
   }
 
+  /** A remote peer's hidden session: watch-only; only the record can be removed. */
+  function renderPeerRow(session: PeerSessionDto): ReactNode {
+    const isConfirming = confirmingId === session.id;
+    return (
+      <div
+        key={session.id}
+        className={[
+          'session-row',
+          session.id === selectedId ? 'selected' : '',
+          session.running ? 'running' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => onSelect(session.id)}
+        onContextMenu={(event) =>
+          open(event, [
+            { id: 'delete', label: '删除记录', danger: true, run: () => setConfirmingId(session.id) },
+          ])
+        }
+        title="远端访客发起 · 只读监控"
+      >
+        <span className="row-marker" />
+        <div className="session-info">
+          <div className="session-title">{session.title ?? '共享运行'}</div>
+          <div className="session-meta">
+            <span className="agent">
+              <RuntimeIcon id="peer" size={11} />
+              {session.agentName}
+            </span>
+            <span className="sep">·</span>
+            <span>来自 {session.peerLabel}</span>
+            <span className="session-time">{relativeTime(session.lastActiveAt)}</span>
+          </div>
+        </div>
+        {session.running && <span className="pulse" />}
+        {isConfirming && (
+          <div className="row-confirm" onClick={(event) => event.stopPropagation()}>
+            <span>删除这条远端记录？</span>
+            <button
+              className="btn tiny danger"
+              onClick={() => {
+                setConfirmingId(null);
+                onDelete(session.id);
+              }}
+            >
+              删除
+            </button>
+            <button className="btn tiny ghost" onClick={() => setConfirmingId(null)}>
+              取消
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       {nonEmpty.map((bucket) => {
@@ -210,6 +270,23 @@ export function SessionList({
           </section>
         );
       })}
+
+      {peerSessions.length > 0 && (
+        <section className="bucket">
+          <button
+            className={`bucket-head${peerCollapsed ? ' collapsed' : ''}`}
+            onClick={() => setPeerCollapsed((value) => !value)}
+            title={peerCollapsed ? '展开' : '折叠'}
+          >
+            <span className="chevron">
+              <Icon name={peerCollapsed ? 'chevron-right' : 'chevron-down'} size={12} />
+            </span>
+            <span className="bucket-label">远端会话</span>
+            <span className="bucket-count">{peerSessions.length}</span>
+          </button>
+          {!peerCollapsed && peerSessions.map(renderPeerRow)}
+        </section>
+      )}
 
       {taskSessions.length > 0 && (
         <section className="bucket">

@@ -228,6 +228,8 @@ export function ChatView({
   }
 
   const pending = chat.permissions.active;
+  /** A shared run belongs to the remote visitor: watch only, never act. */
+  const readOnly = chat.purpose === 'peer';
   const busy = chat.phase === 'connecting' || chat.phase === 'live' || chat.phase === 'reconnecting';
   const roomRunning =
     Boolean(chat.roomStreamId) &&
@@ -260,7 +262,9 @@ export function ChatView({
   // Builtin/Codex questions emit no permission_request, so the only hint that
   // the room is blocked on the user is this badge (and the live-card one). It
   // also has to see per-run stream answers, which live in `messages`.
-  const awaitingAnswer = findAwaitingAnswer(chat);
+  // The remote visitor answers their own questions; the exposing side must not
+  // open an answer dialog it is not allowed to submit.
+  const awaitingAnswer = readOnly ? null : findAwaitingAnswer(chat);
   const awaitingName = awaitingAnswer
     ? (askerName(awaitingAnswer, sessionAgents, workspaceAgents) ?? '助手')
     : null;
@@ -372,6 +376,7 @@ export function ChatView({
           <Transcript
             messages={chat.messages}
             scrollRef={scrollRef}
+            interactive={!readOnly}
             runs={chat.runs}
             agentNames={
               sessionAgents.length > 0
@@ -385,7 +390,7 @@ export function ChatView({
             }}
             onQuote={(author, text) => setQuote({ author, text })}
             onResend={resend}
-            resendDisabled={busy || chat.historyLoading || chat.turnSending}
+            resendDisabled={readOnly || busy || chat.historyLoading || chat.turnSending}
           />
         )}
       </div>
@@ -582,7 +587,7 @@ export function ChatView({
         <div className="chat-banner">该运行已结束（daemon 侧已不在运行），以上为已收到的事件。</div>
       )}
 
-      {pending && !requiresModal(pending.toolName) && (
+      {!readOnly && pending && !requiresModal(pending.toolName) && (
         <InlinePermissionCard
           permission={pending}
           queued={chat.permissions.queue.length}
@@ -624,10 +629,18 @@ export function ChatView({
         </button>
       )}
 
+      {readOnly && (
+        <div className="chat-banner">
+          远端访客发起的共享运行 · 只读监控（不能在此发言或审批）
+        </div>
+      )}
+
       <Composer
-        disabled={busy || chat.historyLoading || chat.turnSending}
+        disabled={busy || chat.historyLoading || chat.turnSending || readOnly}
         busy={busy}
-        placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
+        placeholder={
+          busy ? '任务正在运行…' : readOnly ? '远端访客发起 · 只读监控' : '给 Agent 发消息'
+        }
         showModel={Boolean(chat.sessionId || chat.pendingNew)}
         model={chat.model}
         models={models}
@@ -661,7 +674,7 @@ export function ChatView({
           // that turn to the leader.
           void send(text, attachmentIds, mentionIds).then(() => refreshAgents());
         }}
-        canStop={!busy && roomRunning}
+        canStop={!readOnly && !busy && roomRunning}
         onStop={stop}
         mentionAgents={mentionAgentList}
         quote={quote}
@@ -693,7 +706,7 @@ export function ChatView({
         />
       )}
 
-      {pending && requiresModal(pending.toolName) && (
+      {!readOnly && pending && requiresModal(pending.toolName) && (
         <PermissionDialog
           permission={pending}
           queued={chat.permissions.queue.length}

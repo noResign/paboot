@@ -11,6 +11,7 @@ import {
   type TaskRunnerDeps,
 } from '../agents/index.js';
 import { normalizeAttachmentIds } from '../attachments/request.js';
+import { startPeerTaskRun } from '../peer/index.js';
 import { log } from '../platform/log.js';
 import { getActiveRun } from '../runtimes/active-runs.js';
 import { sseHeaders, writeSseFrame } from '../http/sse.js';
@@ -126,6 +127,14 @@ export function roomPublisher(ctx: AppContext): TaskRunnerDeps['publish'] {
   };
 }
 
+/** Task runners get peer execution injected here, keeping `agents/` transport-free. */
+function taskRunnerDeps(ctx: AppContext): TaskRunnerDeps {
+  return {
+    publish: roomPublisher(ctx),
+    runPeerTask: (inner, input) => startPeerTaskRun(inner, input),
+  };
+}
+
 export function registerRoomRoutes(app: Express, ctx: AppContext): void {
   /** Replay + live tail. `after` resumes; omit it for live-only. */
   app.get('/api/sessions/:id/stream', (req, res) => {
@@ -221,6 +230,16 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
+    // Pure read-only: the exposing side does not stop the visitor's run. The
+    // guest cancels through its own `/peer/runs/:id/cancel`, and the contract's
+    // wall clock reaps anything left behind.
+    if (session.purpose === 'peer') {
+      res.status(403).json({
+        error: 'shared runs are read-only on this machine',
+        code: 'peer_session_read_only',
+      });
+      return;
+    }
     const now = Date.now();
     const touchedTurns = new Set<string>();
     let cancelled = 0;
@@ -299,6 +318,15 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
     const session = ctx.db.getSession(req.params.id!);
     if (!session) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    // `purpose='peer'` sessions belong to the remote visitor driving them; the
+    // exposing side may watch but must not inject turns into that conversation.
+    if (session.purpose === 'peer') {
+      res.status(403).json({
+        error: 'shared runs are read-only on this machine',
+        code: 'peer_session_read_only',
+      });
       return;
     }
     const workspace = session.workspace_id ? ctx.db.getWorkspace(session.workspace_id) : undefined;
@@ -431,7 +459,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
 
     // Fire and forget: the response is the acknowledgement, not the answer. A
     // failure here is per-task and reported on the room stream.
-    void runTurn(ctx, { publish: roomPublisher(ctx) }, {
+    void runTurn(ctx, taskRunnerDeps(ctx), {
       session,
       workspace,
       tasks: created.tasks,

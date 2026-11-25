@@ -16,6 +16,17 @@ export const ROUTES = {
   // 那个列的是能驱动的后端，这个管的是房间里干活的那个助手。
   workspaceAgents: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/agents`,
   agentProfiles: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}`,
+  // Cross-machine sharing (P3).
+  agentExposed: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}/exposed`,
+  agentExposedInvites: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}/exposed/invites`,
+  agentExposedTokens: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}/exposed/tokens`,
+  peers: '/api/peer/peers',
+  peer: (id: string) => `/api/peer/peers/${encodeURIComponent(id)}`,
+  peerProbe: (id: string) => `/api/peer/peers/${encodeURIComponent(id)}/probe`,
+  peerRunPermission: (runId: string) =>
+    `/api/peer/runs/${encodeURIComponent(runId)}/permission`,
+  peerSessions: (workspaceId?: string) =>
+    `/api/peer/sessions${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''}`,
   sessionAgents: (id: string) => `/api/sessions/${encodeURIComponent(id)}/agents`,
   sessionAgent: (id: string, agentId: string) =>
     `/api/sessions/${encodeURIComponent(id)}/agents/${encodeURIComponent(agentId)}`,

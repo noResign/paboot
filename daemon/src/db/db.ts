@@ -69,6 +69,64 @@ export interface SessionAgentRow {
   joined_at: number;
 }
 
+/** A's authorization for one exposed agent. `contract_json` holds the full body. */
+export interface ExposedAgentRow {
+  agent_id: string;
+  contract_json: string;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+/** `in` = the other daemon connects to us; `out` = we connect to it. */
+export interface PeerRow {
+  /** Local connection id. One connection addresses exactly one agent. */
+  id: string;
+  direction: 'in' | 'out';
+  /** The other daemon's stable identity (`serverId`). */
+  server_id: string;
+  /** Only for outbound connections: the remote agent this one talks to. */
+  remote_agent_id: string | null;
+  label: string;
+  base_url: string;
+  fingerprint: string | null;
+  token_cipher: string | null;
+  last_seen_at: number | null;
+  created_at: number;
+}
+
+export interface PeerTokenRow {
+  id: string;
+  peer_id: string;
+  token_hash: string;
+  /** JSON array of agent ids this token may address. */
+  scopes: string;
+  created_at: number;
+  /** Inherited from the invite; NULL = never expires (legacy rows). */
+  expires_at: number | null;
+  revoked_at: number | null;
+  last_used_at: number | null;
+}
+
+export interface PeerInviteRow {
+  id: string;
+  token_hash: string;
+  /** JSON array of exposed agent ids. */
+  agent_ids: string;
+  expires_at: number;
+  single_use: number;
+  consumed_at: number | null;
+  created_at: number;
+}
+
+export interface PeerThreadRow {
+  peer_id: string;
+  thread_key: string;
+  agent_id: string;
+  session_id: string;
+  created_at: number;
+}
+
 /** Where a task came from. `relay`/`summon` arrive with the room features. */
 export type AgentTaskSource = 'mention' | 'leader_default' | 'summon' | 'reply' | 'steering' | 'summarize';
 
@@ -242,6 +300,8 @@ export interface MessageRow {
   task_id?: string | null;
   /** Timeline position; NULL until the message is final. */
   committed_seq?: number | null;
+  /** `'peer'` when the text came from another daemon; NULL for local/legacy. */
+  source?: string | null;
 }
 
 export interface RunRow {
@@ -261,7 +321,7 @@ export interface RunRow {
   command_id: string | null;
   /** Set when the run was started by a scheduled task. */
   task_id: string | null;
-  /** `user` | `scheduled` | `run_now`. */
+  /** `user` | `scheduled` | `run_now` | `peer`. */
   trigger: string;
   /** Permission mode actually used for this run. */
   permission_mode: string | null;
@@ -269,6 +329,12 @@ export interface RunRow {
   agent_id?: string | null;
   thread_id?: string | null;
   turn_id?: string | null;
+  /** The peer this run talks to; NULL for local runs. */
+  peer_id?: string | null;
+  /** B-side idempotency key for a peer run. */
+  client_run_id?: string | null;
+  /** A-side run id of the remote execution. */
+  remote_run_id?: string | null;
 }
 
 export interface ScheduledTaskRow {
@@ -776,6 +842,75 @@ export class Db {
       CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks (session_id, status);
       CREATE INDEX IF NOT EXISTS idx_agent_tasks_agent ON agent_tasks (agent_id, status);
       CREATE INDEX IF NOT EXISTS idx_agent_tasks_run ON agent_tasks (run_id);
+
+      -- ───────────────────────────────────────────────────────────────
+      -- Peer / cross-machine sharing (P3).
+      --
+      -- exposed_agents is A's authorization: one contract per exposed agent.
+      -- peers identifies the other daemon; peer_tokens are the guest
+      -- credentials it presents; peer_invites are one-shot pairing links.
+      -- The contract body stays JSON because it is expected to evolve.
+      -- ───────────────────────────────────────────────────────────────
+      CREATE TABLE IF NOT EXISTS exposed_agents (
+        agent_id      TEXT PRIMARY KEY,
+        contract_json TEXT NOT NULL,
+        enabled       INTEGER NOT NULL DEFAULT 0,
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS peers (
+        id              TEXT PRIMARY KEY,           -- local connection id (one agent)
+        direction       TEXT NOT NULL,              -- in | out
+        server_id       TEXT NOT NULL DEFAULT '',   -- the other daemon's serverId
+        remote_agent_id TEXT,                       -- outbound: the agent it addresses
+        label           TEXT NOT NULL DEFAULT '',
+        base_url        TEXT NOT NULL,
+        fingerprint     TEXT,
+        token_cipher    TEXT,
+        last_seen_at    INTEGER,
+        created_at      INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_peers_direction ON peers (direction, created_at DESC);
+      -- idx_peers_remote is created after the column migrations below: on a
+      -- P3.1 database peers predates server_id, so indexing it here fails.
+
+      CREATE TABLE IF NOT EXISTS peer_tokens (
+        id           TEXT PRIMARY KEY,
+        peer_id      TEXT NOT NULL,
+        token_hash   TEXT NOT NULL,
+        scopes       TEXT NOT NULL DEFAULT '[]',
+        created_at   INTEGER NOT NULL,
+        expires_at   INTEGER,
+        revoked_at   INTEGER,
+        last_used_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_peer_tokens_peer ON peer_tokens (peer_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_tokens_hash ON peer_tokens (token_hash);
+
+      CREATE TABLE IF NOT EXISTS peer_invites (
+        id          TEXT PRIMARY KEY,
+        token_hash  TEXT NOT NULL,
+        agent_ids   TEXT NOT NULL,               -- JSON array
+        expires_at  INTEGER NOT NULL,
+        single_use  INTEGER NOT NULL DEFAULT 1,
+        consumed_at INTEGER,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_invites_hash ON peer_invites (token_hash);
+
+      -- B-generated thread key -> the hidden session on this machine. One row
+      -- per (peer, key); the agent is stored so a key cannot be replayed
+      -- against a different exposed agent.
+      CREATE TABLE IF NOT EXISTS peer_threads (
+        peer_id    TEXT NOT NULL,
+        thread_key TEXT NOT NULL,
+        agent_id   TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (peer_id, thread_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_peer_threads_session ON peer_threads (session_id);
     `);
     // Only Claude existed when this column was named for it; Codex stores its
     // thread id in the same slot. Rename before any read so old daemons keep
@@ -828,6 +963,33 @@ export class Db {
     );
     this.db.exec(
       `CREATE INDEX IF NOT EXISTS idx_messages_committed ON messages (session_id, committed_seq);`,
+    );
+
+    // ── Peer / P3 columns ─────────────────────────────────────────────
+    // `messages.source='peer'` is written when the text came from another
+    // daemon; memory capture skips those rows structurally (no tag parsing).
+    // `client_run_id` is B's idempotency key; `remote_run_id` is what B must
+    // cancel/reconcile against A after a restart.
+    this.ensureColumn('messages', 'source', 'TEXT');
+    this.ensureColumn('runs', 'peer_id', 'TEXT');
+    this.ensureColumn('runs', 'client_run_id', 'TEXT');
+    this.ensureColumn('runs', 'remote_run_id', 'TEXT');
+    this.ensureColumn('peer_tokens', 'expires_at', 'INTEGER');
+    this.ensureColumn('peers', 'server_id', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('peers', 'remote_agent_id', 'TEXT');
+    // P3.1 shipped machine-wide rows keyed by serverId; they remain valid as
+    // one-agent connections, so backfill the server identity instead of dropping.
+    this.db.exec(`UPDATE peers SET server_id = id WHERE server_id = ''`);
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_peers_remote
+         ON peers (direction, server_id, remote_agent_id);`,
+    );
+    // Idempotency is per peer: two machines may both number their calls "1".
+    // The early global index shipped in P3.1; replace it with the composite one.
+    this.db.exec(`DROP INDEX IF EXISTS idx_runs_client_run;`);
+    this.db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_peer_client_run
+         ON runs (peer_id, client_run_id);`,
     );
     // A turn retry (dropped response, double Enter, flaky link) must not become
     // a second question. NULL is allowed for turns sent by older clients.
@@ -887,6 +1049,19 @@ export class Db {
     this.db.close();
   }
 
+  /** Run a synchronous unit of work atomically. Nested calls are not supported. */
+  transaction<T>(work: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = work();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   // ---- sessions ----
 
   createSession(input: {
@@ -901,8 +1076,8 @@ export class Db {
     title?: string | null;
     /** Hidden command-task sessions use `command`; visible chat sessions use `chat`. */
     kind?: 'chat' | 'command';
-    /** `task_config` marks the reusable AI authoring chat. */
-    purpose?: 'task_config' | null;
+    /** `task_config` marks the reusable AI authoring chat; `peer` hides remote runs. */
+    purpose?: 'task_config' | 'peer' | null;
   }): SessionRow {
     const now = Date.now();
     this.db
@@ -982,11 +1157,36 @@ export class Db {
   listSessions(workspaceId?: string): SessionRow[] {
     if (workspaceId) {
       return this.db
-        .prepare(`SELECT * FROM sessions WHERE workspace_id = ? AND kind = 'chat' ORDER BY last_active_at DESC`)
+        .prepare(
+          `SELECT * FROM sessions WHERE workspace_id = ? AND kind = 'chat'
+             AND (purpose IS NULL OR purpose <> 'peer')
+           ORDER BY last_active_at DESC`,
+        )
         .all(workspaceId) as unknown as SessionRow[];
     }
     return this.db
-      .prepare(`SELECT * FROM sessions WHERE kind = 'chat' ORDER BY last_active_at DESC`)
+      .prepare(
+        `SELECT * FROM sessions WHERE kind = 'chat' AND (purpose IS NULL OR purpose <> 'peer')
+         ORDER BY last_active_at DESC`,
+      )
+      .all() as unknown as SessionRow[];
+  }
+
+  /** Hidden sessions a remote peer is driving (`purpose='peer'`), newest first. */
+  listPeerSessions(workspaceId?: string): SessionRow[] {
+    if (workspaceId) {
+      return this.db
+        .prepare(
+          `SELECT * FROM sessions WHERE workspace_id = ? AND kind = 'chat' AND purpose = 'peer'
+           ORDER BY last_active_at DESC`,
+        )
+        .all(workspaceId) as unknown as SessionRow[];
+    }
+    return this.db
+      .prepare(
+        `SELECT * FROM sessions WHERE kind = 'chat' AND purpose = 'peer'
+         ORDER BY last_active_at DESC`,
+      )
       .all() as unknown as SessionRow[];
   }
 
@@ -1773,6 +1973,215 @@ export class Db {
       .all(workspaceId) as unknown as AgentRow[];
   }
 
+  // ---- peer / exposed agents ----
+
+  getExposedAgent(agentId: string): ExposedAgentRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM exposed_agents WHERE agent_id = ?`)
+      .get(agentId) as unknown as ExposedAgentRow | undefined;
+  }
+
+  listExposedAgents(): ExposedAgentRow[] {
+    return this.db
+      .prepare(`SELECT * FROM exposed_agents ORDER BY created_at ASC`)
+      .all() as unknown as ExposedAgentRow[];
+  }
+
+  upsertExposedAgent(row: ExposedAgentRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO exposed_agents (agent_id, contract_json, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(agent_id) DO UPDATE SET
+           contract_json = excluded.contract_json,
+           enabled = excluded.enabled,
+           updated_at = excluded.updated_at`,
+      )
+      .run(row.agent_id, row.contract_json, row.enabled, row.created_at, row.updated_at);
+  }
+
+  setExposedAgentEnabled(agentId: string, enabled: boolean, updatedAt: number): void {
+    this.db
+      .prepare(`UPDATE exposed_agents SET enabled = ?, updated_at = ? WHERE agent_id = ?`)
+      .run(enabled ? 1 : 0, updatedAt, agentId);
+  }
+
+  deleteExposedAgent(agentId: string): void {
+    this.db.prepare(`DELETE FROM exposed_agents WHERE agent_id = ?`).run(agentId);
+  }
+
+  getPeer(id: string): PeerRow | undefined {
+    return this.db.prepare(`SELECT * FROM peers WHERE id = ?`).get(id) as unknown as PeerRow | undefined;
+  }
+
+  listPeers(direction?: 'in' | 'out'): PeerRow[] {
+    const sql = direction
+      ? `SELECT * FROM peers WHERE direction = ? ORDER BY created_at DESC`
+      : `SELECT * FROM peers ORDER BY created_at DESC`;
+    return (direction
+      ? this.db.prepare(sql).all(direction)
+      : this.db.prepare(sql).all()) as unknown as PeerRow[];
+  }
+
+  upsertPeer(row: PeerRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO peers
+           (id, direction, server_id, remote_agent_id, label, base_url, fingerprint,
+            token_cipher, last_seen_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           direction = excluded.direction,
+           server_id = excluded.server_id,
+           remote_agent_id = excluded.remote_agent_id,
+           label = excluded.label,
+           base_url = excluded.base_url,
+           fingerprint = excluded.fingerprint,
+           token_cipher = excluded.token_cipher`,
+      )
+      .run(
+        row.id,
+        row.direction,
+        row.server_id,
+        row.remote_agent_id,
+        row.label,
+        row.base_url,
+        row.fingerprint,
+        row.token_cipher,
+        row.last_seen_at,
+        row.created_at,
+      );
+  }
+
+  /** One outbound connection per (remote daemon, remote agent). */
+  findOutboundPeer(serverId: string, remoteAgentId: string): PeerRow | undefined {
+    return this.db
+      .prepare(
+        `SELECT * FROM peers
+         WHERE direction = 'out' AND server_id = ? AND remote_agent_id = ?`,
+      )
+      .get(serverId, remoteAgentId) as unknown as PeerRow | undefined;
+  }
+
+  touchPeer(id: string, at: number): void {
+    this.db.prepare(`UPDATE peers SET last_seen_at = ? WHERE id = ?`).run(at, id);
+  }
+
+  deletePeer(id: string): void {
+    this.db.prepare(`DELETE FROM peers WHERE id = ?`).run(id);
+    this.db.prepare(`DELETE FROM peer_tokens WHERE peer_id = ?`).run(id);
+  }
+
+  insertPeerToken(row: PeerTokenRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO peer_tokens
+           (id, peer_id, token_hash, scopes, created_at, expires_at, revoked_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.peer_id,
+        row.token_hash,
+        row.scopes,
+        row.created_at,
+        row.expires_at,
+        row.revoked_at,
+        row.last_used_at,
+      );
+  }
+
+  getPeerTokenByHash(tokenHash: string): PeerTokenRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM peer_tokens WHERE token_hash = ?`)
+      .get(tokenHash) as unknown as PeerTokenRow | undefined;
+  }
+
+  listPeerTokens(peerId: string): PeerTokenRow[] {
+    return this.db
+      .prepare(`SELECT * FROM peer_tokens WHERE peer_id = ? ORDER BY created_at DESC`)
+      .all(peerId) as unknown as PeerTokenRow[];
+  }
+
+  listAllPeerTokens(): PeerTokenRow[] {
+    return this.db
+      .prepare(`SELECT * FROM peer_tokens ORDER BY created_at DESC`)
+      .all() as unknown as PeerTokenRow[];
+  }
+
+  revokePeerToken(id: string, at: number): void {
+    this.db.prepare(`UPDATE peer_tokens SET revoked_at = ? WHERE id = ?`).run(at, id);
+  }
+
+  setPeerTokenScopes(id: string, scopes: string): void {
+    this.db.prepare(`UPDATE peer_tokens SET scopes = ? WHERE id = ?`).run(scopes, id);
+  }
+
+  touchPeerToken(id: string, at: number): void {
+    this.db.prepare(`UPDATE peer_tokens SET last_used_at = ? WHERE id = ?`).run(at, id);
+  }
+
+  insertPeerInvite(row: PeerInviteRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO peer_invites (id, token_hash, agent_ids, expires_at, single_use, consumed_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.token_hash,
+        row.agent_ids,
+        row.expires_at,
+        row.single_use,
+        row.consumed_at,
+        row.created_at,
+      );
+  }
+
+  getPeerInviteByHash(tokenHash: string): PeerInviteRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM peer_invites WHERE token_hash = ?`)
+      .get(tokenHash) as unknown as PeerInviteRow | undefined;
+  }
+
+  consumePeerInvite(id: string, at: number): void {
+    this.db
+      .prepare(`UPDATE peer_invites SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL`)
+      .run(at, id);
+  }
+
+  getPeerThread(peerId: string, threadKey: string): PeerThreadRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM peer_threads WHERE peer_id = ? AND thread_key = ?`)
+      .get(peerId, threadKey) as unknown as PeerThreadRow | undefined;
+  }
+
+  /** The single remote thread mapped to a hidden session (one thread per session). */
+  getPeerThreadBySession(sessionId: string): PeerThreadRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM peer_threads WHERE session_id = ?`)
+      .get(sessionId) as unknown as PeerThreadRow | undefined;
+  }
+
+  insertPeerThread(row: PeerThreadRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO peer_threads (peer_id, thread_key, agent_id, session_id, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(row.peer_id, row.thread_key, row.agent_id, row.session_id, row.created_at);
+  }
+
+  setPeerThreadSession(peerId: string, threadKey: string, sessionId: string): void {
+    this.db
+      .prepare(`UPDATE peer_threads SET session_id = ? WHERE peer_id = ? AND thread_key = ?`)
+      .run(sessionId, peerId, threadKey);
+  }
+
+  setRunRemoteRunId(id: string, remoteRunId: string): void {
+    this.db.prepare(`UPDATE runs SET remote_run_id = ? WHERE id = ?`).run(remoteRunId, id);
+  }
+
   /** Insert a fully-formed agent row. Callers validate; this only writes. */
   insertAgent(row: AgentRow): void {
     this.db
@@ -2337,6 +2746,12 @@ export class Db {
         `UPDATE agent_threads SET last_seen_seq = MAX(last_seen_seq, ?), last_used_at = ? WHERE id = ?`,
       )
       .run(seq, Date.now(), id);
+  }
+
+  setAgentThreadRemoteKey(id: string, remoteThreadKey: string): void {
+    this.db
+      .prepare(`UPDATE agent_threads SET remote_thread_key = ?, last_used_at = ? WHERE id = ?`)
+      .run(remoteThreadKey, Date.now(), id);
   }
 
   updateAgentThread(
@@ -3018,6 +3433,8 @@ export class Db {
       agentId?: string | null;
       turnId?: string | null;
       taskId?: string | null;
+      /** `'peer'` marks text returned by another daemon; memory capture skips it. */
+      source?: 'peer' | null;
       /** Assign the next timeline position (a task answer is final on arrival). */
       commit?: boolean;
     },
@@ -3028,8 +3445,8 @@ export class Db {
     const info = this.db
       .prepare(
         `INSERT INTO messages
-           (session_id, role, content, agent_id, turn_id, task_id, committed_seq, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (session_id, role, content, agent_id, turn_id, task_id, committed_seq, source, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sessionId,
@@ -3039,6 +3456,7 @@ export class Db {
         attribution?.turnId ?? null,
         attribution?.taskId ?? null,
         committedSeq,
+        attribution?.source ?? null,
         Date.now(),
       );
     return Number(info.lastInsertRowid);
@@ -3106,18 +3524,24 @@ export class Db {
     status: string;
     commandId?: string | null;
     taskId?: string | null;
-    trigger?: 'user' | 'scheduled' | 'run_now';
+    trigger?: 'user' | 'scheduled' | 'run_now' | 'peer';
     permissionMode?: string | null;
     /** The agent that owns this run; defaults to the session leader. */
     agentId?: string | null;
     threadId?: string | null;
     turnId?: string | null;
+    /** The peer this run talks to; NULL for local runs. */
+    peerId?: string | null;
+    /** B-side idempotency key for a peer call; unique per peer when present. */
+    clientRunId?: string | null;
+    /** The remote daemon's run id, used for cancel/reconciliation. */
+    remoteRunId?: string | null;
   }): void {
     const shadow = this.shadowRunAttribution(input.sessionId);
     this.db
       .prepare(
-        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode, turn_id, agent_id, thread_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO runs (id, session_id, runtime, model, model_parameters, status, prompt, attachment_ids, started_at, ended_at, exit_code, error, command_id, task_id, trigger, permission_mode, turn_id, agent_id, thread_id, peer_id, client_run_id, remote_run_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -3136,6 +3560,9 @@ export class Db {
         input.turnId ?? null,
         input.agentId ?? shadow.agentId,
         input.threadId ?? shadow.threadId,
+        input.peerId ?? null,
+        input.clientRunId ?? null,
+        input.remoteRunId ?? null,
       );
   }
 
@@ -3173,6 +3600,13 @@ export class Db {
 
   getRun(id: string): RunRow | undefined {
     return this.db.prepare(`SELECT * FROM runs WHERE id = ?`).get(id) as unknown as RunRow | undefined;
+  }
+
+  /** The run a peer already started for this idempotency key, if any. */
+  getRunByPeerClientRun(peerId: string, clientRunId: string): RunRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM runs WHERE peer_id = ? AND client_run_id = ?`)
+      .get(peerId, clientRunId) as unknown as RunRow | undefined;
   }
 
   /** The run a client command id already started, if any (see `createRun`). */

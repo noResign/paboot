@@ -249,6 +249,8 @@ export interface SessionDto {
 export interface CreateSessionRequest {
   workspaceId?: string;
   runtime?: string;
+  /** Chat directly with this workspace assistant; it becomes the room leader. */
+  agentId?: string;
   permissionMode?: ProductPermissionMode;
   model?: string | null;
   modelParameters?: Record<string, string> | null;
@@ -319,7 +321,7 @@ export interface RunDto {
   /** Set when the run was triggered by a scheduled task. */
   taskId?: string | null;
   /** How the run was started; older daemons omit it. */
-  trigger?: 'user' | 'scheduled' | 'run_now';
+  trigger?: 'user' | 'scheduled' | 'run_now' | 'peer';
   /** Permission mode actually used for this run (bypass for scheduled runs). */
   permissionMode?: string | null;
   /** The agent that produced this run; omitted by pre-agent daemons. */
@@ -1113,6 +1115,10 @@ export interface AgentProfileDetailDto extends AgentProfileDto {
   skills: string[] | null;
   /** Run budget override; `null` = the runtime's defaults. */
   budget: { maxSteps?: number; maxToolCalls?: number } | null;
+  /** `kind='peer'`: the local connection id (one agent per connection). */
+  peerId?: string | null;
+  /** `kind='peer'`: the agent id on the other machine. */
+  remoteAgentId?: string | null;
   version: number;
   isImplicit: boolean;
   createdAt: number;
@@ -1177,6 +1183,107 @@ export interface SessionAgentDetailResponse {
     compactionCount: number | null;
     lastCompactedAt: number | null;
   };
+}
+
+/** A cross-machine contract as the owner's client reads/writes it. */
+export interface PeerContractDto {
+  agentId: string;
+  publicName: string;
+  summary: string;
+  access: 'full' | 'custom';
+  dirs: string[];
+  approvalPolicy: 'relay' | 'local_prompt' | 'auto_deny';
+  maxConcurrentRuns: number;
+  quota: {
+    runsPerHour: number;
+    maxInputTokensPerRun: number;
+    maxWallClockMs: number;
+  };
+  capture: boolean;
+  protocolVersion: number;
+  version: number;
+}
+
+export interface PeerExposedAgentDto {
+  agentId: string;
+  enabled: boolean;
+  contract: PeerContractDto;
+  /** True when at least one live guest token can address this agent. */
+  hasTokens: boolean;
+}
+
+/** Anonymous `GET /api/peer/info`: identity + exposed agents, never paths. */
+export interface PeerPublicAgentDto {
+  agentId: string;
+  publicName: string;
+  summary: string;
+  contractVersion: number;
+}
+
+export interface PeerInfoDto {
+  serverId: string;
+  protocolVersion: number;
+  agents: PeerPublicAgentDto[];
+}
+
+/** `POST /api/agents/:id/exposed/invites`. */
+export interface PeerInviteDto {
+  url: string;
+  agentIds: string[];
+  expiresAt: number;
+}
+
+/** `POST /api/peer/redeem`: binds an invite token to an `in` peer. */
+export interface PeerRedeemDto {
+  peerId: string;
+  agentIds: string[];
+}
+
+/** One remote agent this machine has joined, as the owner's client sees it. */
+export interface PeerRemoteAgentDto {
+  /** B-side local agent id (`kind='peer'`). */
+  localAgentId: string;
+  remoteAgentId: string;
+  name: string;
+  summary: string;
+  enabled: boolean;
+}
+
+/** A machine we joined (`peers.direction='out'`). */
+export interface PeerConnectionDto {
+  id: string;
+  label: string;
+  baseUrl: string;
+  online: boolean;
+  lastSeenAt: number | null;
+  agents: PeerRemoteAgentDto[];
+}
+
+/**
+ * A hidden session a remote peer is driving on this machine (`purpose='peer'`).
+ *
+ * The exposing side is read-only: it may watch what a visitor is doing with the
+ * shared agent but cannot inject turns. Not part of `GET /api/sessions`, which
+ * keeps these hidden from the normal rail.
+ */
+export interface PeerSessionDto {
+  id: string;
+  workspaceId: string | null;
+  title: string | null;
+  agentId: string;
+  agentName: string;
+  peerId: string;
+  /** Who connected: the visitor's label or stable server id. */
+  peerLabel: string;
+  threadKey: string;
+  running: boolean;
+  runningRunIds: string[];
+  lastActiveAt: number;
+  createdAt: number;
+}
+
+export interface PeerSessionsResponse {
+  sessions: PeerSessionDto[];
 }
 
 /** Why an addressed agent did not get a task (`POST /turns` 202, `dropped`). */

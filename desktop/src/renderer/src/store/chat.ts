@@ -94,6 +94,8 @@ export interface NewSessionOptions {
   runtime: string | null;
   workspaceId: string | null;
   permissionMode: string;
+  /** Chat directly with this workspace assistant; it becomes the leader. */
+  agentId?: string | null;
 }
 
 interface ChatStore {
@@ -210,6 +212,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         cwd: session.cwd,
         runtime: session.runtime,
         permissionMode: session.permissionMode,
+        purpose: session.purpose ?? null,
         memoryMode: session.memoryMode ?? 'normal',
         model: session.model,
         modelParameters: session.modelParameters ?? {},
@@ -312,6 +315,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         const created = await api.createSession({
           workspaceId: pending?.workspaceId ?? current?.workspaceId ?? undefined,
           runtime: pending?.runtime ?? current?.runtime ?? undefined,
+          ...(pending?.agentId ? { agentId: pending.agentId } : {}),
           permissionMode: (pending?.permissionMode ?? current?.permissionMode ?? 'ask') as ProductPermissionMode,
           model: current?.model ?? null,
           modelParameters:
@@ -340,6 +344,7 @@ export const useChat = create<ChatStore>((set, get) => ({
             workspaceId: session.workspaceId ?? null,
             runtime: session.runtime,
             permissionMode: session.permissionMode,
+            purpose: session.purpose ?? null,
             model: session.model,
             modelParameters: session.modelParameters ?? {},
             pendingNew: null,
@@ -726,14 +731,33 @@ export const useChat = create<ChatStore>((set, get) => ({
       })),
     }));
 
-    const res = await api.decidePermission(pending.permissionId, decision, reason, response);
-    const { apiCode, message } = apiErrorOf(res.data);
+    const local = await api.decidePermission(pending.permissionId, decision, reason, response);
+    let ok = local.ok;
+    let status = local.status;
+    let payload: unknown = local.data;
+
+    // A peer run's approval lives on the other machine: this daemon has no
+    // PermissionManager entry, so the local answer 404s. Relay it instead.
+    if (!local.ok && local.status === 404 && pending.runId) {
+      const relayed = await api.decidePeerPermission(
+        pending.runId,
+        pending.permissionId,
+        decision === 'deny' ? 'deny' : 'allow',
+      );
+      if (relayed.ok || relayed.status === 404 || relayed.status === 409) {
+        ok = relayed.ok;
+        status = relayed.status;
+        payload = relayed.data;
+      }
+    }
+
+    const { apiCode, message } = apiErrorOf(payload);
 
     set((state) => ({
       byKey: patch(state, key, (current) => {
         // A 404/409 means the request is already over (someone else answered, or
         // it timed out) — treat it as resolved rather than showing an error.
-        if (res.ok || res.status === 404 || res.status === 409) {
+        if (ok || status === 404 || status === 409) {
           return {
             ...current,
             permissions: setSubmitting(dismissPermission(current.permissions, pending.permissionId), false),
@@ -745,7 +769,7 @@ export const useChat = create<ChatStore>((set, get) => ({
           return {
             ...current,
             permissions: setSubmitting(
-              setInputError(current.permissions, friendlyMessage(apiCode, res.status, message)),
+              setInputError(current.permissions, friendlyMessage(apiCode, status, message)),
               false,
             ),
           };
@@ -753,7 +777,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         return {
           ...current,
           permissions: setSubmitting(current.permissions, false),
-          error: friendlyMessage(apiCode, res.status, message),
+          error: friendlyMessage(apiCode, status, message),
         };
       }),
     }));
@@ -1638,6 +1662,7 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
       cwd: session.cwd,
       runtime: session.runtime,
       permissionMode: session.permissionMode,
+      purpose: session.purpose ?? null,
       runId: session.runningRunId,
       messages: rebuilt.messages,
       pendingAnswers: rebuilt.pendingAnswers,

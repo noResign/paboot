@@ -35,6 +35,26 @@ export interface PermissionBrokerGrants {
  * unannounced request still waits, so a disconnected client cannot silently
  * approve anything.
  */
+/**
+ * Apply a pre-decision (peer runs) before the normal ask/grants flow.
+ *
+ * `allow`/`deny` short-circuit without creating a pending request; `ask` keeps
+ * the existing behaviour (session grant, then surface to the client).
+ */
+export function withToolPolicy(
+  inner: PermissionBroker,
+  policy: (toolName: string, toolInput: unknown) => 'allow' | 'deny' | 'ask',
+): PermissionBroker {
+  return {
+    async request(request): Promise<ToolPermissionDecision> {
+      const decision = policy(request.toolName, request.toolInput);
+      if (decision === 'allow') return { status: 'allowed', reason: 'peer policy' };
+      if (decision === 'deny') return { status: 'denied', reason: 'peer policy' };
+      return inner.request(request);
+    },
+  };
+}
+
 export function createPermissionBroker(input: {
   permissions: PermissionBrokerBackend;
   notifier: PermissionBrokerNotifier;

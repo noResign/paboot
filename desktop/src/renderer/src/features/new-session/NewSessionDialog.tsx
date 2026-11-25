@@ -9,10 +9,11 @@ import {
   PERMISSION_MODE_LABEL,
 } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
-import type { AgentDto, ProductPermissionMode } from '../../../../shared/contract';
+import type { AgentDto, AgentProfileDto, ProductPermissionMode } from '../../../../shared/contract';
 import type { NewSessionOptions } from '../../store/chat';
 
 interface Props {
+  workspaceId: string | null;
   workspaceName: string | null;
   workspacePath: string | null;
   /** Workspace-level new-session defaults; null = follow global / claude. */
@@ -28,6 +29,7 @@ interface Props {
  * Codex and DeepSeek Harness side by side from one client.
  */
 export function NewSessionDialog({
+  workspaceId,
   workspaceName,
   workspacePath,
   defaultRuntime,
@@ -38,6 +40,9 @@ export function NewSessionDialog({
   const [agents, setAgents] = useState<AgentDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<string | null>(null);
+  /** Direct chat target; null = use a bare runtime instead of a defined assistant. */
+  const [assistants, setAssistants] = useState<AgentProfileDto[]>([]);
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [mode, setMode] = useState<ProductPermissionMode>('ask');
   const storeBypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const [bypassAllowed, setBypassAllowed] = useState(storeBypassAllowed);
@@ -86,6 +91,21 @@ export function NewSessionDialog({
   }, [defaultRuntime, defaultPermissionMode]);
 
   useEffect(() => {
+    if (!workspaceId) {
+      setAssistants([]);
+      return;
+    }
+    let live = true;
+    void api.workspaceAgents(workspaceId).then((res) => {
+      if (!live) return;
+      setAssistants(res.ok ? res.data.agents.filter((agent) => agent.enabled) : []);
+    });
+    return () => {
+      live = false;
+    };
+  }, [workspaceId]);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onCancel();
       if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
@@ -96,14 +116,25 @@ export function NewSessionDialog({
 
   const available = agents?.filter((agent) => agent.available) ?? [];
   const noneAvailable = agents !== null && available.length === 0;
+  const selectedAgent = assistants.find((agent) => agent.id === agentId) ?? null;
+  const effectiveRuntime = selectedAgent ? selectedAgent.backend : runtime;
+  // A remote assistant's freshness is a hint, not a hard gate: `available` is
+  // only "seen in the last 5 minutes", and a run can still wake it.
+  const agentUnavailable =
+    selectedAgent !== null && selectedAgent.kind !== 'peer' && !selectedAgent.available;
 
   function submit(): void {
-    if (!runtime) return;
-    onCreate({ runtime, workspaceId: null, permissionMode: mode });
+    if (!effectiveRuntime || agentUnavailable) return;
+    onCreate({
+      runtime: effectiveRuntime,
+      workspaceId: null,
+      permissionMode: mode,
+      ...(selectedAgent ? { agentId: selectedAgent.id } : {}),
+    });
   }
 
-  const modes = permissionModeOptions(runtime, bypassAllowed);
-  const canSubmit = Boolean(runtime) && !noneAvailable;
+  const modes = permissionModeOptions(effectiveRuntime, bypassAllowed);
+  const canSubmit = Boolean(effectiveRuntime) && (selectedAgent ? !agentUnavailable : !noneAvailable);
 
   return (
     <div className="modal-scrim" onClick={onCancel}>
@@ -131,8 +162,43 @@ export function NewSessionDialog({
         </div>
 
         <div className="field">
-          <label>Agent</label>
-          {agents === null ? (
+          <label>直接和助手对话</label>
+          <div className="agent-picker">
+            <button
+              className={`agent-option${agentId === null ? ' active' : ''}`}
+              onClick={() => setAgentId(null)}
+            >
+              <Icon name="plus" size={14} />
+              <span>不用助手（直接选运行时）</span>
+            </button>
+            {assistants.map((assistant) => (
+              <button
+                key={assistant.id}
+                className={`agent-option${agentId === assistant.id ? ' active' : ''}`}
+                disabled={assistant.kind !== 'peer' && !assistant.available}
+                title={assistant.summary || assistant.backend}
+                onClick={() => setAgentId(assistant.id)}
+              >
+                <RuntimeIcon id={assistant.backend} size={16} />
+                <span>{assistant.name}</span>
+                {assistant.kind === 'peer' && <span className="badge">远端</span>}
+                {!assistant.available && (
+                  <span className="badge">
+                    {assistant.kind === 'peer' ? '可能离线' : '当前离线'}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="hint">
+            选中后，这个会话以它为唯一助手，直接提问即可应答；不加 @ 也由它回答。
+          </div>
+        </div>
+
+        {!selectedAgent && (
+          <div className="field">
+            <label>运行时</label>
+            {agents === null ? (
             <div className="hint">正在读取 Agent 列表…</div>
           ) : (
             <div className="agent-picker">
@@ -152,8 +218,15 @@ export function NewSessionDialog({
             </div>
           )}
           <div className="hint">模型与推理强度用电脑端 Agent 的默认配置；建立会话后可在会话页切换模型。</div>
-        </div>
+          </div>
+        )}
 
+        {selectedAgent?.kind === 'peer' ? (
+          <div className="field">
+            <label>权限模式</label>
+            <div className="hint">由那台机器的共享合同决定（默认：对端用户批准写操作）。</div>
+          </div>
+        ) : (
         <div className="field">
           <label>权限模式</label>
           <div className="mode-picker">
@@ -172,8 +245,9 @@ export function NewSessionDialog({
             <div className="error-text">⚠️ bypass 会跳过工具审批——这个会话里的操作将不再询问你。</div>
           )}
         </div>
+        )}
 
-        {noneAvailable && (
+        {!selectedAgent && noneAvailable && (
           <div className="error-text">
             本机没有可用的 agent，请先在电脑上安装并登录 Claude Code、Codex 或 DeepSeek Harness。
           </div>

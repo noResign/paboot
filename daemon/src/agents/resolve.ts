@@ -94,7 +94,8 @@ export function defaultAgentFor(db: Db, workspaceId: string): Agent | null {
   const pinned = db.getWorkspaceDefaultAgentId(workspaceId);
   if (pinned) {
     const agent = getAgent(db, pinned);
-    if (agent && agent.enabled) return agent;
+    // A peer must never become a room's default speaker by accident.
+    if (agent && agent.enabled && agent.kind !== 'peer') return agent;
   }
   const implicit = db
     .listAgents(workspaceId)

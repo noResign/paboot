@@ -47,6 +47,17 @@ export interface RuntimeDriverRequest {
   onNativeSessionId: (id: string) => void;
   /** Workspace dirs beyond `cwd` this run may touch. */
   extraDirs?: string[];
+  /**
+   * Paths this run must never touch, even under the `local` profile.
+   * Peer runs set this to the daemon data dir.
+   */
+  denyRoots?: string[];
+  /**
+   * Peer runs only: pre-decide a tool call before asking the client. Set by the
+   * peer executor so every backend (Claude, builtin) honours the same contract
+   * (paused share / `auto_deny` / data-dir deny / ungated reads).
+   */
+  peerToolPolicy?: (toolName: string, toolInput: unknown) => 'allow' | 'deny' | 'ask';
   /** Image attachments admitted for this prompt. */
   attachmentIds?: string[];
   /** The same attachments resolved to disk rows, ready for the runtime. */

@@ -129,6 +129,8 @@ export interface ChatSessionState {
   cwd: string | null;
   runtime: string | null;
   permissionMode: string | null;
+  /** `'peer'` = a hidden shared run; the exposing side watches it read-only. */
+  purpose?: string | null;
   /** Memory capture/injection mode; null = older daemon / unknown. */
   memoryMode?: 'normal' | 'no_injection' | 'off' | null;
   /** Explicit model for subsequent runs; null = the machine's CLI default. */
@@ -187,6 +189,8 @@ export interface ChatSessionState {
     runtime: string | null;
     workspaceId: string | null;
     permissionMode: string;
+    /** Direct chat: the assistant that becomes the room leader. */
+    agentId?: string | null;
   } | null;
 }
 
@@ -205,6 +209,7 @@ export function emptyChat(key: string, connectionId: string): ChatSessionState {
     cwd: null,
     runtime: null,
     permissionMode: null,
+    purpose: null,
     model: null,
     modelParameters: {},
     messages: [],

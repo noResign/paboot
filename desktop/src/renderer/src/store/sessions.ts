@@ -2,7 +2,12 @@ import { create } from 'zustand';
 import { api } from '../ipc/client';
 import { apiErrorOf, friendlyMessage } from '../../../shared/errors';
 import { removeWorkspace, replaceWorkspace, setWorkspaceDirs } from './workspaceList';
-import type { ProductPermissionMode, SessionDto, WorkspaceDto } from '../../../shared/contract';
+import type {
+  PeerSessionDto,
+  ProductPermissionMode,
+  SessionDto,
+  WorkspaceDto,
+} from '../../../shared/contract';
 
 /**
  * Session and workspace state, keyed by connection id. M1 only ever shows one
@@ -13,6 +18,8 @@ import type { ProductPermissionMode, SessionDto, WorkspaceDto } from '../../../s
 export interface ConnectionScope {
   workspaces: WorkspaceDto[];
   sessions: SessionDto[];
+  /** Hidden sessions remote peers are driving with our exposed agents. */
+  peerSessions: PeerSessionDto[];
   /** Which workspace `sessions` was loaded for — see {@link visibleSessions}. */
   sessionsWorkspaceId: string | null;
   loading: boolean;
@@ -22,6 +29,7 @@ export interface ConnectionScope {
 export const EMPTY_SCOPE: ConnectionScope = {
   workspaces: [],
   sessions: [],
+  peerSessions: [],
   sessionsWorkspaceId: null,
   loading: false,
   error: null,
@@ -113,7 +121,10 @@ export const useSessions = create<SessionsState>((set, get) => ({
       }));
     }
 
-    const res = await api.sessions(workspaceId);
+    const [res, peerRes] = await Promise.all([
+      api.sessions(workspaceId),
+      api.peerSessions(workspaceId),
+    ]);
 
     set((state) => {
       const previous = state.byConnection[connectionId] ?? EMPTY_SCOPE;
@@ -123,6 +134,9 @@ export const useSessions = create<SessionsState>((set, get) => ({
           [connectionId]: {
             ...previous,
             sessions: res.ok ? res.data.sessions : previous.sessions,
+            // A daemon that predates the peer endpoint answers 404; keep the
+            // previous batch rather than turning the whole rail into an error.
+            peerSessions: peerRes.ok ? peerRes.data.sessions : previous.peerSessions,
             // Only a successful fetch establishes provenance — a failed one must
             // not relabel the old batch as belonging to the new workspace.
             sessionsWorkspaceId: res.ok ? workspaceId : previous.sessionsWorkspaceId,
@@ -249,4 +263,9 @@ export function useScope(connectionId: string | null): ConnectionScope {
  */
 export function visibleSessions(scope: ConnectionScope, workspaceId: string): SessionDto[] {
   return scope.sessionsWorkspaceId === workspaceId ? scope.sessions : [];
+}
+
+/** Same provenance rule as {@link visibleSessions}, for the peer-monitoring rail. */
+export function visiblePeerSessions(scope: ConnectionScope, workspaceId: string): PeerSessionDto[] {
+  return scope.sessionsWorkspaceId === workspaceId ? scope.peerSessions : [];
 }

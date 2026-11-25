@@ -111,6 +111,7 @@ export function extractToolFiles(events: readonly EventRow[]): ToolFiles {
 function firstUserText(messages: readonly MessageRow[]): string {
   for (const message of messages) {
     if (message.role !== 'user') continue;
+    if (message.source === 'peer') continue;
     const text = filterCaptureText(message.content).trim();
     if (text !== '') return text;
   }
@@ -121,6 +122,7 @@ function lastAssistantText(messages: readonly MessageRow[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (message.role !== 'assistant') continue;
+    if (message.source === 'peer') continue;
     const text = filterCaptureText(message.content).trim();
     if (text !== '') return text;
   }

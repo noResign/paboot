@@ -14,7 +14,7 @@
 
 | 表 | 内容 |
 |---|---|
-| `sessions` | 会话：`id`、`runtime`、`kind`（`chat` / `command`，后者是命令任务的隐藏会话）、`native_session_id`、`workspace_id`、`end_id`（主端，P0 只加列，暂为 `NULL`）、`memory_mode`（默认 `normal`；P0 只加列）、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
+| `sessions` | 会话：`id`、`runtime`、`kind`（`chat` / `command`，后者是命令任务的隐藏会话）、`purpose`（`task_config` / `peer`；后者是跨机运行用的隐藏会话）、`native_session_id`、`workspace_id`、`end_id`（主端，P0 只加列，暂为 `NULL`）、`memory_mode`（默认 `normal`；P0 只加列）、`permission_mode`、`model`（建会话时选择的模型，`NULL` = 沿用 CLI 默认）、`model_parameters`（JSON 对象，通用模型参数如 `{"reasoningEffort":"high"}`）、`cwd`、`title`、时间戳 |
 | `workspaces` | 工作区：`id`、`name`、`path`（主目录）、`is_default`、`is_builtin`、`enabled`、`family`（`dev \| life`，默认 `dev`）、`profile_mode`（`off \| portable \| full`，默认 `portable`，仅 life 有意义）、`life_readable`（dev 专用，默认 `0`）、时间戳 |
 | `ends` | 工作区里的端（P0 只落表与约束，CRUD 留到 S2/S3）：`id`、`workspace_id`、`family`（必须等于所属工作区）、`kind`、`name`、`status`、`archived_at`。DB trigger 拒绝 family 不匹配；partial unique index 保证一个工作区只有一个 `family=life` 的端。`end_roots` 存端与目录的绑定 |
 | `end_roots` | 端引用的目录：`(end_id, path)`；life 端不绑定 end_roots（life 工作区的附加目录仍写 `workspace_dirs`，与 dev 同一套授权） |
@@ -24,12 +24,17 @@
 | `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
-| `messages` | 对话转录：user prompt + assistant 聚合后的可见文本；`agent_id` / `turn_id` / `task_id` 记录发言人归属，`committed_seq` 是时间线位置（NULL = 尚未定稿） |
-| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters`、`task_id`、`trigger`（`user\|scheduled\|run_now`）、`permission_mode`、`agent_id` / `thread_id` / `turn_id`（产生这一轮的 agent 与对话） |
+| `messages` | 对话转录：user prompt + assistant 聚合后的可见文本；`agent_id` / `turn_id` / `task_id` 记录发言人归属，`source='peer'` 表示这段文本来自另一台 daemon（**永不进记忆**），`committed_seq` 是时间线位置（NULL = 尚未定稿） |
+| `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error`、实际使用的 `model` / `model_parameters`、`task_id`、`trigger`（`user\|scheduled\|run_now\|peer`）、`permission_mode`、`agent_id` / `thread_id` / `turn_id`（产生这一轮的 agent 与对话）、`peer_id` / `client_run_id`（B 侧幂等键，按 peer 唯一）/ `remote_run_id`（对端 run，用于取消与对账） |
 | `scheduled_tasks` | 定时任务：任务类型/目标会话/工作区/runtime、prompt 或 command、`cron_expr` + `timezone` + `schedule_preset`、`next_run_at`、执行状态、`enabled` / `disabled_reason`、`created_by`（见 [scheduled-tasks.md](scheduled-tasks.md)） |
 | `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放；`session_id` / `room_seq` 是房间流的游标（同一行，不重复写） |
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
+| `exposed_agents` | 跨机授权：`agent_id`、`contract_json`（整份合同）、`enabled`、时间戳；一个 agent 一份 |
+| `peers` | 一条连接对应一个 agent：`id`（本地连接 id）、`direction`（`in` / `out`）、`server_id`（对端 serverId）、`remote_agent_id`（out 必填）、`label`、`base_url`、`fingerprint`、`token_cipher`（出站 token）、`last_seen_at`、`created_at` |
+| `peer_tokens` | 入站 guest 凭证：只存 `token_hash`、`scopes`（**一个** agentId）、`expires_at`（v1 为 NULL：邀请过期不等于连接过期，直到吊销）、`revoked_at`（吊销不删行） |
+| `peer_invites` | 一次性邀请：`token_hash`、`agent_ids`、`expires_at`、`consumed_at`；默认 24h、单次 |
+| `peer_threads` | B 生成的 `thread_key` → 本机隐藏会话：`(peer_id, thread_key)` 主键、`agent_id`、`session_id`；同一个 key 不能挪给另一个 agent |
 
 > `messages` 只是「聚合可见文本」；**工具卡、用量这些细节只存在 `events`**，
 > 客户端重进会话时需用 `GET /api/runs/:id/events` 回放（Android 已实现）。
@@ -66,7 +71,7 @@
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
 | `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?,supportsImages?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）；`supportsImages=false` 表示不能接收图片。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
-| `POST /api/sessions` | 是 | 只创建会话、不启动 run。body `{workspaceId?, runtime?, permissionMode?, model?, modelParameters?, title?}`；交互客户端随后统一走 `/turns` + 房间流。返回 `{session}` |
+| `POST /api/sessions` | 是 | 只创建会话、不启动 run。body `{workspaceId?, runtime?, agentId?, permissionMode?, model?, modelParameters?, title?}`；`agentId` 表示直接和这个助手对话（它成为 leader，`runtime` 由它决定，peer 也可作为 1:1 leader 但不召唤其他助手）。交互客户端随后统一走 `/turns` + 房间流。返回 `{session}` |
 | `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
@@ -312,6 +317,53 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
     `roomSeq`，省略 `after` 只收直播，给了则回放并分页（500 行/页）直到追平。
     客户端重建历史时用 run events 的 `roomSeq` 取得快照游标，再从该位置接入 room stream，
     避免多个并发 run 的已显示前缀被直播流重复或遗漏。
+
+## 跨机共享（peer，P3）
+
+> **v1 是「可信对端」模式**：只承诺同一 LAN / Tailscale / SSH 隧道；合同是 `access='full'`，
+> 工具 / 上下文 / 记忆与本地 run 一致。安全边界在网络 + `guest` 端点白名单 +
+> **`~/.paboot/**` 尽力拒绝（路径/命令启发式，不是沙箱）**。**只有 builtin / Claude 的
+> agent 可以被共享**；Codex / DeepSeek 返回 `backend_not_supported`。
+
+| 方法 & 路径 | 鉴权 | 说明 |
+|---|---|---|
+| `GET /api/peer/info` | 匿名 / guest | 匿名只返回 `serverId` / 协议版本；带 token 时只返回该 token 名下的**一个** agent（`publicName` / `summary` / 合同版本），**不含目录、token 状态** |
+| `GET /api/peer/agent?agentId=` | guest | 自己的合同（B 用来渲染能力与发现版本变化） |
+| `POST /api/peer/redeem` | guest | 把邀请 token 绑定成 `peers(in)` + `peer_tokens`；body 可带 `{peerId,label,baseUrl}`（B 的 serverId），重复调用幂等 |
+| `POST /api/peer/runs` | guest | 发起一轮，直接返回 SSE。body `{agentId, clientRunId, threadKey, prompt, room?, attachments?}`；同一 `(peerId, clientRunId)` 重放不会新建 run |
+| `GET /api/peer/runs/:id/stream?after=` | guest | 断线重连：先回放持久化事件，再续直播 |
+| `POST /api/peer/runs/:id/cancel` | guest | 取消对端 run（A 侧同时有墙钟兜底） |
+| `POST /api/peer/runs/:id/permission` | guest | `relay` 决策回传：`{permissionId, decision:'allow'|'deny'}` |
+| `POST /api/agent-profiles/:id/exposed` | operator | 写入合同（v1 只接受 `access='full'`；`custom` → 400） |
+| `GET /api/agent-profiles/:id/exposed` | operator | 读合同 |
+| `POST /api/agent-profiles/:id/exposed/invites` | operator | 生成本 agent 的一次性邀请（一个邀请只能对应一个 agent），返回 `paboot://join?host&port&fp&t&exp` |
+| `DELETE /api/agent-profiles/:id/exposed/tokens` | operator | 一键吊销：缩小所有相关 token 的 scopes，空则吊销；同时 `enabled=0` |
+| `GET /api/peer/sessions?workspaceId=` | operator | A 侧监控：列出本机 `purpose='peer'` 的隐藏会话（标题、共享的助手、来客 label、是否 running），**只读** |
+
+**A 侧只读监控**：被远端驱动的隐藏会话不进普通 `GET /api/sessions`（`purpose <> 'peer'`），
+主人只能通过 `GET /api/peer/sessions` 看到它们、按 id 打开回放/直播 run 事件；`POST /api/sessions/:id/turns`
+对这类会话返回 `403 peer_session_read_only`。发言与审批仍归远端访客，主人不能接管。
+
+**`guest` 是第四 token 角色**：只允许 `/peer/info`、`/peer/agent`、`/peer/redeem` 与 `/peer/runs*`。其余路径一律 403；`/peer/peers` 等 B 侧管理端点不对 guest 开放。**未兑换的邀请**只能访问 `/peer/agent` 与 `/peer/redeem`。
+
+**B 侧管理（operator）**：`GET /api/peer/peers`、`POST /api/peer/peers {url,workspaceId?,label?}`、
+`DELETE /api/peer/peers/:id`、`POST /api/peer/peers/:id/probe`。加入时先匿名探活 `/peer/info`
+校验 serverId，再 `POST /peer/redeem`，然后把暴露的 agent 投影成本工作区的 `kind='peer'` agent。
+
+**运行协议**：第一帧是 `peer_meta`（A 的 runId / threadKey / cwd / 是否续上），之后是与本地
+run 相同的 `NormalizedEvent` 序列，最后一帧是 `terminal:true` 的 `status`。B 把事件写进自己的
+`events`（run id 用 B 的），回答落 `messages.source='peer'`。A 用 `(peer_id, client_run_id)` 去重；
+B 的 `clientRunId` 是 task id，重启对账（P3.3）会用它取消孤儿 run。
+
+**默认值**：`approvalPolicy='relay'`、`capture=false`、并发 1、每小时 20 次、单次输入 20k、
+墙钟 10 分钟；这些数字在 `peer/runs.ts` 真正执行，不只是展示。`capture=false` 时，peer 触发的
+隐藏会话（`sessions.purpose='peer'`）与 `messages.source='peer'` 的文本都不进本机记忆。
+
+**`~/.paboot` 尽力拒绝（启发式）**：peer run 带 `denyRoots=[dataDir]`——builtin 的路径策略在
+`local` 下也会先查 denyRoots，Claude 的 hook matcher 额外包含 `Read|Grep|Glob` 并只做这一条
+检查；Bash 侧是命令文本里 `dataDir` / `~/.paboot` 的子串匹配。**它挡的是误用，不是有意的
+绕过**（`cat ${HOME}/.paboot/token` 之类仍可绕过），真正的边界是「可信对端 + 网络」。
+**读类工具在检查通过后自动放行，不产生审批**；写类才走合同审批策略。
 
 ## 文件改动的查看
 

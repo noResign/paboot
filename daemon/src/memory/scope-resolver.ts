@@ -19,6 +19,10 @@ export function shouldCaptureSession(session: SessionRow): boolean {
   if (session.kind !== 'chat') return false;
   if (session.runtime === 'command') return false;
   if (session.purpose === 'task_config') return false;
+  // A hidden session driven by a remote peer must not feed this machine's
+  // memory. `contract.capture` is a reserved field in v1 (setting it to true
+  // is rejected), so this is unconditional.
+  if (session.purpose === 'peer') return false;
   return session.memory_mode !== 'off';
 }
 

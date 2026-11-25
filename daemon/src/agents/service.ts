@@ -205,6 +205,44 @@ export function removeAgent(db: Db, id: string): void {
   db.deleteAgentRow(id);
 }
 
+/**
+ * Make `agent` the room's leader.
+ *
+ * Used when a session is created for a specific assistant (direct chat). Unlike
+ * `addToSession`, this may replace the implicit leader that `createSession`
+ * seeds. A peer is allowed here even though it can never be *adopted* into an
+ * empty room later: a 1:1 session with a remote assistant is the intended
+ * shape, and leader-only summons are disabled when the leader is remote.
+ */
+export function adoptLeader(
+  db: Db,
+  session: { id: string; workspaceId: string | null },
+  agent: Agent,
+): void {
+  const now = Date.now();
+  for (const row of db.listSessionAgents(session.id)) {
+    if (row.role !== 'leader' || row.agent_id === agent.id) continue;
+    const previous = getAgent(db, row.agent_id);
+    // The implicit agent is a stand-in for "no assistant chosen"; once a real
+    // one is chosen it should not linger as a read-only extra member.
+    if (previous?.isImplicit) {
+      db.deleteSessionAgent(session.id, row.agent_id);
+      db.deleteAgentThreads(session.id, row.agent_id);
+    } else {
+      db.upsertSessionAgent({ ...row, role: 'member' });
+    }
+  }
+  const existing = db.listSessionAgents(session.id).find((row) => row.agent_id === agent.id);
+  db.upsertSessionAgent({
+    session_id: session.id,
+    agent_id: agent.id,
+    role: 'leader',
+    added_by: existing?.added_by ?? null,
+    joined_at: existing?.joined_at ?? now,
+  });
+  syncSessionRuntime(db, session.id);
+}
+
 /** Agents in a session, leader first. */
 export function sessionRoster(db: Db, sessionId: string): { agent: Agent; role: 'leader' | 'member' }[] {
   return listSessionAgents(db, sessionId);
@@ -222,6 +260,14 @@ export function addToSession(db: Db, session: { id: string; workspaceId: string 
   }
   const existing = db.listSessionAgents(session.id);
   if (existing.some((row) => row.agent_id === agentId)) return;
+  if (existing.length === 0 && agent.kind === 'peer') {
+    // A remote agent cannot be the room's default speaker: every fallback run
+    // would become a cross-machine call without the user asking for one.
+    throw new AgentValidationError(
+      'peer_cannot_be_leader',
+      'a remote agent cannot lead a room; connect to that daemon directly',
+    );
+  }
   // Re-adding an existing member returns above, so a retry never trips the cap.
   assertRoomHasSpace(db, session.id);
   db.upsertSessionAgent({
@@ -370,8 +416,13 @@ function normalizeWiring(
  */
 export function assertWritableSlotFree(db: Db, sessionId: string, agent: Agent): void {
   if (agent.readOnly) return;
+  // A peer writes on *its* machine, not in this room's working directory. It
+  // must not consume the local write slot, and must not be blocked by one.
+  if (agent.kind === 'peer') return;
   const members = listSessionAgents(db, sessionId).map((row) => row.agent);
-  const otherWriter = members.find((member) => member.id !== agent.id && !member.readOnly);
+  const otherWriter = members.find(
+    (member) => member.id !== agent.id && !member.readOnly && member.kind !== 'peer',
+  );
   if (otherWriter) {
     throw new AgentValidationError(
       'writable_agent_exists',

@@ -84,6 +84,7 @@ function createArgvDriver(adapter: RuntimeAdapter, deps: ArgvDriverDeps): Runtim
                 timeoutMs: config.permissionTimeoutMs,
                 matcher: claudePermissionHookMatcher(
                   req.permissionMode === 'ask' ? 'ask' : 'acceptEdits',
+                  { includeReads: (req.denyRoots?.length ?? 0) > 0 },
                 ),
               },
         idleTimeoutMs: config.runIdleTimeoutMs,

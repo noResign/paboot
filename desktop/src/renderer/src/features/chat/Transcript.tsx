@@ -44,6 +44,7 @@ export function Transcript({
   onQuote,
   onResend,
   resendDisabled = false,
+  interactive = true,
 }: {
   messages: ChatMessage[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -63,6 +64,8 @@ export function Transcript({
   onResend?(text: string, attachmentIds?: string[]): void;
   /** A send is already in flight; the menu's "重发" would be a silent no-op. */
   resendDisabled?: boolean;
+  /** False when the viewer may watch but not answer (peer read-only session). */
+  interactive?: boolean;
 }) {
   const [limit, setLimit] = useState(VISIBLE);
   const shown = messages.length > limit ? messages.slice(messages.length - limit) : messages;
@@ -146,12 +149,15 @@ export function Transcript({
             showSpeakerName={showSpeakerName}
             leaderAgentId={leaderAgentId}
             textOnly
-            interactive={questionInteractive({
-              index: offset + index,
-              lastUserIndex,
-              runTurnId: run?.turnId ?? null,
-              lastUserTurnId,
-            })}
+            interactive={
+              interactive &&
+              questionInteractive({
+                index: offset + index,
+                lastUserIndex,
+                runTurnId: run?.turnId ?? null,
+                lastUserTurnId,
+              })
+            }
             onOpenTrace={onOpenTrace}
             onQuote={onQuote}
           />

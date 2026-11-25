@@ -28,6 +28,7 @@ import { registerMcpTaskRoutes } from '../routes/mcp-tasks.js';
 import { registerSystemRoutes, type SystemRouteHooks } from '../routes/system.js';
 import { registerAgentsRoutes } from '../routes/agents.js';
 import { registerRoomRoutes } from '../routes/room.js';
+import { guestTokenResolver, registerPeerInfoRoute, registerPeerRoutes } from '../routes/peer.js';
 import { registerWorkspaceRoutes } from '../routes/workspaces.js';
 
 export type ServerHooks = SystemRouteHooks;
@@ -40,6 +41,9 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
 
   // Health is unauthenticated so probes/load-balancers can reach it.
   registerHealthRoutes(app, ctx);
+  // A peer probes identity before it has a token; this stays anonymous but
+  // returns only display names and contract versions.
+  registerPeerInfoRoute(app, ctx);
 
   // Everything else under /api requires a bearer token.
   app.use(
@@ -49,6 +53,7 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
       lockoutMs: ctx.config.authLockoutMs,
       agentToken: ctx.config.agentToken,
       serverToken: ctx.config.serverToken,
+      guestToken: guestTokenResolver(ctx),
     }),
   );
   app.use('/api', requireRolePolicy());
@@ -62,6 +67,7 @@ export function createApp(ctx: AppContext, hooks: ServerHooks = {}): Express {
   registerFsRoutes(app, ctx);
   registerAgentsRoutes(app, ctx);
   registerRoomRoutes(app, ctx);
+  registerPeerRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
   registerKnowledgeRoutes(app, ctx);
   registerMemoryRoutes(app, ctx);

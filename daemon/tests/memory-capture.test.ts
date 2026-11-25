@@ -144,6 +144,19 @@ describe('memory scope resolver', () => {
     expect(shouldCaptureSession(db.getSession(off.id) as SessionRow)).toBe(false);
   });
 
+  it('skips hidden peer sessions and peer-authored messages', () => {
+    const { db, workspace } = setup();
+    const peer = db.createSession({
+      id: 's-peer',
+      runtime: 'claude',
+      workspaceId: workspace.id,
+      permissionMode: 'ask',
+      cwd: workspace.path,
+      purpose: 'peer',
+    });
+    expect(shouldCaptureSession(peer)).toBe(false);
+  });
+
   it('still captures a session set to no_injection', () => {
     const { db, workspace } = setup();
     const session = lifeSession(db, workspace);
@@ -169,6 +182,18 @@ describe('run ingest', () => {
 
     expect(capture(store, db, session, workspace, 'r-2')).toBe(0);
     expect(store.listSources(`workspace:${workspace.id}`)).toHaveLength(2);
+  });
+
+  it('never captures messages returned by another daemon', () => {
+    const { db, store, workspace } = setup();
+    const session = lifeSession(db, workspace);
+    db.addMessage(session.id, 'user', '帮我问一下远端');
+    db.addMessage(session.id, 'assistant', '远端说：一切正常。', { source: 'peer' });
+
+    expect(capture(store, db, session, workspace)).toBe(1);
+    const sources = store.listSources(`workspace:${workspace.id}`);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.content).toBe('帮我问一下远端');
   });
 
   it('stores filtered text without private spans or injected context', () => {

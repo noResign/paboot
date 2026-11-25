@@ -21,13 +21,27 @@ const CLEANUP_INTERVAL_MS = 60 * 1000;
 const MAX_TRACKED_CLIENTS = 10_000;
 
 /** The token's authority level. Only `operator` may use public write endpoints. */
-export type AuthRole = 'operator' | 'agent' | 'server';
+export type AuthRole = 'operator' | 'agent' | 'server' | 'guest';
+
+/** What a guest bearer token authorizes, resolved by the caller (DB lookup). */
+export interface GuestPrincipal {
+  tokenId: string;
+  peerId: string;
+  agentIds: string[];
+  /** Set when the credential is a not-yet-redeemed invite link. */
+  inviteId?: string;
+}
 
 export interface AuthOptions extends AuthThrottleOptions {
   /** Read-only token injected into the agent runtime / permission hook. */
   agentToken?: string;
   /** Narrow token injected only into MCP server processes. */
   serverToken?: string;
+  /**
+   * Database-backed guest token lookup. Called only after the static tokens
+   * fail; returning null counts as an ordinary auth failure.
+   */
+  guestToken?: (token: string) => GuestPrincipal | null;
 }
 
 export interface AuthThrottleOptions {
@@ -173,6 +187,25 @@ export function requireAuth(token: string, options: AuthOptions = {}): RequestHa
       return;
     }
 
+    // Guest tokens are not static: they live in the peer tables and can be
+    // revoked at any time. Only reached when the three built-in roles fail.
+    if (provided && options.guestToken) {
+      let guest: GuestPrincipal | null = null;
+      try {
+        guest = options.guestToken(provided);
+      } catch {
+        guest = null;
+      }
+      if (guest) {
+        if (!res.locals) res.locals = {};
+        res.locals.authRole = 'guest';
+        res.locals.authGuest = guest;
+        throttle.recordSuccess(key);
+        next();
+        return;
+      }
+    }
+
     if (provided) {
       const failure = throttle.recordFailure(key);
       if (failure.locked) {
@@ -190,6 +223,11 @@ export function requireAuth(token: string, options: AuthOptions = {}): RequestHa
 /** Role attached by {@link requireAuth}; undefined when auth has not run. */
 export function authRole(res: Response): AuthRole | undefined {
   return (res.locals as { authRole?: AuthRole } | undefined)?.authRole;
+}
+
+/** A guest's scopes, attached by {@link requireAuth} for `role='guest'`. */
+export function authGuest(res: Response): GuestPrincipal | undefined {
+  return (res.locals as { authGuest?: GuestPrincipal } | undefined)?.authGuest;
 }
 
 const READ_METHODS = new Set(['GET', 'HEAD']);
@@ -211,6 +249,41 @@ export function isRoleAllowed(role: AuthRole, method: string, path: string): boo
     return apiPath.startsWith('/internal/permissions/');
   }
   if (role === 'server') return apiPath.startsWith('/internal/');
+  if (role === 'guest') {
+    // Written out rather than "anything under /peer": the same prefix holds
+    // B-side management (`/peer/peers`) which must stay operator-only.
+    const verb = method.toUpperCase();
+    return GUEST_ROUTES.some(([allowedVerb, pattern]) => allowedVerb === verb && pattern.test(apiPath));
+  }
+  return false;
+}
+
+/** Exact guest surface; a route snapshot test asserts nothing else leaks in. */
+const GUEST_ROUTES: ReadonlyArray<readonly [string, RegExp]> = [
+  ['GET', /^\/peer\/info$/],
+  ['GET', /^\/peer\/agent$/],
+  ['POST', /^\/peer\/redeem$/],
+  ['POST', /^\/peer\/runs$/],
+  ['POST', /^\/peer\/runs\/[^/]+\/cancel$/],
+  ['GET', /^\/peer\/runs\/[^/]+\/stream$/],
+  ['POST', /^\/peer\/runs\/[^/]+\/permission$/],
+];
+
+/**
+ * An unredeemed invite is only allowed to look at its own contract and to
+ * redeem itself. Without this, the pairing link would already be a full guest
+ * credential and `single_use` would protect nothing.
+ */
+export function isGuestAllowed(
+  guest: GuestPrincipal | undefined,
+  method: string,
+  path: string,
+): boolean {
+  if (!guest?.inviteId) return isRoleAllowed('guest', method, path);
+  const apiPath = path.startsWith('/api/') ? path.slice(4) : path;
+  const verb = method.toUpperCase();
+  if (verb === 'GET' && apiPath === '/peer/agent') return true;
+  if (verb === 'POST' && apiPath === '/peer/redeem') return true;
   return false;
 }
 
@@ -223,7 +296,11 @@ export function requireRolePolicy(): RequestHandler {
       return;
     }
     const path = (req.originalUrl ?? req.path ?? '').split('?')[0] ?? '';
-    if (!isRoleAllowed(role, req.method, path)) {
+    const allowed =
+      role === 'guest'
+        ? isGuestAllowed(authGuest(res), req.method, path)
+        : isRoleAllowed(role, req.method, path);
+    if (!allowed) {
       res.status(403).json({
         error: 'this token is not allowed to perform this action',
         code: 'forbidden',

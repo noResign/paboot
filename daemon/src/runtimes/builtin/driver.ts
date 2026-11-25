@@ -50,7 +50,7 @@ import { resolveFetchBackend } from './web/fetch.js';
 import { resolveSearchBackend } from './web/search.js';
 import { createLoadSkillTool } from './skills/load-tool.js';
 import { SkillRegistry, type SkillRoot } from './skills/registry.js';
-import { createPermissionBroker } from './tools/permission-broker.js';
+import { createPermissionBroker, withToolPolicy } from './tools/permission-broker.js';
 import { ToolExecutor } from './tools/executor.js';
 import { ToolRegistry } from './tools/registry.js';
 import type { ToolProvider } from './tools/types.js';
@@ -101,10 +101,13 @@ async function runBuiltin(
     const resolved = await resolveBuiltinModel(req.model, process.env);
     const builtinConfig = ctx.builtinConfig ?? DEFAULT_BUILTIN_CONFIG;
     const budget = resolveContextBudget(builtinConfig, resolved.snapshot.contextWindow);
-    const denyRoots =
-      builtinConfig.securityProfile === 'server-strict'
+    const denyRoots = [
+      ...(builtinConfig.securityProfile === 'server-strict'
         ? serverStrictDenyRoots(ctx.config.dataDir)
-        : [];
+        : []),
+      // Peer runs must not read the daemon's own secrets even under `local`.
+      ...(req.denyRoots ?? []),
+    ];
     const calibrator = createTokenCalibrator(resolved.modelId);
     const measure = calibrator.measure;
     const attachments = (req.attachmentIds ?? []).map((id) => {
@@ -220,7 +223,12 @@ async function runBuiltin(
       notifier: ctx.notifier,
       grants: ctx.db,
     });
-    agent.permissionBroker = permissionBroker;
+    // Peer runs carry the exposure's policy: the builtin kernel creates its own
+    // approvals, so without this wrapper a paused share or `auto_deny` contract
+    // would still surface write tools to the visitor.
+    agent.permissionBroker = req.peerToolPolicy
+      ? withToolPolicy(permissionBroker, req.peerToolPolicy)
+      : permissionBroker;
 
     // Read-before-write survives resume: seed from the persisted transcript.
     const readFiles = ReadFilesTracker.fromTranscript(transcript.list(thread.id), session.cwd);

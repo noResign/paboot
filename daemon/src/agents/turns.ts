@@ -129,10 +129,6 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
         admission.push({ id, reason: 'disabled' });
         continue;
       }
-      if (candidate.kind === 'peer') {
-        admission.push({ id, reason: 'unavailable' });
-        continue;
-      }
       try {
         assertWritableSlotFree(db, input.session.id, candidate);
         addToSession(
@@ -230,7 +226,9 @@ export function createTurn(db: Db, input: CreateTurnInput): CreatedTurn {
       agentId: target.agent.id,
       source: target.source,
       prompt: input.prompt,
-      needsWrite: !target.agent.readOnly,
+      // Peer tasks write on the remote machine; they never take this room's
+      // local write slot.
+      needsWrite: target.agent.kind === 'peer' ? false : !target.agent.readOnly,
       snapshotSeq,
       now,
     });

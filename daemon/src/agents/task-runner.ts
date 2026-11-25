@@ -12,8 +12,9 @@ import {
   resolveSessionAgent,
 } from './index.js';
 import { backendFor } from './resolve.js';
-import type { Agent } from './types.js';
+import type { Agent, AgentThread } from './types.js';
 import { startSessionRun, type RunSink } from '../runs/run-service.js';
+import type { RunOutcome } from '../runtimes/engine.js';
 import { log } from '../platform/log.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 
@@ -36,9 +37,30 @@ import type { NormalizedEvent, SseFrame } from '../types/api.js';
  *      that agent, not a verdict on the turn.
  */
 
+/**
+ * Executes a peer agent. Injected by the composition point (`routes/room`) so
+ * `agents/` never imports `peer/` — the dependency would be a cycle and would
+ * break the module's "knows nothing about transport" boundary.
+ */
+export type PeerTaskRunner = (
+  ctx: AppContext,
+  input: {
+    session: SessionRow;
+    workspace: WorkspaceRow;
+    task: AgentTaskRow;
+    agent: Agent;
+    thread: AgentThread;
+    roomContext?: string;
+    roomSystem?: string;
+    sink: RunSink;
+  },
+) => { runId: string; done: Promise<RunOutcome> };
+
 export interface TaskRunnerDeps {
   /** Publish one room-multiplexed frame to every subscriber of the session. */
   publish(sessionId: string, taskId: string | null, agentId: string | null, frame: SseFrame): void;
+  /** Set by the composition point; peer tasks fail closed when absent. */
+  runPeerTask?: PeerTaskRunner;
 }
 
 export interface TaskOutcome {
@@ -122,8 +144,9 @@ async function runTaskOnce(
 
   const resolved = resolveSessionAgent(ctx.db, session, workspace);
   const thread = resolved?.agent.id === agent.id ? resolved.thread : ensureThread(ctx.db, session, agent, workspace);
-  const driver = ctx.registry.driver(backendFor(agent));
-  if (!driver || driver.internal) {
+  // Peer agents execute on another daemon and do not have a local driver.
+  const driver = agent.kind === 'peer' ? undefined : ctx.registry.driver(backendFor(agent));
+  if (agent.kind !== 'peer' && (!driver || driver.internal)) {
     return failTaskBeforeRun(
       ctx,
       deps,
@@ -162,30 +185,49 @@ async function runTaskOnce(
   const roomSystem = buildRoomSystem(ctx.db, {
     sessionId: session.id,
     selfAgentId: agent.id,
-    canSummon: task.source === 'leader_default',
+    // A remote leader answers directly; letting it summon local agents would
+    // make a cross-machine call decide this room's local work.
+    canSummon: task.source === 'leader_default' && agent.kind !== 'peer',
     canReplyToLeader: task.source === 'summon',
   });
 
   try {
-    const handle = startSessionRun(ctx, {
-      session,
-      workspace,
-      prompt: task.prompt,
-      driver,
-      permissionMode: session.permission_mode as never,
-      model: null,
-      trigger: 'user',
-      // The turn already committed the user's message before any task started.
-      skipUserMessage: true,
-      turnId: task.turn_id,
-      agentTaskId: task.id,
-      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-      roomContext: roomContext ?? undefined,
-      roomSystem: roomSystem ?? undefined,
-      sink,
-      agent,
-      thread,
-    });
+    let handle: { runId: string; done: Promise<RunOutcome> };
+    if (agent.kind === 'peer') {
+      if (!deps.runPeerTask) {
+        return failTaskBeforeRun(ctx, deps, session, task, agent.id, 'peer execution is not wired', thread.id);
+      }
+      handle = deps.runPeerTask(ctx, {
+        session,
+        workspace,
+        task,
+        agent,
+        thread,
+        roomContext: roomContext ?? undefined,
+        roomSystem: roomSystem ?? undefined,
+        sink,
+      });
+    } else {
+      handle = startSessionRun(ctx, {
+        session,
+        workspace,
+        prompt: task.prompt,
+        driver: driver!,
+        permissionMode: session.permission_mode as never,
+        model: null,
+        trigger: 'user',
+        // The turn already committed the user's message before any task started.
+        skipUserMessage: true,
+        turnId: task.turn_id,
+        agentTaskId: task.id,
+        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        roomContext: roomContext ?? undefined,
+        roomSystem: roomSystem ?? undefined,
+        sink,
+        agent,
+        thread,
+      });
+    }
     ctx.db.updateTask(task.id, { runId: handle.runId });
     // The projection is in this run's prompt; the next task for this agent only
     // needs what was committed after this point.
@@ -304,6 +346,8 @@ function summonSupplements(
 ): void {
   const text = input.replyText.trim();
   if (!text) return;
+  // A remote leader never summons local agents; its `@` stays text.
+  if (input.agent.kind === 'peer') return;
   if (input.task.source === 'summon') {
     replyToLeader(ctx, deps, input, text);
     return;

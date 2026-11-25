@@ -16,6 +16,7 @@ import {
   updateAgent,
 } from '../agents/index.js';
 import type { Agent, AgentAvailability } from '../agents/index.js';
+import { removeExposure } from '../peer/index.js';
 import type { AgentTaskRow, WorkspaceRow } from '../db/db.js';
 import type { ProductPermissionMode } from '../permissions/permission-mode.js';
 import type {
@@ -108,6 +109,8 @@ function agentDetailDto(agent: Agent): AgentProfileDetailDto {
     permissionCeiling: agent.permissionCeiling,
     skills: agent.skills,
     budget: agent.budget,
+    peerId: agent.peerId,
+    remoteAgentId: agent.remoteAgentId,
     version: agent.version,
     isImplicit: agent.isImplicit,
     createdAt: agent.createdAt,
@@ -146,9 +149,20 @@ function workspaceOr404(ctx: AppContext, id: string, res: Response): WorkspaceRo
 async function availabilityOf(ctx: AppContext, agent: Agent): Promise<AgentAvailability> {
   if (!agent.enabled) return { enabled: false, online: false, available: false, reason: 'disabled' };
   if (agent.kind === 'peer') {
-    // Peer probing arrives with the peer module; until then a peer agent is
-    // reported as offline rather than optimistically available.
-    return { enabled: true, online: false, available: false, reason: 'peer_not_connected' };
+    const peer = agent.peerId ? ctx.db.getPeer(agent.peerId) : undefined;
+    if (!peer || peer.direction !== 'out' || !peer.token_cipher) {
+      return { enabled: true, online: false, available: false, reason: 'peer_not_connected' };
+    }
+    // No live probe here: the roster must not fan out network calls. A run or
+    // manual probe refreshes `last_seen_at`, so five minutes is the same
+    // freshness window the connections list uses.
+    const online = peer.last_seen_at !== null && Date.now() - peer.last_seen_at < 5 * 60 * 1000;
+    return {
+      enabled: true,
+      online,
+      available: online,
+      ...(online ? {} : { reason: 'peer_offline' }),
+    };
   }
   // Builtin has no executable to probe, but it still needs a configured
   // provider with at least one enabled model. Treat it like any other runtime
@@ -278,6 +292,9 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
   app.delete('/api/agent-profiles/:id', (req, res) => {
     try {
       removeAgent(ctx.db, req.params.id!);
+      // `agents/` cannot import `peer/`; the composition point does the
+      // cross-domain cleanup. A deleted agent must not linger in /peer/info.
+      removeExposure(ctx.db, req.params.id!);
       res.status(204).end();
     } catch (err) {
       sendAgentError(res, err);

@@ -47,15 +47,8 @@ export function resolvePathAccess(request: PathAccessRequest): PathAccessResult 
     return { path: canonicalizeForAccess(absolute) };
   }
 
-  // Local product semantics (`builtin.json` securityProfile=local): reads are not
-  // gated, matching Claude/Codex; mutations stay inside the granted roots.
-  if (
-    request.policy.mode === 'local' &&
-    (request.capability === 'read' || request.capability === 'list')
-  ) {
-    return { path: canonicalizeForAccess(absolute) };
-  }
-
+  // Deny roots are absolute: they apply even under `local`, where reads are
+  // otherwise ungated. Peer runs use this to keep `~/.paboot` out of reach.
   const lexicalDenied = request.policy.denyRoots.some((root) =>
     isInside(path.resolve(root), absolute),
   );
@@ -67,6 +60,15 @@ export function resolvePathAccess(request: PathAccessRequest): PathAccessResult 
     return isInside(canonicalRoot, canonical);
   });
   if (resolvedDenied) throw new PathPolicyError('path is denied by policy', 'denied_root');
+
+  // Local product semantics (`builtin.json` securityProfile=local): reads are not
+  // gated, matching Claude/Codex; mutations stay inside the granted roots.
+  if (
+    request.policy.mode === 'local' &&
+    (request.capability === 'read' || request.capability === 'list')
+  ) {
+    return { path: canonical };
+  }
 
   const matching = request.policy.grants.filter((grant) => {
     const canonicalRoot = canonicalizeRoot(grant.root);

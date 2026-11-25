@@ -75,12 +75,9 @@ export function routeMentions(input: RouteInput): RouteResult {
       dropped.push({ id, reason: 'disabled' });
       return null;
     }
-    // Peer transport is not wired yet; routing to one would create a task that
-    // can only fail. An explicit @ is still the user's call, so say why.
-    if (agent.kind === 'peer') {
-      dropped.push({ id, reason: 'unavailable' });
-      return null;
-    }
+    // Peer agents are members like any other for an explicit `@`; only the
+    // leader's automatic summon (`@all`) keeps them out (they are expensive
+    // remote calls and must be addressed deliberately).
     return agent;
   };
 

@@ -9,9 +9,15 @@
  */
 export type HookPermissionMode = 'ask' | 'acceptEdits';
 
-export function claudePermissionHookMatcher(mode: HookPermissionMode): string {
+export function claudePermissionHookMatcher(
+  mode: HookPermissionMode,
+  options: { includeReads?: boolean } = {},
+): string {
+  // Peer runs include reads so the daemon can reject `~/.paboot` paths; normal
+  // runs keep the historical "reads are not gated" behaviour and pay no RTT.
+  const reads = options.includeReads ? 'Read|Grep|Glob|' : '';
   const gated = mode === 'ask'
-    ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch'
-    : 'Bash|WebSearch|WebFetch';
+    ? `${reads}Bash|Write|Edit|MultiEdit|NotebookEdit|WebSearch|WebFetch`
+    : `${reads}Bash|WebSearch|WebFetch`;
   return `${gated}|mcp__(?!paboot_memory__).*`;
 }

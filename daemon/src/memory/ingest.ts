@@ -39,6 +39,9 @@ export function captureRunMessages(input: CaptureRunInput): number {
   for (const message of input.messages) {
     if (message.id <= afterMessageId) continue;
     if (message.role !== 'user' && message.role !== 'assistant') continue;
+    // Text returned by another daemon is untrusted external data: never let it
+    // become a memory source, regardless of how it is formatted.
+    if (message.source === 'peer') continue;
     if (seen.has(message.id)) continue;
 
     const content = filterCaptureText(message.content);

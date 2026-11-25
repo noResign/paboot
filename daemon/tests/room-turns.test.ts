@@ -11,6 +11,7 @@ import { Db } from '../src/db/db';
 import { PermissionManager } from '../src/permissions/permissions';
 import { registerAgentsRoutes } from '../src/routes/agents';
 import { registerRoomRoutes } from '../src/routes/room';
+import { registerSessionRoutes } from '../src/routes/sessions';
 import { RunNotifier } from '../src/runs/run-notifier';
 import { SessionNotifier } from '../src/runs/session-notifier';
 import { registerActiveRun, type ManagedRun } from '../src/runtimes/active-runs';
@@ -174,6 +175,7 @@ async function startApi(): Promise<Harness> {
   app.use(express.json());
   registerRoomRoutes(app, ctx);
   registerAgentsRoutes(app, ctx);
+  registerSessionRoutes(app, ctx);
   const server = app.listen(0);
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -319,6 +321,26 @@ describe('POST /api/sessions/:id/turns', () => {
     expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === writer.id)).toBe(
       false,
     );
+  });
+
+  it('admits a peer even when the room already has a local writer', async () => {
+    const h = await startApi();
+    const sessionId = seedRoom(h, []);
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const remote = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '远端',
+      kind: 'peer',
+      peerId: 'peer-1',
+      remoteAgentId: 'agent-1',
+    });
+
+    const response = await turns(h, sessionId, { prompt: '你来写', mentions: [remote.id] });
+    expect(response.status).toBe(202);
+    expect(h.db.listSessionAgents(sessionId).some((row) => row.agent_id === remote.id)).toBe(true);
+    const turn = h.db.listTurns(sessionId, null, 1)[0]!;
+    // It writes on the other machine, so it never holds this room's write slot.
+    expect(h.db.listTasksByTurn(turn.id)[0]!.needs_write).toBe(0);
   });
 
   it('will not admit past the room capacity, even through @', async () => {
@@ -1121,3 +1143,48 @@ async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void
   }
   throw new Error('timed out waiting for condition');
 }
+
+describe('direct chat with a chosen assistant', () => {
+  it('creates the session with that assistant as leader', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '审阅',
+      kind: 'runtime',
+      runtime: 'claude',
+    });
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      agentId: agent.id,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { session: { id: string; runtime: string } };
+    expect(body.session.runtime).toBe('claude');
+    expect(getLeader(h.db, body.session.id)?.id).toBe(agent.id);
+    // The implicit stand-in leader is removed, not kept as an extra member.
+    expect(h.db.listSessionAgents(body.session.id)).toHaveLength(1);
+  });
+
+  it('allows a remote assistant to lead its own 1:1 chat', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const remote = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '远端',
+      kind: 'peer',
+      peerId: 'connection-1',
+      remoteAgentId: 'agent-1',
+    });
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      agentId: remote.id,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { session: { id: string; runtime: string } };
+    expect(body.session.runtime).toBe('peer');
+    expect(getLeader(h.db, body.session.id)?.id).toBe(remote.id);
+  });
+});

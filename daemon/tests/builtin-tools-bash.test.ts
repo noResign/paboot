@@ -27,6 +27,7 @@ function tempDir(prefix = 'paboot-bash-'): string {
 function makeAgent(options: {
   root: string;
   permissionMode?: ProductPermissionMode;
+  denyRoots?: string[];
   signal?: AbortSignal;
 }): AgentRunContext {
   return {
@@ -39,7 +40,7 @@ function makeAgent(options: {
     pathPolicy: {
       mode: 'server-strict',
       grants: [{ root: options.root, capabilities: ['read', 'write', 'list'] }],
-      denyRoots: [],
+      denyRoots: options.denyRoots ?? [],
     },
     permissionMode: options.permissionMode ?? 'ask',
     signal: options.signal ?? new AbortController().signal,
@@ -235,5 +236,16 @@ describe('SpillStore', () => {
     expect(store.prune()).toBe(1);
     expect(fs.existsSync(oldFile)).toBe(false);
     expect(fs.existsSync(newFile)).toBe(true);
+  });
+});
+
+describe('Bash deny roots', () => {
+  it('refuses a command that names a denied path', async () => {
+    const root = tempDir();
+    const dataDir = tempDir('paboot-data-');
+    const agent = makeAgent({ root, denyRoots: [dataDir] });
+    await expect(
+      createBashTool().call({ command: `cat ${dataDir}/token` }, callContext(agent)),
+    ).rejects.toThrow(/denied by policy/);
   });
 });

@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
+import { evaluatePeerTool, getExposure } from '../peer/index.js';
 import type { PermissionDecision, PermissionRequest } from '../permissions/permissions.js';
 import type { PermissionDto } from '../types/api.js';
 import { isReadOnlyBash } from '../permissions/command-safety.js';
@@ -106,6 +107,21 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
     }
     const sessionId = run.session_id;
     const p = ctx.permissions.create(runId, sessionId, toolName, body.toolInput ?? null);
+    if (run.trigger === 'peer') {
+      const exposure = run.agent_id ? getExposure(ctx.db, run.agent_id) : null;
+      const verdict = evaluatePeerTool({
+        enabled: exposure?.enabled === true,
+        approvalPolicy: exposure?.contract.approvalPolicy ?? 'auto_deny',
+        dataDir: ctx.config.dataDir,
+        toolName,
+        toolInput: body.toolInput ?? null,
+      });
+      if (verdict.decision !== 'ask') {
+        ctx.permissions.decide(p.id, verdict.decision === 'allow' ? 'allow' : 'deny', verdict.reason);
+        res.json({ id: p.id, status: p.status });
+        return;
+      }
+    }
     // `runs.permission_mode` is the effective mode resolved at the API boundary.
     // Bypass auto-approves without broadcasting; ask / acceptEdits still ask.
     if (run.permission_mode === 'bypass') {

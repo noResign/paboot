@@ -23,6 +23,8 @@ const TABLE: Record<string, RuntimeIdentity> = {
   codex: { id: 'codex', displayName: 'Codex', icon: 'terminal', color: '#10A37F' },
   deepseek: { id: 'deepseek', displayName: 'DeepSeek Harness', icon: 'bolt', color: '#4D6BFE' },
   builtin: { id: 'builtin', displayName: 'Builtin', icon: 'build', color: '#7C3AED' },
+  // Sessions led by a remote assistant mirror their leader's backend.
+  peer: { id: 'peer', displayName: '远端助手', icon: 'robot', color: NEUTRAL_COLOR },
 };
 
 export function runtimeIdentity(id: string): RuntimeIdentity {

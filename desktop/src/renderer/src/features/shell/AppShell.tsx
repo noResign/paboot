@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection } from '../../store/connection';
-import { useScope, useSessions, visibleSessions } from '../../store/sessions';
+import { useScope, useSessions, visiblePeerSessions, visibleSessions } from '../../store/sessions';
 import {
   fallbackWorkspaceId,
   initialWorkspaceId,
@@ -149,6 +149,7 @@ export function AppShell() {
   // else — the "every workspace" answer that used to land before the default
   // workspace resolved, or a batch left over mid-switch — must not render.
   const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
+  const peerSessions = useMemo(() => visiblePeerSessions(scope, workspaceId), [scope, workspaceId]);
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
   const selectedWorkspaceLabel = workspaceLabel(selectedWorkspace);
   const hasDevWorkspace = useMemo(
@@ -775,6 +776,7 @@ export function AppShell() {
             ) : (
               <SessionList
                 sessions={sessions}
+                peerSessions={peerSessions}
                 selectedId={selectedId}
                 needsInput={needsInput}
                 failed={failed}
@@ -913,6 +915,7 @@ export function AppShell() {
 
       {newSessionOpen && (
         <NewSessionDialog
+          workspaceId={selectedWorkspace?.id ?? null}
           workspaceName={selectedWorkspaceLabel}
           workspacePath={selectedWorkspace?.path ?? null}
           defaultRuntime={selectedWorkspace?.defaultRuntime ?? null}

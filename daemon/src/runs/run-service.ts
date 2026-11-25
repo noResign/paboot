@@ -51,14 +51,23 @@ export interface StartSessionRunInput {
   session: SessionRow;
   workspace: WorkspaceRow;
   prompt: string;
+  /** Pre-allocated run id (peer runs need it before the first frame). */
+  runId?: string;
   driver: RuntimeDriver;
   permissionMode: ProductPermissionMode;
+  /** Paths this run must never touch (peer runs: the daemon data dir). */
+  denyRoots?: string[];
+  /** Peer runs only: pre-decide a tool call before it reaches the client. */
+  peerToolPolicy?: (toolName: string, toolInput: unknown) => 'allow' | 'deny' | 'ask';
   model: string | null;
   /** Explicit request-level parameters; omitted = agent/session fallback. */
   modelParameters?: Record<string, string> | null;
   /** Image attachment ids admitted with this run. */
   attachmentIds?: string[];
-  trigger: 'user' | 'scheduled' | 'run_now';
+  trigger: 'user' | 'scheduled' | 'run_now' | 'peer';
+  /** Peer runs: which machine and which idempotency key owns this row. */
+  peerId?: string | null;
+  clientRunId?: string | null;
   /** Scheduled-task id (`runs.task_id`); unrelated to an agent task. */
   taskId?: string | null;
   /** The room turn this run answers, when it came from `POST /turns`. */
@@ -233,19 +242,26 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       : agent && ceilingApplies
         ? stricterPermissionMode(resolvedMode, agent.permissionCeiling)
         : resolvedMode;
-  const runId = randomUUID();
+  const runId = input.runId ?? randomUUID();
   // Read before this run is created: a session's first turn gets a generated
   // title, later turns leave whatever title it already has alone.
   const isFirstRun = ctx.db.listRuns(session.id).length === 0;
 
   ctx.db.touchWorkspace(workspace.id);
-  if (!input.skipUserMessage) ctx.db.addMessage(session.id, 'user', prompt);
+  if (!input.skipUserMessage) {
+    ctx.db.addMessage(
+      session.id,
+      'user',
+      prompt,
+      input.trigger === 'peer' ? { source: 'peer' } : undefined,
+    );
+  }
   // Bump recency when the run starts, not only when it ends: the session list
   // is ordered by last_active_at, so waiting for a long run to finish would
   // leave the session buried mid-list while it is clearly the active one.
   ctx.db.touchSession(session.id);
   ctx.db.audit(
-    input.trigger === 'user' ? 'chat' : 'scheduled_run',
+    input.trigger === 'user' ? 'chat' : input.trigger === 'peer' ? 'peer_run' : 'scheduled_run',
     JSON.stringify({
       sessionId: session.id,
       runtime,
@@ -254,6 +270,7 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
       trigger: input.trigger,
       taskId: input.taskId ?? null,
       permissionMode,
+      ...(input.peerId ? { peerId: input.peerId, clientRunId: input.clientRunId ?? null } : {}),
     }),
   );
   ctx.db.createRun({
@@ -272,6 +289,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
     agentId: agent?.id ?? null,
     threadId: thread?.id ?? null,
     turnId: input.turnId ?? null,
+    peerId: input.peerId ?? null,
+    clientRunId: input.clientRunId ?? null,
   });
   // Tell anyone watching this session (another device, another window) that
   // its transcript is about to grow. The run's own event stream stays the
@@ -491,6 +510,8 @@ export function startSessionRun(ctx: AppContext, input: StartSessionRunInput): R
             ? ctx.db.setAgentThreadNativeId(thread.id, nativeId)
             : ctx.db.setNativeSessionId(sessionId, nativeId),
         extraDirs,
+        denyRoots: input.denyRoots,
+        peerToolPolicy: input.peerToolPolicy,
         attachmentIds: input.attachmentIds,
         images,
         systemContext: nativeSystemPrompt && injected ? injected.prefix : undefined,
@@ -703,7 +724,11 @@ function scheduleMemoryCapture(
         settings,
       });
       const scope = resolveRunMemoryScope(latestSession, latestWorkspace, ends, runId, settings);
-      if (scope) {
+      // A peer run's tool events name files on the *other* machine. Text is
+      // already skipped by `source='peer'`, but the mechanical observation would
+      // still write those absolute paths into this machine's memory.
+      const peerRun = ctx.db.getRun(runId)?.trigger === 'peer';
+      if (scope && !peerRun) {
         const observed = captureRunObservation({
           store: memory,
           scope,

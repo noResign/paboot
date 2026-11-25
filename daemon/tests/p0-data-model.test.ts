@@ -243,3 +243,42 @@ describe('P0.2 data model', () => {
     expect(cfg.status).toBe(200);
   });
 });
+
+describe('peer schema migration (P3)', () => {
+  it('opens a P3.1 database whose peers table predates server_id', () => {
+    const file = path.join(tmpRoot(), 'paboot.sqlite');
+    // P3.1 shipped `peers` without server_id / remote_agent_id and with a
+    // machine-wide row per peer. Indexing server_id before the ALTER would
+    // fail the whole constructor with "no such column: server_id".
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      CREATE TABLE peers (
+        id          TEXT PRIMARY KEY,
+        direction   TEXT NOT NULL,
+        label       TEXT NOT NULL DEFAULT '',
+        base_url    TEXT NOT NULL,
+        fingerprint TEXT,
+        token_cipher TEXT,
+        last_seen_at INTEGER,
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX idx_peers_direction ON peers (direction, created_at DESC);
+      INSERT INTO peers (id, direction, label, base_url, created_at)
+        VALUES ('peer-1', 'in', 'old', 'http://127.0.0.1:4780', 1);
+    `);
+    legacy.close();
+
+    const db = new Db(file);
+    dbs.push(db);
+    const row = db.getPeer('peer-1');
+    expect(row?.server_id).toBe('peer-1');
+    expect(row?.remote_agent_id).toBeNull();
+    db.close();
+    dbs.splice(dbs.indexOf(db), 1);
+
+    // A second boot on the migrated file must stay a no-op.
+    const reopened = new Db(file);
+    dbs.push(reopened);
+    expect(reopened.listPeers().map((peer) => peer.id)).toEqual(['peer-1']);
+  });
+});

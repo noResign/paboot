@@ -36,6 +36,7 @@ function makeAgent(options: {
   root: string;
   permissionMode?: ProductPermissionMode;
   policyMode?: 'local' | 'server-strict' | 'bypass';
+  denyRoots?: string[];
   broker?: (name: string) => Promise<ToolPermissionDecision>;
   events?: AgentEvent[];
 }): AgentRunContext {
@@ -49,7 +50,7 @@ function makeAgent(options: {
     pathPolicy: {
       mode: options.policyMode ?? 'server-strict',
       grants: [{ root: options.root, capabilities: ['read', 'write', 'list'] }],
-      denyRoots: [],
+      denyRoots: options.denyRoots ?? [],
     },
     permissionMode: options.permissionMode ?? 'ask',
     signal: new AbortController().signal,
@@ -307,5 +308,22 @@ describe('Write approval', () => {
     expect(broker).not.toHaveBeenCalled();
     expect(result.isError).toBe(false);
     expect(fs.readFileSync(path.join(root, 'a.txt'), 'utf8')).toBe('x');
+  });
+});
+
+describe('deny roots', () => {
+  it('blocks reads inside a deny root even under the local profile', async () => {
+    const root = tempDir();
+    const dataDir = tempDir('paboot-data-');
+    fs.writeFileSync(path.join(dataDir, 'token'), 'secret');
+    const agent = makeAgent({ root, policyMode: 'local', denyRoots: [dataDir] });
+    const registry = new ToolRegistry([new NativeToolProvider([createReadTool()])]);
+
+    const result = await new ToolExecutor({ registry }).execute(
+      { id: 't1', name: 'Read', input: { file_path: path.join(dataDir, 'token') } },
+      agent,
+    );
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('denied');
   });
 });

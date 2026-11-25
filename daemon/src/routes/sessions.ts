@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
+import { adoptLeader, backendFor, getAgent } from '../agents/index.js';
 import type { AppContext } from '../app/context.js';
 import type { EndRow, SessionRow } from '../db/db.js';
 import { resolveSessionEndsScope } from '../ends/scope.js';
@@ -94,6 +95,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     const body = (req.body ?? {}) as {
       workspaceId?: unknown;
       runtime?: unknown;
+      agentId?: unknown;
       permissionMode?: unknown;
       model?: unknown;
       modelParameters?: unknown;
@@ -115,13 +117,35 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
+    // Direct chat: the chosen assistant is the room's leader from the start.
+    // An explicit agent wins over `runtime` — the agent already owns a backend.
+    const requestedAgentId =
+      typeof body.agentId === 'string' && body.agentId.trim() ? body.agentId.trim() : undefined;
+    const agent = requestedAgentId ? getAgent(ctx.db, requestedAgentId) : undefined;
+    if (requestedAgentId && (!agent || !agent.enabled)) {
+      res.status(404).json({ error: 'agent not found or disabled', code: 'agent_not_found' });
+      return;
+    }
+    if (agent && agent.workspaceId !== workspace.id) {
+      res.status(400).json({ error: 'agent belongs to another workspace', code: 'cross_workspace' });
+      return;
+    }
     const requestedRuntime =
       typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
-    const runtime = resolveNewSessionRuntime(workspace, requestedRuntime);
-    const driver = ctx.registry.driver(runtime);
-    if (!driver || driver.internal) {
-      res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
-      return;
+    const runtime = agent ? backendFor(agent) : resolveNewSessionRuntime(workspace, requestedRuntime);
+    if (!agent) {
+      const driver = ctx.registry.driver(runtime);
+      if (!driver || driver.internal) {
+        res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
+        return;
+      }
+    } else if (agent.kind !== 'peer') {
+      // A local assistant still needs its backend to be runnable right now.
+      const driver = ctx.registry.driver(runtime);
+      if (!driver || driver.internal) {
+        res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
+        return;
+      }
     }
     const requestedPermissionMode: ProductPermissionMode = isProductPermissionMode(body.permissionMode)
       ? body.permissionMode
@@ -142,11 +166,17 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       permissionMode,
       model,
       modelParameters,
-      cwd: workspace.path,
+      cwd: agent?.cwd ?? workspace.path,
       title: promptTitle.trim() ? titleFromPrompt(promptTitle) : null,
     });
+    if (agent) adoptLeader(ctx.db, { id: session.id, workspaceId: workspace.id }, agent);
     res.status(201).json({
-      session: sessionDto(ctx, session, [], ctx.db.countScheduledTasksForSession(session.id)),
+      session: sessionDto(
+        ctx,
+        ctx.db.getSession(session.id) ?? session,
+        [],
+        ctx.db.countScheduledTasksForSession(session.id),
+      ),
     });
   });
 

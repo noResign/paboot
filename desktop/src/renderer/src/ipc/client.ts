@@ -73,6 +73,10 @@ import type {
   CreateScheduledTaskRequest,
   UpdateScheduledTaskRequest,
   TaskConfigSessionResponse,
+  PeerConnectionDto,
+  PeerExposedAgentDto,
+  PeerInviteDto,
+  PeerSessionsResponse,
   SessionAgentDetailResponse,
   SessionAgentsResponse,
   CreateSessionRequest,
@@ -302,6 +306,31 @@ export const api = {
     }),
   deleteAgentProfile: (id: string) =>
     request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.agentProfiles(id) }),
+
+  // Cross-machine sharing (P3).
+  peerExposure: (agentId: string) =>
+    request<PeerExposedAgentDto>({ method: 'GET', path: ROUTES.agentExposed(agentId) }),
+  setPeerExposure: (agentId: string, body: Record<string, unknown>) =>
+    request<PeerExposedAgentDto>({ method: 'POST', path: ROUTES.agentExposed(agentId), body }),
+  createPeerInvite: (agentId: string, body: Record<string, unknown> = {}) =>
+    request<PeerInviteDto>({ method: 'POST', path: ROUTES.agentExposedInvites(agentId), body }),
+  revokePeerTokens: (agentId: string) =>
+    request<{ revoked: number }>({ method: 'DELETE', path: ROUTES.agentExposedTokens(agentId) }),
+  peers: () => request<{ peers: PeerConnectionDto[] }>({ method: 'GET', path: ROUTES.peers }),
+  peerSessions: (workspaceId?: string) =>
+    request<PeerSessionsResponse>({ method: 'GET', path: ROUTES.peerSessions(workspaceId) }),
+  joinPeer: (body: { url: string; workspaceId?: string; label?: string }) =>
+    request<PeerConnectionDto>({ method: 'POST', path: ROUTES.peers, body }),
+  removePeer: (id: string) =>
+    request<{ ok: boolean }>({ method: 'DELETE', path: ROUTES.peer(id) }),
+  probePeer: (id: string) =>
+    request<{ online: boolean }>({ method: 'POST', path: ROUTES.peerProbe(id) }),
+  decidePeerPermission: (runId: string, permissionId: string, decision: 'allow' | 'deny') =>
+    request<{ ok: boolean }>({
+      method: 'POST',
+      path: ROUTES.peerRunPermission(runId),
+      body: { permissionId, decision },
+    }),
   /** 发一次输入：202 + 任务列表，答案是走房间流的。 */
   sendTurn: (
     sessionId: string,

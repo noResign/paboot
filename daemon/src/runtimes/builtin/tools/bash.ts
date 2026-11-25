@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
+import os from 'node:os';
 
 import { spawnExecutable } from '../../../platform/executable.js';
 import { killProcessGroup } from '../../../platform/process-tree.js';
@@ -120,6 +121,9 @@ export function createBashTool(options: BashToolOptions = {}): ToolImplementatio
           'read-only agent: this command can modify state; only read-only commands are allowed',
           'read_only',
         );
+      }
+      if (commandHitsDenyRoot(args.command, context.agent.pathPolicy.denyRoots)) {
+        throw new ToolError('command references a path denied by policy', 'denied_root');
       }
       if (context.signal.aborted) {
         return { content: 'command cancelled before start', isError: true, interrupted: true };
@@ -285,6 +289,20 @@ function parseBashArgs(input: unknown, defaultTimeout: number, maxTimeout: numbe
   }
   const timeoutMs = Math.min((requested as number | undefined) ?? defaultTimeout, maxTimeout);
   return { command, timeoutMs };
+}
+
+/** Best-effort check: shells make absolute sandboxing impossible at this layer. */
+function commandHitsDenyRoot(command: string, denyRoots: readonly string[]): boolean {
+  if (denyRoots.length === 0) return false;
+  const home = os.homedir();
+  for (const root of denyRoots) {
+    if (root && command.includes(root)) return true;
+    if (root.startsWith(`${home}/`)) {
+      const suffix = root.slice(home.length);
+      if (command.includes(`~${suffix}`) || command.includes(`$HOME${suffix}`)) return true;
+    }
+  }
+  return false;
 }
 
 /** Only pass a small allowlist; provider keys and PABOOT_* never reach the shell. */

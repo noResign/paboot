@@ -145,6 +145,15 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
+    // A peer-driven session is the visitor's conversation; the exposing side
+    // must not resume it with a local run.
+    if (session?.purpose === 'peer') {
+      res.status(403).json({
+        error: 'shared runs are read-only on this machine',
+        code: 'peer_session_read_only',
+      });
+      return;
+    }
 
     // One prompt at a time per session. Without this, a second run would
     // `--resume` the same native session id as the first, i.e. two agents

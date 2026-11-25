@@ -25,6 +25,7 @@ export {
 export {
   AgentValidationError,
   addToSession,
+  adoptLeader,
   assertWritableSlotFree,
   createAgent,
   ensureThread,
