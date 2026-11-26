@@ -16,6 +16,13 @@ import { sseHeaders } from '../http/sse.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
 import { runningRunIdsBySession } from '../runs/session-runs.js';
 import { closeSessionRoomStreams } from './room.js';
+import {
+  dispatchTurn,
+  parseTurnBody,
+  TurnHttpError,
+  type ParsedTurnBody,
+} from '../rooms/dispatch-turn.js';
+import { asyncRoute } from '../http/async-route.js';
 import { runDto } from '../db/dto.js';
 import { resolveWorkspaceForRequest } from '../workspaces/workspace-service.js';
 import {
@@ -91,7 +98,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
    * `/turns` + the room stream. Keeping creation separate makes single-agent
    * sessions use the same send/reconnect path as group rooms.
    */
-  app.post('/api/sessions', (req, res) => {
+  app.post('/api/sessions', asyncRoute(async (req, res) => {
     const body = (req.body ?? {}) as {
       workspaceId?: unknown;
       runtime?: unknown;
@@ -100,6 +107,8 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       model?: unknown;
       modelParameters?: unknown;
       title?: unknown;
+      /** Present → create and send the first turn in one request. */
+      prompt?: unknown;
     };
     if (body.permissionMode !== undefined && !isProductPermissionMode(body.permissionMode)) {
       res.status(400).json({ error: 'permissionMode must be ask, acceptEdits or bypass', code: 'bad_request' });
@@ -108,6 +117,17 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
     if (body.modelParameters !== undefined && !isValidModelParameters(body.modelParameters)) {
       res.status(400).json({ error: 'modelParameters must be an object or null', code: 'bad_request' });
       return;
+    }
+    // Pure body validation runs before anything is written: a malformed first
+    // turn must not create (then delete) a session row.
+    let firstTurn: ParsedTurnBody | null = null;
+    if (body.prompt !== undefined) {
+      const parsed = parseTurnBody(req.body);
+      if (parsed instanceof TurnHttpError) {
+        res.status(parsed.status).json({ error: parsed.message, code: parsed.code });
+        return;
+      }
+      firstTurn = parsed;
     }
     const workspace = resolveWorkspaceForRequest(
       ctx.db,
@@ -170,6 +190,37 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       title: promptTitle.trim() ? titleFromPrompt(promptTitle) : null,
     });
     if (agent) adoptLeader(ctx.db, { id: session.id, workspaceId: workspace.id }, agent);
+
+    // Optional first message: create-and-send in one round trip. Omitted by
+    // older clients (and by "create a blank session" flows), which then send
+    // their first turn through `/turns` as before.
+    if (firstTurn) {
+      try {
+        const turn = await dispatchTurn(ctx, { session, workspace, ...firstTurn });
+        res.status(201).json({
+          session: sessionDto(
+            ctx,
+            ctx.db.getSession(session.id) ?? session,
+            [],
+            ctx.db.countScheduledTasksForSession(session.id),
+          ),
+          turn,
+        });
+      } catch (err) {
+        if (err instanceof TurnHttpError) {
+          // The session exists only for this request; a rejected first turn
+          // must not leave an empty one behind in the client's list.
+          ctx.db.deleteSession(session.id);
+          res.status(err.status).json({ error: err.message, code: err.code });
+          return;
+        }
+        // Unknown failure (DB, bug): keep the session so a retry can reuse it,
+        // and let asyncRoute answer 500 instead of hanging the request.
+        throw err;
+      }
+      return;
+    }
+
     res.status(201).json({
       session: sessionDto(
         ctx,
@@ -178,7 +229,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
         ctx.db.countScheduledTasksForSession(session.id),
       ),
     });
-  });
+  }));
 
   app.get('/api/sessions/:id', (req, res) => {
     const s = visibleSession(ctx, req.params.id);

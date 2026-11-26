@@ -256,10 +256,22 @@ export interface CreateSessionRequest {
   modelParameters?: Record<string, string> | null;
   /** Usually the first prompt; the server derives the normal session title. */
   title?: string;
+  /**
+   * Optional first turn, sent in the same request as creation. Lets a client
+   * go from "new chat" to a running answer in one round trip instead of
+   * create-session → open-stream → send-turn.
+   */
+  prompt?: string;
+  mentions?: string[];
+  /** Idempotency key for the first turn; same semantics as `POST /turns`. */
+  commandId?: string;
+  attachmentIds?: string[];
 }
 
 export interface CreateSessionResponse {
   session: SessionDto;
+  /** Present only when the request carried `prompt` and the daemon supports it. */
+  turn?: CreateTurnResponse;
 }
 
 export interface WorkspaceDto {

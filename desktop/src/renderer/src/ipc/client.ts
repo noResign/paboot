@@ -156,11 +156,14 @@ export function attachmentBytes(id: string): Promise<AttachmentGetResult> {
   return window.paboot.attachmentBytes({ connectionId: activeConnectionId, id });
 }
 
-async function request<T>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {
-  if (!activeConnectionId) {
+async function request<T>(
+  req: Omit<DaemonRequest, 'connectionId'>,
+  connectionId: string | undefined = activeConnectionId ?? undefined,
+): Promise<DaemonResponse<T>> {
+  if (!connectionId) {
     return { status: 0, ok: false, data: { error: 'not_connected', message: '尚未连接 daemon' } } as DaemonResponse<T>;
   }
-  return (await window.paboot.request({ ...req, connectionId: activeConnectionId })) as DaemonResponse<T>;
+  return (await window.paboot.request({ ...req, connectionId })) as DaemonResponse<T>;
 }
 
 export const connectionApi = {
@@ -277,8 +280,11 @@ export const api = {
       path: ROUTES.sessions,
       query: { workspaceId },
     }),
-  createSession: (body: CreateSessionRequest) =>
-    request<CreateSessionResponse>({ method: 'POST', path: ROUTES.sessions, body }),
+  // The optional connection pins a request to the host that owns it. Sending
+  // from a chat must not be rerouted to whichever host is active by the time
+  // the request leaves (e.g. the user switched hosts mid-send).
+  createSession: (body: CreateSessionRequest, connectionId?: string) =>
+    request<CreateSessionResponse>({ method: 'POST', path: ROUTES.sessions, body }, connectionId),
   session: (id: string) =>
     request<SessionDetailResponse>({ method: 'GET', path: ROUTES.session(id) }),
 
@@ -338,20 +344,27 @@ export const api = {
     mentions: string[],
     commandId: string,
     attachmentIds: string[] = [],
+    connectionId?: string,
   ) =>
-    request<CreateTurnResponse>({
-      method: 'POST',
-      path: ROUTES.sessionTurns(sessionId),
-      // A retry carrying the same commandId re-attaches to the same turn.
-      body: {
-        prompt,
-        mentions,
-        commandId,
-        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+    request<CreateTurnResponse>(
+      {
+        method: 'POST',
+        path: ROUTES.sessionTurns(sessionId),
+        // A retry carrying the same commandId re-attaches to the same turn.
+        body: {
+          prompt,
+          mentions,
+          commandId,
+          ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        },
       },
-    }),
-  sessionAgents: (sessionId: string) =>
-    request<SessionAgentsResponse>({ method: 'GET', path: ROUTES.sessionAgents(sessionId) }),
+      connectionId,
+    ),
+  sessionAgents: (sessionId: string, connectionId?: string) =>
+    request<SessionAgentsResponse>(
+      { method: 'GET', path: ROUTES.sessionAgents(sessionId) },
+      connectionId,
+    ),
   sessionAgentDetail: (sessionId: string, agentId: string) =>
     request<SessionAgentDetailResponse>({
       method: 'GET',

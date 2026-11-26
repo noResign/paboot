@@ -1188,3 +1188,116 @@ describe('direct chat with a chosen assistant', () => {
     expect(getLeader(h.db, body.session.id)?.id).toBe(remote.id);
   });
 });
+
+describe('POST /api/sessions with a first prompt', () => {
+  it('creates the session and starts its first turn in one request', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '审稿',
+      kind: 'runtime',
+      runtime: 'claude',
+    });
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      agentId: agent.id,
+      prompt: '第一句',
+      commandId: 'first-1',
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      session: { id: string };
+      turn: { turnId: string; tasks: { agentId: string }[] };
+    };
+    expect(body.turn.tasks).toHaveLength(1);
+    expect(body.turn.tasks[0]!.agentId).toBe(agent.id);
+    // Same commit-then-run behavior as POST /turns.
+    expect(
+      h.db.listMessages(body.session.id).filter((message) => message.role === 'user'),
+    ).toHaveLength(1);
+    await waitFor(() => h.starts.length === 1);
+    expect(h.db.listTurns(body.session.id, null, 1)[0]!.id).toBe(body.turn.turnId);
+  });
+
+  it('drops the created session when the first turn is rejected', async () => {
+    const h = await startApi();
+    const before = h.db.listAllSessions(h.workspaceId).length;
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      runtime: 'claude',
+      prompt: '带个坏附件',
+      attachmentIds: ['missing'],
+    });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('attachment_not_found');
+    // A rejected first turn must not leave an empty session for the client.
+    expect(h.db.listAllSessions(h.workspaceId)).toHaveLength(before);
+    expect(h.starts).toHaveLength(0);
+  });
+
+  it('creates only when no prompt is sent', async () => {
+    const h = await startApi();
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      runtime: 'claude',
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { turn?: unknown };
+    expect(body.turn).toBeUndefined();
+    expect(h.starts).toHaveLength(0);
+  });
+
+  it('carries a first-turn attachment through creation', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '看图',
+      kind: 'runtime',
+      runtime: 'claude',
+    });
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      agentId: agent.id,
+      prompt: '看图',
+      attachmentIds: [attachment.id],
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { session: { id: string }; turn: { turnId: string } };
+    await waitFor(() => h.starts.length === 1);
+    // The upload is owned by the newly created session, same as POST /turns.
+    expect(h.attachments.get(attachment.id)?.sessionId).toBe(body.session.id);
+    expect(h.starts[0]!.attachmentIds).toEqual([attachment.id]);
+    expect(h.db.listTurns(body.session.id, null, 1)[0]!.id).toBe(body.turn.turnId);
+  });
+
+  it('rolls back when the first turn image is unsupported', async () => {
+    const h = await startApi();
+    const workspace = h.db.getWorkspace(h.workspaceId)!;
+    const agent = createAgent(h.db, workspace, {
+      workspaceId: h.workspaceId,
+      name: '无图',
+      kind: 'runtime',
+      runtime: 'codex',
+    });
+    h.imageCapable.delete('codex');
+    const attachment = await h.attachments.saveImage(pngBytes(), 'image/png');
+    const before = h.db.listAllSessions(h.workspaceId).length;
+
+    const res = await h.request('POST', '/api/sessions', {
+      workspaceId: h.workspaceId,
+      agentId: agent.id,
+      prompt: '看图',
+      attachmentIds: [attachment.id],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe('attachments_unsupported_agent');
+    expect(h.db.listAllSessions(h.workspaceId)).toHaveLength(before);
+    expect(h.starts).toHaveLength(0);
+  });
+});

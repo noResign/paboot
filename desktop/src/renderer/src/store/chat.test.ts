@@ -10,7 +10,7 @@ vi.mock('../ipc/client', () => ({
     cancelTask: vi.fn(),
     decidePermission: vi.fn(),
   },
-  connectionApi: { streamStart: vi.fn() },
+  connectionApi: { streamStart: vi.fn(), streamCancel: vi.fn() },
 }));
 vi.mock('./sessions', () => ({ useSessions: { getState: () => ({ refreshCurrent: vi.fn() }) } }));
 vi.mock('../notify/notifier', () => ({
@@ -138,17 +138,24 @@ describe('model selection before the session exists', () => {
     await useChat.getState().setSessionSelection('p:m', { reasoningEffort: 'high' });
     await useChat.getState().send('hi');
 
-    expect(api.createSession).toHaveBeenCalledWith({
-      workspaceId: 'w',
-      runtime: 'builtin',
-      permissionMode: 'ask',
-      model: 'p:m',
-      modelParameters: { reasoningEffort: 'high' },
-      title: 'hi',
-    });
+    expect(api.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'w',
+        runtime: 'builtin',
+        permissionMode: 'ask',
+        model: 'p:m',
+        modelParameters: { reasoningEffort: 'high' },
+        title: 'hi',
+        prompt: 'hi',
+      }),
+      'host',
+    );
+    // No merged turn on an older daemon: the stream opens live-only (after null)
+    // and the message still waits for it before POSTing the turn.
     expect(vi.mocked(connectionApi.streamStart).mock.calls[0]![0]).toMatchObject({
       kind: 'room',
       sessionId: 's-new',
+      after: null,
     });
     // The chat existed before the session did, so it also has to open the
     // session watch itself — the first-turn title update arrives there.
@@ -162,7 +169,60 @@ describe('model selection before the session exists', () => {
       [],
       expect.any(String),
       [],
+      'host',
     );
+  });
+
+  it('starts the first turn inside the create request and replays the room stream', async () => {
+    vi.mocked(api.createSession).mockResolvedValue({
+      ok: true,
+      status: 201,
+      data: {
+        session: {
+          id: 's-new',
+          runtime: 'builtin',
+          workspaceId: 'w',
+          permissionMode: 'ask',
+          model: null,
+          modelParameters: null,
+          cwd: '/w',
+          title: 'hi',
+          createdAt: 1,
+          lastActiveAt: 1,
+          running: true,
+          runningRunId: 'r1',
+        },
+        turn: {
+          turnId: 't1',
+          addressed: [],
+          dropped: [],
+          tasks: [{ id: 'task-1', agentId: 'a1', source: 'leader_default', status: 'running' }],
+        },
+      },
+    } as never);
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true } as never);
+
+    await useChat.getState().send('hi');
+
+    // No second round trip: the create request already started the turn.
+    expect(api.sendTurn).not.toHaveBeenCalled();
+    const chat = useChat.getState().byKey[newKey]!;
+    expect(chat.messages[0]).toMatchObject({ kind: 'user', text: 'hi', turnId: 't1' });
+    expect(chat.dispatchedTasks).toEqual([{ taskId: 'task-1', agentId: 'a1' }]);
+    expect(chat.turnSending).toBe(false);
+
+    // The agent is running before the stream opens, so it must replay from 0.
+    await vi.waitFor(() => expect(connectionApi.streamStart).toHaveBeenCalled());
+    expect(vi.mocked(connectionApi.streamStart).mock.calls[0]![0]).toMatchObject({
+      kind: 'room',
+      sessionId: 's-new',
+      after: 0,
+    });
   });
 });
 
@@ -231,6 +291,7 @@ describe('permission mode before the session exists', () => {
 
     expect(api.createSession).toHaveBeenCalledWith(
       expect.objectContaining({ permissionMode: 'bypass' }),
+      'host',
     );
     expect(vi.mocked(connectionApi.streamStart).mock.calls[0]![0]).toMatchObject({
       kind: 'room',
@@ -243,6 +304,90 @@ describe('permission mode before the session exists', () => {
     useChat.setState({ byKey: { [newKey]: chat } });
     useChat.getState().setPermissionMode('ask');
     expect(useChat.getState().byKey[newKey]!.pendingNew).toBeNull();
+  });
+});
+
+describe('host switch while a send is in flight', () => {
+  const switchKey = 'host::new';
+
+  beforeEach(() => {
+    useChat.setState({
+      activeKey: switchKey,
+      streamKeys: {},
+      failedIds: [],
+      byKey: {
+        [switchKey]: {
+          ...emptyChat(switchKey, 'host'),
+          runtime: 'builtin',
+          pendingNew: { runtime: 'builtin', workspaceId: 'w', permissionMode: 'ask' },
+        },
+      },
+    });
+  });
+
+  it('still creates and sends on the original host after the user leaves', async () => {
+    let releaseCreate!: (value: unknown) => void;
+    vi.mocked(api.createSession).mockReturnValue(
+      new Promise((resolve) => {
+        releaseCreate = resolve;
+      }) as never,
+    );
+    vi.mocked(api.sessionAgents).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { leaderId: 'a1', agents: [] },
+    } as never);
+    vi.mocked(connectionApi.streamStart).mockResolvedValue({ ok: true, streamId: 's1' } as never);
+    vi.mocked(api.sendTurn).mockResolvedValue({
+      ok: true,
+      status: 202,
+      data: { turnId: 't1', tasks: [] },
+    } as never);
+
+    const sending = useChat.getState().send('hi');
+    await vi.waitFor(() => expect(api.createSession).toHaveBeenCalled());
+
+    // Switching hosts nulls the global active key/connection while the create
+    // is still in flight. The rest of the send must not follow it.
+    useChat.getState().leave();
+    expect(useChat.getState().activeKey).toBeNull();
+
+    releaseCreate({
+      ok: true,
+      status: 201,
+      data: {
+        session: {
+          id: 's-new',
+          runtime: 'builtin',
+          workspaceId: 'w',
+          permissionMode: 'ask',
+          model: null,
+          modelParameters: null,
+          cwd: '/w',
+          title: 'hi',
+          createdAt: 1,
+          lastActiveAt: 1,
+          running: false,
+          runningRunId: null,
+        },
+      },
+    });
+    await sending;
+
+    expect(api.sendTurn).toHaveBeenCalledWith(
+      's-new',
+      'hi',
+      [],
+      expect.any(String),
+      [],
+      'host',
+    );
+    // The bubble is no longer local-only: the turn id proves it reached the host.
+    expect(useChat.getState().byKey[switchKey]!.messages[0]).toMatchObject({
+      kind: 'user',
+      text: 'hi',
+      turnId: 't1',
+    });
   });
 });
 
@@ -799,6 +944,7 @@ describe('room turns', () => {
       ['a1'],
       expect.any(String),
       ['img-1'],
+      'host',
     );
     expect(useChat.getState().byKey[roomKey]!.messages[0]).toMatchObject({
       kind: 'user',
@@ -823,6 +969,7 @@ describe('room turns', () => {
       [],
       expect.any(String),
       ['img-1'],
+      'host',
     );
   });
 });

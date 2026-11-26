@@ -71,7 +71,7 @@
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin,available}]}`（`available` = 本机是否装上） |
 | `GET /api/agents/:id/models` | 是 | 某运行时的模型目录 `{models:[{id,label,parameters?,supportsImages?}]}`。`parameters` 是该模型支持的可调参数（如 `{id:"reasoningEffort",label,values,defaultId?}`）；`supportsImages=false` 表示不能接收图片。Claude 用静态别名（**探测到 `--effort` 才带 reasoningEffort**）；Codex 短启 app-server 调 `model/list`（映射 `supportedReasoningEfforts`）；DeepSeek 用默认路由的静态目录（ACP 不透明选择器 + `off/low/high/max`）。Registry 缓存 5 分钟（失败 30 秒） |
-| `POST /api/sessions` | 是 | 只创建会话、不启动 run。body `{workspaceId?, runtime?, agentId?, permissionMode?, model?, modelParameters?, title?}`；`agentId` 表示直接和这个助手对话（它成为 leader，`runtime` 由它决定，peer 也可作为 1:1 leader 但不召唤其他助手）。交互客户端随后统一走 `/turns` + 房间流。返回 `{session}` |
+| `POST /api/sessions` | 是 | 创建会话；**可选**在同一请求里发出首条 turn。body `{workspaceId?, runtime?, agentId?, permissionMode?, model?, modelParameters?, title?, prompt?, mentions?, commandId?, attachmentIds?}`；`agentId` 表示直接和这个助手对话（它成为 leader，`runtime` 由它决定，peer 也可作为 1:1 leader 但不召唤其他助手）。不带 `prompt` → 只建会话，返回 `{session}`；带 `prompt` → 复用 `/turns` 的校验与派发，返回 `{session, turn}`（`turn` 形状同 `/turns` 的 202）。首条 turn 被拒时回滚该会话并返回对应 4xx。老 daemon 会忽略 `prompt`，客户端据此回退到 `/turns` |
 | `PATCH /api/sessions/:id/model` | 是 | 切换该会话后续 run 使用的模型/参数，body `{model?: string\|null, modelParameters?: object\|null}`（至少给一个；`null` = 回到默认）。省略的字段保持原值。正在运行的 run 不受影响，返回 `{ok, effective:"next_run", session}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'desktop'|'all'}` |
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
@@ -298,6 +298,7 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
   - `POST /api/sessions/:id/turns`（body `{prompt, mentions: string[], attachmentIds?: string[], commandId?}`，
     `mentions` 最多 8 个）
     → 202 `{turnId, addressed, dropped, tasks}`。用户消息在返回前提交；答案是别的帧，走房间流。
+    与 `POST /api/sessions` 的首条 `prompt` 共用同一套校验/派发（`rooms/dispatch-turn.ts`）。
     `attachmentIds` 是最多 8 张、此前通过 `POST /api/attachments` 上传的图片，由 turn 持有并
     同传给该 turn 的每个 task（包括 leader 之后召唤的 supplement）。只要有一个被点名的 agent
     所属 runtime 不支持图片输入，整张 turn 会在写用户消息前以

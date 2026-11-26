@@ -1,54 +1,23 @@
 import type { Express } from 'express';
 import type { AppContext } from '../app/context.js';
 import type { SseFrame } from '../types/api.js';
-import {
-  AgentValidationError,
-  createTurn,
-  listAgents,
-  MAX_MENTIONS,
-  runTurn,
-  type Agent,
-  type TaskRunnerDeps,
-} from '../agents/index.js';
-import { normalizeAttachmentIds } from '../attachments/request.js';
-import { startPeerTaskRun } from '../peer/index.js';
 import { log } from '../platform/log.js';
 import { getActiveRun } from '../runtimes/active-runs.js';
+import { asyncRoute } from '../http/async-route.js';
 import { sseHeaders, writeSseFrame } from '../http/sse.js';
+import {
+  addRoomSubscriber,
+  removeRoomSubscriber,
+  REPLAY_PAGE,
+  roomSubscribers,
+  type RoomFrame,
+  type Subscriber,
+} from '../rooms/session-events.js';
+import { dispatchTurn, parseTurnBody, TurnHttpError } from '../rooms/dispatch-turn.js';
 
-/**
- * Whether each workspace agent can receive images, with a user-facing reason
- * when it cannot. Builtin is accepted here because its model-level check runs
- * in the driver; runtime agents need an explicit `imageInput` capability.
- */
-async function imageSupportByAgent(
-  ctx: AppContext,
-  workspaceId: string,
-): Promise<Map<string, string | null>> {
-  const agents = listAgents(ctx.db, workspaceId);
-  const entries = await Promise.all(
-    agents.map(async (agent): Promise<[string, string | null]> => {
-      if (agent.kind === 'builtin') return [agent.id, null];
-      if (agent.kind === 'peer') return [agent.id, 'peer agents do not receive images yet'];
-      const runtime = agent.runtime ?? '';
-      if (!runtime) return [agent.id, 'the agent has no runtime'];
-      let detection = ctx.registry.detection(runtime);
-      if (!detection) {
-        try {
-          detection = await ctx.registry.detect(runtime, process.env);
-        } catch {
-          detection = undefined;
-        }
-      }
-      if (!detection?.available) return [agent.id, `runtime ${runtime} is not available`];
-      if (detection.capabilities?.imageInput !== true) {
-        return [agent.id, `runtime ${runtime} does not support image input`];
-      }
-      return [agent.id, null];
-    }),
-  );
-  return new Map(entries);
-}
+// Re-exported for the routes that tear down a session's streams.
+export { closeSessionRoomStreams } from '../rooms/session-events.js';
+export { roomPublisher } from '../rooms/session-events.js';
 
 /**
  * Room stream: one SSE connection per session, carrying every agent's frames.
@@ -64,76 +33,6 @@ async function imageSupportByAgent(
  *     timeline endpoint already gives the committed past)
  *   - `after=N`       → replay frames > N, then go live
  */
-
-interface Subscriber {
-  sessionId: string;
-  write(frame: RoomFrame): void;
-  close(): void;
-}
-
-export interface RoomFrame extends SseFrame {
-  /** Session-wide frame position; the client's resume cursor. */
-  roomSeq: number;
-  /** Which task produced this frame (null for session-level notices). */
-  taskId: string | null;
-  /** Which agent produced it; null for frames that are not an agent's. */
-  agentId: string | null;
-}
-
-/** In-process fan-out. Nothing here is persisted; `events` already is. */
-const subscribers = new Map<string, Set<Subscriber>>();
-
-/** Rows per replay query; the route loops until it catches up. */
-const REPLAY_PAGE = 500;
-
-/** Close every room listener for a session that is being deleted. */
-export function closeSessionRoomStreams(sessionId: string): void {
-  for (const subscriber of subscribers.get(sessionId) ?? []) subscriber.close();
-  subscribers.delete(sessionId);
-}
-
-function broadcast(ctx: AppContext, sessionId: string, frame: Omit<RoomFrame, 'roomSeq'>): void {
-  const roomSeq = ctx.db.nextRoomSeq(sessionId);
-  try {
-    // The run already persisted this frame for per-run replay; tag that row
-    // instead of inserting a second copy (session notices have no row yet).
-    ctx.db.appendRoomEvent(
-      frame.runId || `room:${sessionId}`,
-      frame.seq,
-      frame.event.type,
-      frame.event,
-      sessionId,
-      roomSeq,
-    );
-  } catch (err) {
-    // A room frame that cannot be persisted still goes out live: replay is a
-    // convenience, losing it must not stall the conversation.
-    log.warn('failed to persist room frame', err);
-  }
-  const full: RoomFrame = { ...frame, roomSeq };
-  for (const subscriber of subscribers.get(sessionId) ?? []) subscriber.write(full);
-}
-
-/**
- * Publish one run frame onto the room stream.
- *
- * Used by turns (with a task id) and by `/api/chat` (task id `null`): both
- * paths must be visible to a room subscriber, otherwise the same session would
- * have two different live views depending on who sent the message.
- */
-export function roomPublisher(ctx: AppContext): TaskRunnerDeps['publish'] {
-  return (sessionId, taskId, agentId, frame) => {
-    broadcast(ctx, sessionId, { ...frame, taskId, agentId });
-  };
-}
-
-/** Task runners get peer execution injected here, keeping `agents/` transport-free. */
-function taskRunnerDeps(ctx: AppContext): TaskRunnerDeps {
-  return {
-    publish: roomPublisher(ctx),
-    runPeerTask: (inner, input) => startPeerTaskRun(inner, input),
-  };
-}
 
 export function registerRoomRoutes(app: Express, ctx: AppContext): void {
   /** Replay + live tail. `after` resumes; omit it for live-only. */
@@ -191,9 +90,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       write,
       close: () => res.end(),
     };
-    const set = subscribers.get(session.id) ?? new Set<Subscriber>();
-    subscribers.set(session.id, set);
-    set.add(subscriber);
+    addRoomSubscriber(subscriber);
 
     const heartbeat = setInterval(() => {
       if (res.writableEnded) return;
@@ -202,8 +99,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
 
     res.on('close', () => {
       clearInterval(heartbeat);
-      set.delete(subscriber);
-      if (set.size === 0) subscribers.delete(session.id);
+      removeRoomSubscriber(subscriber);
       // The room keeps running; only this listener goes away.
       log.info(`room stream closed for ${session.id}; turns keep running`);
     });
@@ -211,8 +107,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
 
   /** Drop every subscriber of a session (tests, and daemon shutdown). */
   app.delete('/api/sessions/:id/stream', (req, res) => {
-    for (const subscriber of subscribers.get(req.params.id!) ?? []) subscriber.close();
-    subscribers.delete(req.params.id!);
+    for (const subscriber of roomSubscribers(req.params.id!) ?? []) subscriber.close();
     res.status(204).end();
   });
 
@@ -314,7 +209,7 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
    * stream, not in this response. That is what makes the turn a batch rather
    * than a barrier — the client is free immediately and watches the room.
    */
-  app.post('/api/sessions/:id/turns', async (req, res) => {
+  app.post('/api/sessions/:id/turns', asyncRoute(async (req, res) => {
     const session = ctx.db.getSession(req.params.id!);
     if (!session) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
@@ -335,145 +230,21 @@ export function registerRoomRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    const body = (req.body ?? {}) as {
-      prompt?: unknown;
-      mentions?: unknown;
-      commandId?: unknown;
-      attachmentIds?: unknown;
-    };
-    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-    if (!prompt) {
-      res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
+    const parsed = parseTurnBody(req.body);
+    if (parsed instanceof TurnHttpError) {
+      res.status(parsed.status).json({ error: parsed.message, code: parsed.code });
       return;
     }
-    const mentionIds = Array.isArray(body.mentions)
-      ? body.mentions.filter((id): id is string => typeof id === 'string')
-      : [];
-    if (mentionIds.length > MAX_MENTIONS) {
-      res.status(400).json({
-        error: `at most ${MAX_MENTIONS} agents may be addressed in one turn`,
-        code: 'too_many_mentions',
-      });
-      return;
-    }
-    const commandId =
-      typeof body.commandId === 'string' && body.commandId ? body.commandId : null;
-    const attachmentIds = normalizeAttachmentIds(body.attachmentIds);
-    if (attachmentIds === null) {
-      res.status(400).json({
-        error: 'attachmentIds must be an array of unique ids',
-        code: 'bad_request',
-      });
-      return;
-    }
-    for (const id of attachmentIds) {
-      const attachment = ctx.attachments.get(id);
-      if (!attachment) {
-        res.status(404).json({ error: `attachment not found: ${id}`, code: 'attachment_not_found' });
-        return;
-      }
-      if (attachment.sessionId && attachment.sessionId !== session.id) {
-        res.status(403).json({
-          error: `attachment belongs to another session: ${id}`,
-          code: 'attachment_forbidden',
-        });
-        return;
-      }
-      if (attachment.workspaceId && attachment.workspaceId !== workspace.id) {
-        res.status(403).json({
-          error: `attachment belongs to another workspace: ${id}`,
-          code: 'attachment_forbidden',
-        });
-        return;
-      }
-    }
-    const imageSupport =
-      attachmentIds.length > 0 ? await imageSupportByAgent(ctx, workspace.id) : null;
 
-    let created;
     try {
-      created = createTurn(ctx.db, {
-        session,
-        workspace,
-        prompt,
-        mentionIds,
-        commandId,
-        attachmentIds,
-        ...(imageSupport
-          ? {
-              validateAttachmentTargets: (agents: readonly Agent[]) => {
-                const rejected = agents
-                  .map((agent) => ({
-                    agent,
-                    reason: imageSupport.has(agent.id)
-                      ? imageSupport.get(agent.id)!
-                      : 'image input is not available',
-                  }))
-                  .filter((entry) => entry.reason !== null);
-                if (rejected.length === 0) return;
-                throw new AgentValidationError(
-                  'attachments_unsupported_agent',
-                  rejected
-                    .map((entry) => `${entry.agent.name}: ${entry.reason}`)
-                    .join('; '),
-                );
-              },
-            }
-          : {}),
-      });
+      const dispatched = await dispatchTurn(ctx, { session, workspace, ...parsed });
+      res.status(202).json(dispatched);
     } catch (err) {
-      if (err instanceof AgentValidationError) {
-        const status = err.code === 'command_id_conflict' || err.code === 'room_full' ? 409 : 400;
-        res.status(status).json({
-          error: err.message,
-          code: err.code,
-        });
+      if (err instanceof TurnHttpError) {
+        res.status(err.status).json({ error: err.message, code: err.code });
         return;
       }
       throw err;
     }
-
-    // Own the uploads as soon as the turn exists. The per-run bind below adds a
-    // run id later; the session/workspace binding is the access-control fact
-    // the attachment GET route relies on.
-    for (const id of attachmentIds) {
-      ctx.attachments.bind(id, { sessionId: session.id, workspaceId: workspace.id });
-    }
-
-    res.status(202).json({
-      turnId: created.turn.id,
-      /** What the user's message became on the timeline (already committed). */
-      addressed: created.addressed,
-      dropped: created.dropped,
-      tasks: created.tasks.map((task) => ({
-        id: task.id,
-        agentId: task.agent_id,
-        source: task.source,
-        status: task.status,
-      })),
-    });
-
-    // A retry re-attaches to the turn it already created; starting its tasks a
-    // second time would run the same agent twice.
-    if (created.replayed) return;
-
-    // Fire and forget: the response is the acknowledgement, not the answer. A
-    // failure here is per-task and reported on the room stream.
-    void runTurn(ctx, taskRunnerDeps(ctx), {
-      session,
-      workspace,
-      tasks: created.tasks,
-    })
-      .then((outcomes) => {
-        ctx.db.finishTurnIfSettled(created.turn.id, Date.now());
-        const failed = outcomes.filter((outcome) => outcome.status === 'failed');
-        if (failed.length > 0) {
-          log.warn(`turn ${created.turn.id}: ${failed.length}/${outcomes.length} task(s) failed`);
-        }
-      })
-      .catch((err) => {
-        log.error(`turn ${created.turn.id} crashed`, err);
-        ctx.db.finishTurnIfSettled(created.turn.id, Date.now());
-      });
-  });
+  }));
 }

@@ -74,6 +74,7 @@ provider 的 HTTP 接口，自带工具 / MCP / Skill）。
 | `db/` | 持久化：`db.ts`（`node:sqlite`）、`dto.ts`（run DTO 映射）、`model-selection.ts`、`server-id.ts` |
 | `workspaces/` | 工作区领域：`workspace` / `workspace-service`（路径校验、目录选择）、`changes`（git 改动/diff）、`file-browser`（目录懒加载与文件读取） |
 | `runs/` | run / session 领域：`run-service`（chat/scheduler/command 共用生命周期）、`run-notifier`（SSE fan-out）、`session-runs`（在跑 run 按 session 索引）、`session-title` |
+| `rooms/` | 房间流与 turn 派发：`session-events`（订阅者 fan-out、帧落库、回放游标）、`dispatch-turn`（`/turns` 与「建会话带首条 prompt」共用的校验 + `createTurn` + 启动 run） |
 | `permissions/` | 权限领域：`permissions`（`PermissionManager`）、`permission-mode`（产品模式 ↔ CLI 模式）、`tool-grants`（grant key 映射）、`command-safety`（Bash 只读白名单） |
 | `context/` | 上下文装配契约：`types`（section / 排序 / 预算）、`assembler`（合并 / 去重 / 整段裁剪）、`prelude`（`<paboot-memory-context>` 包装） |
 | `memory/` | Memory M0 – M2：`memory.db` schema / store、`settings`（workspace 开关）、`read-policy`（dev / life 跨读）、scope 解析、捕获过滤与 ingest、LLM 抽取 worker、observation / summary、去重与冲突 / 实体、brief / 按轮召回 / 检索阶梯；见 [memory.md](memory.md) |
@@ -119,6 +120,7 @@ daemon/
 │  │  ├─ context.ts / types.ts
 │  │  ├─ servers/paboot_tasks/        → dist/mcp/servers/paboot_tasks/server.js
 │  │  └─ servers/paboot_memory/       → dist/mcp/servers/paboot_memory/server.js
+│  ├─ rooms/              房间流 fan-out + turn 派发（/turns 与建会话首条共用）
 │  ├─ routes/             HTTP/SSE 边界（按域拆）
 │  ├─ runtimes/           engine / registry / drivers / active-runs / stdio-rpc + claude/ · codex/ · deepseek/ · command
 │  └─ types/api.ts        传输契约

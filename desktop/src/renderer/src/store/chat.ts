@@ -14,6 +14,7 @@ import type { PendingAnswer, PendingPermission } from './chat/types';
 import type { ChatMessage, ChatSessionState, ContentBlock, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
 import type {
+  CreateTurnResponse,
   ProductPermissionMode,
   QuestionAnswers,
   RunDto,
@@ -116,9 +117,8 @@ interface ChatStore {
    * on the room stream, not on this promise.
    */
   sendTurn(text: string, mentionIds: string[], attachmentIds?: string[]): Promise<void>;
-  /** Open the room stream for the current multi-agent session (idempotent). */
-  /** Open the multiplexed room stream; false when it could not be established. */
-  ensureRoomStream(): Promise<boolean>;
+  /** Open the multiplexed room stream for `key` (defaults to the visible chat); false when it could not be established. */
+  ensureRoomStream(key?: string): Promise<boolean>;
   /** The roster says who the main speaker is; leader answers stream live. */
   setLeaderAgentId(agentId: string | null): void;
   /**
@@ -306,24 +306,32 @@ export const useChat = create<ChatStore>((set, get) => ({
       })),
     }));
     try {
-      // There is no separate "first message creates the session" run anymore:
-      // create the session, then send the turn through the same room path used
-      // by every later message. The optimistic bubble is already on screen.
+      // A new chat is created and its first turn sent in a single request, so
+      // the agent starts after one round trip. Older daemons ignore `prompt`
+      // and the turn is sent through `/turns` below instead.
+      const commandId = crypto.randomUUID();
       let current = get().byKey[key];
       if (!current?.sessionId) {
         const pending = current?.pendingNew;
-        const created = await api.createSession({
-          workspaceId: pending?.workspaceId ?? current?.workspaceId ?? undefined,
-          runtime: pending?.runtime ?? current?.runtime ?? undefined,
-          ...(pending?.agentId ? { agentId: pending.agentId } : {}),
-          permissionMode: (pending?.permissionMode ?? current?.permissionMode ?? 'ask') as ProductPermissionMode,
-          model: current?.model ?? null,
-          modelParameters:
-            current && Object.keys(current.modelParameters).length > 0
-              ? current.modelParameters
-              : null,
-          title: prompt,
-        });
+        const created = await api.createSession(
+          {
+            workspaceId: pending?.workspaceId ?? current?.workspaceId ?? undefined,
+            runtime: pending?.runtime ?? current?.runtime ?? undefined,
+            ...(pending?.agentId ? { agentId: pending.agentId } : {}),
+            permissionMode: (pending?.permissionMode ?? current?.permissionMode ?? 'ask') as ProductPermissionMode,
+            model: current?.model ?? null,
+            modelParameters:
+              current && Object.keys(current.modelParameters).length > 0
+                ? current.modelParameters
+                : null,
+            title: prompt,
+            prompt,
+            mentions: mentionIds,
+            commandId,
+            ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+          },
+          chat.connectionId,
+        );
         if (!created.ok) {
           const { apiCode, message } = apiErrorOf(created.data);
           set((state) => ({
@@ -336,6 +344,7 @@ export const useChat = create<ChatStore>((set, get) => ({
           return;
         }
         const session = created.data.session;
+        const firstTurn = created.data.turn ?? null;
         set((state) => ({
           byKey: patch(state, key, (chatState) => ({
             ...chatState,
@@ -348,15 +357,36 @@ export const useChat = create<ChatStore>((set, get) => ({
             model: session.model,
             modelParameters: session.modelParameters ?? {},
             pendingNew: null,
+            // A merged first turn may already be running on the daemon; replay
+            // the room stream from the start so none of its frames are lost.
+            roomCursor: firstTurn ? 0 : chatState.roomCursor,
           })),
         }));
         current = get().byKey[key];
+
+        if (firstTurn) {
+          markTurnSent(set, key, messageId, firstTurn, chat.connectionId);
+          // The turn is already running. The stream and the watch only decide
+          // what is shown; neither gates whether the message was sent. A plain
+          // host switch keeps the cached chat, so the stream still belongs to
+          // someone; a reset dropped it, and opening now would leak a stream.
+          const watched = get().byKey[key];
+          if (watched) {
+            void get().ensureRoomStream(key);
+            if (watched.sessionId && !watched.sessionStreamId) {
+              void startSessionWatch(set, key, watched.connectionId, watched.sessionId).catch(
+                () => undefined,
+              );
+            }
+          }
+          return;
+        }
       }
 
       // The answers exist only on the room stream. Sending before it is open
       // leaves an invisible run behind and lets the session watcher attach a
       // per-run stream to it (a second user bubble and a blocked composer).
-      if (!(await get().ensureRoomStream())) {
+      if (!(await get().ensureRoomStream(key))) {
         set((state) => ({
           byKey: patch(state, key, (current) => ({
             ...current,
@@ -372,45 +402,26 @@ export const useChat = create<ChatStore>((set, get) => ({
       const watched = get().byKey[key];
       if (watched?.sessionId && !watched.sessionStreamId) {
         // Best-effort: a failed watch must not stop the message from sending.
-        await startSessionWatch(set, key, watched.connectionId, watched.sessionId).catch(
+        // Do not await the handshake — it is another round trip on the send's
+        // critical path and the turn does not depend on it.
+        void startSessionWatch(set, key, watched.connectionId, watched.sessionId).catch(
           () => undefined,
         );
       }
 
       // Stable id: a retry (lost response, double submit) re-attaches instead of
-      // creating a second question.
+      // creating a second question. Pinned to the chat's own connection: a host
+      // switch between here and the request leaving must not reroute it.
       const res = await api.sendTurn(
         current!.sessionId!,
         prompt,
         mentionIds,
-        crypto.randomUUID(),
+        commandId,
         attachmentIds,
+        chat.connectionId,
       );
       if (res.ok) {
-        // Stamp the turn onto the question: session hints for any run of this
-        // turn then see it as already rendered instead of appending a copy.
-        const turnId = res.data.turnId;
-        const dispatchedTasks = res.data.tasks.map((task) => ({
-          taskId: task.id,
-          agentId: task.agentId,
-        }));
-        // An addressed agent that got no task is a fact the user has to see:
-        // otherwise a full room or a disabled agent looks like a dead mention.
-        const droppedNotice = describeDropped(res.data.dropped ?? []);
-        set((state) => ({
-          byKey: patch(state, key, (chatState) => ({
-            ...chatState,
-            turnSending: false,
-            dispatchedTasks,
-            error: droppedNotice,
-            messages: chatState.messages.map((message) =>
-              message.kind === 'user' && message.id === messageId
-                ? { ...message, turnId }
-                : message,
-            ),
-          })),
-        }));
-        void useSessions.getState().refreshCurrent(chat.connectionId);
+        markTurnSent(set, key, messageId, res.data, chat.connectionId);
         return;
       }
       const { apiCode, message } = apiErrorOf(res.data);
@@ -439,9 +450,11 @@ export const useChat = create<ChatStore>((set, get) => ({
     }
   },
 
-  async ensureRoomStream(): Promise<boolean> {
-    const key = get().activeKey;
-    let chat = key ? get().byKey[key] : undefined;
+  async ensureRoomStream(key = get().activeKey ?? undefined): Promise<boolean> {
+    // Take the target key explicitly rather than the globally visible one: a
+    // send in flight must keep its own chat when the user switches hosts, which
+    // nulls `activeKey`.
+    const chat = key ? get().byKey[key] : undefined;
     if (!key || !chat?.sessionId) return false;
 
     if (chat.roomStreamId) return true;
@@ -452,7 +465,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     // the agent has not started.
     const roster =
       !chat.leaderAgentId && chat.sessionId
-        ? api.sessionAgents(chat.sessionId).then((res) => {
+        ? api.sessionAgents(chat.sessionId, chat.connectionId).then((res) => {
             if (!res?.ok) return;
             const sessionId = chat!.sessionId;
             set((state) => ({
@@ -1563,7 +1576,7 @@ function applySessionEvent(
   // Room runs are room-owned even when the stream is not open yet: make it so
   // instead of binding a one-run stream (which would block the composer).
   if (event.run.turnId) {
-    void get().ensureRoomStream();
+    void get().ensureRoomStream(key);
     return;
   }
   if (isRunRendered(chat, event.run)) return;
@@ -1679,6 +1692,41 @@ async function syncSessionFromDaemon(set: SetState, get: GetState, key: string):
   if (session.running && session.runningRunId && !running?.turnId) {
     void attachRun(set, key, before.connectionId, session.runningRunId);
   }
+}
+
+/**
+ * Fold a daemon turn acknowledgement into the chat: stamp the question so
+ * room-run hints do not append a duplicate, and surface any dropped mention.
+ * Shared by the merged create+turn path and the `/turns` fallback.
+ */
+function markTurnSent(
+  set: SetState,
+  key: string,
+  messageId: string,
+  turn: CreateTurnResponse,
+  connectionId: string,
+): void {
+  const dispatchedTasks = turn.tasks.map((task) => ({
+    taskId: task.id,
+    agentId: task.agentId,
+  }));
+  // An addressed agent that got no task is a fact the user has to see:
+  // otherwise a full room or a disabled agent looks like a dead mention.
+  const droppedNotice = describeDropped(turn.dropped ?? []);
+  set((state) => ({
+    byKey: patch(state, key, (chatState) => ({
+      ...chatState,
+      turnSending: false,
+      dispatchedTasks,
+      error: droppedNotice,
+      messages: chatState.messages.map((message) =>
+        message.kind === 'user' && message.id === messageId
+          ? { ...message, turnId: turn.turnId }
+          : message,
+      ),
+    })),
+  }));
+  void useSessions.getState().refreshCurrent(connectionId);
 }
 
 function patch(
