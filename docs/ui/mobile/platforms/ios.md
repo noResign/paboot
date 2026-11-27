@@ -1,13 +1,14 @@
 # paboot iOS UI 适配方案
 
-> 本文档是 iOS 客户端把 `docs/ui/`（浅色优先 + 青绿/翡翠）落到 **UIKit** 的实现适配方案。
+> 本文档是 iOS 客户端把 `docs/ui/`（视觉语言 v2.1 · 深空极光，深/浅双主题）落到 **UIKit** 的实现适配方案。
 >
 > **状态（2026-10-22）**：P0–P5 已落地（工程 / 网络 / 导航 / 连接与会话列表 / 聊天 /
 > 文件（含图片与视频预览）/ 设置 / 工作区 / 会话权限）。已做 / 未做清单见 §7.1，
 > 代码位置与运行方式见 [ios/README.md](../../../../ios/README.md)。
 >
-> - 设计源：`docs/ui/shared/design-principles.md`（**唯一设计源**，token 值从它抄，不臆造、不复制到本文档）
-> - 平台映射表：`docs/ui/shared/design-principles.md` §4.5
+> - 视觉数值源：`docs/ui/shared/visual-language.md`（v2，**色 / 字 / 间距 / 圆角 / 阴影 / 玻璃 / 动效**从它抄，不臆造、不复制到本文档）
+> - 语义与组件规则：`docs/ui/shared/design-principles.md`
+> - 平台映射表：`docs/ui/shared/design-principles.md` §4.5，三端 token 落地见 visual-language.md §11
 > - 参考实现（另一平台）：`docs/ui/mobile/platforms/android.md`
 > - §8 的待决策项已在实现中拍板，结论见该节
 

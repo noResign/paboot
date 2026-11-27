@@ -61,7 +61,7 @@
 
 | 方法 & 路径 | 说明 |
 |---|---|
-| `GET /api/scheduled-tasks?workspaceId=&sessionId=` | 任务列表 |
+| `GET /api/scheduled-tasks?workspaceId=&sessionId=` | 任务列表；两个参数都可选，**都不传 = 返回全部工作区的任务**（桌面端全局任务页用这个口径） |
 | `POST /api/scheduled-tasks` | 创建（AI 绑定已有/新建会话；命令绑定工作区） |
 | `GET /api/scheduled-tasks/:id` | 任务 + 最近 20 条 run |
 | `PATCH /api/scheduled-tasks/:id` | 改名 / prompt / command / schedule / enabled / 目标会话（`target`） |

@@ -1,49 +1,77 @@
-# 自定义皮肤
+# 内置皮肤
 
-桌面端的皮肤机制有意做得「薄」：**加一套皮肤 = 改几行代码**，不需要动架构。
-本文件就是那份说明。想加皮肤的人照下面走即可，不用读别处。
+桌面端的皮肤是**一整套内置外观**（配色 + 可选氛围特效），用户可在「设置 → 外观 → 皮肤」切换。
+默认皮肤是 **品牌**。加一套皮肤仍然只改几行代码，不需要动架构。
 
-## 先分清两个轴
+## 先分清三个轴
 
 | 轴 | 管什么 | 落在哪 |
 |---|---|---|
-| `theme` | **颜色**（浅色 / 深色 / 跟随系统） | `data-theme` → `ui/tokens.css` 的 CSS 变量 |
-| `skin` | **动效层**（背景动画、鼠标波纹…） | `data-skin` + `ui/SkinFx.tsx` 挂载的 canvas |
+| `theme` | **明暗**（浅色 / 深色 / 跟随系统） | `data-theme` → `ui/tokens.css` 的 CSS 变量 |
+| `skin` | **整套内置外观**（配色 + 可选氛围特效） | 默认品牌在 `:root`；其他皮肤用 `data-skin` → `[data-skin='<id>']` 覆盖 token |
+| `fx` | **特效层**（背景动画、鼠标波纹…），可选、默认关 | `ui/SkinFx.tsx` 挂载的 canvas |
 
-皮肤**不是**「另一套配色」，而是**叠在明暗之上的一个特效层**。两者独立：选了动效皮肤，
-底色仍由用户的浅色/深色设置决定。所以「只换色、不加动效」也是一套合法皮肤（`fx: 'none'`）。
+皮肤是「另一套配色 + 可选的氛围特效」，叠在明暗之上：选了皮肤，明暗仍由用户的浅/深设置决定。
+每套皮肤必须同时给浅色与深色的 token；**结构 token（字号 / 间距 / 圆角 / 动效 / 组件解剖）不随皮肤变**。
+设计规则见 `docs/ui/shared/visual-language.md` §2.1。
 
-## 加一套「只换配色」的皮肤
+## 首批内置皮肤
+
+**已定**：
+
+- `brand`（**品牌**，默认）：中性灰面 + 发丝边 + 品牌青绿主色，写在 `tokens.css` 的 `:root`
+  （浅 / 深各一组）。
+- `ripple`（**涟漪**，可选）：品牌配色 + 鼠标涟漪特效；特效默认关，关闭时等同品牌外观。
+
+**待定**：其余皮肤的数量、命名、气质与配色。新增时按下面的步骤补齐浅 + 深 token。
+
+> 旧版本存过 `default`（Mono）的本地选择，`skinById` 会把它回落到默认品牌。
+
+## 加一套皮肤（配色为主）
 
 两步：
 
-**1. 在 `src/renderer/src/ui/tokens.css` 写一组变量**
+**1. 在 `src/renderer/src/ui/tokens.css` 写浅 + 深两组变量**
 
 ```css
-:root[data-skin='neon'] {
-  --bg: #0b0b14;
-  --surface: #14142a;
-  --primary: #ff2fb0;
-  /* …想覆盖哪个 token 就写哪个；没写的沿用当前 theme 的值 */
+:root[data-skin='myskin'] {
+  --bg: #fbf7f0;
+  --surface: #fffdf9;
+  --card: #f5eee3;
+  --primary-fill: #2b2119;
+  --on-primary-fill: #ffffff;
+  /* …想覆盖哪个 token 就写哪个；没写的回落默认品牌 */
+}
+:root[data-skin='myskin'][data-theme='dark'] {
+  --bg: #191613;
+  --surface: #221e1a;
+  --card: #2a2520;
+  --primary-fill: #f6efe4;
+  --on-primary-fill: #191613;
 }
 ```
+
+> 每套皮肤**必须浅、深各一组**，且不能覆盖结构 token（字号 / 间距 / 圆角 / 阴影层级 /
+> 动效时长 / 图标）。未覆盖的 token 回落默认品牌。
 
 **2. 在 `src/renderer/src/ui/skins.ts` 的 `SKINS` 加一行**
 
 ```ts
 export const SKINS = [
-  { id: 'default', label: '默认', fx: 'none' },
-  { id: 'ripple',  label: '涟漪', fx: 'ripple' },
-  { id: 'neon',    label: '霓虹', fx: 'none' },   // ← 新增
+  { id: 'brand',  label: '品牌', fx: 'none' },
+  { id: 'myskin', label: '我的皮肤', fx: 'none' },   // ← 新增
 ] as const satisfies readonly SkinEntry[];
 ```
 
 `SkinId` 是从 `SKINS` **推导**出来的，所以不用另外声明类型。改完保存，设置页
 「外观 → 皮肤」里就会出现这一项，**挂载、持久化、降级全部自动生效**。
 
-## 加一套「带动效」的皮肤
+> `ripple`（涟漪）是内置的可选特效皮肤；旧 localStorage 里的无效 id 由 `skinById`
+> 回落到默认品牌。
 
-三步（配色可选，同上）。
+## 给皮肤加可选氛围特效
+
+特效是皮肤的**可选属性**，默认 `none`；关闭特效时皮肤必须完整好看。三步：
 
 **1. 写一个特效实现**，放 `src/renderer/src/ui/fx/<名字>.ts`：
 
@@ -69,7 +97,8 @@ const EFFECTS: Partial<Record<FxId, (canvas: HTMLCanvasElement) => () => void>> 
 };
 ```
 
-**3. 在 `SKINS` 里用上它**：`{ id: 'my', label: '我的', fx: 'myfx' }`。
+**3. 把特效挂到某套皮肤上**：`{ id: 'myskin', label: '我的皮肤', fx: 'myfx' }`。
+**特效不单独作为一套皮肤**；默认 `fx: 'none'`。
 
 现成的参考实现是 `ui/fx/ripple.ts`（鼠标涟漪），它把下面这些约定都示范了一遍。
 
@@ -102,7 +131,7 @@ const EFFECTS: Partial<Record<FxId, (canvas: HTMLCanvasElement) => () => void>> 
 - `prefers-reduced-motion: reduce` 时整个特效层**不挂载**——不是「挂载了但不动」。
 - 窗口隐藏（`visibilitychange`）时拆掉特效，切回来重建。
 - 皮肤选择的持久化（localStorage）、`data-skin` 的同步、设置页的列表。
-- 皮肤激活时 `--bg` / `--surface` / `--surface-2` 会**自动透明**（沉浸式：只留边框），
+- 特效激活时 `--bg` / `--surface` / `--surface-2` 会**自动透明**（沉浸式：只留边框），
   所以卡片、气泡、列表这些不用为皮肤态写任何特殊处理。**前提是新写的容器自带 `border`**——
   没有边框的元素透明后会连边界一起消失。
 
@@ -110,8 +139,8 @@ const EFFECTS: Partial<Record<FxId, (canvas: HTMLCanvasElement) => () => void>> 
 
 | 想改 | 改这 |
 |---|---|
-| 配色 | `ui/tokens.css` → `:root[data-skin='<id>'] { … }` |
-| 有哪些皮肤 | `ui/skins.ts` → `SKINS` 一行 |
+| 整套配色（浅 + 深） | 默认品牌改 `:root`；其他皮肤写 `ui/tokens.css` 的 `[data-skin='<id>']` 与 `[data-skin='<id>'][data-theme='dark']` |
+| 有哪些皮肤 | `ui/skins.ts` → `SKINS` 一行（id / label / fx） |
 | 特效行为 | `ui/fx/<name>.ts` + `ui/SkinFx.tsx` 的 `EFFECTS` 表 |
 
 `App.tsx`、`store/appearance.ts`、`SettingsPage.tsx` 里的皮肤相关代码是通用管线，

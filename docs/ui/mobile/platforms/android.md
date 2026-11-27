@@ -1,10 +1,11 @@
 # paboot Android UI 适配（Design Token → Compose）
 
-> 把 [docs/ui/shared/design-principles.md](../../shared/design-principles.md)（**唯一设计源**）
-> 落到 Jetpack Compose 的**对应关系**。
+> 把 `docs/ui/shared/` 的设计源落到 Jetpack Compose 的**对应关系**：语义与组件规则见
+> [design-principles.md](../../shared/design-principles.md)，**视觉 token（色 / 字 / 间距 / 圆角 /
+> 阴影 / 玻璃 / 动效）的数值见 [visual-language.md](../../shared/visual-language.md) v2.1**。
 >
-> 本文**不重复列 token 的数值**（hex / 字号 / 间距）：数值只在设计源里维护，这里只记「哪个语义
-> token 落到哪个 Compose 位置」。两处各存一份数值必然会漂移。
+> 本文**不重复列 token 的数值**：数值只在设计源里维护，这里只记「哪个语义 token 落到哪个
+> Compose 位置」。两处各存一份数值必然会漂移。
 >
 > - 代码位置：`app/src/main/java/com/noresign/paboot/ui/`
 > - iOS 侧（P0–P4 已实现，文件 / 设置待做）：`docs/ui/mobile/platforms/ios.md`

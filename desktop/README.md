@@ -6,7 +6,7 @@ paboot 的桌面客户端：Electron（主进程 + preload）+ React/Vite 渲染
 设计文档：UI 设计见 [../docs/ui/desktop/design.md](../docs/ui/desktop/design.md)（已入库）；
 技术方案见 `docs/local/electron_desktop_plan.md`（本机私有，未入库）。
 
-自定义皮肤（配色 / 背景动效 / 鼠标波纹）：看 [docs/skins.md](docs/skins.md)——加一套皮肤只改几行代码。
+内置皮肤（整套配色 + 可选氛围特效，可切换，默认「品牌」）：看 [docs/skins.md](docs/skins.md)——加一套皮肤只改几行代码。
 
 ## 运行
 

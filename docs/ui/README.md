@@ -10,11 +10,14 @@
 
 ## 共享规范 · [`shared/`](shared/)
 
-跨平台的设计源。**token 的数值只在这里维护**，各平台文档只记「落到哪里」，不复制数值。
+跨平台的设计源。**视觉 token（色 / 字 / 间距 / 圆角 / 阴影 / 玻璃 / 动效）的数值只在
+[visual-language.md](shared/visual-language.md) 维护**；其余语义与组件规则在
+[design-principles.md](shared/design-principles.md)。各平台文档只记「落到哪里」，不复制数值。
 
 | 文件 | 内容 |
 |---|---|
-| [shared/design-principles.md](shared/design-principles.md) | **总纲**：产品定位 / 设计目标与原则 / 信息架构与页面地图 / **Design Tokens** / 组件库（§0–§5） |
+| [shared/visual-language.md](shared/visual-language.md) | **视觉语言 v2.1**：移动端「深空极光」+ 桌面内置皮肤（默认「品牌」）/ 双主题色板 / 字体 / 材质 / 动效 / 组件外观 / 三端映射 / 验收清单 |
+| [shared/design-principles.md](shared/design-principles.md) | **总纲**：产品定位 / 设计目标与原则 / 信息架构与页面地图 / **Design Tokens** / 组件库（§0–§5；§4 数值已被 v2 取代） |
 | [shared/interactions.md](shared/interactions.md) | 关键交互与状态：命令审批流、并发运行、断线重连、流式渲染、状态胶囊（§7） |
 | [shared/appendix.md](shared/appendix.md) | 数据与界面映射 / 交付里程碑 / 交付物清单 / 后端接口契约（§8–§10 + 附录） |
 

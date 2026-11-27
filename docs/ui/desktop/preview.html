@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
-  静态设计预览（早期稿）。桌面壳层随后续实现演进：surface-2 / 选中态 / 图标 / 思考行 /
-  输入区 / 会话右栏 / 日志面板等，以 docs/ui/desktop/design.md 与 pages/ 为准。
-  本文件尚未重画。
+  桌面端可交互预览。视觉层按 v2.1「桌面默认皮肤 品牌」重绘（品牌青绿主按钮 + 中性灰面 + 发丝边），
+  皮肤系统见 docs/ui/shared/visual-language.md §2.1；
+  结构、页面与交互仍以 docs/ui/desktop/design.md 与 pages/ 为准。
+  深链：?view=chat|files|settings|daemon|connect&theme=light|dark|auto&modal=new|perm|quit
 -->
 <html lang="zh-CN" data-theme="light">
 <head>
@@ -11,66 +12,115 @@
 <title>paboot · 桌面端 UI 预览</title>
 <style>
   /* ============================================================
-     Design Tokens
-     色彩部分与 docs/ui/shared/design-principles.md §4.1 完全一致（不新增、不改值），
-     直接取自 docs/ui/mobile/preview.html 的 :root / [data-theme=dark]。
-     桌面差异（desktop_ui_design.md §4）：圆角收紧、最小点击目标 28–32、
-     显式字体族、细滚动条。
+     Design Tokens v3 · 桌面品牌
+     品牌青绿主按钮 + 中性灰面 + 极细边 + 大圆角；彩色只给交互与运行状态。
+     这是 v2.1 桌面默认皮肤「品牌」（皮肤系统见 §2.1）：结构与交互不变，仅桌面观感。
      ============================================================ */
   :root {
-    --bg: #F6F8F7;
-    --surface: #FFFFFF;
-    --surface-2: #FFFFFF;
-    --border: #E3EAE6;
-    --text-primary: #16211D;
-    --text-secondary: #5A6B64;
-    --text-muted: #93A29A;
-    --primary: #0E9F86;
+    --bg: #FFFFFF;            /* 内容画布 */
+    --canvas: #FFFFFF;
+    --surface: #FFFFFF;       /* 栏面 / 标题栏 / 面板 */
+    --card: #FAFAFA;          /* 卡面（浅灰） */
+    --card-hover: #F4F5F7;
+    --surface-2: #F1F3F5;     /* hover / 选中 */
+    --surface-3: #E9ECEF;     /* 按压 */
+    --border: rgba(0,0,0,.08);
+    --border-strong: rgba(0,0,0,.14);
+    --hairline: rgba(0,0,0,.06);
+    --text-primary: #0F1115;
+    --text-secondary: #61666B;
+    --text-muted: #81858C;
+    --text-disabled: #ADB2B8;
+    --primary: #0A7D6B;
+    --primary-fill: #0E9F86;
+    --on-primary-fill: #04231D;
     --primary-deep: #0A7D6B;
-    --primary-subtle: #E2F3EE;
-    --success: #18A058;
-    --warning: #B7791F;
-    --error: #D6423E;
-    --thinking: #9AA8A2;
-    --code-bg: #F2F5F3;
-    --elevation-1: 0 1px 2px rgba(22,33,29,.06);
-    --elevation-2: 0 8px 24px rgba(22,33,29,.10);
-    --elevation-3: 0 16px 48px rgba(22,33,29,.18);
+    --primary-hover: #18C9A6;
+    --primary-pressed: #0A7D6B;
+    --primary-subtle: #DCF5EF;
+    --accent: #0E9F86;
+    --accent-soft: rgba(14,159,134,.12);
+    --accent-warm: #D97706;
+    --warm-fill: #F59E0B;
+    --warm-subtle: rgba(245,158,11,.12);
+    --info: #0E9F86;
+    --success: #16A34A;
+    --warning: #D97706;
+    --error: #DC2626;
+    --thinking: #81858C;
+    --code-bg: #F9FAFB;
+    --selection: #E8F5F1;
+    --scrim: rgba(0,0,0,.24);
+    --glass: rgba(255,255,255,.82);
+    --glass-border: rgba(0,0,0,.06);
+    --aurora-teal: #0E9F86;
+    --aurora-blue: #4176E6;
+    --aurora-violet: #7C3AED;
+    --elevation-1: 0 1px 2px rgba(0,0,0,.04);
+    --elevation-2: 0 8px 24px rgba(0,0,0,.08);
+    --elevation-3: 0 20px 48px rgba(0,0,0,.14);
+    --composer-shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
     --grad: linear-gradient(135deg, #0E9F86, #18C9A6);
+    --shadow-rim: inset 0 0 0 .5px var(--hairline);
 
-    /* 桌面密度：圆角整体收紧（移动端 12/16/24 → 桌面 10/12/12） */
-    --r-card: 10px;
-    --r-bubble: 12px;
-    --r-modal: 12px;
+    --r-card: 16px;
+    --r-bubble: 16px;
+    --r-modal: 20px;
+    --r-control: 10px;
 
-    /* 桌面布局尺寸（desktop_ui_design.md §3） */
     --rail-w: 300px;
     --aside-w: 320px;
     --read-w: 760px;
 
-    --font-ui: -apple-system, "Segoe UI", Inter, "Noto Sans SC", sans-serif;
-    --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Inter, sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
   }
   [data-theme="dark"] {
-    --bg: #0E1512;
-    --surface: #17201C;
-    --surface-2: #1E2823;
-    --border: #293430;
-    --text-primary: #E7EFEB;
-    --text-secondary: #A2B0AA;
-    --text-muted: #6D7C75;
-    --primary: #2BC7A4;
-    --primary-deep: #4AD8B8;
-    --primary-subtle: #12332B;
-    --success: #4CC38A;
-    --warning: #E0B14A;
-    --error: #F26D6D;
-    --thinking: #85938C;
-    --code-bg: #101815;
-    --elevation-1: 0 1px 2px rgba(0,0,0,.4);
-    --elevation-2: 0 8px 24px rgba(0,0,0,.5);
-    --elevation-3: 0 16px 48px rgba(0,0,0,.6);
+    --bg: #151517;
+    --canvas: #151517;
+    --surface: #1B1B1C;
+    --card: #202022;
+    --card-hover: #262628;
+    --surface-2: #232324;
+    --surface-3: #2C2C2E;
+    --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.14);
+    --hairline: rgba(255,255,255,.06);
+    --text-primary: #F5F6F7;
+    --text-secondary: #B9BDC3;
+    --text-muted: #8A8F96;
+    --text-disabled: #5C6068;
+    --primary: #45E0C2;
+    --primary-fill: #45E0C2;
+    --on-primary-fill: #04231D;
+    --primary-deep: #45E0C2;
+    --primary-hover: #6FEFD5;
+    --primary-pressed: #2BC7A4;
+    --primary-subtle: rgba(69,224,194,.12);
+    --accent: #45E0C2;
+    --accent-soft: rgba(69,224,194,.14);
+    --accent-warm: #FBBF24;
+    --warm-fill: #FBBF24;
+    --warm-subtle: rgba(251,191,36,.14);
+    --info: #45E0C2;
+    --success: #4ADE80;
+    --warning: #FBBF24;
+    --error: #F87171;
+    --thinking: #8A8F96;
+    --code-bg: #1B1B1C;
+    --selection: #143029;
+    --scrim: rgba(0,0,0,.5);
+    --glass: rgba(27,27,28,.72);
+    --glass-border: rgba(255,255,255,.08);
+    --aurora-teal: #45E0C2;
+    --aurora-blue: #7AAAFF;
+    --aurora-violet: #B197FC;
+    --elevation-1: 0 1px 2px rgba(0,0,0,.35);
+    --elevation-2: 0 8px 24px rgba(0,0,0,.45);
+    --elevation-3: 0 20px 48px rgba(0,0,0,.60);
+    --composer-shadow: 0 1px 2px rgba(0,0,0,.35), 0 4px 16px rgba(0,0,0,.3);
     --grad: linear-gradient(135deg, #2BC7A4, #4AD8B8);
+    --shadow-rim: inset 0 0 0 .5px var(--hairline);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -99,7 +149,7 @@
     color: #cfddd6; padding: 7px 12px; border-radius: 999px; font-size: 12.5px; cursor: pointer; transition: .15s;
   }
   .switcher button:hover { background: rgba(255,255,255,.10); }
-  .switcher button.active { background: var(--grad); color: #06231a; border-color: transparent; font-weight: 600; }
+  .switcher button.active { background: var(--grad); color: var(--on-primary-fill); border-color: transparent; font-weight: 600; }
   .switcher .sep { width: 1px; height: 22px; background: rgba(255,255,255,.14); margin: 0 4px; }
   .switcher button.ghost { border-style: dashed; }
 
@@ -160,6 +210,46 @@
 
   /* ============ 三栏骨架 ============ */
   .app { flex: 1; display: flex; min-height: 0; }
+  .app-rail {
+    width: 48px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 10px 0; background: var(--surface); border-right: .5px solid var(--hairline);
+  }
+  .app-rail button {
+    width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 10px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+  }
+  .app-rail button:hover { background: var(--card-hover); color: var(--text-primary); }
+  .app-rail button.active { background: var(--surface-2); color: var(--text-primary); }
+  .app-rail button.bottom { margin-top: auto; }
+  .app-rail svg { width: 18px; height: 18px; fill: currentColor; }
+  /* 任务/设置是应用级页面：不并排会话栏 */
+  .app.wide-view .rail { display: none; }
+
+  /* 全局定时任务（按工作区分组） */
+  .tasks-demo { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .tasks-demo .tsplit { flex: 1; display: flex; min-height: 0; }
+  .tasks-demo .tlist {
+    width: 320px; flex: none; overflow: auto; padding: 6px;
+    background: var(--surface); border-right: .5px solid var(--hairline);
+  }
+  .tgroup {
+    display: flex; align-items: center; gap: 6px; padding: 7px 8px;
+    color: var(--text-secondary); font: 600 11px var(--font-mono); letter-spacing: .04em;
+  }
+  .tgroup .n { margin-left: auto; color: var(--text-muted); font-weight: 400; }
+  .trow { display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 10px; cursor: pointer; }
+  .trow:hover, .trow.active { background: var(--surface-2); }
+  .trow b { font-size: 13px; font-weight: 600; }
+  .trow span { font-size: 11px; color: var(--text-muted); }
+  .tdetail { flex: 1; overflow: auto; padding: 18px 22px; }
+  .tdetail h2 { margin: 0 0 6px; font-size: 20px; }
+  .tdetail .meta { font-size: 11.5px; color: var(--text-muted); display: flex; gap: 6px; flex-wrap: wrap; }
+  .tdetail .sect { margin-top: 18px; border-top: .5px solid var(--hairline); padding-top: 14px; }
+  .tdetail .sect h3 { margin: 0 0 8px; font-size: 15px; }
+  .tdetail pre {
+    margin: 0; padding: 10px 12px; border-radius: 10px; border: .5px solid var(--hairline);
+    background: var(--code-bg); font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap;
+  }
   .rail {
     width: var(--rail-w); flex: none; display: flex; flex-direction: column; min-height: 0;
     background: var(--surface); border-right: 1px solid var(--border);
@@ -192,8 +282,8 @@
     cursor: pointer; font-family: inherit;
   }
   .btn:hover { background: var(--surface-2); }
-  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .btn.primary:hover { background: var(--primary-deep); }
+  .btn.primary { background: var(--primary-fill); border-color: var(--primary-fill); color: var(--on-primary-fill); }
+  .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
   .btn.danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--border)); }
   .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
   .btn.block { width: 100%; }
@@ -297,7 +387,8 @@
   .msg { display: flex; flex-direction: column; gap: 8px; }
   .msg.user { align-items: flex-end; }
   .bubble {
-    max-width: 78%; background: var(--primary); color: #fff; padding: 9px 13px;
+    max-width: 78%; background: var(--primary-subtle); color: var(--text-primary); padding: 9px 13px;
+    border: .5px solid color-mix(in srgb, var(--primary) 16%, transparent);
     border-radius: var(--r-bubble); border-bottom-right-radius: 4px; font-size: 14px; line-height: 1.65;
   }
   /* 助手不套气泡描边，直接落在 surface 上（§6.3） */
@@ -353,7 +444,7 @@
   /* 用量条 */
   .usage { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
   .usage .track { flex: 1; max-width: 150px; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
-  .usage .track i { display: block; height: 100%; width: 6%; background: var(--primary); }
+  .usage .track i { display: block; height: 100%; width: 6%; background: var(--accent); }
 
   /* 输入区 */
   .composer { flex: none; padding: 10px 22px 14px; background: var(--bg); }
@@ -361,7 +452,6 @@
     max-width: var(--read-w); margin: 0 auto; background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--r-card); padding: 9px 10px; display: flex; flex-direction: column; gap: 7px;
   }
-  .composer .box:focus-within { border-color: var(--primary); }
   .composer textarea {
     width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--text-primary);
     font-family: inherit; font-size: 13.5px; line-height: 1.6; min-height: 42px; max-height: 150px;
@@ -422,7 +512,6 @@
     height: 30px; width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
     color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; padding: 0 9px; outline: 0;
   }
-  .input:focus { border-color: var(--primary); }
   .radio3 { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .radio3 button { height: 28px; padding: 0 12px; border: 0; background: var(--surface); color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
   .radio3 button + button { border-left: 1px solid var(--border); }
@@ -526,6 +615,88 @@
   .note b { color: #d8e5df; }
   .note code { font-family: var(--font-mono); font-size: 11.5px; background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
   .note ul { margin: 6px 0 0 18px; }
+
+  /* ============ v3 · 桌面品牌：品牌青绿主按钮 + 灰面 + 极细边 ============ */
+  body {
+    background: radial-gradient(900px 600px at 50% -10%, #1c1d20 0%, #0e0f11 60%);
+    color: #F5F6F7;
+  }
+  .topbar .brand small { color: #8A8F96; }
+  .topbar .brand .lg { background: #F5F6F7; }
+  .topbar .brand .lg svg { fill: #0F1115; }
+  .switcher button { border-color: rgba(255,255,255,.10); background: rgba(255,255,255,.05); color: #C7CACE; }
+  .switcher button.active { background: #F5F6F7; color: #0F1115; border-color: transparent; }
+  .toggle, .note { color: #8A8F96; }
+  .note b { color: #C7CACE; }
+
+  /* 三层面：白面 + 灰卡，分隔靠 0.5px 极细线 */
+  .win { background: var(--bg); border-radius: 14px; }
+  .rail, .aside, .tree, .snav, .titlebar, .head, .pane .phead { background: var(--surface); }
+  .main, .pane, .stream { background: var(--bg); }
+  .titlebar, .head, .pane .phead { border-bottom: .5px solid var(--border); }
+  .rail, .tree, .snav { border-right: .5px solid var(--border); }
+  .aside { border-left: .5px solid var(--border); }
+  .titlebar .mark { background: var(--grad); border-radius: 6px; }
+
+  /* 按钮：品牌主按钮 */
+  .btn { height: 34px; border-radius: 10px; border: .5px solid var(--border); background: var(--surface); color: var(--text-primary); box-shadow: var(--elevation-1); }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary { background: var(--primary-fill); border-color: var(--primary-fill); color: var(--on-primary-fill); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  .badge { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+
+  /* 左栏/导航选中：灰色胶囊，不用彩色条 */
+  .conv { border-radius: 10px; }
+  .conv:hover { background: var(--surface-2); }
+  .conv.active { background: var(--surface-2); border-color: transparent; box-shadow: none; }
+  /* 运行中只用脉冲点，不加竖条 */
+  .conv .bar { width: 2px; }
+  .conv.run .bar { background: transparent; }
+  .snav .item.active, .fnode.active { background: var(--surface-2); color: var(--text-primary); box-shadow: none; }
+  .bucket-head { letter-spacing: .04em; }
+  .conn-pill { background: var(--accent-soft); color: var(--accent); }
+  .run-state { color: var(--accent); }
+  .ring { background: conic-gradient(var(--accent) 0 6%, var(--border) 6% 100%); }
+
+  /* 用户气泡：品牌淡染胶囊 */
+  .bubble { background: var(--primary-subtle); color: var(--text-primary); border: .5px solid color-mix(in srgb, var(--primary) 16%, transparent); }
+  .msg.assistant .text { color: var(--text-primary); }
+
+  /* 思考 / 工具组 / 工具：扁平灰面 + 极细边 */
+  .think, .toolgroup { background: var(--card); border: .5px solid var(--hairline); box-shadow: none; border-radius: 12px; }
+  .tool { background: var(--surface); border: .5px solid var(--border); border-radius: 10px; }
+  .tool pre { background: var(--code-bg); border: .5px solid var(--hairline); }
+  .pinned { background: var(--card); border: .5px solid color-mix(in srgb, var(--warning) 45%, var(--hairline)); border-left: 2px solid var(--warning); box-shadow: none; }
+
+  /* 输入区：白面 + 柔和投影，不描边 */
+  .composer .box { background: var(--surface); border: none; border-radius: 16px; box-shadow: var(--composer-shadow); }
+
+  /* 连接页：极简 */
+  .connect-wrap { background: radial-gradient(700px 420px at 50% -10%, rgba(255,255,255,.06), transparent 70%); }
+  .connect-card { border-radius: 20px; border: .5px solid var(--hairline); box-shadow: var(--elevation-3); }
+  .connect-card .brand2 .lg { background: var(--text-primary); border-radius: 12px; }
+  .connect-card .brand2 .lg svg { fill: var(--bg); }
+  .connect-card h2 { font-size: 22px; font-weight: 600; }
+  .localrow .ic { background: var(--surface-2); }
+  .localrow .ic svg { fill: var(--text-primary); }
+
+  /* 模态 / 分段 / 表单 */
+  .modal { border-radius: 20px; border: .5px solid var(--hairline); box-shadow: var(--elevation-3); }
+  .scrim { background: var(--scrim); backdrop-filter: blur(6px); }
+  .radio3 { border: .5px solid var(--border); border-radius: 10px; }
+  .radio3 button.active { background: var(--surface); color: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .seg button { border: .5px solid transparent; }
+  .seg button.active { background: var(--surface); border-color: var(--border); color: var(--text-primary); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .agentpick button.active { background: var(--surface-2); }
+  .readonly, .input { background: var(--surface); border: .5px solid var(--border); border-radius: 10px; }
+  .card { background: var(--card); border: .5px solid var(--hairline); box-shadow: none; border-radius: 16px; }
+  .tag.ok { background: var(--accent-soft); color: var(--accent); }
+
+  .diff { border: .5px solid var(--hairline); border-radius: 10px; }
+  .fnode { border-radius: 8px; }
+
+  @media (prefers-reduced-transparency: reduce) { .scrim { backdrop-filter: none; } }
+  @media (prefers-reduced-motion: reduce) { .dot.pulse, .think .spin { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -537,6 +708,7 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5.25 3.4 9.74 8 11 4.6-1.26 8-5.75 8-11V5l-8-3z"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></symbol>
     <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></symbol>
@@ -573,6 +745,7 @@
   <nav class="switcher" id="switcher">
     <button data-view="connect">① 连接</button>
     <button data-view="chat" class="active">② 聊天（主界面）</button>
+    <button data-view="tasks">⑪ 定时任务</button>
     <button data-view="files">⑤ 文件</button>
     <button data-view="settings">⑦ 设置</button>
     <button data-view="daemon">⑥ daemon</button>
@@ -673,6 +846,13 @@
       </div>
 
       <div class="app" id="app">
+        <!-- 最左活动栏：会话 / 定时任务 在上，设置固定左下角 -->
+        <nav class="app-rail" aria-label="主导航">
+          <button class="active" data-view="chat" title="会话 ⌘1"><svg><use href="#i-chat"/></svg></button>
+          <button data-view="tasks" title="定时任务 ⌘2"><svg><use href="#i-clock"/></svg></button>
+          <button class="bottom" data-view="settings" title="设置 ⌘,"><svg><use href="#i-settings"/></svg></button>
+        </nav>
+
         <!-- ---------------- 左栏 ---------------- -->
         <aside class="rail">
           <div class="rail-head">
@@ -776,11 +956,7 @@
           </div>
 
           <div class="rail-foot">
-            <div class="row" data-view="settings"><svg><use href="#i-settings"/></svg> 设置</div>
-            <div class="row running" data-view="chat">
-              <span class="dot pulse" style="background:var(--primary)"></span>
-              <span style="color:var(--text-primary);font-weight:600">2 个任务运行中</span>
-            </div>
+            <div class="row"><svg><use href="#i-search"/></svg> 搜索 <span class="kbd" style="margin-left:auto">⌘K</span></div>
           </div>
         </aside>
 
@@ -972,6 +1148,68 @@ src/auth/session.ts:58  if (Date.now() &gt; expiresAt) throw new ExpiredToken();
                     <div class="ln add"><span class="gutter">60</span><span>+ }</span></div>
                     <div class="ln">   return this.store.get(token);</div>
                     <div class="ln"> }</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== ⑪ 定时任务（全局，按工作区分组） ===== -->
+          <section class="view" id="view-tasks">
+            <div class="tasks-demo">
+              <div class="head">
+                <div>
+                  <div class="h-title">定时任务</div>
+                  <div class="h-sub">
+                    <span>2 个工作区 · 4 个任务 · 无人值守</span>
+                    <span class="perm-badge">全部通过</span>
+                  </div>
+                </div>
+                <div class="h-actions">
+                  <button class="btn sm">刷新</button>
+                  <button class="btn sm primary">新建任务</button>
+                </div>
+              </div>
+              <div class="tsplit">
+                <aside class="tlist">
+                  <div class="tgroup">stock-500 <span class="n">2</span></div>
+                  <div class="trow active">
+                    <b>盘前简报 08:40</b>
+                    <span>工作日 08:40 · 下次 20 小时后</span>
+                    <span>会话：盘前简报 · AI 创建</span>
+                  </div>
+                  <div class="trow">
+                    <b>stock500 每日复盘与决策</b>
+                    <span>工作日 17:30 · 下次 —</span>
+                    <span>会话：stock500 每日复盘与决策</span>
+                  </div>
+                  <div class="tgroup">个人空间 <span class="n">2</span></div>
+                  <div class="trow">
+                    <b>APEC 深圳会议 · 全面复盘</b>
+                    <span>cron: 0 21 19 11 * · 下次 357 天后</span>
+                    <span>会话：近期网络热议题 · AI 创建</span>
+                  </div>
+                  <div class="trow">
+                    <b>社交训练 · 每日聊天课</b>
+                    <span>每天 21:07 · 下次 —</span>
+                    <span>会话：社交训练 · 每日聊天课 · AI 创建</span>
+                  </div>
+                </aside>
+                <div class="tdetail">
+                  <h2>盘前简报 08:40</h2>
+                  <div class="meta">
+                    <span>AI 会话任务</span><span>·</span>
+                    <span>工作日 08:40</span>
+                    <span class="perm-badge">全部通过</span>
+                    <span>·</span><span>stock-500</span>
+                  </div>
+                  <div class="sect">
+                    <h3>执行指令</h3>
+                    <pre>整理今天开盘前的市场简报：指数期货、隔夜外盘、重要公告与异动个股，按重要性排序。</pre>
+                  </div>
+                  <div class="sect">
+                    <h3>执行历史</h3>
+                    <div class="meta"><span>最近 5 次</span><span>·</span><span>成功 4</span><span>·</span><span>失败 1</span></div>
                   </div>
                 </div>
               </div>
@@ -1234,7 +1472,7 @@ src/auth/session.ts:58  if (Date.now() &gt; expiresAt) throw new ExpiredToken();
   <b>这份原型覆盖了什么</b>
   <ul>
     <li><b>窗口外壳</b>：自绘标题栏（连接胶囊全局唯一位置；点胶囊切连接）、daemon 状态条（仅异常/未托管时出现）、左栏 300 + 主区 + 右栏 320。</li>
-    <li><b>左栏</b>：工作区切换器 / ⌘N 新建 / <b>按状态分桶</b>的会话列表（默认只展开前两桶，3 天以前收进「更早」）/ 底部任务·设置 + 运行中计数。</li>
+    <li><b>活动栏 + 左栏</b>：最左 48px 图标条（会话 / 定时任务 / 设置，常驻）；左栏内是工作区切换器 / ⌘N 新建 / <b>按状态分桶</b>的会话列表（默认只展开前两桶，3 天以前收进「更早」）/ 底部运行中计数。</li>
     <li><b>聊天</b>：标题栏（上下文圆环、运行状态 + 停止、⚙）、思考块与<b>工具组折叠</b>（等高等行）、右栏待办、用量条、输入区。</li>
     <li><b>审批两条路径</b>：<code>Write</code> → 消息流<b>内联吸顶卡</b>；<code>Bash</code> → 顶栏「Ⓟ 审批」看的<b>模态</b>（含 1/3 队列、命令全文、跨设备 grant 文案）。</li>
     <li><b>⑤ 文件</b>（会话右栏两级分栏 + 并排/统一）、<b>⑦ 设置</b>（左小节导航 + 右内容）、<b>⑥ daemon 管理</b>（只读态 + 日志）、<b>① 连接</b>（本机发现区块 + 未加密徽章）。</li>
@@ -1254,6 +1492,8 @@ src/auth/session.ts:58  if (Date.now() &gt; expiresAt) throw new ExpiredToken();
   const winApp = document.getElementById('win-app');
   const switcherBtns = document.querySelectorAll('#switcher button[data-view]');
   const modalBtns = document.querySelectorAll('#switcher button[data-modal]');
+  const appRailBtns = document.querySelectorAll('.app-rail button');
+  const appEl = document.getElementById('app');
 
   function showView(id) {
     // ① 连接页是独立的窗口状态（未连接），其余都在已连接的窗口里
@@ -1266,6 +1506,9 @@ src/auth/session.ts:58  if (Date.now() &gt; expiresAt) throw new ExpiredToken();
       if (target) target.classList.add('active');
     }
     switcherBtns.forEach(b => b.classList.toggle('active', b.dataset.view === id));
+    appRailBtns.forEach(b => b.classList.toggle('active', b.dataset.view === id));
+    // 任务 / 设置是应用级页面：不并排会话栏
+    appEl?.classList.toggle('wide-view', id === 'tasks' || id === 'settings');
     closeModals();
   }
 
@@ -1354,6 +1597,17 @@ src/auth/session.ts:58  if (Date.now() &gt; expiresAt) throw new ExpiredToken();
 
   /* ---------- M2 标注开关 ---------- */
   document.getElementById('m2Toggle').addEventListener('change', (e) => document.body.classList.toggle('show-m2', e.target.checked));
+
+  /* ---------- 深链（设计评审用）：?view=chat|files|settings|daemon|connect&theme=light|dark|auto&modal=new|perm|quit ---------- */
+  {
+    const q = new URLSearchParams(location.search);
+    const t = q.get('theme');
+    if (t) { applyTheme(t); themeIdx = order.indexOf(t); }
+    const v = q.get('view');
+    if (v) showView(v);
+    const m = q.get('modal');
+    if (m) openModal('modal-' + m, m === 'quit' ? null : 'chat');
+  }
 
   /* ---------- 窗口框自适应缩放（窗口是固定 1280×800，屏小就整体缩）---------- */
   const fit = document.getElementById('fit');
