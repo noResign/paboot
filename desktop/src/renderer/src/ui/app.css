@@ -1801,6 +1801,248 @@ button.end-chip {
   margin-top: 10px;
 }
 
+/* ---------- 助手（settings · AgentSection） ---------- */
+
+.agent-section .section-head {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.agent-section .section-head h3 {
+  margin: 0;
+}
+.agent-workspace {
+  margin-left: auto;
+  max-width: 220px;
+}
+.agent-lead {
+  margin: 4px 0 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.agent-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.agent-toolbar .hint {
+  margin-top: 0;
+}
+
+.agent-remote {
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface-2, var(--surface));
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.agent-remote .hint {
+  margin-top: 0;
+}
+.agent-remote-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-list {
+  display: grid;
+  gap: 10px;
+}
+.agent-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--r-card);
+  padding: 22px 16px;
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  text-align: center;
+}
+.agent-empty b {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.agent-empty .hint {
+  margin-top: 0;
+}
+
+.agent-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  transition: border-color 120ms ease;
+}
+.agent-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.agent-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.agent-card-title b {
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.agent-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.agent-card-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.agent-card-actions .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.agent-summary {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.agent-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.agent-card-foot .btn {
+  margin-left: auto;
+}
+.agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.agent-toggle input {
+  width: auto;
+  height: auto;
+}
+
+.agent-edit-form {
+  display: grid;
+  gap: 8px;
+}
+.agent-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.agent-share {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.agent-share .hint {
+  margin-top: 0;
+}
+.agent-invite-row {
+  display: flex;
+  gap: 6px;
+}
+.agent-invite-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-create {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.agent-create-head {
+  display: grid;
+  gap: 2px;
+}
+.agent-create-head b {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.agent-create-head .hint {
+  margin-top: 0;
+}
+.agent-create-grid {
+  display: grid;
+  gap: 8px;
+}
+.agent-create-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-create-row > input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.agent-create-row > select {
+  flex: 0 0 180px;
+}
+.agent-create-grid textarea,
+.agent-edit-form textarea {
+  width: 100%;
+  min-height: 104px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.agent-create-grid textarea:focus,
+.agent-edit-form textarea:focus {
+  border-color: var(--primary);
+}
+.agent-create-grid textarea.agent-instructions,
+.agent-edit-form textarea.agent-instructions {
+  min-height: 150px;
+}
+.agent-create-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.agent-notice {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 /* ---------- workspaces section (settings.md §6.9 ⑧⑨) ---------- */
 
 /* Painted by `.settings-section`; this only adds the hover-reveal hook. */

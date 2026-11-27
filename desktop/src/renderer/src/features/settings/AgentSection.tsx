@@ -20,11 +20,19 @@ interface RuntimeOption {
 interface Draft {
   name: string;
   summary: string;
+  /** Long-form system prompt; not shown in the room roster. */
+  instructions: string;
   runtime: string;
   readOnly: boolean;
 }
 
-const EMPTY_DRAFT: Draft = { name: '', summary: '', runtime: '', readOnly: true };
+const EMPTY_DRAFT: Draft = {
+  name: '',
+  summary: '',
+  instructions: '',
+  runtime: '',
+  readOnly: true,
+};
 
 const POLICY_LABEL: Record<string, string> = {
   relay: '对端用户批准',
@@ -59,9 +67,14 @@ export function AgentSection() {
   const [notice, setNotice] = useState<string | null>(null);
   /** Inline editor for an existing definition; only name/summary are editable here. */
   const [editing, setEditing] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<{ name: string; summary: string }>({
+  const [editDraft, setEditDraft] = useState<{
+    name: string;
+    summary: string;
+    instructions: string;
+  }>({
     name: '',
     summary: '',
+    instructions: '',
   });
   /** Cross-machine sharing: loaded lazily when the row is expanded. */
   const [sharing, setSharing] = useState<string | null>(null);
@@ -159,6 +172,7 @@ export function AgentSection() {
     const body: AgentProfileRequest = {
       name,
       summary: draft.summary.trim() || undefined,
+      instructions: draft.instructions.trim() || undefined,
       kind: draft.runtime === 'builtin' ? 'builtin' : 'runtime',
       runtime: draft.runtime === 'builtin' ? null : draft.runtime,
       readOnly: draft.readOnly,
@@ -169,18 +183,27 @@ export function AgentSection() {
       setBusy(false);
       return;
     }
-    setDraft((current) => ({ ...current, name: '', summary: '' }));
+    setDraft((current) => ({ ...current, name: '', summary: '', instructions: '' }));
     setNotice(`已创建「${res.data.agent.name}」。在会话里输入 @ 即可把它拉进房间。`);
     await load();
     setBusy(false);
   }
 
-  function startEdit(agent: AgentProfileDto): void {
+  async function startEdit(agent: AgentProfileDto): Promise<void> {
+    // `instructions` only exists on the detail endpoint. Details are loaded for
+    // the whole list, but fetch on demand so opening the editor can never save
+    // an empty definition over a real one.
+    let instructions = details[agent.id]?.instructions;
+    if (instructions === undefined) {
+      const res = await api.agentProfile(agent.id);
+      if (res.ok) instructions = res.data.agent.instructions;
+    }
     setEditing(agent.id);
     // The list DTO falls an empty summary back to the name; do not pre-fill that.
     setEditDraft({
       name: agent.name,
       summary: agent.summary === agent.name ? '' : agent.summary,
+      instructions: instructions ?? '',
     });
     setError(null);
     setNotice(null);
@@ -194,7 +217,11 @@ export function AgentSection() {
     }
     setBusy(true);
     setError(null);
-    const body: AgentProfileRequest = { name, summary: editDraft.summary.trim() };
+    const body: AgentProfileRequest = {
+      name,
+      summary: editDraft.summary.trim(),
+      instructions: editDraft.instructions.trim(),
+    };
     const res = await api.updateAgentProfile(agent.id, body);
     if (!res.ok) {
       setError(errorText(res));
@@ -349,18 +376,12 @@ export function AgentSection() {
   }
 
   return (
-    <section className="settings-section">
-      <h3>助手</h3>
-      <div className="hint" style={{ marginTop: 0 }}>
-        工作区级的助手定义。创建后不会自动进入任何会话——在会话里用 <b>@</b> 点名，
-        它才会加入那个房间并回答。
-      </div>
-
-      {workspaces.length > 1 && (
-        <div className="field">
-          <label>工作区</label>
+    <section className="settings-section agent-section">
+      <div className="section-head">
+        <h3>助手</h3>
+        {workspaces.length > 1 && (
           <select
-            className="model-select"
+            className="model-select agent-workspace"
             value={selected?.id ?? ''}
             onChange={(event) => setWorkspaceId(event.target.value)}
           >
@@ -370,85 +391,73 @@ export function AgentSection() {
               </option>
             ))}
           </select>
+        )}
+      </div>
+      <p className="agent-lead">
+        工作区级的助手定义。创建后不会自动进入任何会话——在会话里用 <b>@</b> 点名，它才会加入那个房间并回答。
+      </p>
+
+      <div className="agent-toolbar">
+        <button className="btn" onClick={() => setRemoteOpen((open) => !open)}>
+          {remoteOpen ? '取消添加远端助手' : '添加远端助手'}
+        </button>
+        <span className="hint">远端助手也是助手；一个邀请对应一个助手。</span>
+      </div>
+      {remoteOpen && (
+        <div className="agent-remote">
+          <p className="hint">
+            让对方在它的助手行点「共享」并生成邀请链接。只支持同一局域网、Tailscale 或 SSH
+            隧道；加入后对方的助手会出现在这个工作区。
+          </p>
+          <input
+            value={remoteUrl}
+            placeholder="paboot://join?host=…&port=…&fp=…&t=…&exp=…"
+            onChange={(event) => setRemoteUrl(event.target.value)}
+          />
+          <input
+            value={remoteLabel}
+            placeholder="给它起个名字（可选），例如：公司那台"
+            maxLength={40}
+            onChange={(event) => setRemoteLabel(event.target.value)}
+          />
+          <p className="hint">
+            ⚠ 它的回答由那台机器生成，消耗对方的额度；对方能使用它自己的全部工具与上下文。
+          </p>
+          <div className="agent-remote-actions">
+            <button
+              className="btn primary"
+              disabled={remoteBusy || !remoteUrl.trim()}
+              onClick={() => void joinRemote()}
+            >
+              {remoteBusy ? '正在连接…' : '添加'}
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="field" style={{ display: 'grid', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn" onClick={() => setRemoteOpen((open) => !open)}>
-            {remoteOpen ? '取消添加远端助手' : '添加远端助手'}
-          </button>
-          <span className="hint" style={{ marginTop: 0 }}>
-            远端助手也是助手；一个邀请对应一个助手。
-          </span>
-        </div>
-        {remoteOpen && (
-          <div
-            style={{
-              border: '1px solid var(--border)',
-              borderRadius: 10,
-              padding: 10,
-              display: 'grid',
-              gap: 6,
-            }}
-          >
-            <div className="hint" style={{ marginTop: 0 }}>
-              让对方在它的助手行点「共享」并生成邀请链接。只支持同一局域网、Tailscale 或 SSH
-              隧道；加入后对方的助手会出现在这个工作区。
-            </div>
-            <input
-              value={remoteUrl}
-              placeholder="paboot://join?host=…&port=…&fp=…&t=…&exp=…"
-              onChange={(event) => setRemoteUrl(event.target.value)}
-            />
-            <input
-              value={remoteLabel}
-              placeholder="给它起个名字（可选），例如：公司那台"
-              maxLength={40}
-              onChange={(event) => setRemoteLabel(event.target.value)}
-            />
-            <div className="hint">
-              ⚠ 它的回答由那台机器生成，消耗对方的额度；对方能使用它自己的全部工具与上下文。
-            </div>
-            <div>
-              <button
-                className="btn primary"
-                disabled={remoteBusy || !remoteUrl.trim()}
-                onClick={() => void joinRemote()}
-              >
-                {remoteBusy ? '正在连接…' : '添加'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="field" style={{ display: 'grid', gap: 8 }}>
+      <div className="agent-list">
         {agents === null ? (
           <div className="hint">正在读取助手…</div>
         ) : agents.length === 0 ? (
-          <div className="hint">这个工作区还没有助手。</div>
+          <div className="agent-empty">
+            <b>还没有助手</b>
+            <span className="hint">在下面创建一个，或添加远端助手。</span>
+          </div>
         ) : (
           agents.map((agent) => (
-            <div
-              key={agent.id}
-              className="field"
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: 10,
-                display: 'grid',
-                gap: 6,
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <b>{agent.name}</b>
-                {details[agent.id]?.isImplicit && <span className="badge">默认</span>}
-                {agent.kind === 'peer' && <span className="badge">远程助手</span>}
-                {agent.heavy && <span className="badge">外部 CLI</span>}
-                {!agent.enabled && <span className="badge">已停用</span>}
-                {agent.enabled && !agent.available && <span className="badge">当前离线</span>}
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <article className="agent-card" key={agent.id}>
+              <header className="agent-card-head">
+                <div className="agent-card-title">
+                  <b>{agent.name}</b>
+                  <span className="agent-badges">
+                    {details[agent.id]?.isImplicit && <span className="badge">默认</span>}
+                    {agent.kind === 'peer' && <span className="badge">远程助手</span>}
+                    {agent.heavy && <span className="badge">外部 CLI</span>}
+                    {!agent.enabled && <span className="badge">已停用</span>}
+                    {agent.enabled && !agent.online && <span className="badge warn">当前离线</span>}
+                  </span>
+                </div>
+                <div className="agent-card-actions">
                   {agent.kind === 'peer' ? (
                     <>
                       <button className="btn ghost" disabled={busy} onClick={() => void probeRemote(agent)}>
@@ -468,16 +477,18 @@ export function AgentSection() {
                       <button
                         className="btn ghost"
                         disabled={busy}
-                        onClick={() => (editing === agent.id ? setEditing(null) : startEdit(agent))}
+                        onClick={() =>
+                          editing === agent.id ? setEditing(null) : void startEdit(agent)
+                        }
                       >
                         {editing === agent.id ? '取消' : '编辑'}
                       </button>
                     </>
                   )}
                 </div>
-              </div>
+              </header>
               {editing === agent.id ? (
-                <div style={{ display: 'grid', gap: 6 }}>
+                <div className="agent-edit-form">
                   <input
                     value={editDraft.name}
                     placeholder="名字，例如：审阅"
@@ -494,7 +505,17 @@ export function AgentSection() {
                       setEditDraft((current) => ({ ...current, summary: event.target.value }))
                     }
                   />
-                  <div>
+                  <textarea
+                    className="agent-instructions"
+                    value={editDraft.instructions}
+                    placeholder="定义（可选）：告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
+                    maxLength={20000}
+                    rows={6}
+                    onChange={(event) =>
+                      setEditDraft((current) => ({ ...current, instructions: event.target.value }))
+                    }
+                  />
+                  <div className="agent-edit-actions">
                     <button
                       className="btn primary"
                       disabled={busy || !editDraft.name.trim()}
@@ -505,14 +526,14 @@ export function AgentSection() {
                   </div>
                 </div>
               ) : (
-                <div className="hint">
+                <p className="agent-summary">
                   {agent.summary || agent.backend}
                   {details[agent.id] && ` · ${details[agent.id]!.readOnly ? '只读' : '可写'}`}
-                </div>
+                </p>
               )}
               {editing !== agent.id && details[agent.id] && !details[agent.id]!.isImplicit && (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <footer className="agent-card-foot">
+                  <label className="agent-toggle">
                     <input
                       type="checkbox"
                       checked={details[agent.id]!.readOnly}
@@ -521,21 +542,18 @@ export function AgentSection() {
                     />
                     只读（不改代码）
                   </label>
-                  <button className="btn" disabled={busy} onClick={() => void remove(agent)}>
+                  <button
+                    className="btn ghost danger"
+                    disabled={busy}
+                    onClick={() => void remove(agent)}
+                  >
                     删除
                   </button>
-                </div>
+                </footer>
               )}
 
               {sharing === agent.id && canShare(agent) && (
-                <div
-                  style={{
-                    borderTop: '1px solid var(--border)',
-                    paddingTop: 8,
-                    display: 'grid',
-                    gap: 6,
-                  }}
-                >
+                <div className="agent-share">
                   {!(agent.id in exposures) ? (
                     <div className="hint">正在读取共享状态…</div>
                   ) : exposures[agent.id] === null ? (
@@ -594,8 +612,8 @@ export function AgentSection() {
                             </button>
                           </div>
                           {inviteUrl && (
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <input readOnly value={inviteUrl} style={{ flex: 1 }} />
+                            <div className="agent-invite-row">
+                              <input readOnly value={inviteUrl} />
                               <button
                                 className="btn"
                                 onClick={() => void navigator.clipboard.writeText(inviteUrl)}
@@ -613,41 +631,57 @@ export function AgentSection() {
                   )}
                 </div>
               )}
-            </div>
+            </article>
           ))
         )}
       </div>
 
-      <div className="field" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-        <label>新建助手</label>
-        <div className="hint" style={{ marginTop: 0 }}>
-          简介会展示给用户，也会进入其他 agent 的房间名册——写「能做什么」而不是「很强大」。
+      <div className="agent-create">
+        <div className="agent-create-head">
+          <b>新建助手</b>
+          <span className="hint">
+            简介会展示给用户，也会进入其他 agent 的房间名册——写「能做什么」而不是「很强大」。
+          </span>
         </div>
-        <input
-          value={draft.name}
-          placeholder="名字，例如：审阅"
-          maxLength={40}
-          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-        />
-        <input
-          value={draft.summary}
-          placeholder="一句话简介，例如：审查改动，指出问题，不改代码"
-          maxLength={40}
-          onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))}
-        />
-        <select
-          className="model-select"
-          value={draft.runtime}
-          onChange={(event) => setDraft((current) => ({ ...current, runtime: event.target.value }))}
-        >
-          {runtimes.map((runtime) => (
-            <option key={runtime.id} value={runtime.id} disabled={!runtime.available}>
-              {runtime.name}
-              {runtime.available ? '' : '（不可用）'}
-            </option>
-          ))}
-        </select>
-        <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div className="agent-create-grid">
+          <div className="agent-create-row">
+            <input
+              value={draft.name}
+              placeholder="名字，例如：审阅"
+              maxLength={40}
+              onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+            />
+            <select
+              className="model-select"
+              value={draft.runtime}
+              onChange={(event) => setDraft((current) => ({ ...current, runtime: event.target.value }))}
+            >
+              {runtimes.map((runtime) => (
+                <option key={runtime.id} value={runtime.id} disabled={!runtime.available}>
+                  {runtime.name}
+                  {runtime.available ? '' : '（不可用）'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <input
+            value={draft.summary}
+            placeholder="一句话简介，例如：审查改动，指出问题，不改代码"
+            maxLength={40}
+            onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))}
+          />
+          <textarea
+            className="agent-instructions"
+            value={draft.instructions}
+            placeholder="定义（可选）：告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
+            maxLength={20000}
+            rows={6}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, instructions: event.target.value }))
+            }
+          />
+        </div>
+        <label className="agent-toggle">
           <input
             type="checkbox"
             checked={draft.readOnly}
@@ -657,7 +691,7 @@ export function AgentSection() {
           />
           只读（可以读代码、给建议，但不修改文件）
         </label>
-        <div>
+        <div className="agent-create-actions">
           <button
             className="btn primary"
             disabled={busy || !draft.name.trim() || !draft.runtime}
@@ -668,7 +702,7 @@ export function AgentSection() {
         </div>
       </div>
 
-      {notice && <div className="hint">{notice}</div>}
+      {notice && <div className="agent-notice">{notice}</div>}
       {error && <div className="error-text">{error}</div>}
     </section>
   );
