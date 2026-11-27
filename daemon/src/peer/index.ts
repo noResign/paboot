@@ -48,6 +48,7 @@ export {
   relayPermissionDecision,
 } from './client.js';
 export { joinPeer, listPeerConnections, probeConnection, removePeerConnection } from './join.js';
+export { probeOutboundPeers, startPeerMonitor } from './monitor.js';
 export {
   startPeerTaskRun,
   type PeerTaskRunHandle,

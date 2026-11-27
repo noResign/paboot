@@ -31,7 +31,7 @@
 | `audit_log` | 审计：chat / cancel / permission_decision / 权限模式与 grant 变更 / session 重命名与删除 / config 更新 / workspace 增删改与目录、书签变更 / browse_root |
 | `deploy_jobs` | 部署任务：`id`、`channel`、`target`、`status`、`unit`、`log_path`、时间戳、`exit_code`、`error` |
 | `exposed_agents` | 跨机授权：`agent_id`、`contract_json`（整份合同）、`enabled`、时间戳；一个 agent 一份 |
-| `peers` | 一条连接对应一个 agent：`id`（本地连接 id）、`direction`（`in` / `out`）、`server_id`（对端 serverId）、`remote_agent_id`（out 必填）、`label`、`base_url`、`fingerprint`、`token_cipher`（出站 token）、`last_seen_at`、`created_at` |
+| `peers` | 一条连接对应一个 agent：`id`（本地连接 id）、`direction`（`in` / `out`）、`server_id`（对端 serverId）、`remote_agent_id`（out 必填）、`label`、`base_url`、`fingerprint`、`token_cipher`（出站 token）、`last_seen_at`、`created_at`。出站连接由 daemon 后台每 60s 自动探活刷新 `last_seen_at`（启动即探一次）；agent 的 `available` 以「5 分钟内见过」判定在线 |
 | `peer_tokens` | 入站 guest 凭证：只存 `token_hash`、`scopes`（**一个** agentId）、`expires_at`（v1 为 NULL：邀请过期不等于连接过期，直到吊销）、`revoked_at`（吊销不删行） |
 | `peer_invites` | 一次性邀请：`token_hash`、`agent_ids`、`expires_at`、`consumed_at`；默认 24h、单次 |
 | `peer_threads` | B 生成的 `thread_key` → 本机隐藏会话：`(peer_id, thread_key)` 主键、`agent_id`、`session_id`；同一个 key 不能挪给另一个 agent |

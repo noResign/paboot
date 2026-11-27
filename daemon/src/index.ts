@@ -140,7 +140,7 @@ async function main(): Promise<void> {
         );
   // Peer runs also keep executing on the other machine after this process
   // dies. Cancel those first; `interruptOrphanedRuns` then marks the local rows.
-  const { reconcilePeerRuns } = await import('./peer/index.js');
+  const { reconcilePeerRuns, startPeerMonitor } = await import('./peer/index.js');
   void reconcilePeerRuns(db)
     .then((cancelled) => {
       if (cancelled > 0) log.info(`cancelled ${cancelled} orphaned peer run(s) on their machines`);
@@ -349,6 +349,7 @@ async function main(): Promise<void> {
   // Publish where we are — but only once the socket is actually accepting, so
   // a client that reads the file can connect to what it names.
   let stopHeartbeat: (() => void) | null = null;
+  let stopPeerMonitor: (() => void) | null = null;
 
   // Until now a signal simply killed the process; now it also retracts the
   // runtime info file so clients stop dialing us. Every event is committed
@@ -364,6 +365,7 @@ async function main(): Promise<void> {
     try {
       scheduler.stop();
       clearInterval(debugPruneTimer);
+      stopPeerMonitor?.();
       await memoryWorker.stop();
       stopHeartbeat?.();
       memory.close();
@@ -375,6 +377,10 @@ async function main(): Promise<void> {
       process.exit(0);
     }
   };
+
+  // Start before listening: a client that connects right after startup should
+  // not see a stale "offline" peer while the first probe is still pending.
+  stopPeerMonitor = startPeerMonitor(ctx);
 
   const server = startServer(ctx, { requestShutdown: (reason) => void shutdown(reason) });
   printConnectInfo(config);
