@@ -1,5 +1,49 @@
 import { hasUnansweredQuestion } from './conversationSegments';
-import type { ChatMessage, ChatSessionState } from '../../store/chat/types';
+import type { ChatMessage, ChatSessionState, ContentBlock } from '../../store/chat/types';
+
+/** What a live answer is doing right now, for the status strip. */
+export type AgentActivityKind = 'thinking' | 'tool' | 'writing' | 'answering';
+
+export interface AgentActivity {
+  runId: string;
+  agentId: string | null;
+  kind: AgentActivityKind;
+  /** Tool name while `kind === 'tool'`. */
+  toolName?: string;
+}
+
+/** Read the current activity off a live message's blocks (last active wins). */
+export function activityOf(blocks: readonly ContentBlock[]): {
+  kind: AgentActivityKind;
+  toolName?: string;
+} {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index]!;
+    if (block.kind === 'tool' && block.running) return { kind: 'tool', toolName: block.name };
+    if (block.kind === 'thinking' && block.active) return { kind: 'thinking' };
+    // A text block is only present while the run is still writing it: when it
+    // is the newest block, the agent is producing output.
+    if (block.kind === 'text') return { kind: 'writing' };
+    // Finished tool / settled thinking / notice: keep looking further back.
+  }
+  return { kind: 'answering' };
+}
+
+/**
+ * The activity to show in the status strip. The strip shows one agent only —
+ * whichever started first — because several agents' actions competing for the
+ * same line is noise. Other live agents still have their cards in the
+ * assistant tab.
+ */
+export function leadActivity(chat: ChatSessionState): AgentActivity | null {
+  const lead = listLiveAnswers(chat)[0];
+  if (!lead) return null;
+  return {
+    runId: lead.runId,
+    agentId: lead.agentId,
+    ...activityOf(lead.message.blocks),
+  };
+}
 
 export type LiveAnswerMessage = Extract<ChatMessage, { kind: 'assistant' }>;
 

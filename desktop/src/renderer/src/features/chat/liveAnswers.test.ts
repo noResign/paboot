@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activityOf,
   findAwaitingAnswer,
   findLiveAnswer,
+  leadActivity,
   listLiveAnswers,
   traceTargetOnJump,
 } from './liveAnswers';
@@ -84,6 +86,43 @@ describe('live answers', () => {
       ],
     };
     expect(findAwaitingAnswer(state)).toBeNull();
+  });
+});
+
+describe('live activity', () => {
+  it('reads thinking, a running tool, and output off the blocks', () => {
+    expect(activityOf([{ kind: 'thinking', active: true }])).toEqual({ kind: 'thinking' });
+    expect(
+      activityOf([{ kind: 'tool', id: 't', name: 'Bash', input: null, result: null, isError: false, interrupted: false, running: true }]),
+    ).toEqual({ kind: 'tool', toolName: 'Bash' });
+    expect(activityOf([{ kind: 'text', text: 'hi' }])).toEqual({ kind: 'writing' });
+  });
+
+  it('prefers the newest active block over an earlier one', () => {
+    const blocks = [
+      { kind: 'thinking' as const, active: true },
+      { kind: 'tool' as const, id: 't', name: 'Read', input: null, result: null, isError: false, interrupted: false, running: true },
+    ];
+    expect(activityOf(blocks)).toEqual({ kind: 'tool', toolName: 'Read' });
+  });
+
+  it('reports a finished tool with nothing newer as a generic answer', () => {
+    const blocks = [
+      { kind: 'tool' as const, id: 't', name: 'Bash', input: null, result: 'ok', isError: false, interrupted: false, running: false },
+    ];
+    expect(activityOf(blocks)).toEqual({ kind: 'answering' });
+  });
+
+  it('shows whichever live answer started first', () => {
+    const state = {
+      ...base(),
+      pendingAnswers: [
+        { runId: 'r1', agentId: 'member', message: assistant({ blocks: [{ kind: 'text', text: 'x' }] }) },
+        { runId: 'r2', agentId: 'leader', message: assistant({ blocks: [{ kind: 'thinking', active: true }] }) },
+      ],
+    };
+    expect(leadActivity(state)).toMatchObject({ runId: 'r1', agentId: 'member', kind: 'writing' });
+    expect(leadActivity(base())).toBeNull();
   });
 });
 

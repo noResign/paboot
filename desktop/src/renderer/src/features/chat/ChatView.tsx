@@ -8,6 +8,7 @@ import {
   clampPermissionMode,
   permissionModeLabel,
   permissionModeOptions,
+  runtimeIdentity,
 } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
@@ -17,7 +18,7 @@ import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { agentDisplayName } from './agentLabel';
 import { mentionedAgentIds, type MentionAgent } from './mentions';
-import { findAwaitingAnswer, traceTargetOnJump } from './liveAnswers';
+import { findAwaitingAnswer, leadActivity, traceTargetOnJump, type AgentActivity } from './liveAnswers';
 import { QuestionDialog, askerName } from './QuestionDialog';
 import { Composer } from './Composer';
 import { useStickToBottom } from './useStickToBottom';
@@ -101,7 +102,11 @@ export function ChatView({
   useEffect(() => {
     const sessionId = chat?.sessionId;
     if (!sessionId) {
+      // A new chat has no roster yet. Drop the previous session's, or its
+      // members leak into the 助手 badge and the @ picker's "member" flags.
       setLeaderAgentId(null);
+      setSessionAgents([]);
+      setRoomCapacity(null);
       return;
     }
     let live = true;
@@ -247,18 +252,20 @@ export function ChatView({
     chat.dispatchedTasks.length +
     chat.pendingAnswers.length +
     chat.displayQueue.length;
-  const liveNames = [
-    ...new Set(
-      [...chat.pendingAnswers, ...chat.dispatchedTasks, ...chat.displayQueue]
-        .map((item) => {
-          const member = sessionAgents.find((agent) => agent.id === item.agentId);
-          return member
-            ? agentDisplayName(member)
-            : workspaceAgents.find((agent) => agent.id === item.agentId)?.name;
-        })
-        .filter((name): name is string => Boolean(name)),
-    ),
-  ];
+  const nameOfAgent = (agentId: string | null): string | null => {
+    if (!agentId) return null;
+    const member = sessionAgents.find((agent) => agent.id === agentId);
+    return member
+      ? agentDisplayName(member)
+      : (workspaceAgents.find((agent) => agent.id === agentId)?.name ?? null);
+  };
+  // Show one agent's live activity, not a roster: whichever answer started
+  // first. Several agents' actions competing for one line turns into noise.
+  const activity = leadActivity(chat);
+  const activityName = activity ? nameOfAgent(activity.agentId) : null;
+  const queuedName = chat.dispatchedTasks[0]
+    ? nameOfAgent(chat.dispatchedTasks[0].agentId)
+    : null;
   // Builtin/Codex questions emit no permission_request, so the only hint that
   // the room is blocked on the user is this badge (and the live-card one). It
   // also has to see per-run stream answers, which live in `messages`.
@@ -272,10 +279,10 @@ export function ChatView({
     ? `${awaitingName ?? '助手'} 需要你的回答`
     : chat.turnSending
       ? '正在发送消息…'
-      : chat.pendingAnswers.length > 0
-        ? `${liveNames.slice(0, 3).join('、')}${liveNames.length > 3 ? ` 等 ${liveNames.length} 个助手` : ''} 正在回答…`
+      : activity
+        ? `${activityName ?? '助手'} ${activityLabel(activity)}`
         : chat.dispatchedTasks.length > 0
-          ? `${liveNames.slice(0, 3).join('、')} 已派发任务，等待开始…`
+          ? `${queuedName ?? '助手'} 正在排队…`
           : '回答已就绪，稍后显示…';
 
   /** Secondary session actions, so the header keeps two or three visible controls. */
@@ -407,12 +414,21 @@ export function ChatView({
     ? (chat.runs.find((run) => run.id === traceRunId)?.agentId ?? null)
     : null;
 
+  // Before the first message the session has no roster yet, but it already has
+  // exactly one agent: the chosen assistant, or the runtime's implicit leader.
+  const pendingAgentName =
+    !chat.sessionId && chat.pendingNew
+      ? (workspaceAgents.find((agent) => agent.id === chat.pendingNew!.agentId)?.name
+          ?? runtimeIdentity(chat.pendingNew.runtime ?? chat.runtime ?? '').displayName)
+      : null;
+
   const assistantPanel = (
     <div className="assistant-page">
       <div className="chat-scroll">
         <AssistantTab
           sessionId={chat.sessionId}
           agents={sessionAgents}
+          pendingAgentName={pendingAgentName}
           capacity={roomCapacity}
           workspaceAgents={workspaceAgents}
           chat={chat}
@@ -439,6 +455,10 @@ export function ChatView({
     </div>
   );
 
+  // Before the first message the session does not exist, but it will have
+  // exactly one agent (the chosen assistant or the runtime's implicit leader).
+  const agentCount = chat.sessionId ? sessionAgents.length : chat.pendingNew ? 1 : 0;
+
   const tabs: TabItem[] = [
     { id: 'chat', label: '对话', content: chatPanel },
     {
@@ -446,7 +466,7 @@ export function ChatView({
       label: (
         <>
           助手
-          {sessionAgents.length > 0 && <span className="tab-count">{sessionAgents.length}</span>}
+          {agentCount > 0 && <span className="tab-count">{agentCount}</span>}
           {awaitingAnswer && <span className="tab-ask">需回答</span>}
           {liveCount > 0 && <span className="tab-live" title="有回答正在进行或等待显示" />}
         </>
@@ -622,7 +642,11 @@ export function ChatView({
           }}
         >
           <span className="pending-answer-dot" />
-          <span>{liveStatusText}</span>
+          {/* Keyed so each new activity (thinking → tool → writing) replays the
+              fade-in, giving the strip a rolling feel without faking a cycle. */}
+          <span className="chat-live-status-text" key={liveStatusText}>
+            {liveStatusText}
+          </span>
           <span className="chat-live-status-link">
             {awaitingAnswer ? '去回答' : '查看助手'}
           </span>
@@ -800,4 +824,18 @@ function shortCwd(path: string): string {
   const parts = path.split('/').filter(Boolean);
   if (parts.length <= 3) return path;
   return `…/${parts.slice(-3).join('/')}`;
+}
+
+/** The status strip's live-activity copy, per agent state. */
+function activityLabel(activity: AgentActivity): string {
+  switch (activity.kind) {
+    case 'thinking':
+      return '正在思考…';
+    case 'tool':
+      return activity.toolName ? `正在调用工具 ${activity.toolName}…` : '正在调用工具…';
+    case 'writing':
+      return '正在输出…';
+    default:
+      return '正在回答…';
+  }
 }

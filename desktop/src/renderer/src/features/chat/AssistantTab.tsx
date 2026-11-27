@@ -16,6 +16,11 @@ import type {
 interface Props {
   sessionId: string | null;
   agents: SessionAgentDto[];
+  /**
+   * Name of the single implicit leader of a session that has not been created
+   * yet. Shown as a placeholder member so the tab matches the badge count.
+   */
+  pendingAgentName?: string | null;
   /** `used`/`max` from the daemon; absent on older daemons (then no cap is shown). */
   capacity?: { used: number; max: number } | null;
   workspaceAgents: AgentProfileDto[];
@@ -34,6 +39,7 @@ interface Props {
 export function AssistantTab({
   sessionId,
   agents,
+  pendingAgentName = null,
   capacity = null,
   workspaceAgents,
   chat,
@@ -276,9 +282,22 @@ export function AssistantTab({
       <section className="assistant-roster">
         <div className="assistant-section-head">
           <b>房间成员</b>
-          <span>{agents.length} 个助手</span>
+          <span>{agents.length + (pendingAgentName ? 1 : 0)} 个助手</span>
         </div>
-        {agents.length === 0 && <div className="hint">发送第一条消息后，这里会显示会话成员。</div>}
+        {agents.length === 0 && !pendingAgentName && (
+          <div className="hint">发送第一条消息后，这里会显示会话成员。</div>
+        )}
+        {agents.length === 0 && pendingAgentName && (
+          <div className="assistant-member">
+            <div className="assistant-member-main">
+              <div className="assistant-member-name">
+                <b>{pendingAgentName}</b>
+                <span className="badge">主答</span>
+              </div>
+              <div className="hint">新会话 · 发送第一条消息后创建</div>
+            </div>
+          </div>
+        )}
         {agents.map((agent) => {
           const live = chat.pendingAnswers.some((answer) => answer.agentId === agent.id);
           const queued = chat.dispatchedTasks.some((task) => task.agentId === agent.id);
