@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../ipc/client';
 import { useScheduledTasks } from '../../store/scheduledTasks';
+import { workspaceLabel } from '../../store/workspaceList';
 import { Icon } from '../../ui/Icon';
 import { permissionModeLabel, runtimeIdentity } from '../../../../shared/runtime-identity';
 import { bypassAllowedOf, useConfig } from '../../store/config';
+import { groupTasksByWorkspace } from './taskGroups';
 import type {
   RunDto,
   ScheduleInput,
@@ -11,6 +13,7 @@ import type {
   ScheduledTaskDto,
   SessionDto,
   UpdateScheduledTaskRequest,
+  WorkspaceDto,
 } from '../../../../shared/contract';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -80,20 +83,37 @@ function statusTone(task: ScheduledTaskDto): string {
   return task.lastStatus || 'never';
 }
 
+/** Daemon reasons are stable ids; show copy, not `workspace_deleted`. */
+function disabledReasonLabel(reason: string): string {
+  switch (reason) {
+    case 'workspace_deleted':
+      return '工作区已删除';
+    case 'workspace_disabled':
+      return '工作区已停用';
+    case 'session_invalid':
+      return '绑定的会话已失效';
+    case 'invalid_schedule':
+      return '计划时间无效';
+    default:
+      return reason;
+  }
+}
+
 interface Props {
   connectionId: string | null;
-  workspaceId: string | null;
-  workspaceName: string | null;
+  /** New tasks default here; also orders this workspace's group first. */
+  currentWorkspaceId: string | null;
+  workspaces: WorkspaceDto[];
   /** When set, only this session's tasks are listed (opened from a chat). */
   taskFilter: { id: string; title: string | null } | null;
   onClearTaskFilter: () => void;
-  onOpenSession: (sessionId: string) => void;
+  onOpenSession: (sessionId: string, workspaceId: string) => void;
 }
 
 export function TasksPage({
   connectionId,
-  workspaceId,
-  workspaceName,
+  currentWorkspaceId,
+  workspaces,
   taskFilter,
   onClearTaskFilter,
   onOpenSession,
@@ -108,25 +128,33 @@ export function TasksPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<ScheduledTaskDto | null>(null);
   const [confirmNewTask, setConfirmNewTask] = useState(false);
+  const [newTaskWorkspaceId, setNewTaskWorkspaceId] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [message, setMessage] = useState<string | null>(null);
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const bypassAllowed = bypassAllowedOf(useConfig((state) => state.config));
   const tasks = scope?.tasks ?? [];
   const detail = scope?.detail && scope.detail.task.id === selectedId ? scope.detail : null;
   const filterId = taskFilter?.id;
+  const groups = useMemo(
+    () => groupTasksByWorkspace(tasks, workspaces, currentWorkspaceId),
+    [tasks, workspaces, currentWorkspaceId],
+  );
+  const detailWorkspace =
+    groups.find((group) => group.workspaceId === detail?.task.workspaceId)?.label ?? '未知工作区';
 
   useEffect(() => {
     if (!connectionId) return;
-    void load(connectionId, workspaceId ?? undefined, { sessionId: filterId });
-  }, [connectionId, workspaceId, filterId, load]);
+    void load(connectionId, undefined, { sessionId: filterId });
+  }, [connectionId, filterId, load]);
 
   useEffect(() => {
     if (!connectionId) return;
     const timer = setInterval(() => {
-      void load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+      void load(connectionId, undefined, { silent: true, sessionId: filterId });
     }, 20_000);
     return () => clearInterval(timer);
-  }, [connectionId, workspaceId, filterId, load]);
+  }, [connectionId, filterId, load]);
 
   useEffect(() => {
     if (!connectionId || !selectedId) return;
@@ -142,13 +170,13 @@ export function TasksPage({
 
   useEffect(() => {
     if (selectedId && tasks.some((task) => task.id === selectedId)) return;
-    setSelectedId(tasks[0]?.id ?? null);
-  }, [tasks, selectedId]);
+    setSelectedId(groups[0]?.tasks[0]?.id ?? null);
+  }, [groups, tasks, selectedId]);
 
   async function refreshDetail(): Promise<void> {
     if (!connectionId || !selectedId) return;
     await loadDetail(connectionId, selectedId);
-    await load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+    await load(connectionId, undefined, { silent: true, sessionId: filterId });
   }
 
   async function toggle(task: ScheduledTaskDto): Promise<void> {
@@ -178,14 +206,35 @@ export function TasksPage({
     if (result.ok) setSelectedId(null);
   }
 
+  /** Open the confirm modal with a sensible workspace preselected. */
+  function openNewTask(): void {
+    const preferred =
+      workspaces.find((workspace) => workspace.id === currentWorkspaceId && workspace.enabled) ??
+      workspaces.find((workspace) => workspace.enabled) ??
+      workspaces.find((workspace) => workspace.id === currentWorkspaceId) ??
+      workspaces[0] ??
+      null;
+    setNewTaskWorkspaceId(preferred?.id ?? null);
+    setConfirmNewTask(true);
+  }
+
   async function newTask(): Promise<void> {
-    if (!connectionId) return;
-    const result = await startConfigSession(connectionId, workspaceId ?? undefined);
+    if (!connectionId || !newTaskWorkspaceId) return;
+    const result = await startConfigSession(connectionId, newTaskWorkspaceId);
     if (!result.ok) {
       setMessage(result.error);
       return;
     }
-    onOpenSession(result.sessionId);
+    onOpenSession(result.sessionId, newTaskWorkspaceId);
+  }
+
+  function toggleGroup(workspaceId: string): void {
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
   }
 
   return (
@@ -197,9 +246,7 @@ export function TasksPage({
             <span>
               {taskFilter
                 ? `会话：${taskFilter.title ?? taskFilter.id}`
-                : workspaceName
-                  ? `工作区：${workspaceName}`
-                  : '所有工作区'}{' '}
+                : `${groups.length} 个工作区 · ${tasks.length} 个任务`}{' '}
               · 无人值守
             </span>
             <span
@@ -223,7 +270,7 @@ export function TasksPage({
           <button
             className="btn"
             onClick={() =>
-              void load(connectionId ?? '', workspaceId ?? undefined, {
+              void load(connectionId ?? '', undefined, {
                 silent: true,
                 sessionId: filterId,
               })
@@ -231,7 +278,7 @@ export function TasksPage({
           >
             刷新
           </button>
-          <button className="btn soft" onClick={() => setConfirmNewTask(true)}>
+          <button className="btn soft" onClick={openNewTask}>
             新建任务
           </button>
         </div>
@@ -253,25 +300,47 @@ export function TasksPage({
               {taskFilter ? '点「新建任务」，让 AI 为这个会话创建一个。' : '创建一个：按计划自动唤醒会话或执行命令。'}
             </div>
           )}
-          {tasks.map((task) => (
-            <button
-              key={task.id}
-              className={`task-row${selectedId === task.id ? ' active' : ''}${task.enabled ? '' : ' off'}`}
-              onClick={() => setSelectedId(task.id)}
-            >
-              <div className="task-row-top">
-                <span className="task-name">{task.name}</span>
-                <span className={`task-status status-${statusTone(task)}`}>{statusLabel(task)}</span>
+          {groups.map((group) => {
+            const open = !collapsedGroups.has(group.workspaceId);
+            return (
+              <div className="task-group" key={group.workspaceId}>
+                <button
+                  className="task-group-head"
+                  onClick={() => toggleGroup(group.workspaceId)}
+                  aria-expanded={open}
+                >
+                  <Icon name={open ? 'chevron-down' : 'chevron-right'} size={13} />
+                  <span className="task-group-label">{group.label}</span>
+                  {!group.enabled && <span className="task-group-off">已停用</span>}
+                  <span className="task-group-count">{group.tasks.length}</span>
+                </button>
+                {open &&
+                  group.tasks.map((task) => (
+                    <button
+                      key={task.id}
+                      className={`task-row${selectedId === task.id ? ' active' : ''}${task.enabled ? '' : ' off'}`}
+                      onClick={() => setSelectedId(task.id)}
+                    >
+                      <div className="task-row-top">
+                        <span className="task-name">{task.name}</span>
+                        <span className={`task-status status-${statusTone(task)}`}>{statusLabel(task)}</span>
+                      </div>
+                      <div className="task-row-sub">
+                        {task.schedule.label} · 下次 {relativeTime(task.nextRunAt)}
+                      </div>
+                      <div className="task-row-sub">
+                        {task.type === 'command'
+                          ? '执行命令'
+                          : task.sessionTitle
+                            ? `会话：${task.sessionTitle}`
+                            : '新会话'}
+                        {task.createdBy === 'mcp' ? ' · AI 创建' : ''}
+                      </div>
+                    </button>
+                  ))}
               </div>
-              <div className="task-row-sub">
-                {task.schedule.label} · 下次 {relativeTime(task.nextRunAt)}
-              </div>
-              <div className="task-row-sub">
-                {task.type === 'command' ? '执行命令' : task.sessionTitle ? `会话：${task.sessionTitle}` : '新会话'}
-                {task.createdBy === 'mcp' ? ' · AI 创建' : ''}
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
 
         <div className="tasks-detail">
@@ -280,6 +349,7 @@ export function TasksPage({
             <TaskDetail
               key={detail.task.id}
               task={detail.task}
+              workspaceName={detailWorkspace}
               runs={detail.runs}
               starting={startingTaskId === detail.task.id}
               onOpenSession={onOpenSession}
@@ -306,12 +376,33 @@ export function TasksPage({
                 将打开「配置定时任务」会话。AI 会先问你想要完成什么任务，分析后给出名称、目标、计划和执行内容，
                 确认后才会创建。
               </p>
+              <div className="field">
+                <label htmlFor="task-new-workspace">工作区</label>
+                <select
+                  id="task-new-workspace"
+                  value={newTaskWorkspaceId ?? ''}
+                  onChange={(event) => setNewTaskWorkspaceId(event.target.value || null)}
+                >
+                  {!newTaskWorkspaceId && (
+                    <option value="" disabled>
+                      请选择工作区
+                    </option>
+                  )}
+                  {workspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id} disabled={!workspace.enabled}>
+                      {workspaceLabel(workspace)}
+                      {workspace.enabled ? '' : '（已停用）'}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="modal-actions">
                 <button className="btn" onClick={() => setConfirmNewTask(false)}>
                   取消
                 </button>
                 <button
                   className="btn primary"
+                  disabled={!newTaskWorkspaceId}
                   onClick={() => {
                     setConfirmNewTask(false);
                     void newTask();
@@ -333,7 +424,7 @@ export function TasksPage({
           onSaved={async (task) => {
             setEditingTask(null);
             setSelectedId(task.id);
-            await load(connectionId, workspaceId ?? undefined, { silent: true, sessionId: filterId });
+            await load(connectionId, undefined, { silent: true, sessionId: filterId });
             await loadDetail(connectionId, task.id);
           }}
         />
@@ -344,6 +435,7 @@ export function TasksPage({
 
 function TaskDetail({
   task,
+  workspaceName,
   runs,
   starting,
   onOpenSession,
@@ -353,9 +445,10 @@ function TaskDetail({
   onEdit,
 }: {
   task: ScheduledTaskDto;
+  workspaceName: string;
   runs: RunDto[];
   starting: boolean;
-  onOpenSession: (sessionId: string) => void;
+  onOpenSession: (sessionId: string, workspaceId: string) => void;
   onToggle: () => void;
   onRun: () => void;
   onDelete: () => void;
@@ -381,6 +474,8 @@ function TaskDetail({
         <div>
           <h2>{task.name}</h2>
           <div className="task-meta">
+            <span className="task-workspace">{workspaceName}</span>
+            <span>·</span>
             <span>{task.type === 'command' ? '命令任务' : 'AI 会话任务'}</span>
             <span>·</span>
             <span>{task.schedule.label}</span>
@@ -416,7 +511,7 @@ function TaskDetail({
       </div>
 
       {!task.enabled && task.disabledReason && (
-        <div className="task-warning">已停用：{task.disabledReason}</div>
+        <div className="task-warning">已停用：{disabledReasonLabel(task.disabledReason)}</div>
       )}
       {task.lastError && <div className="task-warning">最近错误：{task.lastError}</div>}
 
@@ -436,7 +531,10 @@ function TaskDetail({
               ? '当前工作区'
               : task.sessionTitle ?? '首次触发时创建会话'}
             {task.type === 'ai' && task.sessionId && (
-              <button className="btn tiny" onClick={() => onOpenSession(task.sessionId as string)}>
+              <button
+                className="btn tiny"
+                onClick={() => onOpenSession(task.sessionId as string, task.workspaceId)}
+              >
                 打开会话
               </button>
             )}
@@ -492,7 +590,10 @@ function TaskDetail({
                       {run.trigger === 'scheduled' ? '定时' : run.trigger === 'run_now' ? '手动' : '交互'}
                     </span>
                     {task.type === 'ai' ? (
-                      <button className="task-run-link" onClick={() => onOpenSession(run.sessionId)}>
+                      <button
+                        className="task-run-link"
+                        onClick={() => onOpenSession(run.sessionId, task.workspaceId)}
+                      >
                         查看会话
                       </button>
                     ) : (

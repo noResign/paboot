@@ -59,11 +59,9 @@ const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
  * the phone uses tabs; a desktop page has the height for a section rail.
  */
 export function SettingsPage({
-  onBack,
   section,
   onSectionChange,
 }: {
-  onBack(): void;
   section: SettingsSection;
   onSectionChange(next: SettingsSection): void;
 }) {
@@ -177,10 +175,6 @@ export function SettingsPage({
   return (
     <div className="settings">
       <div className="settings-head">
-        <button className="btn ghost" onClick={onBack} title="返回（Esc）">
-          <Icon name="arrow-left" size={15} />
-          返回
-        </button>
         <span className="title">设置</span>
       </div>
 

@@ -265,7 +265,7 @@ export function ProviderSection() {
     <section className="settings-section">
       <div className="section-head">
         <h3>模型</h3>
-        <button className="btn primary" disabled={busy} onClick={openCreate}>新增 Provider</button>
+        <button className="btn soft" disabled={busy} onClick={openCreate}>新增 Provider</button>
       </div>
       <div className="hint">
         builtin runtime 与 Memory 共用这份配置。API key 只写入 daemon 本机的 providers.json，

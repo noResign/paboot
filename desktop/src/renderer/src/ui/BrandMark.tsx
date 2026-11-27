@@ -16,7 +16,7 @@ export function BrandMark({ size = 30 }: { size?: number }) {
   return (
     <span className="brand-mark" style={{ width: size, height: size }} aria-hidden="true">
       <svg width={glyph} height={glyph} viewBox="0 0 20 20" aria-hidden="true">
-        <path d={MASCOT_HEAD_PATH} fill="#fff" fillRule="evenodd" />
+        <path d={MASCOT_HEAD_PATH} fill="currentColor" fillRule="evenodd" />
       </svg>
     </span>
   );

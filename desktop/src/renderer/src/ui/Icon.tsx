@@ -18,6 +18,7 @@ export type IconName =
   | 'arrow-left'
   | 'x'
   | 'more'
+  | 'message'
   | 'search'
   | 'settings'
   | 'clock'
@@ -43,6 +44,7 @@ const GLYPHS: Record<IconName, ReactNode> = {
     </>
   ),
   'chevron-down': <path d="m6 9 6 6 6-6" />,
+  message: <path d="M20 15a2 2 0 0 1-2 2H8l-4 3V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z" />,
   'chevron-right': <path d="m9 6 6 6-6 6" />,
   'chevron-left': <path d="m15 6-6 6 6 6" />,
   'arrow-left': (

@@ -1,77 +1,120 @@
 /*
- * Design tokens, ported verbatim from docs/ui/design-principles.md §4.1 /
- * docs/ui/preview.html so the desktop client and mobile share one palette.
- * Desktop-only adjustments (density, radius, hit target) live below the
- * colour block — see desktop_ui_design.md §4.
+ * Design tokens for the desktop base skin, 品牌 (v2.1 —
+ * docs/ui/shared/visual-language.md §2.1): neutral surfaces and hairlines with
+ * the brand teal as the only accent. Other skins only override colour tokens
+ * under `[data-skin='<id>']`, never structure.
  */
 :root {
   /*
-   * Three fills: `--surface` is the white chrome (rail, file panel, toolbar,
-   * composer box), `--bg` is the canvas the conversation sits on — one step
-   * darker, so the white columns frame it — and `--surface-2` is the
-   * "inside a white surface" tone: hover, selected row, nested card.
+   * Three fills: `--surface` is the chrome (rail, file panel, titlebar, panels);
+   * `--bg`/`--canvas` is the content canvas; `--card` is a card face (settings
+   * cards, tool groups). `--surface-2` is hover / selected.
    *
-   * `--surface` and `--surface-2` must never hold the same value. They were both
-   * #ffffff for a while, which silently deleted every hover and selected state
-   * in the light theme.
+   * Card and canvas must not hold the same value, or every card disappears.
    */
-  --bg: #f4f7f5;
+  --bg: #ffffff;
+  --canvas: #ffffff;
   --surface: #ffffff;
-  --surface-2: #edf2ef;
-  /* Opaque twins of the two above. Skin mode blanks the originals out; subtrees
-     that must stay filled (overlays) re-point at these instead — see app.css. */
+  --card: #fafafa;
+  --card-hover: #f4f5f7;
+  --surface-2: #f1f3f5;
+  --surface-3: #e9ecef;
+  /* Opaque twins of the two surfaces. Skin mode blanks the originals out;
+     subtrees that must stay filled (overlays) re-point at these instead. */
   --surface-solid: #ffffff;
-  --surface-2-solid: #edf2ef;
-  --border: #e3eae6;
-  --text-primary: #16211d;
-  --text-secondary: #5a6b64;
-  --text-muted: #93a29a;
-  --primary: #0e9f86;
+  --surface-2-solid: #f1f3f5;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --hairline: rgba(0, 0, 0, 0.06);
+  --text-primary: #0f1115;
+  --text-secondary: #61666b;
+  --text-muted: #81858c;
+  --text-disabled: #adb2b8;
+  --primary: #0a7d6b;
   --primary-deep: #0a7d6b;
-  --primary-subtle: #e2f3ee;
-  /* The 2px bar on a selected row: the accent mixed into the row tone, so it
-     reads as a marker instead of a hard green edge. */
-  --accent-bar: color-mix(in srgb, var(--primary) 55%, var(--surface-2));
-  --success: #18a058;
-  --warning: #b7791f;
-  --error: #d6423e;
-  --thinking: #9aa8a2;
-  --code-bg: #f2f5f3;
-  --elevation-1: 0 1px 2px rgba(22, 33, 29, 0.06);
-  --elevation-2: 0 8px 24px rgba(22, 33, 29, 0.1);
-  --elevation-3: 0 16px 48px rgba(22, 33, 29, 0.18);
+  --primary-fill: #0e9f86;
+  --on-primary-fill: #04231d;
+  --primary-hover: #18c9a6;
+  --primary-subtle: #dcf5ef;
+  /* Keyboard focus for buttons/links only; form controls have no focus stroke. */
+  --focus-ring: color-mix(in srgb, var(--primary) 35%, transparent);
+  /* The composer is a white card on a white canvas: layering comes from a soft
+     shadow, never a focus stroke. */
+  --composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --composer-shadow-focus: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 20px rgba(0, 0, 0, 0.09);
+  /* The only colour on the base skin: running / online / progress. */
+  --accent: #0e9f86;
+  --accent-soft: rgba(14, 159, 134, 0.12);
+  --on-accent: #04231d;
+  --success: #16a34a;
+  --warning: #d97706;
+  --error: #dc2626;
+  --thinking: #81858c;
+  --code-bg: #f9fafb;
+  --selection: #e8f5f1;
+  --scrim: rgba(0, 0, 0, 0.24);
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --elevation-2: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --elevation-3: 0 20px 48px rgba(0, 0, 0, 0.14);
+  /* Controls get depth from a 1px shadow + a top sheen, not from heavy borders. */
+  --ctl-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+  --ctl-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --primary-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 55%);
+  --bubble-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
+  /* Brand mark only — gradients are not used anywhere else. */
   --grad: linear-gradient(135deg, #0e9f86, #18c9a6);
 }
 
 :root[data-theme='dark'] {
-  --bg: #0b110f;
-  --surface: #161f1b;
-  --surface-2: #1e2823;
-  --surface-solid: #161f1b;
-  --surface-2-solid: #1e2823;
-  --border: #293430;
-  --text-primary: #e7efeb;
-  --text-secondary: #a2b0aa;
-  --text-muted: #6d7c75;
-  --primary: #2bc7a4;
-  --primary-deep: #4ad8b8;
-  --primary-subtle: #12332b;
-  --success: #4cc38a;
-  --warning: #e0b14a;
-  --error: #f26d6d;
-  --thinking: #85938c;
-  --code-bg: #101815;
-  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --elevation-2: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --elevation-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --bg: #151517;
+  --canvas: #151517;
+  --surface: #1b1b1c;
+  --card: #202022;
+  --card-hover: #262628;
+  --surface-2: #232324;
+  --surface-3: #2c2c2e;
+  --surface-solid: #1b1b1c;
+  --surface-2-solid: #232324;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --hairline: rgba(255, 255, 255, 0.06);
+  --text-primary: #f5f6f7;
+  --text-secondary: #b9bdc3;
+  --text-muted: #8a8f96;
+  --text-disabled: #5c6068;
+  --primary: #45e0c2;
+  --primary-deep: #45e0c2;
+  --primary-fill: #45e0c2;
+  --on-primary-fill: #04231d;
+  --primary-hover: #6fefd5;
+  --primary-subtle: rgba(69, 224, 194, 0.12);
+  --composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --composer-shadow-focus: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.4);
+  --accent: #45e0c2;
+  --accent-soft: rgba(69, 224, 194, 0.14);
+  --on-accent: #04231d;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --thinking: #8a8f96;
+  --code-bg: #1b1b1c;
+  --selection: #143029;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --elevation-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --elevation-3: 0 20px 48px rgba(0, 0, 0, 0.6);
+  --ctl-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
+  --ctl-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --primary-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(0, 0, 0, 0.1));
+  --bubble-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   --grad: linear-gradient(135deg, #2bc7a4, #4ad8b8);
 }
 
 /*
- * Another palette? Add a `:root[data-skin='<id>'] { --bg: …; }` block here and
- * register that id in `ui/skins.ts` — it then shows up in 设置 → 外观 → 皮肤.
- * This file is colours only; anything animated or pointer-driven is code, see
- * `ui/fx/` and `ui/SkinFx.tsx`.
+ * Other skins: add a `:root[data-skin='<id>']` block (light) and a
+ * `:root[data-skin='<id>'][data-theme='dark']` block, then register the id in
+ * `ui/skins.ts`. Colour only — never radii, spacing or fonts. Anything animated
+ * or pointer-driven is code, see `ui/fx/` and `ui/SkinFx.tsx`.
  */
 
 /*
@@ -98,17 +141,18 @@
   --surface-2: transparent;
 }
 
-/* Desktop density: 48px touch targets shrink, radii tighten, blocks compress. */
+/* Desktop density (v2.1): cards 16, modals 20, controls 10, buttons 34. */
 :root {
-  --r-card: 10px;
-  --r-bubble: 12px;
-  --r-modal: 12px;
+  --r-card: 16px;
+  --r-bubble: 16px;
+  --r-modal: 20px;
+  --r-control: 10px;
   --space-block: 18px;
-  --ctl-h: 30px;
+  --ctl-h: 34px;
   --rail-w: 300px;
-  --font-ui: -apple-system, 'Segoe UI', Inter, 'Noto Sans SC', Roboto, 'PingFang SC', 'Microsoft YaHei',
-    sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Inter, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
 }
 
 * {

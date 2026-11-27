@@ -26,7 +26,7 @@ export const ASIDE_MAX = 880;
 
 interface AppearanceState {
   theme: ThemePreference;
-  /** Effect-layer skin — a second axis on top of light/dark (see `ui/skins`). */
+  /** Built-in look (palette + optional effect) — a second axis on top of light/dark (see `ui/skins`). */
   skin: SkinId;
   zoom: number;
   /** Diff rendering mode for the file panel — a display preference, not file state. */
@@ -180,8 +180,8 @@ function persist(state: Stored): void {
 export function applyAppearance(state: Stored): void {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   document.documentElement.dataset['theme'] = resolveTheme(state.theme, media.matches);
-  // The skin is an effect layer, not a colour scheme — `ui/SkinFx` reads the same
-  // value back through the store. Kept on the DOM too so CSS can target it.
+  // A skin is a palette plus an optional effect — CSS reads it for colour
+  // overrides, `ui/SkinFx` reads the same value back through the store.
   document.documentElement.dataset['skin'] = state.skin;
   // `data-fx` lets CSS know an effect is live: `--page-bg` (tokens.css) goes
   // transparent off it, so the canvas is not covered by page backdrops.

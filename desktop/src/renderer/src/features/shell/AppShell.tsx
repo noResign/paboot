@@ -30,6 +30,7 @@ import { comboLabel, isEditableTarget, isModifierless, matchShortcut } from '../
 import { IS_MAC } from '../../ui/platform';
 import { createWindowFocus } from './windowFocus';
 import { PersonalWelcome } from './PersonalWelcome';
+import { ActivityBar, type ShellPage } from './ActivityBar';
 import type { PaletteItem } from '../../commands/palette';
 import { runtimeIdentity } from '../../../../shared/runtime-identity';
 import type { SessionDto } from '../../../../shared/contract';
@@ -37,7 +38,8 @@ import type { SessionDto } from '../../../../shared/contract';
 /** One per renderer process — see `windowFocus.ts` for why it is memoized. */
 const windowFocus = createWindowFocus(() => window.paboot.focusSession());
 
-type Page = 'chat' | 'settings' | 'tasks';
+type Page = ShellPage;
+const ACTIVITY_BAR_WIDTH = 48;
 
 /**
  * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
@@ -368,7 +370,6 @@ export function AppShell() {
   const currentIsVisible = shownWorkspaces.some((workspace) => workspace.id === workspaceId);
   const showWorkspaceSelect =
     shownWorkspaces.length > 1 || (shownWorkspaces.length === 1 && !currentIsVisible);
-  const runningCount = sessions.filter((session) => session.running).length;
   /*
    * Four columns are more than a 1280–1440 window can hold. The panel's width
    * is capped so the chat keeps CHAT_FLOOR even at the aside's maximum; the
@@ -376,14 +377,15 @@ export function AppShell() {
    * windows), and never when the conversation column is collapsed — there is
    * nothing to protect then.
    */
-  const railSpace = railVisible ? railWidth : 44;
+  const railSpace =
+    ACTIVITY_BAR_WIDTH + (page === 'chat' ? (railVisible ? railWidth : 44) : 0);
   const maxAsideWidth = Math.max(ASIDE_MIN, viewportWidth - railSpace - CHAT_FLOOR);
   const effectiveAsideWidth = Math.min(asideWidth, maxAsideWidth);
   const starveIfRailShown =
     asideVisible &&
     chatVisible &&
     page === 'chat' &&
-    viewportWidth - railWidth - effectiveAsideWidth < CHAT_FLOOR;
+    viewportWidth - ACTIVITY_BAR_WIDTH - railWidth - effectiveAsideWidth < CHAT_FLOOR;
   const railStarved = railVisible && starveIfRailShown;
 
   /**
@@ -560,6 +562,10 @@ export function AppShell() {
     'new-session': () => setNewSessionOpen(true),
     'toggle-rail': toggleRailOrMakeRoom,
     'go-sessions': () => setPage('chat'),
+    'go-tasks': () => {
+      setTaskFilter(null);
+      setPage('tasks');
+    },
     'go-settings': () => openSettings(),
     back: goBack,
     refresh,
@@ -699,7 +705,16 @@ export function AppShell() {
 
   return (
     <div className={`shell${IS_MAC ? ' darwin' : ''}`}>
-      {(!railVisible || railStarved) && (
+      <ActivityBar
+        page={page}
+        onGoChat={() => setPage('chat')}
+        onGoTasks={() => {
+          setTaskFilter(null);
+          setPage('tasks');
+        }}
+        onGoSettings={() => openSettings()}
+      />
+      {page === 'chat' && (!railVisible || railStarved) && (
         // Collapsed leaves a strip rather than nothing: without it the only way
         // back is ⌘B or the palette, both invisible (matches the right panel's
         // collapse-to-44px in the design preview). The same strip covers the
@@ -722,7 +737,7 @@ export function AppShell() {
           </button>
         </div>
       )}
-      {railVisible && !railStarved && (
+      {page === 'chat' && railVisible && !railStarved && (
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
             <ConnectionSwitcher />
@@ -792,31 +807,6 @@ export function AppShell() {
           </div>
 
           <div className="rail-foot">
-            <button
-              className={`rail-foot-row${page === 'tasks' ? ' active' : ''}`}
-              title="定时任务"
-              onClick={() => {
-                setTaskFilter(null);
-                setPage('tasks');
-              }}
-            >
-              <Icon name="clock" size={15} />
-              <span className="rail-foot-label">定时任务</span>
-            </button>
-            <button
-              className={`rail-foot-row${page === 'settings' ? ' active' : ''}`}
-              title="设置"
-              onClick={() => openSettings()}
-            >
-              <Icon name="settings" size={15} />
-              <span className="rail-foot-label">设置</span>
-            </button>
-            {runningCount > 0 && (
-              <div className="rail-running-row" title={`${runningCount} 个任务正在本地 daemon 上运行`}>
-                <span className="live-dot" />
-                {runningCount} 个任务运行中
-              </div>
-            )}
             <div className="rail-foot-utils">
               <button
                 className="rail-palette"
@@ -845,15 +835,15 @@ export function AppShell() {
 
       <main className="main">
         {page === 'settings' ? (
-          <SettingsPage onBack={goBack} section={settingsSection} onSectionChange={setSettingsSection} />
+          <SettingsPage section={settingsSection} onSectionChange={setSettingsSection} />
         ) : page === 'tasks' ? (
           <TasksPage
             connectionId={connectionId}
-            workspaceId={workspaceId || null}
-            workspaceName={selectedWorkspaceLabel}
+            currentWorkspaceId={workspaceId || null}
+            workspaces={scope.workspaces}
             taskFilter={taskFilter}
             onClearTaskFilter={() => setTaskFilter(null)}
-            onOpenSession={(id) => select(id)}
+            onOpenSession={openSessionIn}
           />
         ) : (
           <div className="chat-row">

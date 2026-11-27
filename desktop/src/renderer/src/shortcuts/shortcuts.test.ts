@@ -32,6 +32,12 @@ describe('matchShortcut', () => {
     expect(matchShortcut(key({ key: 'k', ctrlKey: true }))?.id).toBe('command-palette');
   });
 
+  it('maps the activity-bar destinations', () => {
+    expect(matchShortcut(key({ key: '1', metaKey: true }))?.id).toBe('go-sessions');
+    expect(matchShortcut(key({ key: '2', metaKey: true }))?.id).toBe('go-tasks');
+    expect(matchShortcut(key({ key: ',', metaKey: true }))?.id).toBe('go-settings');
+  });
+
   it('returns null for an unbound key', () => {
     expect(matchShortcut(key({ key: 'q', metaKey: true }))).toBeNull();
   });
