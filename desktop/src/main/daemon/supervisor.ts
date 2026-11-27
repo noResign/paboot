@@ -275,7 +275,7 @@ export class DaemonSupervisor {
     // we did not spawn. The daemon's own lock would refuse us too, but only
     // after spawning a child and reading its log back.
     if (this.livePid() !== null) {
-      return { ok: false, code: 'already_running', message: '本机 daemon 已经在运行' };
+      return { ok: false, code: 'already_running', message: '本地 daemon 已经在运行' };
     }
 
     let env: Record<string, string>;

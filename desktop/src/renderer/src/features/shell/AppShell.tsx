@@ -812,7 +812,7 @@ export function AppShell() {
               <span className="rail-foot-label">设置</span>
             </button>
             {runningCount > 0 && (
-              <div className="rail-running-row" title={`${runningCount} 个任务正在本机 daemon 上运行`}>
+              <div className="rail-running-row" title={`${runningCount} 个任务正在本地 daemon 上运行`}>
                 <span className="live-dot" />
                 {runningCount} 个任务运行中
               </div>

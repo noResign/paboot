@@ -264,7 +264,7 @@ export function ProviderSection() {
   return (
     <section className="settings-section">
       <div className="section-head">
-        <h3>模型 Provider</h3>
+        <h3>模型</h3>
         <button className="btn primary" disabled={busy} onClick={openCreate}>新增 Provider</button>
       </div>
       <div className="hint">

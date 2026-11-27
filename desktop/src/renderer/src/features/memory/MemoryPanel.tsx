@@ -800,7 +800,7 @@ export function MemoryPanel({ workspaceId, workspaceName, family, onClose }: Pro
                     ? '记忆状态加载失败；列表仍可正常浏览。'
                     : model
                       ? '当前记忆模型不可用：请检查 Provider 的 Key、启用状态和模型目录。'
-                      : '到「模型 Provider」勾选「用于记忆」后自动整理。'}
+                      : '到「模型」勾选「用于记忆」后自动整理。'}
                 </p>
               )
             )}

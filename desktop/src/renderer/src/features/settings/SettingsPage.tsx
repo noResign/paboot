@@ -44,10 +44,10 @@ export type SettingsSection =
 
 const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'connection', label: '连接' },
-  { id: 'daemon', label: '本机 daemon' },
+  { id: 'daemon', label: 'Daemon' },
   { id: 'workspaces', label: '工作区' },
   { id: 'agents', label: '助手' },
-  { id: 'providers', label: '模型 Provider' },
+  { id: 'providers', label: '模型' },
   { id: 'preferences', label: '默认偏好' },
   { id: 'notifications', label: '通知' },
   { id: 'appearance', label: '外观' },
@@ -268,7 +268,7 @@ export function SettingsPage({
                 </dl>
                 <div className="settings-actions">
                   <button className="btn" disabled={probing} onClick={() => void probeNow()}>
-                    {probing ? '探测中…' : '重新探测本机 daemon'}
+                    {probing ? '探测中…' : '重新探测本地 daemon'}
                   </button>
                   <button className="btn danger" onClick={() => void disconnectAll()}>
                     断开全部连接
@@ -279,7 +279,7 @@ export function SettingsPage({
 
             {section === 'daemon' && (
               <section className="settings-section">
-                <h3>本机 daemon</h3>
+                <h3>本地 daemon</h3>
                 {found ? (
                   <>
                     <dl className="kv">
@@ -313,7 +313,7 @@ export function SettingsPage({
                   </>
                 ) : (
                   <div className="hint" style={{ marginTop: 0 }}>
-                    候选表里没有找到本机 daemon（不代表它没在跑）。已试过：
+                    候选表里没有找到本地 daemon（不代表它没在跑）。已试过：
                     <ul className="tried mono">
                       {(probe?.tried ?? []).map((entry) => (
                         <li key={entry}>{entry}</li>
@@ -333,7 +333,7 @@ export function SettingsPage({
             {section === 'daemon' && (
               <section className="settings-section">
                 <div className="section-head">
-                  <h3>本机 daemon 的启停</h3>
+                  <h3>本地 daemon 的启停</h3>
                   <button className="btn tiny" onClick={() => void refreshManaged()}>
                     刷新
                   </button>
@@ -399,7 +399,7 @@ export function SettingsPage({
                   <div className="field">
                     <div className="settings-actions">
                       <button className="btn primary" disabled={daemonBusy} onClick={() => void startManaged()}>
-                        {daemonBusy ? '启动中…' : '启动本机 daemon'}
+                        {daemonBusy ? '启动中…' : '启动本地 daemon'}
                       </button>
                     </div>
                     <div className="hint">
@@ -412,11 +412,11 @@ export function SettingsPage({
                   </div>
                 )}
                 <div className="field">
-                  <label>启动应用时，本机 daemon</label>
+                  <label>启动应用时，本地 daemon</label>
                   <div className="mode-picker">
                     {(
                       [
-                        { value: true, title: '自动启动', desc: '没有运行中的本机 daemon 时自动拉起' },
+                        { value: true, title: '自动启动', desc: '没有运行中的本地 daemon 时自动拉起' },
                         { value: false, title: '只连接已有的', desc: '不自动启动；没有就停在连接页' },
                       ] as const
                     ).map((option) => (
@@ -437,7 +437,7 @@ export function SettingsPage({
                   </div>
                 </div>
                 <div className="field">
-                  <label>退出应用时，本机 daemon</label>
+                  <label>退出应用时，本地 daemon</label>
                   <div className="mode-picker">
                     {(
                       [

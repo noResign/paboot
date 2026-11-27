@@ -381,7 +381,7 @@ async function resolveDaemonOnQuit(): Promise<boolean> {
     const keepByDefault = !ours || facts?.exposed === true || tasks > 0;
     const options: Electron.MessageBoxOptions = {
       type: 'question',
-      message: ours ? '本应用启动的本机 daemon 还在运行' : '本机 daemon 还在运行（不是本应用启动的）',
+      message: ours ? '本应用启动的本地 daemon 还在运行' : '本地 daemon 还在运行（不是本应用启动的）',
       detail:
         (tasks > 0 ? `有 ${tasks} 个任务在跑，停止会中断它们。` : '') +
         '保留的话，手机和其它电脑仍能连上它，正在跑的任务也不会中断；停止则这台机器上的 agent 全部结束。' +

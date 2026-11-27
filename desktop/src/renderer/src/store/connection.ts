@@ -143,7 +143,7 @@ export const useConnection = create<ConnectionState>((set, get) => ({
         set({ booting: false, error: `daemon 起来了但没报告地址（${started.listen ?? '未知'}）` });
         return;
       }
-      await get().connect({ ...bound, token: started.token, name: '本机 daemon（本应用启动）' });
+      await get().connect({ ...bound, token: started.token, name: '本地 daemon（本应用启动）' });
       set({ booting: false });
     } catch (err) {
       set({ booting: false, error: messageOf(err) });

@@ -227,7 +227,7 @@ export class ConnectionManager {
     for (const entry of this.entries.values()) {
       if (!settings.isLoopback(entry.target.host)) continue;
       entry.client = null;
-      entry.error = '本机 daemon 已停止';
+      entry.error = '本地 daemon 已停止';
       entry.serverId = null;
     }
   }
@@ -407,7 +407,7 @@ async function probeOther(baseUrl: string, timeoutMs: number) {
 }
 
 export function discoveredName(found: DiscoveredDaemon): string {
-  return found.hostname || '本机 daemon';
+  return found.hostname || '本地 daemon';
 }
 
 /**

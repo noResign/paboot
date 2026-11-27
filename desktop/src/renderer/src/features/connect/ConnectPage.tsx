@@ -42,7 +42,7 @@ export function ConnectPage() {
 
   // Discovery is a snapshot taken once, at boot (`App` calls `boot()`). It knows
   // nothing about a daemon started or stopped afterwards — including one this
-  // page launched itself. Re-probe on every mount so the「本机 daemon」block shows
+  // page launched itself. Re-probe on every mount so the「本地 daemon」block shows
   // live state instead of a stale「没找到」while a daemon is in fact running.
   useEffect(() => {
     void probeNow();
@@ -125,7 +125,7 @@ export function ConnectPage() {
       setSpawnError(`daemon 起来了但没报告地址（${res.listen ?? '未知'}）`);
       return;
     }
-    await connect({ ...bound, token: res.token, name: '本机 daemon（本应用启动）' });
+    await connect({ ...bound, token: res.token, name: '本地 daemon（本应用启动）' });
   }
 
   async function connectRemote(): Promise<void> {
@@ -247,7 +247,7 @@ export function ConnectPage() {
           </div>
         )}
 
-        <div className="section-label">本机 daemon</div>
+        <div className="section-label">本地 daemon</div>
         <LocalDaemonBlock
           probing={probing}
           found={found}
@@ -261,7 +261,7 @@ export function ConnectPage() {
 
         {spawnOpen && (
           <div className="local-block" style={{ marginTop: 10 }}>
-            <div className="local-title">启动一个本机 daemon</div>
+            <div className="local-title">启动一个本地 daemon</div>
             <div className="hint" style={{ marginTop: 0 }}>
               会默认进入内置「个人空间」工作区；
               启动后可在「工作区」里添加自己的项目目录。
@@ -356,7 +356,7 @@ function LocalDaemonBlock(props: LocalBlockProps) {
     return (
       <div className="local-block">
         <div className="local-title">
-          <span className="dot" /> 正在查找本机 daemon…
+          <span className="dot" /> 正在查找本地 daemon…
         </div>
       </div>
     );
@@ -367,7 +367,7 @@ function LocalDaemonBlock(props: LocalBlockProps) {
       <button className="local-block found local-pick" onClick={() => onPick(found)} title="直接连接这台 daemon">
         <div className="local-title">
           <span className="dot ok" />
-          本机 daemon · v{found.version}
+          本地 daemon · v{found.version}
           <Icon name="chevron-right" size={16} className="local-pick-arrow" />
         </div>
         <div className="local-meta mono">
@@ -386,7 +386,7 @@ function LocalDaemonBlock(props: LocalBlockProps) {
   return (
     <div className="local-block">
       <div className="local-title">
-        <span className="dot warn" /> 没找到本机 daemon
+        <span className="dot warn" /> 没找到本地 daemon
       </div>
       <div className="local-meta">
         探测不出来只说明候选表里没有——不代表它没在跑。已试过：
@@ -406,7 +406,7 @@ function LocalDaemonBlock(props: LocalBlockProps) {
           它跑在别的地址 → 填地址连接
         </button>
         <button className="choice" onClick={onStart}>
-            确实没在跑 → 启动一个本机 daemon
+            确实没在跑 → 启动一个本地 daemon
           </button>
       </div>
     </div>
