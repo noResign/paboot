@@ -286,6 +286,14 @@ agent」，**创建后不可更换**，也没有换 leader 的端点；要换主
   本身超过总预算时才截断，并在文本中明确标注 `（已截断）`。
 - **端点**：
   - `GET /api/workspaces/:id/agents`、`POST /api/workspaces/:id/agents`
+  - `POST /api/workspaces/:id/agent-definition-draft`：用 builtin 默认模型（第一个可用
+    provider/model）一次补全，根据 `{name, summary?, includeWorkspace?}` 起草助手「定义」，
+    返回 `{instructions}`；不建会话、不落库。`includeWorkspace=true` 时把工作区名、端
+    （名称/summary/notes/目录名）、verified 知识标题、顶层目录名拼进 prompt（**不含文件内容**）。
+    未配置可用 provider → 409 `no_provider`
+  - `POST /api/workspaces/:id/agent-draft`：`{idea, includeWorkspace?}` → `{name, summary, instructions}`。
+    根据一句描述一次起草**整个助手**；模型返回 JSON，解析失败 → 502 `bad_response`，
+    名字/简介超 40 字截断。同样不建会话、不落库；未配置 provider → 409 `no_provider`
   - `GET|PATCH|DELETE /api/agent-profiles/:id`
   - `GET|POST /api/sessions/:id/agents`、`DELETE /api/sessions/:id/agents/:agentId`、
     `POST /api/sessions/:id/agents/:agentId/reset-context`

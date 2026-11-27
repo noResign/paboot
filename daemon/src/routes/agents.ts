@@ -6,6 +6,9 @@ import {
   assertWritableSlotFree,
   backendFor,
   createAgent,
+  draftAgentDefinition,
+  draftAgentFromIdea,
+  DefinitionDraftError,
   getAgent,
   listAgents,
   listThreads,
@@ -25,6 +28,7 @@ import type {
   SessionAgentDto,
 } from '../types/api.js';
 import { isProductPermissionMode } from '../permissions/permission-mode.js';
+import { asyncRoute } from '../http/async-route.js';
 
 /**
  * Agent CRUD, room membership, and per-agent conversation resets.
@@ -237,6 +241,63 @@ export function registerAgentsRoutes(app: Express, ctx: AppContext): void {
       sendAgentError(res, err);
     }
   });
+
+  /**
+   * Draft an assistant's long-form definition from its name/summary, optionally
+   * grounded in the workspace's own facts (ends, knowledge titles, top dirs).
+   * One tool-free completion; nothing is persisted — the client fills the editor.
+   */
+  app.post(
+    '/api/workspaces/:id/agent-definition-draft',
+    asyncRoute(async (req, res) => {
+      const workspace = workspaceOr404(ctx, req.params.id!, res);
+      if (!workspace) return;
+      const body = (req.body ?? {}) as {
+        name?: unknown;
+        summary?: unknown;
+        includeWorkspace?: unknown;
+      };
+      try {
+        const result = await draftAgentDefinition(ctx, {
+          workspaceId: workspace.id,
+          name: typeof body.name === 'string' ? body.name : '',
+          summary: typeof body.summary === 'string' ? body.summary : undefined,
+          includeWorkspace: body.includeWorkspace === true,
+        });
+        res.json(result);
+      } catch (err) {
+        if (err instanceof DefinitionDraftError) {
+          res.status(err.status).json({ error: err.message, code: err.code });
+          return;
+        }
+        throw err;
+      }
+    }),
+  );
+
+  /** Draft a whole assistant (name/summary/definition) from a free-form idea. */
+  app.post(
+    '/api/workspaces/:id/agent-draft',
+    asyncRoute(async (req, res) => {
+      const workspace = workspaceOr404(ctx, req.params.id!, res);
+      if (!workspace) return;
+      const body = (req.body ?? {}) as { idea?: unknown; includeWorkspace?: unknown };
+      try {
+        const result = await draftAgentFromIdea(ctx, {
+          workspaceId: workspace.id,
+          idea: typeof body.idea === 'string' ? body.idea : '',
+          includeWorkspace: body.includeWorkspace === true,
+        });
+        res.json(result);
+      } catch (err) {
+        if (err instanceof DefinitionDraftError) {
+          res.status(err.status).json({ error: err.message, code: err.code });
+          return;
+        }
+        throw err;
+      }
+    }),
+  );
 
   app.get('/api/agent-profiles/:id', (req, res) => {
     const agent = getAgent(ctx.db, req.params.id!);

@@ -15,6 +15,9 @@ export const ROUTES = {
   // Agent profiles（会话里的「助手」）——与上面 `agents`（runtime 插件清单）区分：
   // 那个列的是能驱动的后端，这个管的是房间里干活的那个助手。
   workspaceAgents: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/agents`,
+  workspaceAgentDefinitionDraft: (id: string) =>
+    `/api/workspaces/${encodeURIComponent(id)}/agent-definition-draft`,
+  workspaceAgentDraft: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/agent-draft`,
   agentProfiles: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}`,
   // Cross-machine sharing (P3).
   agentExposed: (id: string) => `/api/agent-profiles/${encodeURIComponent(id)}/exposed`,

@@ -14,6 +14,10 @@ import type {
   StreamSpec,
 } from '../../../shared/ipc';
 import type {
+  AgentDefinitionDraftRequest,
+  AgentDefinitionDraftResponse,
+  AgentDraftRequest,
+  AgentDraftResponse,
   AgentModelsResponse,
   AgentProfileDetailResponse,
   AgentProfileRequest,
@@ -304,6 +308,22 @@ export const api = {
     }),
   agentProfile: (id: string) =>
     request<AgentProfileDetailResponse>({ method: 'GET', path: ROUTES.agentProfiles(id) }),
+  // These call a model: they need more than the 15s default, and less than the
+  // daemon's own abort so its readable error wins.
+  draftAgentDefinition: (workspaceId: string, body: AgentDefinitionDraftRequest) =>
+    request<AgentDefinitionDraftResponse>({
+      method: 'POST',
+      path: ROUTES.workspaceAgentDefinitionDraft(workspaceId),
+      body,
+      timeoutMs: 45_000,
+    }),
+  draftAgentFromIdea: (workspaceId: string, body: AgentDraftRequest) =>
+    request<AgentDraftResponse>({
+      method: 'POST',
+      path: ROUTES.workspaceAgentDraft(workspaceId),
+      body,
+      timeoutMs: 45_000,
+    }),
   updateAgentProfile: (id: string, body: AgentProfileRequest) =>
     request<AgentProfileDetailResponse>({
       method: 'PATCH',

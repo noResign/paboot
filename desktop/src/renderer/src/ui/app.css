@@ -2010,8 +2010,28 @@ button.end-chip {
 .agent-create-row > select {
   flex: 0 0 180px;
 }
-.agent-create-grid textarea,
-.agent-edit-form textarea {
+.agent-instructions-field {
+  display: grid;
+  gap: 6px;
+}
+.agent-field-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.agent-field-head > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.agent-field-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-section textarea {
   width: 100%;
   min-height: 104px;
   padding: 8px 10px;
@@ -2025,13 +2045,48 @@ button.end-chip {
   resize: vertical;
   outline: none;
 }
-.agent-create-grid textarea:focus,
-.agent-edit-form textarea:focus {
+.agent-section textarea:focus {
   border-color: var(--primary);
 }
-.agent-create-grid textarea.agent-instructions,
-.agent-edit-form textarea.agent-instructions {
+.agent-section textarea.agent-instructions {
   min-height: 150px;
+}
+
+.agent-idea {
+  border: 1px dashed var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface-2, var(--surface));
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.agent-idea .hint {
+  margin-top: 0;
+}
+.agent-section .agent-idea textarea {
+  min-height: 64px;
+}
+.agent-idea-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.agent-idea-actions .btn {
+  margin-left: auto;
+}
+.agent-manual-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-manual-toggle .btn {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.agent-manual-toggle .hint {
+  margin-top: 0;
 }
 .agent-create-actions {
   display: flex;
@@ -5365,7 +5420,7 @@ a.btn {
   }
 }
 
-/* ---------- providers section (settings → 模型 Provider) ---------- */
+/* ---------- providers section (settings → 模型) ---------- */
 .provider-list,
 .provider-editor,
 .provider-model-list {

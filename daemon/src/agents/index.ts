@@ -71,6 +71,16 @@ export {
   type CreateTurnInput,
 } from './turns.js';
 
+export {
+  draftAgentDefinition,
+  draftAgentFromIdea,
+  DefinitionDraftError,
+  type DraftAgentInput,
+  type DraftAgentResult,
+  type DraftDefinitionDeps,
+  type DraftDefinitionInput,
+} from './definition-draft.js';
+
 export { runTask, runTurn, type TaskOutcome, type TaskRunnerDeps } from './task-runner.js';
 
 export { getLeader, listSessionAgents } from './store.js';

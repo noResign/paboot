@@ -65,6 +65,13 @@ export function AgentSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** AI drafting is one shared request, used by both the create and edit forms. */
+  const [generating, setGenerating] = useState(false);
+  const [useWorkspaceContext, setUseWorkspaceContext] = useState(false);
+  /** Free-form description for "AI 起草" (whole assistant, not just a field). */
+  const [idea, setIdea] = useState('');
+  /** The manual create fields stay collapsed until wanted (or after AI drafts). */
+  const [manualOpen, setManualOpen] = useState(false);
   /** Inline editor for an existing definition; only name/summary are editable here. */
   const [editing, setEditing] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
@@ -161,6 +168,78 @@ export function AgentSection() {
     return friendlyMessage(apiCode, res.status, message, '操作失败');
   }
 
+  /**
+   * Draft the definition with the builtin model from the current name/summary.
+   * Fills the editor only; the user still edits and saves.
+   */
+  async function generateDefinition(target: 'create' | 'edit'): Promise<void> {
+    if (!selected) return;
+    const name = (target === 'create' ? draft.name : editDraft.name).trim();
+    if (!name) {
+      setError('先填这个名字，再生成定义');
+      return;
+    }
+    const summary = (target === 'create' ? draft.summary : editDraft.summary).trim();
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.draftAgentDefinition(selected.id, {
+        name,
+        ...(summary ? { summary } : {}),
+        includeWorkspace: useWorkspaceContext,
+      });
+      if (!res.ok) {
+        setError(
+          res.status === 404 ? '当前 daemon 版本不支持 AI 生成，升级后再试' : errorText(res),
+        );
+        return;
+      }
+      if (target === 'create') {
+        setDraft((current) => ({ ...current, instructions: res.data.instructions }));
+      } else {
+        setEditDraft((current) => ({ ...current, instructions: res.data.instructions }));
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  /** Draft name + summary + definition from a description; fills the form only. */
+  async function draftFromIdea(): Promise<void> {
+    if (!selected) return;
+    const text = idea.trim();
+    if (!text) {
+      setError('先描述一下你想要什么样的助手');
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.draftAgentFromIdea(selected.id, {
+        idea: text,
+        includeWorkspace: useWorkspaceContext,
+      });
+      if (!res.ok) {
+        setError(
+          res.status === 404 ? '当前 daemon 版本不支持 AI 起草，升级后再试' : errorText(res),
+        );
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        name: res.data.name,
+        summary: res.data.summary,
+        instructions: res.data.instructions,
+      }));
+      // Show the filled-in fields so the user can review before creating.
+      setManualOpen(true);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   async function create(): Promise<void> {
     const name = draft.name.trim();
     if (!selected || !name) {
@@ -184,6 +263,7 @@ export function AgentSection() {
       return;
     }
     setDraft((current) => ({ ...current, name: '', summary: '', instructions: '' }));
+    setIdea('');
     setNotice(`已创建「${res.data.agent.name}」。在会话里输入 @ 即可把它拉进房间。`);
     await load();
     setBusy(false);
@@ -505,16 +585,41 @@ export function AgentSection() {
                       setEditDraft((current) => ({ ...current, summary: event.target.value }))
                     }
                   />
-                  <textarea
-                    className="agent-instructions"
-                    value={editDraft.instructions}
-                    placeholder="定义（可选）：告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
-                    maxLength={20000}
-                    rows={6}
-                    onChange={(event) =>
-                      setEditDraft((current) => ({ ...current, instructions: event.target.value }))
-                    }
-                  />
+                  <div className="agent-instructions-field">
+                    <div className="agent-field-head">
+                      <span>定义（可选）</span>
+                      <div className="agent-field-head-actions">
+                        <label
+                          className="agent-toggle"
+                          title="会把工作区的名称、端、知识标题、顶层目录名发给模型（不含文件内容）"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={useWorkspaceContext}
+                            onChange={(event) => setUseWorkspaceContext(event.target.checked)}
+                          />
+                          参考当前工作区
+                        </label>
+                        <button
+                          className="btn ghost"
+                          disabled={generating || !editDraft.name.trim()}
+                          onClick={() => void generateDefinition('edit')}
+                        >
+                          {generating ? '生成中…' : '重写定义'}
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      className="agent-instructions"
+                      value={editDraft.instructions}
+                      placeholder="告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
+                      maxLength={20000}
+                      rows={6}
+                      onChange={(event) =>
+                        setEditDraft((current) => ({ ...current, instructions: event.target.value }))
+                      }
+                    />
+                  </div>
                   <div className="agent-edit-actions">
                     <button
                       className="btn primary"
@@ -643,6 +748,44 @@ export function AgentSection() {
             简介会展示给用户，也会进入其他 agent 的房间名册——写「能做什么」而不是「很强大」。
           </span>
         </div>
+        <div className="agent-idea">
+          <textarea
+            value={idea}
+            placeholder="描述你想要的助手：它帮你做什么、关注什么、不要做什么…"
+            maxLength={1000}
+            rows={2}
+            onChange={(event) => setIdea(event.target.value)}
+          />
+          <div className="agent-idea-actions">
+            <label
+              className="agent-toggle"
+              title="会把工作区的名称、端、知识标题、顶层目录名发给模型（不含文件内容）"
+            >
+              <input
+                type="checkbox"
+                checked={useWorkspaceContext}
+                onChange={(event) => setUseWorkspaceContext(event.target.checked)}
+              />
+              参考当前工作区
+            </label>
+            <button
+              className="btn primary"
+              disabled={generating || !idea.trim()}
+              onClick={() => void draftFromIdea()}
+            >
+              {generating ? '起草中…' : 'AI 起草'}
+            </button>
+          </div>
+          <span className="hint">AI 会生成名称、简介和定义填到下面的表单里，你可以再改。</span>
+        </div>
+        <div className="agent-manual-toggle">
+          <button className="btn ghost" onClick={() => setManualOpen((open) => !open)}>
+            {manualOpen ? '收起手动填写' : '手动填写'}
+          </button>
+          {!manualOpen && <span className="hint">不想用 AI 就手动填</span>}
+        </div>
+        {manualOpen && (
+          <>
         <div className="agent-create-grid">
           <div className="agent-create-row">
             <input
@@ -670,16 +813,30 @@ export function AgentSection() {
             maxLength={40}
             onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))}
           />
-          <textarea
-            className="agent-instructions"
-            value={draft.instructions}
-            placeholder="定义（可选）：告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
-            maxLength={20000}
-            rows={6}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, instructions: event.target.value }))
-            }
-          />
+          <div className="agent-instructions-field">
+            <div className="agent-field-head">
+              <span>定义（可选）</span>
+              <div className="agent-field-head-actions">
+                <button
+                  className="btn ghost"
+                  disabled={generating || !draft.name.trim()}
+                  onClick={() => void generateDefinition('create')}
+                >
+                  {generating ? '生成中…' : '重写定义'}
+                </button>
+              </div>
+            </div>
+            <textarea
+              className="agent-instructions"
+              value={draft.instructions}
+              placeholder="告诉它它是谁、该怎么工作。会作为这个助手的系统提示，不进入房间名册。"
+              maxLength={20000}
+              rows={6}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, instructions: event.target.value }))
+              }
+            />
+          </div>
         </div>
         <label className="agent-toggle">
           <input
@@ -700,6 +857,8 @@ export function AgentSection() {
             {busy ? '正在处理…' : '创建'}
           </button>
         </div>
+          </>
+        )}
       </div>
 
       {notice && <div className="agent-notice">{notice}</div>}

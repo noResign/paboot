@@ -1329,6 +1329,30 @@ export interface CreateTurnResponse {
   tasks: { id: string; agentId: string; source: string; status: string }[];
 }
 
+/** `POST /api/workspaces/:id/agent-definition-draft` — AI 起草助手「定义」。 */
+export interface AgentDefinitionDraftRequest {
+  name: string;
+  summary?: string;
+  /** 是否把工作区的概要（端 / 知识标题 / 顶层目录）一起发给模型。 */
+  includeWorkspace?: boolean;
+}
+
+export interface AgentDefinitionDraftResponse {
+  instructions: string;
+}
+
+/** `POST /api/workspaces/:id/agent-draft` — AI 从一句描述起草整个助手。 */
+export interface AgentDraftRequest {
+  idea: string;
+  includeWorkspace?: boolean;
+}
+
+export interface AgentDraftResponse {
+  name: string;
+  summary: string;
+  instructions: string;
+}
+
 /** 新建 / 编辑 agent 的请求体；字段都可选，服务端只改传了的。 */
 export interface AgentProfileRequest {
   name?: string;

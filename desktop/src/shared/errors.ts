@@ -102,6 +102,13 @@ export function friendlyMessage(
       return '图片不存在或已过期，请重新上传';
     case 'attachment_forbidden':
       return '这张图片属于其他会话，请重新上传';
+    // agent definition drafting
+    case 'no_provider':
+      return '还没有可用的模型：到设置 →「模型」配置一个 Provider 后重试';
+    case 'model_unavailable':
+      return `模型不可用：${message}`;
+    case 'generation_timeout':
+      return '生成超时了，稍后再试（模型可能较慢）';
 
     // permissions
     case 'bad_response':
