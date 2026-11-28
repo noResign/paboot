@@ -1,12 +1,14 @@
 package com.noresign.paboot.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,7 +32,12 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -66,6 +73,7 @@ internal fun InputBar(
 ) {
     val sendable = input.text.isNotBlank() || attachments.any { it.remoteId != null }
     val density = LocalDensity.current
+    var preview by remember { mutableStateOf<AttachmentDraft?>(null) }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (attachments.isNotEmpty()) {
             LazyRow(
@@ -75,7 +83,7 @@ internal fun InputBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(attachments, key = { it.localId }) { attachment ->
-                    AttachmentChip(attachment, onRemoveAttachment)
+                    AttachmentChip(attachment, onRemoveAttachment, onPreview = { preview = it })
                 }
             }
         }
@@ -190,10 +198,33 @@ internal fun InputBar(
             }
         }
     }
+    preview?.let { image ->
+        Dialog(onDismissRequest = { preview = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = image.previewUri,
+                    contentDescription = "图片预览",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable { preview = null },
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun AttachmentChip(attachment: AttachmentDraft, onRemove: (String) -> Unit) {
+private fun AttachmentChip(
+    attachment: AttachmentDraft,
+    onRemove: (String) -> Unit,
+    onPreview: (AttachmentDraft) -> Unit,
+) {
     Box(modifier = Modifier.size(64.dp)) {
         AsyncImage(
             model = attachment.previewUri,
@@ -202,7 +233,8 @@ private fun AttachmentChip(attachment: AttachmentDraft, onRemove: (String) -> Un
             modifier = Modifier
                 .size(64.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { onPreview(attachment) },
         )
         if (attachment.uploading) {
             Box(

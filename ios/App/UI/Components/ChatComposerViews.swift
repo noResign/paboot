@@ -185,6 +185,15 @@ final class ChatInputBar: UIView {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(imageView)
 
+        let open = UIButton(type: .custom)
+        open.translatesAutoresizingMaskIntoConstraints = false
+        open.accessibilityLabel = "查看大图"
+        open.addAction(
+            UIAction { [weak self] _ in self?.presentPreview(draft) },
+            for: .touchUpInside
+        )
+        box.addSubview(open)
+
         let remove = UIButton(type: .system)
         remove.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         remove.tintColor = .white
@@ -214,12 +223,34 @@ final class ChatInputBar: UIView {
             imageView.bottomAnchor.constraint(equalTo: box.bottomAnchor),
             imageView.leadingAnchor.constraint(equalTo: box.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+            open.topAnchor.constraint(equalTo: box.topAnchor),
+            open.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            open.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+            open.trailingAnchor.constraint(equalTo: box.trailingAnchor),
             remove.topAnchor.constraint(equalTo: box.topAnchor, constant: 2),
             remove.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -2),
             remove.widthAnchor.constraint(equalToConstant: 20),
             remove.heightAnchor.constraint(equalToConstant: 20),
         ])
         return box
+    }
+
+    private func presentPreview(_ draft: ChatAttachmentDraft) {
+        guard let image = UIImage(data: draft.previewData) else { return }
+        guard let host = owningViewController else { return }
+        let controller = ChatAttachmentPreviewViewController(image: image)
+        controller.modalPresentationStyle = .overFullScreen
+        controller.modalTransitionStyle = .crossDissolve
+        host.present(controller, animated: true)
+    }
+
+    private var owningViewController: UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return nil
     }
 
     @objc private func textChanged() {
@@ -697,5 +728,45 @@ final class TodoPanelView: UIView {
         ])
 
         return row
+    }
+}
+
+/// Full-screen tap-to-dismiss preview for a composer image (local draft data, so
+/// it does not need the attachment endpoint).
+private final class ChatAttachmentPreviewViewController: UIViewController {
+    private let image: UIImage
+
+    init(image: UIImage) {
+        self.image = image
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+        ])
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(close))
+        view.addGestureRecognizer(tap)
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
     }
 }
