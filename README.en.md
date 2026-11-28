@@ -24,14 +24,11 @@
 
 <br/>
 
-**paboot is a personal agent that runs on your own computer**: one daemon drives multiple agents
-and multiple models, and your phone, tablet and desktop all connect to the same one. It remembers
-you (memory), knows your material (knowledge), can pull several assistants into one conversation
-(group chat), and ships with tools and skills.
-
-**Your data always stays on your own machine**: no account, no data collection; runs execute on
-your computer, clients are just the entrance, and a dropped connection neither stops a run nor
-loses your place.
+**paboot is a personal agent that runs on your own computer**: it can drive multiple agents and
+multiple models, and your phone, tablet and desktop all connect to the same one. It remembers you
+(memory), knows your material (knowledge), can pull several assistants into one conversation
+(group chat), and ships with tools and skills. **Your data always stays on your own machine**:
+open source, no account, no data collection; runs execute on your computer.
 
 <p align="center">
   <img src="docs/media/desktop.png" alt="paboot desktop" width="900">
@@ -135,28 +132,14 @@ docker compose restart daemon
 
 **(1) desktop**
 
-The desktop build runs the daemon's tsc to generate the protocol types, so install both sides'
-dependencies first:
-
 ```bash
 cd daemon && pnpm install && cd ..
-cd desktop && pnpm install    # downloads the Electron binary (~100MB)
-```
-
-Day-to-day development and packaging:
-
-```bash
-cd desktop
-pnpm dev             # main process + renderer (HMR)
-pnpm dist            # package the current platform into release/
-pnpm dist:linux      # or dist:mac / dist:windows
+cd desktop && pnpm install
 ```
 
 Commands and build details live in [desktop/README.md](desktop/README.md).
 
 **(2) android**
-
-Open `android/` in Android Studio, pick a flavor and Run. The command-line equivalent:
 
 ```bash
 cd android
@@ -168,8 +151,6 @@ Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
 [android/README.md](android/README.md).
 
 **(3) ios**
-
-Open `ios/paboot.xcodeproj` in Xcode and Run; the command-line equivalent:
 
 ```bash
 cd ios
@@ -196,26 +177,18 @@ several assistants into the same room.
 | Built-in agent | inside the daemon process | no CLI, just a model API key |
 
 **The built-in agent works out of the box**: it lives inside the daemon and brings its own tools,
-MCP, skills, image input and context compaction. When it needs clarification it asks and **waits
-inside the same run** for your answer instead of ending the turn.
+MCP, skills, image input and context compaction.
 
 ### Assistants and rooms
 
 - **Workspace-level assistants**: each workspace can define multiple assistants with their own
   runtime, model, system definition and read-only ceiling; read-only assistants get no write tools,
   and a room has at most one writable agent.
-- **A session is a room**: `@name` addresses specific members, `@all` broadcasts to available ones,
-  and with no mention the lead agent answers. Tasks in one turn run concurrently, while tasks for
-  the same agent queue serially.
-- **Bounded hand-off**: the lead can `@` other assistants at the end of its answer, and a summoned
-  assistant can `@` the lead back once; the chain is capped, so assistants cannot mention forever.
+- **Group chat**: `@name` addresses specific members, `@all` broadcasts to available ones, and
+  with no mention the lead agent answers. Tasks in one turn run concurrently, while tasks for the
+  same agent queue serially.
 - **Cross-machine sharing**: expose an assistant through an invite link, and another paboot can
   `@` it from its own sessions (trusted-network mode, deny by default).
-- **AI-drafted assistants**: describe what you want in one sentence; the built-in model drafts a
-  name, summary and definition for you to confirm.
-
-> Group chat UI currently ships on desktop; Android / iOS are still single-agent and do not yet
-> consume the room stream or `@` mentions.
 
 <br/>
 
@@ -233,7 +206,6 @@ budget and can also be queried on demand through the memory tool.
 - Cross-workspace read policy, retrieval ladder, timeline and search, follow-up review and
   per-item feedback are supported.
 - Clients can view, correct and forget; write tools go through approval.
-- Data lives in `<dataDir>/memory/memory.db`, separate from the main database, in WAL mode.
 
 See [daemon/docs/memory.md](daemon/docs/memory.md).
 
@@ -265,32 +237,6 @@ The built-in agent ships with its own tools; external agents keep using their ow
 | Interaction | `AskUserQuestion` (blocking question) / `TodoWrite` |
 | Extension | MCP servers (stdio), skills (`SKILL.md` directories), image input |
 
-- **MCP**: per-run `ToolServerSpec` assembly, injected by Claude / Codex / DeepSeek / builtin;
-  servers that require approval go through one gate.
-- **Skills**: loaded from the workspace and bundled directories on demand, not dumped into context.
-- **Permissions**: every tool call goes through `PermissionManager`; reads are not gated, writes
-  require approval under `ask` / `acceptEdits`, and timeouts deny.
-
-<br/>
-
-## 🤖 Models
-
-The built-in agent calls models through a shared `llm/` layer, and the same provider catalog powers
-background work such as memory extraction and assistant drafting.
-
-| Provider | Built-in models | Credentials |
-| :--- | :--- | :--- |
-| Anthropic | Claude Sonnet 4.6 | `ANTHROPIC_API_KEY` |
-| OpenAI | GPT-5.2 | `OPENAI_API_KEY` |
-| DeepSeek | DeepSeek Flash / Chat / Reasoner | `DEEPSEEK_API_KEY` |
-| Custom | any OpenAI-compatible model | `~/.paboot/providers.json` or `PABOOT_LLM_PROVIDERS` |
-
-- A model can be selected per session; external agents use whatever their own CLI is configured with.
-- The catalog can be replaced wholesale or extended with more providers; keys are write-only and
-  never sent back to clients.
-- Image and tool-calling support are declared per model; if any `@`-mentioned agent cannot accept
-  images, the whole turn is rejected before the user message is written.
-
 <br/>
 
 ## 📱 Clients
@@ -306,7 +252,7 @@ All three clients are native and share the `daemon/src/types/api.ts` transport c
 
 ### Mobile UI
 
-| Sessions | Chat (Markdown rendering) | New session |
+| Sessions | Chat (Markdown) | New session |
 |---|---|---|
 | <img src="docs/media/session_dir.jpg" width="170" alt="Sessions"> | <img src="docs/media/session.jpg" width="170" alt="Chat"> | <img src="docs/media/create_session.jpg" width="170" alt="New session"> |
 

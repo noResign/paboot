@@ -26,12 +26,10 @@
 
 <br/>
 
-**paboot 是跑在你自己电脑上的 personal agent**：一个 daemon 驱动多种 agent、多种模型，
+**paboot 是跑在你自己电脑上的 personal agent**：可驱动多种 agent、多种模型，
 手机、平板和桌面随时接入同一个它。它记得你（记忆）、懂你的资料（知识）、能把多个助手拉进
-同一个会话协作（群聊），也自带工具与 Skill。
-
-**数据始终在你自己的机器上**：不用注册账号，不收集任何数据；会话跑在你的电脑上，客户端只是
-入口，断连不影响任务，重连自动续上。
+同一个会话协作（群聊），也自带工具与 Skill。**数据始终在你自己的机器上**：开源，不注册账号，
+不收集任何数据；会话跑在你的电脑上。
 
 <p align="center">
   <img src="docs/media/desktop.png" alt="paboot 桌面端" width="900">
@@ -128,27 +126,14 @@ docker compose restart daemon
 
 **(1) desktop**
 
-desktop 构建会用 daemon 的 tsc 生成协议类型，所以先把两边依赖都装上：
-
 ```bash
 cd daemon && pnpm install && cd ..
-cd desktop && pnpm install    # 会下载 Electron 二进制（约 100MB）
-```
-
-日常开发与打包：
-
-```bash
-cd desktop
-pnpm dev             # 起主进程 + 渲染层（HMR）
-pnpm dist            # 打包当前平台的安装包到 release/
-pnpm dist:linux      # 或 dist:mac / dist:windows
+cd desktop && pnpm install
 ```
 
 命令与构建细节见 [desktop/README.md](desktop/README.md)。
 
 **(2) android**
-
-用 Android Studio 打开 `android/` 选 flavor 后直接 Run。命令行等价于：
 
 ```bash
 cd android
@@ -160,8 +145,6 @@ cd android
 [android/README.md](android/README.md)。
 
 **(3) ios**
-
-用 Xcode 打开 `ios/paboot.xcodeproj` 直接 Run；命令行等价于：
 
 ```bash
 cd ios
@@ -187,22 +170,16 @@ paboot 把「用哪个 agent」做成可组合的：同一个会话里可以只�
 | DeepSeek Harness | 外部 CLI（`dsh acp`） | 本机安装并配置模型凭据 |
 | 内置 agent | daemon 进程内 | 不需要 CLI，只依赖模型 API Key |
 
-**内置 agent 开箱即用**：它跑在 daemon 进程里，自带工具、MCP、Skill、图片输入与上下文压缩；
-需要澄清时会发起提问卡片，并**在同一个 run 内等你的回答**，你答完它接着往下做。
+**内置 agent 开箱即用**：它跑在 daemon 进程里，自带工具、MCP、Skill、图片输入与上下文压缩。
 
 ### 助手与群聊
 
 - **工作区级助手**：每个工作区可以定义多个助手，各自指定 runtime、模型、系统定义与只读约束；
   只读助手不挂写工具，一个房间最多一个可写 agent。
-- **一个会话就是一个房间**：`@名字` 指定谁来答，`@all` 广播给所有可用成员，不 `@` 则由主答
+- **支持群聊**：`@名字` 指定谁来答，`@all` 广播给所有可用成员，不 `@` 则由主答
   agent 回答；同一 turn 的多个任务并发跑，同一 agent 的任务串行排队。
-- **有限接力**：主答可以在回答末尾 `@` 其他助手补充，被召唤的助手完成后可 `@` 主答回报一次，
-  链路有上限，不会无限互 `@`。
 - **跨机共享**：把助手通过邀请链接共享给另一台 paboot，对方可以在自己的会话里直接 `@` 它
   （基于可信网络，默认拒绝）。
-- **AI 起草助手**：用一句话描述想要的助手，内置模型会生成名称、简介与定义，确认后再创建。
-
-> 群聊 UI 目前由桌面端提供；Android / iOS 仍是单 agent 会话流，尚未接入房间流与 `@`。
 
 <br/>
 
@@ -217,7 +194,6 @@ paboot 会从 life 会话（以及开启记忆的 dev 工作区）里自动捕�
 - 每个工作区独立开关记忆与注入；个人空间默认开启，项目工作区默认关闭。
 - 支持跨工作区读取策略、检索阶梯、时间线与搜索、跟进项审核与单条反馈。
 - 客户端可查看、改正、忘记；写入工具走审批。
-- 数据在 `<dataDir>/memory/memory.db`，与主库分离，WAL 模式。
 
 详见 [daemon/docs/memory.md](daemon/docs/memory.md)。
 
@@ -246,31 +222,6 @@ paboot 会从 life 会话（以及开启记忆的 dev 工作区）里自动捕�
 | 交互 | `AskUserQuestion`（阻塞式提问） / `TodoWrite` |
 | 扩展 | MCP server（stdio）、Skill（`SKILL.md` 目录）、图片输入 |
 
-- **MCP**：按 run 组装 `ToolServerSpec`，Claude / Codex / DeepSeek / builtin 各自注入；
-  需要审批的 server 走统一 gate。
-- **Skill**：从工作区与内置目录加载 `SKILL.md`，按需读取，不一次性塞满上下文。
-- **权限**：所有工具调用都经过 `PermissionManager`；读类工具不门控，写类在 `ask` /
-  `acceptEdits` 下审批，超时自动拒绝。
-
-<br/>
-
-## 🤖 模型
-
-内置 agent 通过共享 `llm/` 层调用模型，同一套 provider 目录也供记忆抽取、助手起草等后台任务
-使用。
-
-| Provider | 内置模型 | 凭据 |
-| :--- | :--- | :--- |
-| Anthropic | Claude Sonnet 4.6 | `ANTHROPIC_API_KEY` |
-| OpenAI | GPT-5.2 | `OPENAI_API_KEY` |
-| DeepSeek | DeepSeek Flash / Chat / Reasoner | `DEEPSEEK_API_KEY` |
-| 自定义 | 任意 OpenAI 兼容模型 | `~/.paboot/providers.json` 或 `PABOOT_LLM_PROVIDERS` |
-
-- 每个会话可以单独选择模型；外部 agent 的模型由它自己的 CLI 配置决定。
-- 模型目录可以整体覆盖，也可以只追加 provider；密钥只写不读，不会回传给客户端。
-- 图片与工具调用能力按模型声明；一次 turn 里只要有一个被 `@` 的 agent 不支持图片，整轮会在
-  写用户消息前拒绝。
-
 <br/>
 
 ## 📱 客户端
@@ -285,7 +236,7 @@ paboot 会从 life 会话（以及开启记忆的 dev 工作区）里自动捕�
 
 ### 移动端界面
 
-| 会话列表 | 聊天（支持 Markdown 渲染） | 新建会话 |
+| 会话列表 | 聊天（支持 Markdown） | 新建会话 |
 |---|---|---|
 | <img src="docs/media/session_dir.jpg" width="170" alt="会话列表"> | <img src="docs/media/session.jpg" width="170" alt="聊天"> | <img src="docs/media/create_session.jpg" width="170" alt="新建会话"> |
 
