@@ -1,54 +1,82 @@
-> English | [中文](README.md)
+<p align="center">
+  English | <a href="README.md">中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a>
+</p>
 
-<div align="center">
+<h1 align="center">paboot</h1>
 
-<h1>paboot</h1>
+<h4 align="center">Build your personal agent for coding, socializing, and daily life</h4>
 
-<h4>One client for all your agents</h4>
+<p align="center">
+  <a href="https://github.com/noResign/paboot/releases/latest"><img src="https://img.shields.io/github/v/release/noResign/paboot?color=0E9F86&cacheSeconds=3600" alt="Latest release"></a>
+  <a href="https://www.npmjs.com/package/@noresign/paboot"><img src="https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86" alt="npm"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-0E9F86" alt="License"></a>
+  <a href="https://github.com/noResign/paboot/stargazers"><img src="https://img.shields.io/github/stars/noResign/paboot?color=0E9F86" alt="Stars"></a>
+</p>
 
+<p align="center">
+  <a href="#quick-start">🚀 Quick Start</a> &nbsp;·&nbsp;
+  <a href="daemon/docs/daemon.md">📖 Docs</a> &nbsp;·&nbsp;
+  <a href="https://github.com/noResign/paboot/releases">💻 Download</a> &nbsp;·&nbsp;
+  <a href="android/README.md">📱 Android</a> &nbsp;·&nbsp;
+  <a href="ios/README.md">🍎 iOS</a> &nbsp;·&nbsp;
+  <a href="desktop/README.md">🖥️ Desktop</a>
+</p>
 
-[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](android/README.md) • [🖥️ **Desktop**](desktop/README.md) • [⚙️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md)
+<br/>
 
-[![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
+**paboot is a personal agent that runs on your own computer**: one daemon drives multiple agents
+and multiple models, and your phone, tablet and desktop all connect to the same one. It remembers
+you (memory), knows your material (knowledge), can pull several assistants into one conversation
+(group chat), and ships with tools and skills.
 
-</div>
+**Your data always stays on your own machine**: no account, no data collection; runs execute on
+your computer, clients are just the entrance, and a dropped connection neither stops a run nor
+loses your place.
 
-**Built as one system across clients — switch form factor whenever you like, and drive every agent on your computer (Claude Code, Codex, DeepSeek Harness and the built-in agent today).**
-**Your data always stays on your own machine**: phone and desktop drive the same sessions, and a dropped connection neither stops a run nor loses your place.
+<p align="center">
+  <img src="docs/media/desktop.png" alt="paboot desktop" width="900">
+</p>
 
-- **One client for all your agents** — Claude Code, Codex, DeepSeek Harness, and a built-in agent.
-- **A built-in agent that needs no CLI** — supply one model API key and it runs. It lives inside the
-  daemon process and brings its own tools (file read/write, Bash, Grep, Glob, web fetch, blocking
-  questions), MCP servers, skills and multimodal input, with the model provider switchable between
-  Claude / OpenAI / DeepSeek.
-- **Three clients, one system, each native** — Android, iOS and desktop share one protocol and one
-  design system, operate on the same sessions, and are each implemented natively.
-- **Your data stays on your own machine** — agents use that machine's environment, tools, configs
-  and skills; everything stays on your computer or the server you deploy, and paboot itself needs
-  no account and collects no data.
-- **Disconnects do not stop runs** — a run is decoupled from its connection: locking the phone,
-  switching apps or losing the network does not stop the work, and you pick it up where you left off.
-- **Approval stays in your hands** — per-session `ask` / `acceptEdits` / `bypass`; deny by default,
-  with Bash, file writes and MCP calls arriving on your phone as approval cards, auto-denied on
-  timeout, and read-only commands auto-allowed.
-- **Many runs at once, notified when done** — several sessions and runs in parallel without
-  blocking each other; when you are not in that conversation, approvals and finished runs trigger
-  a system notification.
-- **See every change** — Git changes, per-file diffs, the directory tree and text / image / video
-  previews without leaving the conversation. The daemon never touches your index or HEAD, so
-  undoing a change is plain `git`.
-- **Front-end / back-end separation, deploy anywhere** — the clients and the daemon are separate.
-  The daemon runs anywhere via npm / Docker — any computer or server — so you can build your own
-  control matrix.
+<p align="center"><em>Desktop: activity bar · session list · conversation · file panel</em></p>
 
+<br/>
 
-## Quick start
+## 🌟 Highlights
+
+| Capability | Description |
+| :--- | :--- |
+| Multi-Agent | Claude Code, Codex, DeepSeek Harness and a built-in agent behind one client; define multiple assistants per workspace |
+| Group chat | A session is a room: `@` decides who answers, assistants can summon and report back, and assistants can be shared across machines (desktop today) |
+| Memory | Facts, preferences, relationships and open loops distilled from conversations, deduplicated and injected into context |
+| Knowledge | A verifiable Markdown knowledge base with review status, indexing and context injection |
+| Tools & Skills | Built-in file, Bash, web, question and todo tools, plus MCP servers and skills |
+| Multi-model | Built-in Anthropic / OpenAI / DeepSeek templates and any OpenAI-compatible provider, selectable per session |
+| Multi-client | Native Android / iOS / desktop clients sharing one protocol and one design system |
+| Built-in agent | No external CLI required — one model API key is enough |
+| Disconnect-safe | Runs are decoupled from connections; locking the phone, switching apps or losing the network does not stop work |
+| Approvals | Per-session `ask` / `acceptEdits` / `bypass`, deny by default, auto-denied on timeout |
+| Scheduled tasks | In-daemon scheduling, AI-authored task config, cron triggers and session resume |
+| File changes | Git changes / diffs / directory tree / text and media previews; your index and HEAD are never touched |
+| Anywhere | The desktop app bundles a daemon; npm / Docker deploy to any computer or server |
+
+<br/>
+
+## Quick Start
+
+Pick the way that fits your setup:
+
+| Way | Best for | Entry |
+| :--- | :--- | :--- |
+| **Desktop (recommended)** | Zero setup, no Node / CLI required | [Download](https://github.com/noResign/paboot/releases) |
+| **daemon + phone** | An always-on computer, phone / tablet access | `npm install -g @noresign/paboot` |
+| **Docker** | A server / NAS | [daemon/docker-compose.yml](daemon/docker-compose.yml) |
+| **From source** | Development | See "Build clients from source" below |
 
 ### 0. Prerequisites
 
 paboot drives Claude Code, Codex and DeepSeek Harness, plus a **built-in agent**. The external
 agents have to be installed and configured **on the machine that runs the daemon**; the built-in one
-needs no CLI — only a model provider API key (see "Built-in agent" below).
+needs no CLI — only a model provider API key (see "Multi-Agent & group chat" below).
 
 > [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 >
@@ -57,27 +85,6 @@ needs no CLI — only a model provider API key (see "Built-in agent" below).
 > [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): `npm install -g @deepseek-ai/dsh`;
 > provide model credentials through the `DEEPSEEK_API_KEY` environment variable, or fill them in
 > under **Settings → Models** in `dsh web`.
-
-### Built-in agent
-
-paboot ships an **agent runtime that lives inside the daemon**, listed alongside the three external
-CLIs in the same session list and driven by the same client, approvals and resume behaviour.
-
-- **No external CLI required**: it talks to LLM providers over HTTP only. Set any of
-  `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`, or configure several providers in
-  `~/.paboot/providers.json` and pick a model in Settings.
-- **Tools included**: `Read` / `Write` / `Edit` / `Bash` / `Grep` / `Glob` / `TodoWrite` / `WebFetch` /
-  `AskUserQuestion`, plus mounted MCP servers and skills.
-- **Blocking questions**: when the agent needs clarification it asks and **waits inside the same
-  run** for your answer instead of ending the turn — it continues once you reply.
-- **Two web-fetch backends**: provider-hosted by default (runs on the provider's servers, cannot
-  reach intranet addresses); without a usable provider key it falls back to the local backend, which
-  can also be selected explicitly for intranet / loopback pages and converts HTML to Markdown.
-- **Context compaction**: older history is compacted against a token budget, so long sessions do not
-  die at the window limit.
-
-See [daemon/docs/runtimes.md](daemon/docs/runtimes.md) and
-[daemon/docs/configuration.md](daemon/docs/configuration.md) for the details.
 
 ### 1. Desktop (recommended: it can run the daemon itself)
 
@@ -89,7 +96,6 @@ it. The desktop app ships a daemon runtime: if no daemon is running, it starts o
   directories under **Settings → Workspaces**;
 - Android / iOS on the same network can connect to that daemon too: use the LAN address shown by the
   desktop app and the token at `~/.paboot/token`.
-
 
 ### 2. Standalone daemon (any computer or server)
 
@@ -173,53 +179,219 @@ xcodebuild -project paboot.xcodeproj -scheme paboot \
 
 Module layout and the pure-logic tests (`ios/PabootCore`) live in [ios/README.md](ios/README.md).
 
-### 4. Connecting from outside your LAN (optional)
+<br/>
 
-By default the daemon only listens on your LAN. To reach it from the internet, two
-common approaches:
+## 👥 Multi-Agent & group chat
 
-**(1) SSH relay** — for personal use. You need one machine with a public IP. On the
-**computer running the daemon**:
+paboot makes "which agent answers" composable: a session can have a single lead agent, or pull
+several assistants into the same room.
+
+### Agent runtimes
+
+| Runtime | Integration | Notes |
+| :--- | :--- | :--- |
+| Claude Code | external CLI | install locally and run `claude auth login` |
+| Codex | external CLI (`codex app-server`) | install locally and run `codex login` |
+| DeepSeek Harness | external CLI (`dsh acp`) | install locally and configure model credentials |
+| Built-in agent | inside the daemon process | no CLI, just a model API key |
+
+**The built-in agent works out of the box**: it lives inside the daemon and brings its own tools,
+MCP, skills, image input and context compaction. When it needs clarification it asks and **waits
+inside the same run** for your answer instead of ending the turn.
+
+### Assistants and rooms
+
+- **Workspace-level assistants**: each workspace can define multiple assistants with their own
+  runtime, model, system definition and read-only ceiling; read-only assistants get no write tools,
+  and a room has at most one writable agent.
+- **A session is a room**: `@name` addresses specific members, `@all` broadcasts to available ones,
+  and with no mention the lead agent answers. Tasks in one turn run concurrently, while tasks for
+  the same agent queue serially.
+- **Bounded hand-off**: the lead can `@` other assistants at the end of its answer, and a summoned
+  assistant can `@` the lead back once; the chain is capped, so assistants cannot mention forever.
+- **Cross-machine sharing**: expose an assistant through an invite link, and another paboot can
+  `@` it from its own sessions (trusted-network mode, deny by default).
+- **AI-drafted assistants**: describe what you want in one sentence; the built-in model drafts a
+  name, summary and definition for you to confirm.
+
+> Group chat UI currently ships on desktop; Android / iOS are still single-agent and do not yet
+> consume the room stream or `@` mentions.
+
+<br/>
+
+## 🧠 Memory & knowledge
+
+### Memory
+
+paboot captures conversations from life sessions (and dev workspaces with memory enabled), then a
+shared LLM extracts facts, preferences, relationships, profiles and open loops in the background.
+After deduplication, conflict resolution and entity merging, memory is injected into context on a
+budget and can also be queried on demand through the memory tool.
+
+- Memory and injection can be toggled per workspace; the Personal workspace is on by default,
+  project workspaces are off by default.
+- Cross-workspace read policy, retrieval ladder, timeline and search, follow-up review and
+  per-item feedback are supported.
+- Clients can view, correct and forget; write tools go through approval.
+- Data lives in `<dataDir>/memory/memory.db`, separate from the main database, in WAL mode.
+
+See [daemon/docs/memory.md](daemon/docs/memory.md).
+
+### Knowledge
+
+Markdown documents in a workspace form a verifiable knowledge base: each entry has a title, body
+and `.meta.json` metadata (source, review status, hash). Confirmed entries are injected into
+context as pointers, their bodies are read on demand, and the whole base can be exported as a zip.
+
+- Organized per workspace, with optional external directories; scanning and indexing happen inside
+  the daemon.
+- Desktop can create, edit, verify and delete; mobile can view and toggle verification. Knowledge
+  changes sync into the memory index.
+- Files are the source of truth; the index is rebuildable.
+
+See [daemon/docs/knowledge.md](daemon/docs/knowledge.md).
+
+<br/>
+
+## 🔧 Tools & skills
+
+The built-in agent ships with its own tools; external agents keep using their own toolchains.
+
+| Category | Contents |
+| :--- | :--- |
+| Files | `Read` / `Write` / `Edit` / `Grep` / `Glob` |
+| Shell | `Bash` (read-only allowlist auto-allowed; writes require approval) |
+| Web | `WebSearch` (provider-hosted) / `WebFetch` (provider-hosted or local direct backend) |
+| Interaction | `AskUserQuestion` (blocking question) / `TodoWrite` |
+| Extension | MCP servers (stdio), skills (`SKILL.md` directories), image input |
+
+- **MCP**: per-run `ToolServerSpec` assembly, injected by Claude / Codex / DeepSeek / builtin;
+  servers that require approval go through one gate.
+- **Skills**: loaded from the workspace and bundled directories on demand, not dumped into context.
+- **Permissions**: every tool call goes through `PermissionManager`; reads are not gated, writes
+  require approval under `ask` / `acceptEdits`, and timeouts deny.
+
+<br/>
+
+## 🤖 Models
+
+The built-in agent calls models through a shared `llm/` layer, and the same provider catalog powers
+background work such as memory extraction and assistant drafting.
+
+| Provider | Built-in models | Credentials |
+| :--- | :--- | :--- |
+| Anthropic | Claude Sonnet 4.6 | `ANTHROPIC_API_KEY` |
+| OpenAI | GPT-5.2 | `OPENAI_API_KEY` |
+| DeepSeek | DeepSeek Flash / Chat / Reasoner | `DEEPSEEK_API_KEY` |
+| Custom | any OpenAI-compatible model | `~/.paboot/providers.json` or `PABOOT_LLM_PROVIDERS` |
+
+- A model can be selected per session; external agents use whatever their own CLI is configured with.
+- The catalog can be replaced wholesale or extended with more providers; keys are write-only and
+  never sent back to clients.
+- Image and tool-calling support are declared per model; if any `@`-mentioned agent cannot accept
+  images, the whole turn is rejected before the user message is written.
+
+<br/>
+
+## 📱 Clients
+
+All three clients are native and share the `daemon/src/types/api.ts` transport contract and the
+`docs/ui/` design system.
+
+| Client | Stack | Implemented |
+| :--- | :--- | :--- |
+| Android | Kotlin + Jetpack Compose | connect / sessions / chat / approvals / files / workspaces / scheduled tasks / knowledge (view / verify) / memory |
+| iOS | UIKit + SwiftPM | connect / sessions / chat / approvals / files / workspaces / scheduled tasks / knowledge (view / verify) / memory |
+| Desktop | Electron + React | all of the above + multi-agent group chat / assistant management / global tasks / cross-machine sharing / skins |
+
+### Mobile UI
+
+| Sessions | Chat (Markdown rendering) | New session |
+|---|---|---|
+| <img src="docs/media/session_dir.jpg" width="170" alt="Sessions"> | <img src="docs/media/session.jpg" width="170" alt="Chat"> | <img src="docs/media/create_session.jpg" width="170" alt="New session"> |
+
+| Files & diff | Workspaces | Settings |
+|---|---|---|
+| <img src="docs/media/file_full.jpg" width="170" alt="Files & diff"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="Workspaces"> | <img src="docs/media/setting.jpg" width="170" alt="Settings"> |
+
+<br/>
+
+## 🔐 Security & permissions
+
+Driving a shell-capable agent from a client is effectively remote code execution. paboot defaults
+to deny:
+
+- **Authentication**: apart from `/health` and the peer handshake endpoints, every route requires a
+  Bearer token; the token is persisted at `~/.paboot/token` (delete to rotate), and repeated
+  failures from one source trigger a cooldown.
+- **Permission modes**: per-session `ask` / `acceptEdits` / `bypass`; under `ask`, Bash / Write /
+  Edit and MCP calls require approval, timeouts deny, and read-only commands are auto-allowed.
+- **Scopes**: approvals and "allow all" grants are session-level; the workspace boundary constrains
+  writes, not an OS sandbox. Reads outside the workspace are neither gated nor added to the cwd.
+- **Data**: SQLite / token / memory / knowledge / providers live under `~/.paboot`; paboot needs no
+  account and collects no data.
+- **Peers**: peer mode trusts the other machine; `~/.paboot` is best-effort denied rather than
+  sandboxed, and only builtin / Claude agents can be shared.
+
+> ⚠️ Exposing the daemon to the internet is handing a shell-capable machine to anyone who can
+> connect. Prefer Tailscale / ZeroTier / WireGuard; use an SSH tunnel only temporarily, and never
+> leak your IP or token.
+
+<br/>
+
+## 🌐 Remote access (optional)
+
+By default the daemon only listens on your LAN. To reach it from outside, two common approaches:
+
+**(1) SSH relay** — for personal use. You need one machine with a public IP. On the **computer
+running the daemon**:
 
 ```bash
 ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 ```
 
-Then point your phone at `http://your-server:4788` — 4788 is the port on the server; pick
-any you like. Note that **SSH only encrypts the "computer → server" leg; the hop from the
-phone to the server is still plain HTTP**, so the token travels in the clear there — which
-is why this route is only for your own temporary use.
+Then point your phone at `http://your-server:4788`. Note that **SSH only encrypts the
+"computer → server" leg; the hop from the phone to the server is still plain HTTP**, so the token
+travels in the clear there — which is why this route is only for temporary use.
 
-
-
-- The command binds `0.0.0.0`, but the server ignores that and binds to **loopback** by
-  default, so the phone still cannot reach it. Set `GatewayPorts clientspecified` in the
-  server's `/etc/ssh/sshd_config`
+- The command binds `0.0.0.0`, but the server ignores that and binds to **loopback** by default, so
+  the phone still cannot reach it. Set `GatewayPorts clientspecified` in the server's
+  `/etc/ssh/sshd_config`
 - The tunnel does not reconnect by itself; use `autossh -M 0 -N -R ...` or run it under systemd
 
-**(2) Mesh / VPN tools** — put the computer and the phone on the same virtual network, then
-connect to the address the daemon printed (or its virtual IP) exactly as if you were on the
-same LAN. Nothing to change on the daemon side:
+**(2) Mesh / VPN tools** — put the computer and the phone on the same virtual network, then connect
+to the address the daemon printed (or its virtual IP) exactly as if you were on the same LAN.
+Nothing to change on the daemon side:
 
-- **Tailscale / ZeroTier** — sign in and go; mobile apps included, with a relay fallback when NAT traversal fails
+- **Tailscale / ZeroTier** — sign in and go; mobile apps included, with a relay fallback when NAT
+  traversal fails
 - **WireGuard** — roll your own; cleanest, but you maintain the keys and routes
 
-The whole path is encrypted end to end, so there is no certificate or port exposure to
-worry about.
+The whole path is encrypted end to end, so there is no certificate or port exposure to worry about.
 
-> ⚠️ Any of the above means the daemon is exposed beyond your own machine,
-> and it drives an agent with shell access — anyone who connects can drive it to operate
-> your computer. Do not leak your IP or token, and make sure the token is strongly random.
+<br/>
 
-## Mobile UI
+## 🛠️ Development & contributing
 
-| Sessions | Chat (Markdown rendering) | Approval | New session |
-|---|---|---|---|
-| <img src="docs/media/session_dir.jpg" width="170" alt="Sessions"> | <img src="docs/media/session.jpg" width="170" alt="Chat"> | <img src="docs/media/permission_dialog.jpg" width="170" alt="Approval"> | <img src="docs/media/create_session.jpg" width="170" alt="New session"> |
+- Repository layout and conventions live in [CLAUDE.md](CLAUDE.md); each subproject has its own README.
+- daemon: `cd daemon && pnpm install && pnpm dev`; before committing run
+  `pnpm typecheck && pnpm test`.
+- Desktop: `cd desktop && pnpm dev`; Android uses Android Studio; iOS opens
+  `ios/paboot.xcodeproj` in Xcode.
+- When a change touches the protocol, update `daemon/src/types/api.ts` and the three clients' DTOs.
+  Issues and PRs are welcome.
 
-| Files / diff (multiple Git dirs) | All files | Workspaces | Settings |
-|---|---|---|---|
-| <img src="docs/media/file_git.jpg" width="170" alt="Files / diff"> | <img src="docs/media/file_full.jpg" width="170" alt="All files"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="Workspaces"> | <img src="docs/media/setting.jpg" width="170" alt="Settings"> |
+<br/>
+
+## ⚠️ Disclaimer
+
+1. Released under [Apache-2.0](LICENSE), provided as-is without warranty of any kind.
+2. The agent can access your local filesystem and shell; only deploy it in trusted environments and
+   use it at your own risk.
+3. Comply with the laws and regulations of your jurisdiction; the maintainers assume no liability
+   for consequences arising from use of this project.
+
+<br/>
 
 ## License
 
