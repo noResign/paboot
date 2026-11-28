@@ -222,7 +222,9 @@ export function SessionList({
               {session.agentName}
             </span>
             <span className="sep">·</span>
-            <span>来自 {session.peerLabel}</span>
+            <span className="peer-origin" title={`来自 ${session.peerLabel}`}>
+              来自 {session.peerLabel}
+            </span>
             <span className="session-time">{relativeTime(session.lastActiveAt)}</span>
           </div>
         </div>

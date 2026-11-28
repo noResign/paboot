@@ -711,49 +711,6 @@ kbd {
   border-color: var(--border);
   background: var(--surface-2);
 }
-.end-chips {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.end-chip {
-  font-size: 11px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  background: var(--surface-2);
-}
-button.end-chip {
-  cursor: pointer;
-}
-.end-chip.primary {
-  color: var(--text-primary);
-  border-color: var(--accent, var(--text-secondary));
-}
-.end-chip.muted {
-  color: var(--text-muted);
-}
-.end-chip-caret {
-  margin-left: 3px;
-  font-size: 9px;
-}
-.end-chip-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
-  min-width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--elevation-3);
-}
 .chat-sub {
   display: flex;
   align-items: center;
@@ -917,16 +874,30 @@ button.end-chip {
 }
 
 .block-question {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
+  background: var(--card);
+  border: 1px solid var(--hairline);
   border-radius: var(--r-card);
-  padding: 10px 12px;
+  padding: 12px 14px;
   margin: 8px 0;
 }
 .block-title {
-  font-weight: 600;
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.block-title::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
 }
 .question + .question {
   margin-top: 10px;
@@ -967,7 +938,11 @@ button.end-chip {
   background: var(--card-hover);
 }
 .question-option.selected {
+  border-color: transparent;
   background: var(--primary-subtle);
+}
+.question-option.selected .question-mark {
+  color: var(--primary);
 }
 .question-option:disabled {
   cursor: default;
@@ -1003,8 +978,8 @@ button.end-chip {
   font: inherit;
 }
 .question-status {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: 10px;
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
@@ -2819,12 +2794,25 @@ a.btn {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
   margin-top: 1px;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+/* Remote sessions carry a peer label that may include an address: keep it on a
+   single truncated line so it never wraps the timestamp onto a second row. */
+.session-meta .agent {
+  flex: none;
+  white-space: nowrap;
+}
+.peer-origin {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .session-time {
   margin-left: auto;
@@ -6189,6 +6177,15 @@ a.btn {
   border: 1px solid var(--hairline);
   background: var(--surface-2);
 }
+.composer-attachment-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
 .composer-attachment img {
   width: 100%;
   height: 100%;
@@ -6286,6 +6283,14 @@ a.btn {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.ends-mini-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px 0;
 }
 .ends-body {
   display: flex;

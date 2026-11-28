@@ -277,6 +277,8 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
     setDocBody(res.data.document.body);
   }
 
+  const detailOpen = Boolean(selected) || addOpen;
+
   return (
     <div
       className="kn-overlay"
@@ -288,29 +290,49 @@ export function EndsPanel({ workspaceId, workspaceName, initialEndId, startAddin
       }}
     >
       <div className="kn-panel ends-panel">
-        <header className="kn-head">
-          <div className="kn-head-copy">
-            <div className="kn-head-title">
-              <Icon name="folder" size={16} />
-              <h2>端</h2>
-              <span className="badge subtle">{workspaceName}</span>
-            </div>
-            <p className="hint">先加端（名称 + 目录），再维护端规范与知识。</p>
-          </div>
-          <div className="kn-head-actions">
-            {/* Same intent as the overview's「添加端」entry. Without it, cancelling
-                left the panel with no way back to it. */}
-            <button className="btn tiny" onClick={openAdd} disabled={addOpen}>
-              添加端
-            </button>
-            <button className="icon-btn" title="刷新" onClick={() => void load()}>
-              <Icon name="refresh" size={16} />
+        {detailOpen ? (
+          // A selected end (or the create view) owns the whole panel: the
+          // workspace-level head would just be noise above it.
+          <div className="ends-mini-head">
+            <button
+              className="btn ghost"
+              onClick={() => {
+                if (addOpen) setAddOpen(false);
+                else setSelectedId(null);
+              }}
+            >
+              <Icon name="arrow-left" size={15} />
+              返回端列表
             </button>
             <button className="icon-btn kn-close" title="关闭" onClick={onClose}>
               <Icon name="x" size={16} />
             </button>
           </div>
-        </header>
+        ) : (
+          <header className="kn-head">
+            <div className="kn-head-copy">
+              <div className="kn-head-title">
+                <Icon name="folder" size={16} />
+                <h2>端</h2>
+                <span className="badge subtle">{workspaceName}</span>
+              </div>
+              <p className="hint">先加端（名称 + 目录），再维护端规范与知识。</p>
+            </div>
+            <div className="kn-head-actions">
+              {/* Same intent as the overview's「添加端」entry. Without it, cancelling
+                  left the panel with no way back to it. */}
+              <button className="btn tiny" onClick={openAdd} disabled={addOpen}>
+                添加端
+              </button>
+              <button className="icon-btn" title="刷新" onClick={() => void load()}>
+                <Icon name="refresh" size={16} />
+              </button>
+              <button className="icon-btn kn-close" title="关闭" onClick={onClose}>
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+          </header>
+        )}
 
         <div className="ends-body">
           {loading && <p className="hint">加载中…</p>}

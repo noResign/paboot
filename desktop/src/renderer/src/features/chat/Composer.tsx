@@ -80,6 +80,7 @@ export function Composer({
   const mentionedIds = mentionedAgentIds(text, mentionAgents ?? []);
   const hasMentions = mentionedIds.length > 0;
   const [images, setImages] = useState<DraftImage[]>([]);
+  const [previewImage, setPreviewImage] = useState<DraftImage | null>(null);
   const [uploading, setUploading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -107,6 +108,7 @@ export function Composer({
       if (target) URL.revokeObjectURL(target.previewUrl);
       return current.filter((image) => image.id !== id);
     });
+    setPreviewImage((current) => (current?.id === id ? null : current));
   }
 
   /** Open/refresh the `@` picker from the caret's current token. */
@@ -193,6 +195,7 @@ export function Composer({
     setText('');
     setMention(null);
     setImages([]);
+    setPreviewImage(null);
     setAttachError(null);
     onSend(
       quote ? `${quoteBlock(quote)}\n\n${value}` : value,
@@ -256,7 +259,14 @@ export function Composer({
           <div className="composer-attachments">
             {images.map((image) => (
               <div className="composer-attachment" key={image.id}>
-                <img src={image.previewUrl} alt={image.name} />
+                <button
+                  type="button"
+                  className="composer-attachment-open"
+                  title="查看大图"
+                  onClick={() => setPreviewImage(image)}
+                >
+                  <img src={image.previewUrl} alt={image.name} />
+                </button>
                 <button
                   type="button"
                   className="composer-attachment-remove"
@@ -267,6 +277,16 @@ export function Composer({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+        {previewImage && (
+          <div
+            className="image-lightbox"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setPreviewImage(null)}
+          >
+            <img src={previewImage.previewUrl} alt={previewImage.name} />
           </div>
         )}
         {attachError && <p className="composer-attach-error">{attachError}</p>}

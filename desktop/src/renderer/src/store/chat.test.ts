@@ -644,7 +644,13 @@ describe('question answers', () => {
       },
     });
 
-    useChat.getState().answerQuestion('q-nb', '答案', {});
+    useChat.getState().answerQuestion('q-nb', '答案', { q: ['A'] });
+
+    const block = useChat.getState().byKey[key]!.messages[1]!;
+    if (block.kind !== 'assistant') throw new Error('expected assistant message');
+    // The card must keep the picks after the turn ends, even though the answer
+    // itself travels as a normal continuation message.
+    expect(block.blocks[0]).toMatchObject({ answered: true, answers: { q: ['A'] } });
 
     await vi.waitFor(() => expect(api.sendTurn).toHaveBeenCalled());
     const call = vi.mocked(api.sendTurn).mock.calls[0]!;

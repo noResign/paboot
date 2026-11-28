@@ -586,9 +586,10 @@ export const useChat = create<ChatStore>((set, get) => ({
     // by the leader — and let the per-agent queue serialize it behind that
     // agent's live run.
     if (question.answered) return;
-    // No answer to record here: this path sends the choice as the next user
-    // message, which is already on the timeline right below the card.
-    set(questionAnswered(key, toolUseId, true));
+    // The continuation turn carries the choice as text, but the card has to
+    // remember the picks too — otherwise it goes blank (or keeps a stale local
+    // check) the moment the question stops being the live turn.
+    set(questionAnswered(key, toolUseId, true, answers ?? null));
     // Address the asker explicitly. If the roster has not loaded yet we cannot
     // tell whether it is the leader; sending a member's answer to the leader is
     // worse than a leader turn taking the `mention` source.

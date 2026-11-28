@@ -29,7 +29,6 @@ import { PermissionDialog, InlinePermissionCard } from '../permissions/Permissio
 import { AssistantTab } from './AssistantTab';
 import { RunTracePane } from './RunTracePane';
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
-import { SessionEndsChips } from './SessionEndsChips';
 import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
 import type {
@@ -528,9 +527,6 @@ export function ChatView({
               </span>
             ) : (
               workspaceName && <span>{workspaceName}</span>
-            )}
-            {chat.sessionId && workspaceId && (
-              <SessionEndsChips sessionId={chat.sessionId} workspaceId={workspaceId} />
             )}
             {chat.permissionMode && (
               <button

@@ -82,6 +82,15 @@ export function QuestionBlock({
   const blocking = Boolean(permissionId);
   const readonly = closed || answerStatus !== null || !interactive;
 
+  // A card that settled with no durable answer (e.g. Claude auto-denied it) must
+  // not keep the local clicks from when it was live: the footer already says the
+  // answer is not retained, so a stale check mark reads as a bug.
+  useEffect(() => {
+    if (!readonly || answers || answerText) return;
+    setSelections({});
+    setOthers({});
+  }, [readonly, answers, answerText]);
+
   useEffect(() => {
     // Builtin blocks the run, so a blocking question must be confirmed with the
     // button: the user may still be toggling options. Headless Claude can only
